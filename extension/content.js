@@ -164,12 +164,111 @@
     return { mensagens, nome: nomeDoContato() };
   }
 
+  // ---------------------------------------------------------------------------
+  // Aviso fixo na tela do WhatsApp (visível enquanto você responde outros leads)
+  // ---------------------------------------------------------------------------
+  const BADGE_ID = 'closer-report-badge';
+
+  function badgeEl() {
+    let el = document.getElementById(BADGE_ID);
+    if (!el) {
+      el = document.createElement('div');
+      el.id = BADGE_ID;
+      el.style.cssText = [
+        'position:fixed', 'bottom:20px', 'right:20px', 'z-index:2147483647',
+        'max-width:320px', 'background:#16212e', 'color:#e6edf3',
+        'border:1px solid #26333f', 'border-left:4px solid #25d366',
+        'border-radius:10px', 'padding:12px 14px', 'font:13px/1.45 -apple-system,Segoe UI,Roboto,sans-serif',
+        'box-shadow:0 6px 24px rgba(0,0,0,.4)', 'display:flex', 'gap:10px', 'align-items:flex-start',
+      ].join(';');
+      document.body.appendChild(el);
+    }
+    return el;
+  }
+
+  function mostrarBadge({ texto, cor = '#25d366', loading = false, arquivo = null, server = null }) {
+    const el = badgeEl();
+    el.style.borderLeftColor = cor;
+    const spinner = loading
+      ? '<span style="flex:none;width:14px;height:14px;border:2px solid rgba(255,255,255,.25);border-top-color:#fff;border-radius:50%;display:inline-block;animation:crspin .8s linear infinite"></span>'
+      : '<span style="flex:none;font-size:15px">📋</span>';
+    let acao = '';
+    if (arquivo && server) {
+      const url = server + '/api/download/' + encodeURIComponent(arquivo);
+      acao =
+        `<a href="${url}" target="_blank" style="display:inline-block;margin-top:8px;background:#25d366;color:#05130c;` +
+        `font-weight:700;text-decoration:none;padding:6px 10px;border-radius:7px">⬇ Baixar .docx</a>`;
+    }
+    el.innerHTML =
+      (document.getElementById('crspin-style') ? '' : '<style id="crspin-style">@keyframes crspin{to{transform:rotate(360deg)}}</style>') +
+      spinner +
+      `<div style="flex:1"><div>${texto}</div>${acao}</div>` +
+      `<span id="cr-x" style="flex:none;cursor:pointer;color:#8b98a5;font-size:15px;line-height:1">×</span>`;
+    const x = el.querySelector('#cr-x');
+    if (x) x.onclick = () => el.remove();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Orquestração do report (roda em segundo plano, sobrevive ao fechar o popup)
+  // ---------------------------------------------------------------------------
+  let jobEmAndamento = false;
+
+  async function gerarReportEmBackground(server) {
+    if (jobEmAndamento) {
+      mostrarBadge({ texto: 'Já existe um report sendo gerado…', cor: '#f0ad4e', loading: true });
+      return;
+    }
+    jobEmAndamento = true;
+    try {
+      mostrarBadge({
+        texto: '<b>Lendo a conversa…</b><br>Aguarde e <u>não troque de conversa agora</u>.',
+        loading: true,
+      });
+      const { mensagens, nome } = await coletarConversa();
+      if (!mensagens.length) {
+        mostrarBadge({ texto: '❌ Nenhuma mensagem encontrada nesta conversa.', cor: '#ff6b6b' });
+        jobEmAndamento = false;
+        return;
+      }
+
+      mostrarBadge({
+        texto:
+          `<b>Gerando report…</b> (${mensagens.length} mensagens)<br>` +
+          '✅ Já pode responder outros leads.',
+        loading: true,
+      });
+
+      const resp = await new Promise((resolve) =>
+        chrome.runtime.sendMessage({ action: 'reportFetch', server, mensagens, nome }, resolve)
+      );
+
+      if (!resp || !resp.ok) {
+        mostrarBadge({ texto: '❌ ' + ((resp && resp.erro) || 'Falha ao gerar o report.'), cor: '#ff6b6b' });
+        jobEmAndamento = false;
+        return;
+      }
+
+      chrome.storage.local.set({
+        ultimoReport: { arquivo: resp.arquivo, dados: resp.dados, nome, server, quando: Date.now() },
+      });
+      mostrarBadge({
+        texto: `<b>✅ Report pronto!</b> (${nome || 'lead'})`,
+        arquivo: resp.arquivo,
+        server,
+      });
+    } catch (e) {
+      mostrarBadge({ texto: '❌ ' + e.message, cor: '#ff6b6b' });
+    } finally {
+      jobEmAndamento = false;
+    }
+  }
+
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-    if (msg && msg.action === 'scrape') {
-      coletarConversa()
-        .then((r) => sendResponse({ ok: true, ...r }))
-        .catch((e) => sendResponse({ ok: false, erro: e.message }));
-      return true; // resposta assíncrona
+    if (msg && msg.action === 'start') {
+      // Dispara em background e responde na hora para o popup poder fechar.
+      gerarReportEmBackground(msg.server);
+      sendResponse({ ok: true, iniciado: true });
+      return false;
     }
     if (msg && msg.action === 'ping') {
       sendResponse({ ok: true });

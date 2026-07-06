@@ -49,11 +49,11 @@ async function abaAtiva() {
   return tab;
 }
 
-// Pede a raspagem ao content script; injeta-o se ainda não estiver presente.
-async function raspar(tabId) {
+// Envia "start" ao content script; injeta-o se ainda não estiver presente.
+async function enviarStart(tabId, server) {
   const enviar = () =>
     new Promise((resolve) => {
-      chrome.tabs.sendMessage(tabId, { action: 'scrape' }, (resp) => {
+      chrome.tabs.sendMessage(tabId, { action: 'start', server }, (resp) => {
         if (chrome.runtime.lastError) resolve({ __semScript: true });
         else resolve(resp);
       });
@@ -61,17 +61,16 @@ async function raspar(tabId) {
 
   let resp = await enviar();
   if (resp && resp.__semScript) {
-    // content script não carregou (WhatsApp aberto antes da extensão): injeta e tenta de novo.
     try {
       await chrome.scripting.executeScript({ target: { tabId }, files: ['content.js'] });
-    } catch (e) {
+    } catch (_) {
       throw new Error('Não consegui acessar a página. Recarregue o WhatsApp Web (F5) e tente de novo.');
     }
     resp = await enviar();
   }
-  if (!resp) throw new Error('Sem resposta da página. Recarregue o WhatsApp Web e tente de novo.');
-  if (!resp.ok) throw new Error(resp.erro || 'Falha ao ler a conversa.');
-  return resp;
+  if (!resp || (!resp.ok && !resp.__semScript)) {
+    throw new Error('Recarregue o WhatsApp Web (F5) e tente de novo.');
+  }
 }
 
 async function testarConexao() {
@@ -88,39 +87,18 @@ async function testarConexao() {
 
 async function gerar() {
   $('gerar').disabled = true;
-  $('report').classList.add('hidden');
-  $('dl').classList.add('hidden');
-  const server = getServer();
-
   try {
     const tab = await abaAtiva();
     if (!tab || !/^https:\/\/web\.whatsapp\.com\//.test(tab.url || '')) {
       throw new Error('Abra o WhatsApp Web (web.whatsapp.com) nesta aba primeiro.');
     }
-
-    setStatus('Lendo a conversa (rolando o histórico)… não feche este popup.', { loading: true });
-    const { mensagens, nome } = await raspar(tab.id);
-    if (!mensagens || mensagens.length === 0) {
-      throw new Error('Nenhuma mensagem encontrada. Abra uma conversa com mensagens e tente de novo.');
-    }
-
-    setStatus(`Lidas ${mensagens.length} mensagens. Gerando report…`, { loading: true });
-    const r = await fetch(server + '/api/report-direto', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mensagens, nome }),
-    }).catch(() => {
-      throw new Error('Servidor local não respondeu. Rode "npm start" e confira a porta.');
-    });
-
-    const data = await r.json();
-    if (!r.ok) throw new Error(data.erro || 'Erro ao gerar o relatório.');
-
-    $('report').innerHTML = renderReport(data.dados);
-    $('report').classList.remove('hidden');
-    $('dl').href = server + '/api/download/' + encodeURIComponent(data.arquivo);
-    $('dl').classList.remove('hidden');
-    setStatus(`✅ Report gerado a partir de ${mensagens.length} mensagens.`);
+    const server = getServer();
+    setStatus('Iniciando…', { loading: true });
+    await enviarStart(tab.id, server);
+    setStatus(
+      '🚀 <b>Report iniciado!</b> Acompanhe o aviso no canto inferior direito do WhatsApp. ' +
+        'Você pode fechar este popup e continuar respondendo.'
+    );
   } catch (err) {
     setStatus(err.message, { erro: true });
   } finally {
@@ -128,7 +106,20 @@ async function gerar() {
   }
 }
 
-// Inicialização: carrega URL salva.
+// Mostra o último report gerado (se houver) ao abrir o popup.
+function carregarUltimo() {
+  chrome.storage.local.get({ ultimoReport: null }, ({ ultimoReport }) => {
+    if (!ultimoReport) return;
+    $('report').innerHTML = renderReport(ultimoReport.dados);
+    $('report').classList.remove('hidden');
+    $('dl').href = ultimoReport.server + '/api/download/' + encodeURIComponent(ultimoReport.arquivo);
+    $('dl').classList.remove('hidden');
+    const quando = new Date(ultimoReport.quando).toLocaleString('pt-BR');
+    setStatus(`Último report: ${ultimoReport.nome || 'lead'} · ${quando}`);
+  });
+}
+
+// Inicialização.
 chrome.storage.local.get({ server: DEFAULT_SERVER }, (cfg) => {
   $('server').value = cfg.server || DEFAULT_SERVER;
 });
@@ -137,3 +128,4 @@ $('server').addEventListener('change', () => {
 });
 $('testar').addEventListener('click', testarConexao);
 $('gerar').addEventListener('click', gerar);
+carregarUltimo();

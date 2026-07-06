@@ -66,11 +66,16 @@ npm start        # deixe o servidor rodando
 
 1. Abra o **WhatsApp Web** e entre na conversa com o lead.
 2. Clique no ícone da extensão → **Testar** (confere o servidor) → **Gerar Report**.
-3. Aguarde ela rolar/ler a conversa (não feche o popup).
-4. Veja a prévia e clique em **⬇ Baixar .docx**.
+3. Um aviso aparece no **canto inferior direito da tela do WhatsApp** com o progresso:
+   - **Lendo a conversa…** — não troque de conversa nesse momento (ela está lendo o histórico).
+   - **Gerando report…** — a partir daqui você já pode **fechar o popup e responder outros
+     leads**; o trabalho continua em segundo plano.
+   - **✅ Report pronto** — clique em **⬇ Baixar .docx** no próprio aviso.
+4. O popup também guarda o último report gerado (com botão de download) ao ser reaberto.
 
 > A leitura é retroativa: ela sobe pela conversa para carregar o histórico. Em conversas
-> muito longas isso pode levar alguns segundos.
+> muito longas isso pode levar alguns segundos. Só a fase de leitura exige ficar na
+> conversa; a geração roda em background.
 
 ## Riscos e custos
 
@@ -90,6 +95,7 @@ src/report.js          # monta o prompt, chama a LLM, valida o JSON
 src/generateDoc.js     # gera o .docx no layout de handoff
 extension/
   manifest.json        # extensão MV3
-  content.js           # lê a conversa do WhatsApp Web (DOM + scroll)
+  content.js           # lê a conversa (DOM + scroll) + aviso de progresso na tela
+  background.js        # service worker: chama o servidor (roda em background)
   popup.html/.js       # botão "Gerar Report" + prévia + download
 ```
