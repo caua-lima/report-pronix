@@ -6,10 +6,27 @@
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+  // Encontra os elementos de mensagem, tentando várias estratégias (o HTML do
+  // WhatsApp Web muda de tempos em tempos).
+  function acharMensagens(root) {
+    let els = [...root.querySelectorAll('div.message-in, div.message-out')];
+    if (els.length) return els;
+    // Fallback 1: linhas com data-id de mensagem (true_/false_ = enviada/recebida).
+    els = [...root.querySelectorAll('[data-id]')].filter((el) => {
+      const id = el.getAttribute('data-id') || '';
+      return /^(true|false)_/.test(id) && el.querySelector('.copyable-text, .selectable-text, [data-icon], audio');
+    });
+    if (els.length) return els;
+    // Fallback 2: role="row" que contenha texto selecionável.
+    els = [...root.querySelectorAll('div[role="row"]')].filter((el) =>
+      el.querySelector('.selectable-text, .copyable-text')
+    );
+    return els;
+  }
+
   // Encontra o elemento que realmente rola a lista de mensagens.
-  function acharScroller(main) {
-    const msg = main.querySelector('div.message-in, div.message-out');
-    let el = msg ? msg.parentElement : null;
+  function acharScroller(sample) {
+    let el = sample ? sample.parentElement : null;
     while (el && el !== document.body) {
       const st = getComputedStyle(el);
       if (
@@ -21,6 +38,17 @@
       el = el.parentElement;
     }
     return null;
+  }
+
+  // Descobre se a mensagem foi enviada por mim (várias pistas).
+  function ehDeMim(el) {
+    if (el.classList.contains('message-out')) return true;
+    if (el.classList.contains('message-in')) return false;
+    if (el.querySelector('.message-out')) return true;
+    if (el.querySelector('.message-in')) return false;
+    const idEl = el.matches('[data-id]') ? el : el.closest('[data-id]') || el.querySelector('[data-id]');
+    const id = idEl ? idEl.getAttribute('data-id') || '' : '';
+    return id.startsWith('true_'); // padrão: recebida (deles)
   }
 
   // "20:57, 06/07/2026" -> { iso, ms }  (best-effort, formato pt-BR)
@@ -61,7 +89,7 @@
   }
 
   function extrairMensagem(el) {
-    const fromMe = el.classList.contains('message-out');
+    const fromMe = ehDeMim(el);
     let timestamp = null;
     let ts = null;
 
@@ -100,21 +128,29 @@
     return dir ? (dir.innerText || '').trim() : '';
   }
 
-  async function coletarConversa() {
-    const main = document.querySelector('#main');
-    if (!main) {
-      throw new Error('Nenhuma conversa aberta. Clique numa conversa no WhatsApp Web e tente de novo.');
-    }
+  function diagnostico() {
+    return {
+      main: !!document.querySelector('#main'),
+      msgClasses: document.querySelectorAll('.message-in, .message-out').length,
+      dataId: document.querySelectorAll('[data-id]').length,
+      rows: document.querySelectorAll('div[role="row"]').length,
+      selectable: document.querySelectorAll('.selectable-text').length,
+      copyable: document.querySelectorAll('.copyable-text').length,
+    };
+  }
 
-    const scroller = acharScroller(main);
+  async function coletarConversa() {
+    const root = document.querySelector('#main') || document;
+
+    const scroller = acharScroller(acharMensagens(root)[0]);
     const mapa = new Map(); // chave -> registro (ordem = primeira aparição top→bottom)
     let seq = 0;
 
     const capturar = () => {
-      main.querySelectorAll('div.message-in, div.message-out').forEach((el) => {
-        const idEl = el.closest('[data-id]');
+      acharMensagens(root).forEach((el) => {
         const reg = extrairMensagem(el);
         if (!reg) return;
+        const idEl = el.matches('[data-id]') ? el : el.closest('[data-id]') || el.querySelector('[data-id]');
         const chave = idEl
           ? idEl.getAttribute('data-id')
           : (reg.timestamp || '') + '|' + reg.content.slice(0, 80);
@@ -159,6 +195,12 @@
     const mensagens = [...mapa.values()]
       .sort((a, b) => a._ord - b._ord)
       .map(({ from, type, content, timestamp }) => ({ from, type, content, timestamp }));
+
+    if (mensagens.length === 0) {
+      const diag = diagnostico();
+      console.log('[Closer Report] Nenhuma mensagem lida. Diagnóstico:', diag);
+      throw new Error('Nenhuma mensagem lida. Diag: ' + JSON.stringify(diag));
+    }
 
     console.log(`[Closer Report] ${mensagens.length} mensagens lidas.`);
     return { mensagens, nome: nomeDoContato() };
