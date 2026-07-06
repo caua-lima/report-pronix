@@ -1,60 +1,95 @@
 # WhatsApp Closer Report
 
-App 100% local (Node.js) que lê a conversa do WhatsApp com um lead (texto + áudio
-transcrito), permite visualizá-la e gera com um clique um relatório de handoff de
+Extensão do Chrome + servidor local que lê a **conversa aberta no WhatsApp Web**
+(incluindo o histórico retroativo) e gera, com um clique, um relatório de handoff de
 pré-vendas em Word (`.docx`).
+
+Sem configurar lead por lead, sem QR code, sem bot: você abre a conversa no WhatsApp
+Web, clica na extensão e baixa o relatório.
 
 ## Como funciona
 
-1. **Bot (`npm start`)** — conecta ao WhatsApp via QR (Baileys), escuta os contatos de
-   `WATCHED_CONTACTS` e salva cada mensagem em `data/<numero>.json`. Áudios são
-   transcritos localmente com `faster-whisper` antes de salvar.
-2. **Interface web (`npm run server`)** — sobe uma página em `http://localhost:PORT` com:
-   - dropdown dos contatos monitorados,
-   - **Ler conversa** → mostra o histórico completo e real,
-   - **Gerar Report** → chama a LLM, monta o `.docx` e disponibiliza o download.
+```
+WhatsApp Web  ──(extensão lê a conversa)──▶  servidor local (Node)
+                                                   │
+                                          LLM (Anthropic/Ollama)
+                                                   │
+                                             relatório .docx  ◀── você baixa
+```
+
+1. A **extensão** roda em cima do `web.whatsapp.com`. Ao clicar em *Gerar Report*, ela
+   rola a conversa aberta para carregar o histórico e lê todas as mensagens.
+2. Manda a conversa para o **servidor local**, que chama a LLM e monta o `.docx`.
+3. A extensão mostra a prévia e o botão de download.
+
+**Áudios:** a extensão lê a *transcrição nativa do WhatsApp*. Ative em
+**WhatsApp → Configurações → Conversas → Transcrever áudios** para que o texto dos
+áudios entre no relatório.
 
 ## Requisitos
 
 - Node.js 18+ (usa `fetch` nativo).
-- Python 3 com `faster-whisper` (só para transcrever áudio).
+- Google Chrome (ou Edge/Brave — qualquer navegador Chromium).
+- Uma chave da Anthropic **ou** Ollama rodando local (custo zero).
 
 ## Instalação
 
+### 1. Servidor
+
 ```bash
 npm install
-pip install faster-whisper --break-system-packages
-cp .env.example .env   # e preencha as variáveis
+cp .env.example .env      # e preencha
 ```
 
-Variáveis principais do `.env`:
+No `.env`, o essencial:
 
 | Variável | Descrição |
 | --- | --- |
-| `WATCHED_CONTACTS` | Números dos leads (DDI+DDD+número), separados por vírgula. |
 | `COMPANY_NAME` | Nome da empresa (título do relatório). |
-| `PORT` | Porta da interface web (padrão 3000). |
+| `PORT` | Porta do servidor (padrão 3000). |
 | `LLM_PROVIDER` | `anthropic` (padrão) ou `ollama`. |
 | `ANTHROPIC_API_KEY` / `ANTHROPIC_MODEL` | Credenciais da Anthropic. |
 | `OLLAMA_MODEL` / `OLLAMA_URL` | Config do Ollama local (custo zero). |
-| `PYTHON_BIN` / `WHISPER_MODEL_SIZE` | Config da transcrição. |
+
+### 2. Extensão no Chrome
+
+1. Abra `chrome://extensions`.
+2. Ative o **Modo do desenvolvedor** (canto superior direito).
+3. Clique em **Carregar sem compactação** e selecione a pasta `extension/`.
+4. Fixe a extensão na barra (ícone de quebra-cabeça → alfinete).
 
 ## Uso
 
 ```bash
-# Terminal 1 — bot que captura as mensagens
-npm start          # escaneie o QR code
-
-# Terminal 2 — interface web
-npm run server     # abra http://localhost:3000
+npm start        # deixe o servidor rodando
 ```
 
-Antes da reunião: selecione o contato → **Ler conversa** para conferir → **Gerar Report**
-→ baixe o `.docx`.
+1. Abra o **WhatsApp Web** e entre na conversa com o lead.
+2. Clique no ícone da extensão → **Testar** (confere o servidor) → **Gerar Report**.
+3. Aguarde ela rolar/ler a conversa (não feche o popup).
+4. Veja a prévia e clique em **⬇ Baixar .docx**.
 
-## Riscos assumidos
+> A leitura é retroativa: ela sobe pela conversa para carregar o histórico. Em conversas
+> muito longas isso pode levar alguns segundos.
 
-- **Baileys** é biblioteca não oficial: há risco de ban mesmo em uso passivo (menor que
-  em automação de envio em massa). Recomenda-se usar um chip secundário.
-- **Custo**: tudo gratuito, exceto a chamada à API da Anthropic por relatório (poucos
+## Riscos e custos
+
+- **Risco de ban:** baixo. A extensão apenas **lê** a página que você já tem aberta e
+  logada — não cria nenhuma conexão não oficial (ao contrário de bots com biblioteca
+  não oficial). É um uso passivo.
+- **Fragilidade de layout:** a leitura depende do HTML do WhatsApp Web; se o WhatsApp
+  mudar a estrutura, os seletores em `extension/content.js` podem precisar de ajuste.
+- **Custo:** tudo gratuito, exceto a chamada à API da Anthropic por relatório (poucos
   centavos). Com `LLM_PROVIDER=ollama` o custo é zero.
+
+## Estrutura
+
+```
+server.js              # servidor Express (endpoint /api/report-direto + download)
+src/report.js          # monta o prompt, chama a LLM, valida o JSON
+src/generateDoc.js     # gera o .docx no layout de handoff
+extension/
+  manifest.json        # extensão MV3
+  content.js           # lê a conversa do WhatsApp Web (DOM + scroll)
+  popup.html/.js       # botão "Gerar Report" + prévia + download
+```

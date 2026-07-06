@@ -2,7 +2,6 @@
 
 require('dotenv').config();
 
-const { loadConversation } = require('./store');
 const { gerarDocx } = require('./generateDoc');
 
 const LLM_PROVIDER = (process.env.LLM_PROVIDER || 'anthropic').toLowerCase();
@@ -203,15 +202,29 @@ async function chamarLLM(userPrompt) {
   throw new Error(`LLM_PROVIDER inválido: "${LLM_PROVIDER}" (use "anthropic" ou "ollama").`);
 }
 
+/** Normaliza uma mensagem recebida da extensão para o formato interno. */
+function normalizarMensagem(m) {
+  const from = m && m.from === 'eu' ? 'eu' : 'eles';
+  const type = m && m.type === 'audio' ? 'audio' : 'texto';
+  const content = m && typeof m.content === 'string' ? m.content.trim() : '';
+  return { timestamp: m && m.timestamp ? m.timestamp : null, from, type, content };
+}
+
 /**
- * Gera o relatório de handoff para um contato.
- * @param {string} jid número ou JID do contato
+ * Gera o relatório de handoff a partir de uma conversa recebida diretamente
+ * (raspada da tela do WhatsApp Web pela extensão).
+ * @param {{mensagens: Array, nome?: string}} payload
  * @returns {Promise<{dados: object, arquivo: string}>}
  */
-async function gerarReport(jid) {
-  const historico = loadConversation(jid);
-  if (!historico || historico.length === 0) {
-    throw new Error('Nenhuma conversa salva para este contato ainda');
+async function gerarReportDireto({ mensagens, nome } = {}) {
+  const historico = (Array.isArray(mensagens) ? mensagens : [])
+    .map(normalizarMensagem)
+    .filter((m) => m.content);
+
+  if (historico.length === 0) {
+    throw new Error(
+      'Nenhuma mensagem foi lida. Abra uma conversa no WhatsApp Web e tente novamente.'
+    );
   }
 
   const historicoFormatado = montarHistoricoFormatado(historico);
@@ -228,8 +241,17 @@ async function gerarReport(jid) {
 
   dados = normalizarDados(dados);
 
-  const arquivo = await gerarDocx(dados, jid);
+  // Se a LLM não achou o nome, usa o nome do contato lido do cabeçalho da conversa.
+  if (
+    (!dados.lead || dados.lead === 'Não identificado na conversa') &&
+    nome &&
+    nome.trim()
+  ) {
+    dados.lead = nome.trim();
+  }
+
+  const arquivo = await gerarDocx(dados, nome || dados.lead);
   return { dados, arquivo };
 }
 
-module.exports = { gerarReport };
+module.exports = { gerarReportDireto };

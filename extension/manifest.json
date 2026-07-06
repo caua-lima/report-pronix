@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "WhatsApp Closer Report",
+  "version": "1.0.0",
+  "description": "Lê a conversa aberta no WhatsApp Web e gera um relatório de handoff de pré-vendas em .docx com um clique.",
+  "permissions": ["activeTab", "scripting", "storage"],
+  "host_permissions": [
+    "https://web.whatsapp.com/*",
+    "http://localhost/*",
+    "http://127.0.0.1/*"
+  ],
+  "action": {
+    "default_title": "Closer Report",
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://web.whatsapp.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
