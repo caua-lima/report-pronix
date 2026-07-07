@@ -134,6 +134,35 @@ function normalizarDados(dados) {
   return out;
 }
 
+// Ferramenta de saída estruturada: o Claude devolve o relatório já no schema,
+// sem texto em volta (mais confiável que pedir JSON no texto).
+const REPORT_TOOL = {
+  name: 'gerar_relatorio',
+  description: 'Registra o relatório de handoff de pré-vendas extraído da conversa.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      lead: { type: 'string' },
+      status: { type: 'string' },
+      nicho: { type: 'string' },
+      investimento: { type: 'string' },
+      perfil_contexto: { type: 'array', items: { type: 'string' } },
+      momento_atual: { type: 'array', items: { type: 'string' } },
+      sinais_tracao: { type: 'array', items: { type: 'string' } },
+      capacidade_decisao: { type: 'array', items: { type: 'string' } },
+      agendamento_status: { type: 'array', items: { type: 'string' } },
+      leitura_estrategica: { type: 'array', items: { type: 'string' } },
+      closer_deve_bater: { type: 'array', items: { type: 'string' } },
+      frase_impacto: { type: 'string' },
+    },
+    required: [
+      'lead', 'status', 'nicho', 'investimento', 'perfil_contexto', 'momento_atual',
+      'sinais_tracao', 'capacidade_decisao', 'agendamento_status', 'leitura_estrategica',
+      'closer_deve_bater', 'frase_impacto',
+    ],
+  },
+};
+
 async function chamarAnthropic(userPrompt) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
@@ -152,11 +181,9 @@ async function chamarAnthropic(userPrompt) {
       model,
       max_tokens: 4000,
       system: SYSTEM_PROMPT,
-      messages: [
-        { role: 'user', content: userPrompt },
-        // Prefill: força a resposta a começar como JSON (sem texto em volta).
-        { role: 'assistant', content: '{' },
-      ],
+      tools: [REPORT_TOOL],
+      tool_choice: { type: 'tool', name: 'gerar_relatorio' },
+      messages: [{ role: 'user', content: userPrompt }],
     }),
   });
 
@@ -166,10 +193,13 @@ async function chamarAnthropic(userPrompt) {
   }
 
   const json = await resp.json();
+  // A saída estruturada vem num bloco tool_use, com o objeto já pronto em .input.
+  const toolUse = (json.content || []).find((b) => b.type === 'tool_use');
+  if (toolUse && toolUse.input) return JSON.stringify(toolUse.input);
+  // Fallback: texto puro (caso o modelo não use a ferramenta).
   const texto = (json.content || []).map((b) => b.text || '').join('').trim();
   if (!texto) throw new Error('Resposta vazia da Anthropic.');
-  // Recompõe o "{" do prefill que não volta no corpo da resposta.
-  return texto.startsWith('{') ? texto : '{' + texto;
+  return texto;
 }
 
 async function chamarOllama(userPrompt) {
