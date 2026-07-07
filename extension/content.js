@@ -202,8 +202,19 @@
       throw new Error('Nenhuma mensagem lida. Diag: ' + JSON.stringify(diag));
     }
 
-    console.log(`[Closer Report] ${mensagens.length} mensagens lidas.`);
-    return { mensagens, nome: nomeDoContato() };
+    const audios = mensagens.filter((m) => m.type === 'audio');
+    const audiosTranscritos = audios.filter((m) => !m.content.startsWith('[áudio'));
+    const stats = {
+      total: mensagens.length,
+      audios: audios.length,
+      audiosTranscritos: audiosTranscritos.length,
+    };
+
+    console.log(
+      `[Closer Report] ${stats.total} mensagens lidas — ` +
+        `${stats.audios} áudios (${stats.audiosTranscritos} com transcrição).`
+    );
+    return { mensagens, nome: nomeDoContato(), stats };
   }
 
   // ---------------------------------------------------------------------------
@@ -266,17 +277,25 @@
         texto: '<b>Lendo a conversa…</b><br>Aguarde e <u>não troque de conversa agora</u>.',
         loading: true,
       });
-      const { mensagens, nome } = await coletarConversa();
+      const { mensagens, nome, stats } = await coletarConversa();
       if (!mensagens.length) {
         mostrarBadge({ texto: '❌ Nenhuma mensagem encontrada nesta conversa.', cor: '#ff6b6b' });
         jobEmAndamento = false;
         return;
       }
 
+      const linhaAudio =
+        stats.audios > 0
+          ? `🎤 ${stats.audios} áudio(s), ${stats.audiosTranscritos} com transcrição` +
+            (stats.audiosTranscritos < stats.audios
+              ? ' <span style="color:#f0ad4e">(ative a transcrição de áudio no WhatsApp p/ pegar o resto)</span>'
+              : '')
+          : 'Sem áudios nesta conversa';
+
       mostrarBadge({
         texto:
-          `<b>Gerando report…</b> (${mensagens.length} mensagens)<br>` +
-          '✅ Já pode responder outros leads.',
+          `<b>Gerando report…</b> (${stats.total} mensagens)<br>` +
+          `${linhaAudio}<br>✅ Já pode responder outros leads.`,
         loading: true,
       });
 
