@@ -150,9 +150,13 @@ async function chamarAnthropic(userPrompt) {
     },
     body: JSON.stringify({
       model,
-      max_tokens: 2000,
+      max_tokens: 4000,
       system: SYSTEM_PROMPT,
-      messages: [{ role: 'user', content: userPrompt }],
+      messages: [
+        { role: 'user', content: userPrompt },
+        // Prefill: força a resposta a começar como JSON (sem texto em volta).
+        { role: 'assistant', content: '{' },
+      ],
     }),
   });
 
@@ -164,7 +168,8 @@ async function chamarAnthropic(userPrompt) {
   const json = await resp.json();
   const texto = (json.content || []).map((b) => b.text || '').join('').trim();
   if (!texto) throw new Error('Resposta vazia da Anthropic.');
-  return texto;
+  // Recompõe o "{" do prefill que não volta no corpo da resposta.
+  return texto.startsWith('{') ? texto : '{' + texto;
 }
 
 async function chamarOllama(userPrompt) {
@@ -236,7 +241,11 @@ async function gerarReportDireto({ mensagens, nome } = {}) {
   try {
     dados = extrairJson(respostaBruta);
   } catch (err) {
-    throw new Error(`Não foi possível interpretar a resposta da LLM como JSON: ${err.message}`);
+    const trecho = String(respostaBruta).replace(/\s+/g, ' ').slice(0, 180);
+    console.error('[report] resposta não-JSON da LLM:', respostaBruta);
+    throw new Error(
+      `Não foi possível interpretar a resposta da LLM como JSON: ${err.message} — a IA respondeu: "${trecho}…"`
+    );
   }
 
   dados = normalizarDados(dados);
