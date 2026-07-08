@@ -85,13 +85,20 @@ function montarHistoricoFormatado(historico) {
     .join('\n');
 }
 
-function montarUserPrompt(historicoFormatado) {
+function montarUserPrompt(conteudo, origem = 'chat') {
+  const rotulo =
+    origem === 'ligacao'
+      ? 'Transcrição de uma LIGAÇÃO de vendas (fala corrida — a transcrição NÃO separa ' +
+        'quem falou; use o contexto para inferir o que é do vendedor e o que é do lead):'
+      : 'Conversa real a ser analisada (ordem cronológica):';
   return (
     'Exemplo de um relatório bem preenchido (apenas para calibrar tom e nível de detalhe, ' +
     'NÃO copie os dados):\n\n' +
     JSON.stringify(EXEMPLO_FEWSHOT, null, 2) +
-    '\n\n---\n\nConversa real a ser analisada (ordem cronológica):\n\n' +
-    historicoFormatado +
+    '\n\n---\n\n' +
+    rotulo +
+    '\n\n' +
+    conteudo +
     '\n\n---\n\nGere agora o relatório em JSON estrito, seguindo o schema e as regras.'
   );
 }
@@ -263,8 +270,15 @@ async function gerarReportDireto({ mensagens, nome } = {}) {
   }
 
   const historicoFormatado = montarHistoricoFormatado(historico);
-  const userPrompt = montarUserPrompt(historicoFormatado);
+  const userPrompt = montarUserPrompt(historicoFormatado, 'chat');
+  const dados = await processarComLLM(userPrompt, nome);
 
+  const arquivo = await gerarDocx(dados, nome || dados.lead);
+  return { dados, arquivo };
+}
+
+/** Roda o prompt na LLM, valida o JSON e devolve os dados normalizados. */
+async function processarComLLM(userPrompt, nome) {
   const respostaBruta = await chamarLLM(userPrompt);
 
   let dados;
@@ -280,17 +294,31 @@ async function gerarReportDireto({ mensagens, nome } = {}) {
 
   dados = normalizarDados(dados);
 
-  // Se a LLM não achou o nome, usa o nome do contato lido do cabeçalho da conversa.
-  if (
-    (!dados.lead || dados.lead === 'Não identificado na conversa') &&
-    nome &&
-    nome.trim()
-  ) {
+  // Se a LLM não achou o nome, usa o nome informado (contato/lead).
+  if ((!dados.lead || dados.lead === 'Não identificado na conversa') && nome && nome.trim()) {
     dados.lead = nome.trim();
   }
-
-  const arquivo = await gerarDocx(dados, nome || dados.lead);
-  return { dados, arquivo };
+  return dados;
 }
 
-module.exports = { gerarReportDireto };
+/**
+ * Gera o relatório a partir da transcrição de uma LIGAÇÃO gravada.
+ * @param {{transcricao: string, nome?: string}} payload
+ * @returns {Promise<{dados: object, arquivo: string, transcricao: string}>}
+ */
+async function gerarReportDeTranscricao({ transcricao, nome } = {}) {
+  const texto = typeof transcricao === 'string' ? transcricao.trim() : '';
+  if (!texto) {
+    throw new Error(
+      'A transcrição ficou vazia. Verifique se a gravação captou áudio (som do sistema + microfone).'
+    );
+  }
+
+  const userPrompt = montarUserPrompt(texto, 'ligacao');
+  const dados = await processarComLLM(userPrompt, nome);
+
+  const arquivo = await gerarDocx(dados, nome || dados.lead);
+  return { dados, arquivo, transcricao: texto };
+}
+
+module.exports = { gerarReportDireto, gerarReportDeTranscricao };

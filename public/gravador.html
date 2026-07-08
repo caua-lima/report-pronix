@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Gravador de Ligação — Closer Report</title>
+  <style>
+    :root {
+      --bg: #0f1720; --card: #16212e; --border: #26333f;
+      --accent: #25d366; --accent-2: #128c7e; --text: #e6edf3;
+      --muted: #8b98a5; --erro: #ff6b6b; --rec: #ff4d4f;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; font-family: -apple-system, Segoe UI, Roboto, sans-serif;
+      background: var(--bg); color: var(--text); line-height: 1.5;
+    }
+    header { padding: 20px 24px; border-bottom: 1px solid var(--border); display: flex; gap: 10px; align-items: center; }
+    header h1 { font-size: 1.15rem; margin: 0; }
+    .wrap { max-width: 780px; margin: 0 auto; padding: 24px; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 20px; margin-bottom: 18px; }
+    label { display: block; font-size: .85rem; color: var(--muted); margin-bottom: 6px; }
+    input[type=text] { width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border); background: #0c141c; color: var(--text); font-size: .95rem; }
+    .btn { border: none; border-radius: 10px; padding: 16px 22px; font-size: 1.05rem; font-weight: 700; cursor: pointer; }
+    .btn-rec { background: var(--accent); color: #05130c; }
+    .btn-stop { background: var(--rec); color: #fff; }
+    .btn:disabled { opacity: .5; cursor: not-allowed; }
+    .center { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+    .timer { font-size: 2.4rem; font-variant-numeric: tabular-nums; letter-spacing: 1px; }
+    .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--rec); display: inline-block; animation: pulse 1s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.25} }
+    .status { min-height: 20px; color: var(--muted); display: flex; align-items: center; gap: 8px; justify-content: center; }
+    .status.erro { color: var(--erro); }
+    .spinner { width: 16px; height: 16px; border: 2px solid rgba(255,255,255,.25); border-top-color: #fff; border-radius: 50%; animation: spin .8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .hidden { display: none; }
+    .hint { font-size: .82rem; color: var(--muted); }
+    .steps { font-size: .85rem; color: var(--muted); background: #101a24; border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+    .steps b { color: var(--text); }
+    details { margin-top: 10px; }
+    summary { cursor: pointer; color: var(--muted); }
+    .transcricao { white-space: pre-wrap; background: #0c141c; border: 1px solid var(--border); border-radius: 8px; padding: 12px; font-size: .85rem; max-height: 220px; overflow: auto; }
+    /* Report preview */
+    .report h2 { font-size: 1rem; margin: 16px 0 4px; }
+    .report table { border-collapse: collapse; width: 100%; margin-bottom: 12px; }
+    .report td { border: 1px solid var(--border); padding: 6px 10px; font-size: .9rem; }
+    .report td.rot { font-weight: 700; width: 32%; background: #101a24; }
+    .report ul, .report ol { margin: 4px 0 8px; padding-left: 20px; }
+    .report li { margin: 2px 0; font-size: .9rem; }
+    .frase { font-style: italic; color: #d6f5e3; border-left: 3px solid var(--accent); padding-left: 10px; }
+    .dl { display: inline-block; margin-top: 8px; background: var(--accent); color: #05130c; font-weight: 700; text-decoration: none; padding: 10px 16px; border-radius: 8px; }
+  </style>
+</head>
+<body>
+  <header>
+    <span style="font-size:1.4rem">🎙️</span>
+    <h1>Gravador de Ligação</h1>
+  </header>
+
+  <div class="wrap">
+    <div class="card">
+      <div class="steps">
+        <b>Antes de começar:</b> ao clicar em <b>Começar</b>, o navegador vai pedir para
+        você compartilhar a tela. Escolha <b>“Tela inteira”</b> e <b>marque “Compartilhar
+        áudio do sistema”</b> — é isso que captura a voz do lead. O seu microfone é
+        capturado automaticamente.
+      </div>
+    </div>
+
+    <div class="card">
+      <label for="nome">Nome do lead (opcional)</label>
+      <input id="nome" type="text" placeholder="Ex.: Douglas Shinkawa" />
+    </div>
+
+    <div class="card center">
+      <div id="timer" class="timer">00:00</div>
+      <button id="btnRec" class="btn btn-rec">● Começar gravação</button>
+      <button id="btnStop" class="btn btn-stop hidden">■ Terminar e gerar report</button>
+      <div id="status" class="status"></div>
+      <div class="hint">A gravação é 100% local. Só o texto transcrito é enviado à IA para o report.</div>
+    </div>
+
+    <div id="resultado" class="card hidden">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+        <h3 style="margin:0">Report gerado</h3>
+        <a id="dl" class="dl" target="_blank">⬇ Baixar .docx</a>
+      </div>
+      <div id="report" class="report"></div>
+      <details>
+        <summary>Ver transcrição da ligação</summary>
+        <div id="transcricao" class="transcricao"></div>
+      </details>
+    </div>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    let mediaRecorder = null;
+    let chunks = [];
+    let stopTracks = [];
+    let audioCtx = null;
+    let timerInt = null;
+    let inicio = 0;
+
+    function setStatus(txt, { erro = false, loading = false } = {}) {
+      const el = $('status');
+      el.className = 'status' + (erro ? ' erro' : '');
+      el.innerHTML = (loading ? '<span class="spinner"></span>' : '') + (txt || '');
+    }
+
+    function fmt(s) {
+      const m = Math.floor(s / 60).toString().padStart(2, '0');
+      const ss = (s % 60).toString().padStart(2, '0');
+      return `${m}:${ss}`;
+    }
+    function tick() { $('timer').textContent = fmt(Math.floor((Date.now() - inicio) / 1000)); }
+
+    async function comecar() {
+      setStatus('');
+      $('resultado').classList.add('hidden');
+      let displayStream;
+      try {
+        displayStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+      } catch (e) {
+        setStatus('Você cancelou o compartilhamento de tela. Tente de novo.', { erro: true });
+        return;
+      }
+
+      const sysAudio = displayStream.getAudioTracks();
+      if (sysAudio.length === 0) {
+        setStatus('❌ Sem áudio do sistema. Refaça e marque "Compartilhar áudio do sistema".', { erro: true });
+        displayStream.getTracks().forEach((t) => t.stop());
+        return;
+      }
+
+      let micStream = null;
+      try {
+        micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      } catch (e) {
+        setStatus('⚠ Sem acesso ao microfone — vou gravar só o áudio do sistema.', { erro: true });
+      }
+
+      // Mixa áudio do sistema (voz do lead) + microfone (sua voz) numa faixa só.
+      audioCtx = new AudioContext();
+      const dest = audioCtx.createMediaStreamDestination();
+      audioCtx.createMediaStreamSource(new MediaStream(sysAudio)).connect(dest);
+      if (micStream) audioCtx.createMediaStreamSource(micStream).connect(dest);
+
+      stopTracks = [...displayStream.getTracks(), ...(micStream ? micStream.getTracks() : [])];
+      // Não precisamos do vídeo — encerra a faixa de vídeo para economizar.
+      displayStream.getVideoTracks().forEach((t) => (t.enabled = true)); // mantém ativa p/ o áudio continuar
+
+      const mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm;codecs=opus'
+        : 'audio/webm';
+      chunks = [];
+      mediaRecorder = new MediaRecorder(dest.stream, { mimeType: mime });
+      mediaRecorder.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
+      mediaRecorder.onstop = enviar;
+
+      // Se o usuário parar o compartilhamento pela barra do Chrome, encerramos também.
+      displayStream.getVideoTracks()[0].addEventListener('ended', () => {
+        if (mediaRecorder && mediaRecorder.state === 'recording') terminar();
+      });
+
+      mediaRecorder.start();
+      inicio = Date.now();
+      timerInt = setInterval(tick, 500);
+      $('btnRec').classList.add('hidden');
+      $('btnStop').classList.remove('hidden');
+      setStatus('<span class="dot"></span> Gravando… fale normalmente.');
+    }
+
+    function terminar() {
+      $('btnStop').disabled = true;
+      clearInterval(timerInt);
+      if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+      stopTracks.forEach((t) => t.stop());
+      if (audioCtx) audioCtx.close().catch(() => {});
+    }
+
+    async function enviar() {
+      setStatus('Transcrevendo a ligação e gerando o report… (pode levar 1–2 min)', { loading: true });
+      const blob = new Blob(chunks, { type: 'audio/webm' });
+      if (blob.size < 2000) {
+        setStatus('❌ A gravação ficou vazia/curta demais. Confira se marcou o áudio do sistema.', { erro: true });
+        resetBotoes();
+        return;
+      }
+      const nome = encodeURIComponent($('nome').value.trim());
+      try {
+        const r = await fetch('/api/transcrever-ligacao?nome=' + nome, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/octet-stream' },
+          body: blob,
+        });
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.erro || 'Falha ao gerar o report.');
+        mostrarResultado(data);
+        setStatus('✅ Report gerado!');
+      } catch (err) {
+        setStatus('❌ ' + err.message, { erro: true });
+      } finally {
+        resetBotoes();
+      }
+    }
+
+    function resetBotoes() {
+      $('btnStop').classList.add('hidden');
+      $('btnStop').disabled = false;
+      $('btnRec').classList.remove('hidden');
+      $('timer').textContent = '00:00';
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, (c) =>
+        ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+    function lista(arr, ord) {
+      const tag = ord ? 'ol' : 'ul';
+      return `<${tag}>${(arr || []).map((i) => `<li>${escapeHtml(i)}</li>`).join('')}</${tag}>`;
+    }
+    function mostrarResultado(data) {
+      const d = data.dados;
+      $('report').innerHTML = `
+        <table>
+          <tr><td class="rot">Lead</td><td>${escapeHtml(d.lead)}</td></tr>
+          <tr><td class="rot">Status</td><td>${escapeHtml(d.status)}</td></tr>
+          <tr><td class="rot">Nicho</td><td>${escapeHtml(d.nicho)}</td></tr>
+          <tr><td class="rot">Investimento</td><td>${escapeHtml(d.investimento)}</td></tr>
+        </table>
+        <h2>👤 Perfil & Contexto</h2>${lista(d.perfil_contexto)}
+        <h2>📍 Momento Atual</h2>${lista(d.momento_atual)}
+        <h2>📈 Sinais de Tração</h2>${lista(d.sinais_tracao)}
+        <h2>💰 Capacidade & Decisão</h2>${lista(d.capacidade_decisao)}
+        <h2>📅 Agendamento & Status</h2>${lista(d.agendamento_status)}
+        <h2>🎯 Leitura Estratégica</h2>${lista(d.leitura_estrategica)}
+        <h2>✅ O que o closer deve bater</h2>${lista(d.closer_deve_bater, true)}
+        <h2>💬 Frase de Impacto</h2><p class="frase">"${escapeHtml(d.frase_impacto)}"</p>`;
+      $('transcricao').textContent = data.transcricao || '(vazia)';
+      $('dl').href = '/api/download/' + encodeURIComponent(data.arquivo);
+      $('resultado').classList.remove('hidden');
+    }
+
+    $('btnRec').addEventListener('click', comecar);
+    $('btnStop').addEventListener('click', terminar);
+  </script>
+</body>
+</html>
