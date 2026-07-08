@@ -22,9 +22,12 @@ WhatsApp Web  ──(extensão lê a conversa)──▶  servidor local (Node)
 2. Manda a conversa para o **servidor local**, que chama a LLM e monta o `.docx`.
 3. A extensão mostra a prévia e o botão de download.
 
-**Áudios:** a extensão lê a *transcrição nativa do WhatsApp*. Ative em
-**WhatsApp → Configurações → Conversas → Transcrever áudios** para que o texto dos
-áudios entre no relatório.
+**Áudios:** a extensão lê a *transcrição nativa do WhatsApp* (quando disponível). Se a
+sua conta tiver a opção **WhatsApp → Configurações → Conversas → Transcrever áudios**,
+ative-a e o texto dos áudios entra no relatório. Se essa opção **não existir** na sua
+conta (varia por versão/idioma/região), não há transcrição para ler e os áudios entram
+no relatório apenas como `[áudio]` — o WhatsApp Web não expõe o arquivo de áudio para
+transcrição automática sem tocá-lo.
 
 ## Requisitos
 

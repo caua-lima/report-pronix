@@ -152,8 +152,7 @@
 
     if (ehAudio(el)) {
       const transc = extrairTranscricaoAudio(el);
-      const content =
-        transc || '[áudio sem transcrição — ative a transcrição de áudio no WhatsApp]';
+      const content = transc || '[áudio — sem transcrição disponível]';
       return { from: fromMe ? 'eu' : 'eles', type: 'audio', content, timestamp, ts };
     }
 
@@ -334,7 +333,7 @@
         stats.audios > 0
           ? `🎤 ${stats.audios} áudio(s), ${stats.audiosTranscritos} com transcrição` +
             (stats.audiosTranscritos < stats.audios
-              ? ' <span style="color:#f0ad4e">(ative a transcrição de áudio no WhatsApp p/ pegar o resto)</span>'
+              ? ' <span style="color:#8b98a5">(os demais entram como [áudio])</span>'
               : '')
           : 'Sem áudios nesta conversa';
 
