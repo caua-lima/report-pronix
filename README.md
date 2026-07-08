@@ -29,11 +29,26 @@ conta (varia por versão/idioma/região), não há transcrição para ler e os �
 no relatório apenas como `[áudio]` — o WhatsApp Web não expõe o arquivo de áudio para
 transcrição automática sem tocá-lo.
 
+## Modo manual (colar conversa + transcrever áudio)
+
+Com o servidor rodando, abra **http://localhost:3000/manual** para gerar o report a
+partir de uma conversa colada — útil quando a extensão não pega os áudios:
+
+- **Transcrever áudio**: baixe/salve o áudio do WhatsApp, selecione o arquivo e clique
+  em *Transcrever e adicionar*. Ele é transcrito **localmente** com `faster-whisper` e o
+  texto vai direto para a caixa da conversa. Nada de áudio sai da máquina.
+- **Colar a conversa**: cole o texto (identificando `EU:`/`LEAD:` ajuda) e clique em
+  *Gerar Report* para baixar o `.docx`.
+
+Requer `faster-whisper` (Python) para a transcrição:
+`pip install faster-whisper --break-system-packages`.
+
 ## Requisitos
 
 - Node.js 18+ (usa `fetch` nativo).
 - Google Chrome (ou Edge/Brave — qualquer navegador Chromium).
 - Uma chave da Anthropic **ou** Ollama rodando local (custo zero).
+- Python + `faster-whisper` **apenas** se for usar a transcrição de áudio no modo manual.
 
 ## Instalação
 

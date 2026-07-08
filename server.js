@@ -7,6 +7,7 @@ const fs = require('fs');
 const express = require('express');
 
 const { gerarReportDireto, gerarReportDeTexto } = require('./src/report');
+const { transcribeBuffer } = require('./src/transcribe');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -62,6 +63,26 @@ app.post('/api/report-direto', async (req, res) => {
 app.get('/manual', (_req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'manual.html'));
 });
+
+// POST /api/transcrever — recebe um arquivo de áudio (corpo binário) e devolve o texto
+app.post(
+  '/api/transcrever',
+  express.raw({ type: () => true, limit: '100mb' }),
+  async (req, res) => {
+    try {
+      const buffer = req.body;
+      if (!buffer || !buffer.length) {
+        return res.status(400).json({ erro: 'Nenhum áudio recebido.' });
+      }
+      const nomeArq = (req.query.nome || '').toString();
+      const ext = path.extname(nomeArq) || '.ogg';
+      const texto = await transcribeBuffer(buffer, ext);
+      res.json({ texto });
+    } catch (err) {
+      res.status(500).json({ erro: err.message });
+    }
+  }
+);
 
 // POST /api/report-texto — gera o report a partir da conversa colada como texto
 app.post('/api/report-texto', async (req, res) => {

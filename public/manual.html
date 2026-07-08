@@ -51,6 +51,20 @@
     </div>
 
     <div class="card">
+      <label>🎤 Transcrever áudio (opcional) — tudo local, o áudio não sai da sua máquina</label>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+        <select id="quem" style="padding:9px 10px;border-radius:8px;border:1px solid var(--border);background:#0c141c;color:var(--text)">
+          <option value="LEAD">Áudio do LEAD</option>
+          <option value="EU">Áudio meu (EU)</option>
+        </select>
+        <input id="audio" type="file" accept="audio/*,.ogg,.opus,.m4a,.mp3,.aac,.wav" multiple />
+        <button id="btnTranscrever" class="btn" style="padding:10px 16px;font-size:.95rem">Transcrever e adicionar</button>
+      </div>
+      <div id="statusAudio" class="status"></div>
+      <div class="hint">Baixe/salve o áudio do WhatsApp e selecione aqui. A 1ª vez baixa o modelo do Whisper (~500&nbsp;MB) e é mais lenta; depois fica rápido. O texto vai direto para a caixa abaixo.</div>
+    </div>
+
+    <div class="card">
       <label for="texto">Cole aqui a conversa inteira (texto + áudios já transcritos)</label>
       <textarea id="texto" placeholder="Cole a conversa aqui…"></textarea>
       <div class="hint">Dica: identifique quem falou para o report ficar mais preciso. Ex.:</div>
@@ -132,7 +146,49 @@ LEAD: Uns 5 mil tranquilo.</div>
       }
     }
 
+    function appendConversa(linha) {
+      const ta = $('texto');
+      ta.value = (ta.value.trim() ? ta.value.replace(/\s*$/, '') + '\n' : '') + linha + '\n';
+      ta.scrollTop = ta.scrollHeight;
+    }
+
+    async function transcreverAudios() {
+      const files = [...$('audio').files];
+      if (files.length === 0) { setAudioStatus('Selecione um arquivo de áudio.', { erro: true }); return; }
+      const quem = $('quem').value;
+      $('btnTranscrever').disabled = true;
+      try {
+        for (let i = 0; i < files.length; i++) {
+          const f = files[i];
+          setAudioStatus(`Transcrevendo ${i + 1} de ${files.length} (${f.name})…`, { loading: true });
+          const r = await fetch('/api/transcrever?nome=' + encodeURIComponent(f.name), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/octet-stream' },
+            body: f,
+          });
+          const data = await r.json();
+          if (!r.ok) throw new Error(data.erro || 'Falha ao transcrever.');
+          const texto = (data.texto || '').trim();
+          appendConversa(`${quem} (áudio): ${texto || '[áudio sem fala reconhecida]'}`);
+        }
+        setAudioStatus(`✅ ${files.length} áudio(s) transcrito(s) e adicionado(s) à conversa.`);
+        $('audio').value = '';
+      } catch (err) {
+        setAudioStatus('❌ ' + err.message, { erro: true });
+      } finally {
+        $('btnTranscrever').disabled = false;
+      }
+    }
+
+    function setAudioStatus(txt, opts) {
+      const el = $('statusAudio');
+      const o = opts || {};
+      el.className = 'status' + (o.erro ? ' erro' : '');
+      el.innerHTML = (o.loading ? '<span class="spinner"></span>' : '') + (txt || '');
+    }
+
     $('gerar').addEventListener('click', gerar);
+    $('btnTranscrever').addEventListener('click', transcreverAudios);
   </script>
 </body>
 </html>
