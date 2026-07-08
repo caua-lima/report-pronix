@@ -6,8 +6,7 @@ const path = require('path');
 const fs = require('fs');
 const express = require('express');
 
-const { gerarReportDireto, gerarReportDeTranscricao } = require('./src/report');
-const { transcribeBuffer } = require('./src/transcribe');
+const { gerarReportDireto } = require('./src/report');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -34,8 +33,6 @@ app.get('/', (_req, res) => {
        <h2>✅ Servidor do Closer Report rodando</h2>
        <p>Deixe este servidor ligado e use a <b>extensão no WhatsApp Web</b>:
        abra uma conversa e clique em <b>Gerar Report</b>.</p>
-       <p>Para gerar report de <b>ligação gravada</b>, abra o
-       <a href="/gravador" style="color:#25d366"><b>🎙️ Gravador de ligação</b></a>.</p>
        <p style="color:#888">Porta ${PORT} · provedor: ${process.env.LLM_PROVIDER || 'anthropic'}</p>
      </div>`
   );
@@ -57,36 +54,6 @@ app.post('/api/report-direto', async (req, res) => {
     res.status(semMsgs ? 400 : 500).json({ erro: err.message });
   }
 });
-
-// GET /gravador — página que grava a ligação e gera o report
-app.get('/gravador', (_req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'gravador.html'));
-});
-
-// POST /api/transcrever-ligacao — recebe o áudio da ligação (corpo binário),
-// transcreve local com Whisper e gera o report.
-app.post(
-  '/api/transcrever-ligacao',
-  express.raw({ type: () => true, limit: '300mb' }),
-  async (req, res) => {
-    try {
-      const buffer = req.body;
-      if (!buffer || !buffer.length) {
-        return res.status(400).json({ erro: 'Nenhum áudio recebido.' });
-      }
-      const nome = (req.query.nome || '').toString().trim();
-
-      const transcricao = await transcribeBuffer(buffer, '.webm');
-      const { dados, arquivo, transcricao: texto } = await gerarReportDeTranscricao({
-        transcricao,
-        nome,
-      });
-      res.json({ dados, arquivo: path.basename(arquivo), transcricao: texto });
-    } catch (err) {
-      res.status(500).json({ erro: err.message });
-    }
-  }
-);
 
 // GET /api/download/:arquivo — baixa o .docx gerado
 app.get('/api/download/:arquivo', (req, res) => {

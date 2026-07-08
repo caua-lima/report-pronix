@@ -69,23 +69,67 @@
 
   function ehAudio(el) {
     if (el.querySelector('audio')) return true;
-    if (
-      el.querySelector(
-        '[data-icon="audio-play"], [data-icon="audio-pause"], [data-icon="ptt"]'
-      )
-    )
+    if (el.querySelector('[data-icon^="audio"], [data-icon="ptt"], [data-icon="ptt-status"]')) {
       return true;
-    const rotulo = el.querySelector('[aria-label]');
-    return rotulo ? /voz|voice|áudio|audio/i.test(rotulo.getAttribute('aria-label') || '') : false;
+    }
+    for (const r of el.querySelectorAll('[aria-label]')) {
+      if (/voz|voice|áudio|audio|ptt/i.test(r.getAttribute('aria-label') || '')) return true;
+    }
+    return false;
   }
 
+  function ehDuracaoOuHora(t) {
+    return /^\d{1,2}:\d{2}(:\d{2})?(\s?[ap]\.?m\.?)?$/i.test((t || '').trim());
+  }
+
+  // Texto de mensagens normais. textContent (não innerText) para pegar também
+  // texto que o WhatsApp deixa oculto/colapsado no DOM.
   function extrairTexto(el) {
     let texto = '';
     el.querySelectorAll('span.selectable-text').forEach((s) => {
-      const t = (s.innerText || '').trim();
+      const t = (s.textContent || '').trim();
       if (t) texto += (texto ? ' ' : '') + t;
     });
     return texto.trim();
+  }
+
+  // Transcrição nativa do áudio: o maior trecho de texto do balão que não seja
+  // duração/horário. Usa textContent para capturar transcrição colapsada.
+  function extrairTranscricaoAudio(el) {
+    let melhor = '';
+    el.querySelectorAll('.selectable-text, .copyable-text').forEach((s) => {
+      const t = (s.textContent || '').trim();
+      if (t.length > melhor.length && !ehDuracaoOuHora(t)) melhor = t;
+    });
+    if (melhor.length < 3) {
+      // Fallback: maior nó-folha de texto que não seja duração/horário.
+      el.querySelectorAll('span, div').forEach((n) => {
+        if (n.children.length === 0) {
+          const t = (n.textContent || '').trim();
+          if (t.length > melhor.length && !ehDuracaoOuHora(t)) melhor = t;
+        }
+      });
+    }
+    return melhor.length >= 3 ? melhor.replace(/\b\d{1,2}:\d{2}\b/g, '').trim() : '';
+  }
+
+  // Clica no botão "Transcrição" dos áudios visíveis que ainda não mostram texto,
+  // para o WhatsApp renderizar a transcrição antes de a lermos.
+  async function expandirTranscricoes(root) {
+    let clicou = false;
+    root.querySelectorAll('[aria-label]').forEach((b) => {
+      if (!/transcri/i.test(b.getAttribute('aria-label') || '')) return;
+      const bolha = b.closest('div.message-in, div.message-out') || b.closest('[data-id]') || b;
+      if (extrairTranscricaoAudio(bolha).length < 3) {
+        try {
+          b.click();
+          clicou = true;
+        } catch (_) {
+          /* ignora */
+        }
+      }
+    });
+    if (clicou) await sleep(700);
   }
 
   function extrairMensagem(el) {
@@ -106,15 +150,14 @@
       }
     }
 
-    const texto = extrairTexto(el);
-
     if (ehAudio(el)) {
-      // A "transcrição nativa" do WhatsApp aparece como texto selecionável no balão.
+      const transc = extrairTranscricaoAudio(el);
       const content =
-        texto || '[áudio sem transcrição — ative a transcrição de áudio no WhatsApp]';
+        transc || '[áudio sem transcrição — ative a transcrição de áudio no WhatsApp]';
       return { from: fromMe ? 'eu' : 'eles', type: 'audio', content, timestamp, ts };
     }
 
+    const texto = extrairTexto(el);
     if (!texto) return null; // imagem/figurinha/sistema sem texto: ignora
     return { from: fromMe ? 'eu' : 'eles', type: 'texto', content: texto, timestamp, ts };
   }
@@ -178,17 +221,20 @@
       await sleep(300);
       const passo = Math.max(200, Math.floor(scroller.clientHeight * 0.6));
       for (let i = 0; i < 500; i++) {
+        await expandirTranscricoes(root); // revela transcrições de áudio recolhidas
         capturar();
         const antes = scroller.scrollTop;
         scroller.scrollTop = Math.min(antes + passo, scroller.scrollHeight);
         await sleep(280);
         const fim = scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 5;
         if (scroller.scrollTop === antes || fim) {
+          await expandirTranscricoes(root);
           capturar();
           break;
         }
       }
     } else {
+      await expandirTranscricoes(root);
       capturar();
     }
 

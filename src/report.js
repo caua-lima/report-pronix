@@ -85,20 +85,13 @@ function montarHistoricoFormatado(historico) {
     .join('\n');
 }
 
-function montarUserPrompt(conteudo, origem = 'chat') {
-  const rotulo =
-    origem === 'ligacao'
-      ? 'Transcrição de uma LIGAÇÃO de vendas (fala corrida — a transcrição NÃO separa ' +
-        'quem falou; use o contexto para inferir o que é do vendedor e o que é do lead):'
-      : 'Conversa real a ser analisada (ordem cronológica):';
+function montarUserPrompt(historicoFormatado) {
   return (
     'Exemplo de um relatório bem preenchido (apenas para calibrar tom e nível de detalhe, ' +
     'NÃO copie os dados):\n\n' +
     JSON.stringify(EXEMPLO_FEWSHOT, null, 2) +
-    '\n\n---\n\n' +
-    rotulo +
-    '\n\n' +
-    conteudo +
+    '\n\n---\n\nConversa real a ser analisada (ordem cronológica):\n\n' +
+    historicoFormatado +
     '\n\n---\n\nGere agora o relatório em JSON estrito, seguindo o schema e as regras.'
   );
 }
@@ -270,7 +263,7 @@ async function gerarReportDireto({ mensagens, nome } = {}) {
   }
 
   const historicoFormatado = montarHistoricoFormatado(historico);
-  const userPrompt = montarUserPrompt(historicoFormatado, 'chat');
+  const userPrompt = montarUserPrompt(historicoFormatado);
   const dados = await processarComLLM(userPrompt, nome);
 
   const arquivo = await gerarDocx(dados, nome || dados.lead);
@@ -301,24 +294,4 @@ async function processarComLLM(userPrompt, nome) {
   return dados;
 }
 
-/**
- * Gera o relatório a partir da transcrição de uma LIGAÇÃO gravada.
- * @param {{transcricao: string, nome?: string}} payload
- * @returns {Promise<{dados: object, arquivo: string, transcricao: string}>}
- */
-async function gerarReportDeTranscricao({ transcricao, nome } = {}) {
-  const texto = typeof transcricao === 'string' ? transcricao.trim() : '';
-  if (!texto) {
-    throw new Error(
-      'A transcrição ficou vazia. Verifique se a gravação captou áudio (som do sistema + microfone).'
-    );
-  }
-
-  const userPrompt = montarUserPrompt(texto, 'ligacao');
-  const dados = await processarComLLM(userPrompt, nome);
-
-  const arquivo = await gerarDocx(dados, nome || dados.lead);
-  return { dados, arquivo, transcricao: texto };
-}
-
-module.exports = { gerarReportDireto, gerarReportDeTranscricao };
+module.exports = { gerarReportDireto };

@@ -77,23 +77,6 @@ npm start        # deixe o servidor rodando
 > muito longas isso pode levar alguns segundos. Só a fase de leitura exige ficar na
 > conversa; a geração roda em background.
 
-## Gravador de ligação (report a partir de chamada)
-
-Além do WhatsApp Web, dá para gerar o mesmo relatório a partir de uma **ligação
-gravada**. Com o servidor rodando, abra **http://localhost:3000/gravador**:
-
-1. Clique em **Começar gravação** → o navegador pede para compartilhar a tela: escolha
-   **“Tela inteira”** e marque **“Compartilhar áudio do sistema”** (é o que captura a voz
-   do lead; seu microfone é capturado automaticamente).
-2. Faça a ligação normalmente.
-3. Clique em **Terminar e gerar report** → o áudio é transcrito **localmente** com
-   `faster-whisper` e vira o mesmo `.docx`.
-
-Requer `faster-whisper` (Python): `pip install faster-whisper --break-system-packages`.
-
-> A transcrição de ligação não separa quem falou (fala corrida). O relatório sai mesmo
-> assim; só a divisão “eu/lead” fica menos precisa do que no chat.
-
 ## Riscos e custos
 
 - **Risco de ban:** baixo. A extensão apenas **lê** a página que você já tem aberta e
