@@ -6,7 +6,7 @@ const path = require('path');
 const fs = require('fs');
 const express = require('express');
 
-const { gerarReportDireto } = require('./src/report');
+const { gerarReportDireto, gerarReportDeTexto } = require('./src/report');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -33,6 +33,9 @@ app.get('/', (_req, res) => {
        <h2>✅ Servidor do Closer Report rodando</h2>
        <p>Deixe este servidor ligado e use a <b>extensão no WhatsApp Web</b>:
        abra uma conversa e clique em <b>Gerar Report</b>.</p>
+       <p>Ou cole a conversa manualmente no
+       <a href="/manual" style="color:#25d366"><b>📝 Modo manual</b></a>
+       (útil quando você já tem a conversa/áudios transcritos em texto).</p>
        <p style="color:#888">Porta ${PORT} · provedor: ${process.env.LLM_PROVIDER || 'anthropic'}</p>
      </div>`
   );
@@ -52,6 +55,23 @@ app.post('/api/report-direto', async (req, res) => {
   } catch (err) {
     const semMsgs = /Nenhuma mensagem/i.test(err.message);
     res.status(semMsgs ? 400 : 500).json({ erro: err.message });
+  }
+});
+
+// GET /manual — página para colar a conversa manualmente e gerar o report
+app.get('/manual', (_req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'manual.html'));
+});
+
+// POST /api/report-texto — gera o report a partir da conversa colada como texto
+app.post('/api/report-texto', async (req, res) => {
+  try {
+    const { texto, nome } = req.body || {};
+    const { dados, arquivo } = await gerarReportDeTexto({ texto, nome });
+    res.json({ dados, arquivo: path.basename(arquivo) });
+  } catch (err) {
+    const vazio = /Cole a conversa/i.test(err.message);
+    res.status(vazio ? 400 : 500).json({ erro: err.message });
   }
 });
 

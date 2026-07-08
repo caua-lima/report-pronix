@@ -294,4 +294,23 @@ async function processarComLLM(userPrompt, nome) {
   return dados;
 }
 
-module.exports = { gerarReportDireto };
+/**
+ * Gera o relatório a partir da conversa colada como texto livre
+ * (o usuário monta a conversa, incluindo áudios já transcritos por fora).
+ * @param {{texto: string, nome?: string}} payload
+ * @returns {Promise<{dados: object, arquivo: string}>}
+ */
+async function gerarReportDeTexto({ texto, nome } = {}) {
+  const conteudo = typeof texto === 'string' ? texto.trim() : '';
+  if (!conteudo) {
+    throw new Error('Cole a conversa antes de gerar o report.');
+  }
+
+  const userPrompt = montarUserPrompt(conteudo);
+  const dados = await processarComLLM(userPrompt, nome);
+
+  const arquivo = await gerarDocx(dados, nome || dados.lead);
+  return { dados, arquivo };
+}
+
+module.exports = { gerarReportDireto, gerarReportDeTexto };
