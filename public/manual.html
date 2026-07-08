@@ -51,23 +51,19 @@
     </div>
 
     <div class="card">
-      <label>🎤 Transcrever áudio (opcional) — tudo local, o áudio não sai da sua máquina</label>
+      <label>🎤 Transcrever áudios (opcional) — tudo local, o áudio não sai da sua máquina</label>
       <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-        <select id="quem" style="padding:9px 10px;border-radius:8px;border:1px solid var(--border);background:#0c141c;color:var(--text)">
-          <option value="LEAD">Áudio do LEAD</option>
-          <option value="EU">Áudio meu (EU)</option>
-        </select>
         <input id="audio" type="file" accept="audio/*,.ogg,.opus,.m4a,.mp3,.aac,.wav" multiple />
-        <button id="btnTranscrever" class="btn" style="padding:10px 16px;font-size:.95rem">Transcrever e adicionar</button>
+        <button id="btnTranscrever" class="btn" style="padding:10px 16px;font-size:.95rem">Transcrever tudo</button>
       </div>
       <div id="statusAudio" class="status"></div>
-      <div class="hint">Baixe/salve o áudio do WhatsApp e selecione aqui. A 1ª vez baixa o modelo do Whisper (~500&nbsp;MB) e é mais lenta; depois fica rápido. O texto vai direto para a caixa abaixo.</div>
+      <div class="hint">Selecione <b>todos os áudios de uma vez</b> — ele transcreve na ordem e joga o texto na caixa abaixo. A 1ª vez baixa o modelo do Whisper (~500&nbsp;MB) e é mais lenta; depois fica rápido.</div>
     </div>
 
     <div class="card">
       <label for="texto">Cole aqui a conversa inteira (texto + áudios já transcritos)</label>
       <textarea id="texto" placeholder="Cole a conversa aqui…"></textarea>
-      <div class="hint">Dica: identifique quem falou para o report ficar mais preciso. Ex.:</div>
+      <div class="hint">Pode colar tudo cru — a IA se vira. Se <b>quiser</b> mais precisão, dá pra marcar quem falou, mas é totalmente opcional. Ex.:</div>
       <div class="exemplo">EU: Oi Anderson, tudo bem? Me conta um pouco do seu negócio.
 LEAD: Tenho uma loja de autopeças e comecei a vender no Mercado Livre.
 LEAD (áudio): Fiz umas 100 vendas em 15 dias, tá saindo bem.
@@ -154,8 +150,7 @@ LEAD: Uns 5 mil tranquilo.</div>
 
     async function transcreverAudios() {
       const files = [...$('audio').files];
-      if (files.length === 0) { setAudioStatus('Selecione um arquivo de áudio.', { erro: true }); return; }
-      const quem = $('quem').value;
+      if (files.length === 0) { setAudioStatus('Selecione um ou mais arquivos de áudio.', { erro: true }); return; }
       $('btnTranscrever').disabled = true;
       try {
         for (let i = 0; i < files.length; i++) {
@@ -169,7 +164,7 @@ LEAD: Uns 5 mil tranquilo.</div>
           const data = await r.json();
           if (!r.ok) throw new Error(data.erro || 'Falha ao transcrever.');
           const texto = (data.texto || '').trim();
-          appendConversa(`${quem} (áudio): ${texto || '[áudio sem fala reconhecida]'}`);
+          appendConversa(`(áudio): ${texto || '[áudio sem fala reconhecida]'}`);
         }
         setAudioStatus(`✅ ${files.length} áudio(s) transcrito(s) e adicionado(s) à conversa.`);
         $('audio').value = '';
