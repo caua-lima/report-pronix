@@ -3,80 +3,190 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Modo Manual — Closer Report</title>
+  <title>Closer Report — Gerar relatório</title>
   <style>
     :root {
-      --bg: #0f1720; --card: #16212e; --border: #26333f;
-      --accent: #25d366; --accent-2: #128c7e; --text: #e6edf3;
-      --muted: #8b98a5; --erro: #ff6b6b;
+      --bg: #eef2f7;
+      --card: #ffffff;
+      --border: #e3e8ef;
+      --text: #0f172a;
+      --muted: #64748b;
+      --primary: #0f9d76;
+      --primary-hover: #0c8465;
+      --primary-soft: #e7f6f1;
+      --danger: #dc2626;
+      --ring: rgba(15,157,118,.25);
+      --shadow: 0 1px 3px rgba(15,23,42,.08), 0 1px 2px rgba(15,23,42,.04);
+      --shadow-lg: 0 10px 30px rgba(15,23,42,.10);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0b1220; --card: #131c2b; --border: #263248; --text: #e6edf6;
+        --muted: #93a1b5; --primary: #16b487; --primary-hover: #12a079;
+        --primary-soft: #123027; --danger: #f87171; --ring: rgba(22,180,135,.3);
+        --shadow: 0 1px 3px rgba(0,0,0,.4); --shadow-lg: 0 12px 34px rgba(0,0,0,.5);
+      }
     }
     * { box-sizing: border-box; }
-    body { margin: 0; font-family: -apple-system, Segoe UI, Roboto, sans-serif; background: var(--bg); color: var(--text); line-height: 1.5; }
-    header { padding: 18px 24px; border-bottom: 1px solid var(--border); display: flex; gap: 10px; align-items: center; }
-    header h1 { font-size: 1.15rem; margin: 0; }
-    .wrap { max-width: 820px; margin: 0 auto; padding: 24px; }
-    .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 18px; margin-bottom: 18px; }
-    label { display: block; font-size: .85rem; color: var(--muted); margin-bottom: 6px; }
-    input[type=text], textarea { width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border); background: #0c141c; color: var(--text); font-size: .95rem; font-family: inherit; }
-    textarea { min-height: 280px; resize: vertical; line-height: 1.5; }
-    .btn { border: none; border-radius: 9px; padding: 13px 20px; font-size: 1rem; font-weight: 700; cursor: pointer; background: var(--accent); color: #05130c; }
-    .btn:disabled { opacity: .5; cursor: not-allowed; }
-    .status { min-height: 20px; margin: 12px 0; color: var(--muted); display: flex; align-items: center; gap: 8px; }
-    .status.erro { color: var(--erro); }
-    .spinner { width: 16px; height: 16px; border: 2px solid rgba(255,255,255,.25); border-top-color: #fff; border-radius: 50%; animation: spin .8s linear infinite; }
+    html, body { margin: 0; }
+    body {
+      font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg); color: var(--text); line-height: 1.55;
+      -webkit-font-smoothing: antialiased;
+    }
+    a { color: var(--primary); }
+
+    header {
+      position: sticky; top: 0; z-index: 10;
+      background: color-mix(in srgb, var(--card) 88%, transparent);
+      backdrop-filter: saturate(1.2) blur(8px);
+      border-bottom: 1px solid var(--border);
+    }
+    .header-in {
+      max-width: 780px; margin: 0 auto; padding: 14px 24px;
+      display: flex; align-items: center; gap: 12px;
+    }
+    .logo {
+      width: 34px; height: 34px; border-radius: 9px; flex: none;
+      background: linear-gradient(135deg, var(--primary), #0bbf8e);
+      display: grid; place-items: center; font-size: 18px; color: #fff;
+      box-shadow: 0 4px 12px var(--ring);
+    }
+    .brand { font-weight: 700; font-size: 1.02rem; letter-spacing: -.01em; }
+    .brand small { display: block; font-weight: 500; font-size: .76rem; color: var(--muted); }
+
+    .wrap { max-width: 780px; margin: 0 auto; padding: 26px 24px 60px; }
+
+    .card {
+      background: var(--card); border: 1px solid var(--border); border-radius: 16px;
+      padding: 22px; margin-bottom: 20px; box-shadow: var(--shadow);
+    }
+    .step-head { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+    .step-num {
+      width: 26px; height: 26px; border-radius: 50%; flex: none;
+      background: var(--primary-soft); color: var(--primary);
+      font-weight: 800; font-size: .82rem; display: grid; place-items: center;
+    }
+    .step-title { font-weight: 700; font-size: 1.02rem; }
+    .step-sub { font-size: .85rem; color: var(--muted); margin: -6px 0 14px 38px; }
+
+    label { display: block; font-size: .82rem; font-weight: 600; color: var(--muted); margin-bottom: 7px; }
+    input[type=text], textarea {
+      width: 100%; padding: 12px 13px; border-radius: 11px; border: 1px solid var(--border);
+      background: var(--bg); color: var(--text); font-size: .95rem; font-family: inherit;
+      transition: border-color .15s, box-shadow .15s;
+    }
+    input[type=text]:focus, textarea:focus {
+      outline: none; border-color: var(--primary); box-shadow: 0 0 0 4px var(--ring);
+    }
+    textarea { min-height: 260px; resize: vertical; line-height: 1.6; }
+
+    /* Dropzone */
+    .dropzone {
+      border: 2px dashed var(--border); border-radius: 14px; padding: 30px 20px;
+      text-align: center; cursor: pointer; transition: all .15s; background: var(--bg);
+    }
+    .dropzone:hover { border-color: var(--primary); background: var(--primary-soft); }
+    .dropzone.drag { border-color: var(--primary); background: var(--primary-soft); transform: scale(1.005); box-shadow: 0 0 0 4px var(--ring); }
+    .dropzone .ic { font-size: 30px; }
+    .dropzone .big { font-weight: 700; margin-top: 6px; }
+    .dropzone .small { font-size: .82rem; color: var(--muted); margin-top: 2px; }
+
+    .files { margin-top: 14px; display: flex; flex-direction: column; gap: 6px; }
+    .file-row { display: flex; align-items: center; gap: 9px; font-size: .87rem; padding: 7px 11px; border: 1px solid var(--border); border-radius: 9px; background: var(--bg); }
+    .file-row .nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .file-row .st { flex: none; color: var(--muted); font-size: .8rem; }
+    .file-row.ok { border-color: color-mix(in srgb, var(--primary) 45%, var(--border)); }
+    .file-row.err .st { color: var(--danger); }
+
+    .btn {
+      border: none; border-radius: 12px; padding: 14px 22px; font-size: 1rem; font-weight: 700;
+      cursor: pointer; background: var(--primary); color: #fff; transition: background .15s, transform .05s, box-shadow .15s;
+      box-shadow: 0 6px 18px var(--ring);
+    }
+    .btn:hover { background: var(--primary-hover); }
+    .btn:active { transform: translateY(1px); }
+    .btn:disabled { opacity: .55; cursor: not-allowed; box-shadow: none; }
+    .btn-block { width: 100%; }
+
+    .status { min-height: 20px; margin-top: 12px; font-size: .9rem; color: var(--muted); display: flex; align-items: center; gap: 8px; }
+    .status.erro { color: var(--danger); }
+    .status.ok { color: var(--primary); font-weight: 600; }
+    .spinner { width: 16px; height: 16px; border: 2px solid color-mix(in srgb, var(--muted) 35%, transparent); border-top-color: var(--primary); border-radius: 50%; animation: spin .8s linear infinite; flex: none; }
     @keyframes spin { to { transform: rotate(360deg); } }
     .hidden { display: none; }
-    .hint { font-size: .82rem; color: var(--muted); margin-top: 6px; }
-    .exemplo { font-size: .8rem; color: var(--muted); background: #0c141c; border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; white-space: pre-wrap; }
-    .dl { display: inline-block; background: var(--accent); color: #05130c; font-weight: 700; text-decoration: none; padding: 10px 16px; border-radius: 8px; }
-    .report h2 { font-size: 1rem; margin: 16px 0 4px; }
-    .report table { border-collapse: collapse; width: 100%; margin-bottom: 12px; }
-    .report td { border: 1px solid var(--border); padding: 6px 10px; font-size: .9rem; }
-    .report td.rot { font-weight: 700; width: 32%; background: #101a24; }
-    .report ul, .report ol { margin: 4px 0 8px; padding-left: 20px; }
-    .report li { margin: 2px 0; font-size: .9rem; }
-    .frase { font-style: italic; color: #d6f5e3; border-left: 3px solid var(--accent); padding-left: 10px; }
+    .hint { font-size: .82rem; color: var(--muted); margin-top: 10px; }
+    .example { font-size: .8rem; color: var(--muted); background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 11px 13px; white-space: pre-wrap; margin-top: 8px; }
+
+    /* Report preview */
+    .result-head { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 6px; }
+    .dl { display: inline-flex; align-items: center; gap: 7px; background: var(--primary); color: #fff; font-weight: 700; text-decoration: none; padding: 11px 18px; border-radius: 11px; box-shadow: 0 6px 18px var(--ring); }
+    .dl:hover { background: var(--primary-hover); }
+    .report h2 { font-size: 1rem; margin: 20px 0 6px; letter-spacing: -.01em; }
+    .report table { border-collapse: collapse; width: 100%; margin: 6px 0 14px; overflow: hidden; border-radius: 10px; }
+    .report td { border: 1px solid var(--border); padding: 9px 12px; font-size: .9rem; }
+    .report td.rot { font-weight: 700; width: 32%; background: var(--bg); }
+    .report ul, .report ol { margin: 4px 0 10px; padding-left: 20px; }
+    .report li { margin: 4px 0; font-size: .92rem; }
+    .frase { font-style: italic; color: var(--text); background: var(--primary-soft); border-left: 3px solid var(--primary); padding: 10px 14px; border-radius: 0 8px 8px 0; }
   </style>
 </head>
 <body>
   <header>
-    <span style="font-size:1.4rem">📝</span>
-    <h1>Modo Manual — colar conversa</h1>
+    <div class="header-in">
+      <div class="logo">📋</div>
+      <div class="brand">Closer Report<small>Gere o relatório de handoff em segundos</small></div>
+    </div>
   </header>
 
   <div class="wrap">
+    <!-- Passo 1: áudios -->
     <div class="card">
-      <label for="nome">Nome do lead (opcional)</label>
-      <input id="nome" type="text" placeholder="Ex.: Anderson Alves Mendes" />
-    </div>
-
-    <div class="card">
-      <label>🎤 Transcrever áudios (opcional) — tudo local, o áudio não sai da sua máquina</label>
-      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-        <input id="audio" type="file" accept="audio/*,.ogg,.opus,.m4a,.mp3,.aac,.wav" multiple />
-        <button id="btnTranscrever" class="btn" style="padding:10px 16px;font-size:.95rem">Transcrever tudo</button>
+      <div class="step-head">
+        <div class="step-num">1</div>
+        <div class="step-title">Áudios <span style="font-weight:500;color:var(--muted)">(opcional)</span></div>
       </div>
+      <div class="step-sub">Transcrição 100% local — o áudio não sai da sua máquina.</div>
+
+      <div id="dropzone" class="dropzone">
+        <div class="ic">🎧</div>
+        <div class="big">Arraste os áudios aqui</div>
+        <div class="small">ou clique para selecionar · .ogg .opus .mp3 .m4a .wav — pode soltar vários de uma vez</div>
+      </div>
+      <input id="audio" type="file" accept="audio/*,.ogg,.opus,.m4a,.mp3,.aac,.wav" multiple class="hidden" />
+
+      <div id="files" class="files"></div>
       <div id="statusAudio" class="status"></div>
-      <div class="hint">Selecione <b>todos os áudios de uma vez</b> — ele transcreve na ordem e joga o texto na caixa abaixo. A 1ª vez baixa o modelo do Whisper (~500&nbsp;MB) e é mais lenta; depois fica rápido.</div>
+      <div class="hint">Baixe/salve o áudio do WhatsApp e solte aqui. A 1ª transcrição baixa o modelo do Whisper (~500&nbsp;MB) e é mais lenta; depois fica rápido.</div>
     </div>
 
+    <!-- Passo 2: conversa -->
     <div class="card">
-      <label for="texto">Cole aqui a conversa inteira (texto + áudios já transcritos)</label>
+      <div class="step-head">
+        <div class="step-num">2</div>
+        <div class="step-title">Conversa</div>
+      </div>
+
+      <label for="nome">Nome do lead (opcional)</label>
+      <input id="nome" type="text" placeholder="Ex.: Anderson Alves Mendes" style="margin-bottom:16px" />
+
+      <label for="texto">Cole a conversa inteira (o texto dos áudios entra aqui automaticamente)</label>
       <textarea id="texto" placeholder="Cole a conversa aqui…"></textarea>
-      <div class="hint">Pode colar tudo cru — a IA se vira. Se <b>quiser</b> mais precisão, dá pra marcar quem falou, mas é totalmente opcional. Ex.:</div>
-      <div class="exemplo">EU: Oi Anderson, tudo bem? Me conta um pouco do seu negócio.
+      <div class="hint">Pode colar tudo cru — a IA se vira. Se <b>quiser</b> mais precisão, marque quem falou (opcional). Ex.:</div>
+      <div class="example">EU: Oi Anderson, me conta um pouco do seu negócio.
 LEAD: Tenho uma loja de autopeças e comecei a vender no Mercado Livre.
-LEAD (áudio): Fiz umas 100 vendas em 15 dias, tá saindo bem.
-EU: Show! Quanto você consegue investir?
+LEAD: Fiz umas 100 vendas em 15 dias.
+EU: Show! Quanto consegue investir?
 LEAD: Uns 5 mil tranquilo.</div>
     </div>
 
-    <button id="gerar" class="btn">Gerar Report</button>
+    <button id="gerar" class="btn btn-block">Gerar Report</button>
     <div id="status" class="status"></div>
 
-    <div id="resultado" class="card hidden">
-      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
-        <h3 style="margin:0">Report gerado</h3>
+    <!-- Resultado -->
+    <div id="resultado" class="card hidden" style="margin-top:20px">
+      <div class="result-head">
+        <div class="step-title">✅ Report gerado</div>
         <a id="dl" class="dl" target="_blank">⬇ Baixar .docx</a>
       </div>
       <div id="report" class="report"></div>
@@ -86,10 +196,11 @@ LEAD: Uns 5 mil tranquilo.</div>
   <script>
     const $ = (id) => document.getElementById(id);
 
-    function setStatus(txt, { erro = false, loading = false } = {}) {
-      const el = $('status');
-      el.className = 'status' + (erro ? ' erro' : '');
-      el.innerHTML = (loading ? '<span class="spinner"></span>' : '') + (txt || '');
+    function setStatus(elId, txt, opts) {
+      const o = opts || {};
+      const el = $(elId);
+      el.className = 'status' + (o.erro ? ' erro' : o.ok ? ' ok' : '');
+      el.innerHTML = (o.loading ? '<span class="spinner"></span>' : '') + (txt || '');
     }
     function escapeHtml(s) {
       return String(s).replace(/[&<>"']/g, (c) =>
@@ -115,12 +226,19 @@ LEAD: Uns 5 mil tranquilo.</div>
       return tabela + secoes + frase;
     }
 
+    // ---------- Conversa ----------
+    function appendConversa(linha) {
+      const ta = $('texto');
+      ta.value = (ta.value.trim() ? ta.value.replace(/\s*$/, '') + '\n' : '') + linha + '\n';
+      ta.scrollTop = ta.scrollHeight;
+    }
+
     async function gerar() {
       const texto = $('texto').value.trim();
-      if (!texto) { setStatus('Cole a conversa antes de gerar.', { erro: true }); return; }
+      if (!texto) { setStatus('status', 'Cole a conversa antes de gerar.', { erro: true }); return; }
       $('gerar').disabled = true;
       $('resultado').classList.add('hidden');
-      setStatus('Gerando report…', { loading: true });
+      setStatus('status', 'Gerando report…', { loading: true });
       try {
         const r = await fetch('/api/report-texto', {
           method: 'POST',
@@ -132,56 +250,68 @@ LEAD: Uns 5 mil tranquilo.</div>
         $('report').innerHTML = renderReport(data.dados);
         $('dl').href = '/api/download/' + encodeURIComponent(data.arquivo);
         $('resultado').classList.remove('hidden');
-        setStatus('✅ Report gerado!');
+        setStatus('status', 'Report gerado com sucesso.', { ok: true });
+        $('resultado').scrollIntoView({ behavior: 'smooth', block: 'start' });
       } catch (err) {
-        setStatus('❌ ' + err.message, { erro: true });
+        setStatus('status', '❌ ' + err.message, { erro: true });
       } finally {
         $('gerar').disabled = false;
       }
     }
 
-    function appendConversa(linha) {
-      const ta = $('texto');
-      ta.value = (ta.value.trim() ? ta.value.replace(/\s*$/, '') + '\n' : '') + linha + '\n';
-      ta.scrollTop = ta.scrollHeight;
+    // ---------- Áudios (drag & drop + clique) ----------
+    function fileRow(nome) {
+      const row = document.createElement('div');
+      row.className = 'file-row';
+      row.innerHTML = `<span class="spinner"></span><span class="nm">${escapeHtml(nome)}</span><span class="st">transcrevendo…</span>`;
+      $('files').appendChild(row);
+      return row;
     }
 
-    async function transcreverAudios() {
-      const files = [...$('audio').files];
-      if (files.length === 0) { setAudioStatus('Selecione um ou mais arquivos de áudio.', { erro: true }); return; }
-      $('btnTranscrever').disabled = true;
-      try {
-        for (let i = 0; i < files.length; i++) {
-          const f = files[i];
-          setAudioStatus(`Transcrevendo ${i + 1} de ${files.length} (${f.name})…`, { loading: true });
+    async function transcreverFiles(files) {
+      const lista = [...files].filter((f) => f && f.size);
+      if (lista.length === 0) return;
+      setStatus('statusAudio', `Transcrevendo ${lista.length} áudio(s)…`, { loading: true });
+      let ok = 0;
+      for (const f of lista) {
+        const row = fileRow(f.name);
+        try {
           const r = await fetch('/api/transcrever?nome=' + encodeURIComponent(f.name), {
             method: 'POST',
             headers: { 'Content-Type': 'application/octet-stream' },
             body: f,
           });
           const data = await r.json();
-          if (!r.ok) throw new Error(data.erro || 'Falha ao transcrever.');
+          if (!r.ok) throw new Error(data.erro || 'falhou');
           const texto = (data.texto || '').trim();
           appendConversa(`(áudio): ${texto || '[áudio sem fala reconhecida]'}`);
+          row.className = 'file-row ok';
+          row.innerHTML = `<span>✅</span><span class="nm">${escapeHtml(f.name)}</span><span class="st">adicionado</span>`;
+          ok++;
+        } catch (err) {
+          row.className = 'file-row err';
+          row.innerHTML = `<span>⚠️</span><span class="nm">${escapeHtml(f.name)}</span><span class="st">${escapeHtml(err.message)}</span>`;
         }
-        setAudioStatus(`✅ ${files.length} áudio(s) transcrito(s) e adicionado(s) à conversa.`);
-        $('audio').value = '';
-      } catch (err) {
-        setAudioStatus('❌ ' + err.message, { erro: true });
-      } finally {
-        $('btnTranscrever').disabled = false;
       }
+      setStatus('statusAudio', `${ok} de ${lista.length} áudio(s) transcrito(s) e adicionado(s) à conversa.`, { ok: ok > 0, erro: ok === 0 });
     }
 
-    function setAudioStatus(txt, opts) {
-      const el = $('statusAudio');
-      const o = opts || {};
-      el.className = 'status' + (o.erro ? ' erro' : '');
-      el.innerHTML = (o.loading ? '<span class="spinner"></span>' : '') + (txt || '');
-    }
+    const dz = $('dropzone');
+    dz.addEventListener('click', () => $('audio').click());
+    dz.addEventListener('dragover', (e) => { e.preventDefault(); dz.classList.add('drag'); });
+    dz.addEventListener('dragleave', () => dz.classList.remove('drag'));
+    dz.addEventListener('drop', (e) => {
+      e.preventDefault(); dz.classList.remove('drag');
+      transcreverFiles(e.dataTransfer.files);
+    });
+    $('audio').addEventListener('change', () => { transcreverFiles($('audio').files); $('audio').value = ''; });
+
+    // Evita que soltar um arquivo fora da dropzone abra ele no navegador.
+    ['dragover', 'drop'].forEach((ev) =>
+      window.addEventListener(ev, (e) => { if (e.target !== dz && !dz.contains(e.target)) e.preventDefault(); })
+    );
 
     $('gerar').addEventListener('click', gerar);
-    $('btnTranscrever').addEventListener('click', transcreverAudios);
   </script>
 </body>
 </html>
