@@ -132,3 +132,15 @@ $('server').addEventListener('change', () => {
 $('testar').addEventListener('click', testarConexao);
 $('gerar').addEventListener('click', gerar);
 carregarUltimo();
+
+// Contadores do dia (rastreados pela extensão).
+function carregarContadores() {
+  const hoje = new Date().toISOString().slice(0, 10);
+  chrome.storage.local.get(['crDia'], ({ crDia }) => {
+    const d = crDia && crDia.data === hoje ? crDia : { iniciados: [], respostas: [], recontatos: [] };
+    $('cIni').textContent = (d.iniciados || []).length;
+    $('cResp').textContent = (d.respostas || []).length;
+    $('cRec').textContent = (d.recontatos || []).length;
+  });
+}
+carregarContadores();

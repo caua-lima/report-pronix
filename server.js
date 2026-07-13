@@ -72,6 +72,39 @@ app.get('/dia', (_req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'dia.html'));
 });
 
+// Contadores automáticos do dia (enviados pela extensão) — guardados em data/.
+const DATA_DIR = path.join(__dirname, 'data');
+function arquivoDia(data) {
+  const d = /^\d{4}-\d{2}-\d{2}$/.test(data || '') ? data : new Date().toISOString().slice(0, 10);
+  return path.join(DATA_DIR, `dia_${d}.json`);
+}
+
+// POST /api/dia — a extensão envia { data, iniciados, respostas, recontatos }
+app.post('/api/dia', (req, res) => {
+  try {
+    const { data, iniciados = 0, respostas = 0, recontatos = 0 } = req.body || {};
+    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(
+      arquivoDia(data),
+      JSON.stringify({ data, iniciados, respostas, recontatos, atualizado: new Date().toISOString() })
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// GET /api/dia/hoje — a página /dia lê os contadores automáticos do dia
+app.get('/api/dia/hoje', (_req, res) => {
+  try {
+    const caminho = arquivoDia(new Date().toISOString().slice(0, 10));
+    if (!fs.existsSync(caminho)) return res.json({ iniciados: 0, respostas: 0, recontatos: 0, vazio: true });
+    res.json(JSON.parse(fs.readFileSync(caminho, 'utf8')));
+  } catch (err) {
+    res.status(500).json({ erro: err.message });
+  }
+});
+
 // POST /api/transcrever — recebe áudio em base64 (JSON), transcreve com Whisper local
 // e, se houver voz cadastrada, marca EU/LEAD.
 app.post('/api/transcrever', async (req, res) => {

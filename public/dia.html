@@ -85,7 +85,7 @@
         <div><label>Recontatos</label><input id="recontatos" type="number" min="0" value="0" /></div>
         <div><label>Ligações</label><input id="ligacoes" type="number" min="0" value="0" /></div>
       </div>
-      <div class="muted" style="margin-top:8px">Depois dá pra preencher estes números automático pela extensão. Por ora, edite à mão.</div>
+      <div class="muted" style="margin-top:8px" id="autoNota">Leads novos, Respostas e Recontatos são preenchidos automático pela extensão (se estiver rodando). Automáticas e Ligações você edita à mão. Pode ajustar tudo.</div>
     </div>
 
     <!-- Registros (chatzinho) -->
@@ -265,7 +265,25 @@
       render(); salvar();
     });
 
+    // Preenche Leads novos / Respostas / Recontatos com os contadores da extensão.
+    async function carregarAuto() {
+      try {
+        const r = await fetch('/api/dia/hoje');
+        if (!r.ok) return;
+        const j = await r.json();
+        if (j.vazio) return;
+        if (j.iniciados != null) $('leadsNovos').value = j.iniciados;
+        if (j.respostas != null) $('respostas').value = j.respostas;
+        if (j.recontatos != null) $('recontatos').value = j.recontatos;
+        salvar();
+      } catch (_) {
+        /* sem servidor: mantém manual */
+      }
+    }
+
     carregar();
+    carregarAuto();
+    setInterval(carregarAuto, 60000); // atualiza ao longo do dia
   </script>
 </body>
 </html>

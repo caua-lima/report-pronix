@@ -20,6 +20,16 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     return true; // resposta assíncrona
   }
 
+  if (msg && msg.action === 'pushDia') {
+    // Best-effort: envia os contadores do dia ao servidor (para a página /dia).
+    fetch(msg.server + '/api/dia', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(msg.dia),
+    }).catch(() => {});
+    return false; // não precisa de resposta
+  }
+
   if (msg && msg.action === 'reportFetch') {
     (async () => {
       try {

@@ -492,6 +492,120 @@
     }
   }
 
+  // ===========================================================================
+  // Rastreador diário (beta): conta contatos iniciados, respostas e recontatos
+  // observando as mensagens enquanto você usa o WhatsApp Web.
+  // ===========================================================================
+  const hojeStr = () => new Date().toISOString().slice(0, 10);
+  const msgProcessadas = new Set();
+  let serverTracker = 'http://localhost:3000';
+  let pushTimer = null;
+
+  const storageGet = (keys) => new Promise((r) => chrome.storage.local.get(keys, r));
+  const storageSet = (obj) => new Promise((r) => chrome.storage.local.set(obj, r));
+
+  function jidEDirecao(dataId) {
+    const p = String(dataId).split('_');
+    const dir = p[0] === 'true' ? 'meu' : p[0] === 'false' ? 'deles' : null;
+    return { dir, jid: p[1] || '' };
+  }
+
+  // Só conta mensagens "ao vivo" (últimos 2 min) — evita contar histórico ao abrir a conversa.
+  function msgAoVivo(el) {
+    const copy = el.querySelector('.copyable-text');
+    const pre = copy && copy.getAttribute('data-pre-plain-text');
+    if (!pre) return false;
+    const m = pre.match(/\[(.*?)\]/);
+    if (!m) return false;
+    const parsed = parseDataHora(m[1]);
+    return parsed ? Math.abs(Date.now() - parsed.ms) < 120000 : false;
+  }
+
+  function agendarPush() {
+    clearTimeout(pushTimer);
+    pushTimer = setTimeout(async () => {
+      const { crDia } = await storageGet(['crDia']);
+      if (!crDia) return;
+      chrome.runtime.sendMessage({
+        action: 'pushDia',
+        server: serverTracker,
+        dia: {
+          data: crDia.data,
+          iniciados: crDia.iniciados.length,
+          respostas: crDia.respostas.length,
+          recontatos: crDia.recontatos.length,
+        },
+      });
+    }, 1500);
+  }
+
+  async function contarMensagem(el) {
+    const idEl = el.matches('[data-id]') ? el : el.closest('[data-id]');
+    if (!idEl) return;
+    const dataId = idEl.getAttribute('data-id');
+    if (!dataId || msgProcessadas.has(dataId)) return;
+    const { dir, jid } = jidEDirecao(dataId);
+    if (!dir || !jid || jid.endsWith('@g.us')) return; // ignora grupos/inválidos
+    if (!msgAoVivo(el)) {
+      msgProcessadas.add(dataId);
+      return;
+    }
+    msgProcessadas.add(dataId);
+
+    const store = await storageGet(['crDia', 'crContatos']);
+    const crContatos = store.crContatos || {};
+    const hoje = hojeStr();
+    let crDia = store.crDia;
+    if (!crDia || crDia.data !== hoje) crDia = { data: hoje, iniciados: [], recontatos: [], respostas: [] };
+
+    if (dir === 'meu') {
+      const c = crContatos[jid];
+      if (!c) {
+        // primeiro contato de todos os tempos com esse lead
+        crContatos[jid] = { primeiroDia: hoje, ultimaRespostaDia: null };
+        if (!crDia.iniciados.includes(jid)) crDia.iniciados.push(jid);
+      } else {
+        const nuncaRespondeu = !c.ultimaRespostaDia;
+        const esfriou = c.ultimaRespostaDia && c.ultimaRespostaDia < hoje;
+        if ((nuncaRespondeu || esfriou) && !crDia.recontatos.includes(jid)) {
+          crDia.recontatos.push(jid);
+        }
+      }
+    } else {
+      if (!crContatos[jid]) crContatos[jid] = { primeiroDia: hoje, ultimaRespostaDia: null };
+      crContatos[jid].ultimaRespostaDia = hoje;
+      if (!crDia.respostas.includes(jid)) crDia.respostas.push(jid);
+    }
+
+    await storageSet({ crDia, crContatos });
+    agendarPush();
+  }
+
+  function iniciarTracker() {
+    chrome.storage.local.get({ server: 'http://localhost:3000' }, (c) => {
+      serverTracker = (c.server || 'http://localhost:3000').replace(/\/$/, '');
+    });
+    chrome.storage.onChanged.addListener((ch) => {
+      if (ch.server) serverTracker = (ch.server.newValue || '').replace(/\/$/, '');
+    });
+    const obs = new MutationObserver((muts) => {
+      for (const mu of muts) {
+        mu.addedNodes.forEach((n) => {
+          if (n.nodeType !== 1) return;
+          const id = n.getAttribute && n.getAttribute('data-id');
+          if (id && /^(true|false)_/.test(id)) contarMensagem(n);
+          if (n.querySelectorAll) {
+            n.querySelectorAll('[data-id]').forEach((e) => {
+              const eid = e.getAttribute('data-id') || '';
+              if (/^(true|false)_/.test(eid)) contarMensagem(e);
+            });
+          }
+        });
+      }
+    });
+    obs.observe(document.documentElement, { childList: true, subtree: true });
+  }
+
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (msg && msg.action === 'start') {
       // Dispara em background e responde na hora para o popup poder fechar.
@@ -499,9 +613,23 @@
       sendResponse({ ok: true, iniciado: true });
       return false;
     }
+    if (msg && msg.action === 'contadoresDia') {
+      storageGet(['crDia']).then(({ crDia }) => {
+        sendResponse({
+          ok: true,
+          data: crDia && crDia.data,
+          iniciados: crDia ? crDia.iniciados.length : 0,
+          respostas: crDia ? crDia.respostas.length : 0,
+          recontatos: crDia ? crDia.recontatos.length : 0,
+        });
+      });
+      return true; // assíncrono
+    }
     if (msg && msg.action === 'ping') {
       sendResponse({ ok: true });
       return false;
     }
   });
+
+  iniciarTracker();
 })();
