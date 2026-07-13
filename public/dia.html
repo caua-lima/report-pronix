@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Report do Dia — Closer Report</title>
+  <style>
+    :root {
+      --bg: #eef2f7; --card: #ffffff; --border: #e3e8ef; --text: #0f172a; --muted: #64748b;
+      --primary: #0f9d76; --primary-hover: #0c8465; --primary-soft: #e7f6f1; --danger: #dc2626;
+      --agenda: #f59e0b; --noshow: #6366f1; --desq: #ef4444;
+      --ring: rgba(15,157,118,.25); --shadow: 0 1px 3px rgba(15,23,42,.08), 0 1px 2px rgba(15,23,42,.04);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg: #0b1220; --card: #131c2b; --border: #263248; --text: #e6edf6; --muted: #93a1b5;
+        --primary: #16b487; --primary-hover: #12a079; --primary-soft: #123027; --danger: #f87171;
+        --ring: rgba(22,180,135,.3); --shadow: 0 1px 3px rgba(0,0,0,.4); }
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; }
+    body { font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); line-height: 1.55; -webkit-font-smoothing: antialiased; }
+    header { position: sticky; top: 0; z-index: 10; background: color-mix(in srgb, var(--card) 88%, transparent); backdrop-filter: saturate(1.2) blur(8px); border-bottom: 1px solid var(--border); }
+    .header-in { max-width: 820px; margin: 0 auto; padding: 14px 24px; display: flex; align-items: center; gap: 12px; }
+    .logo { width: 34px; height: 34px; border-radius: 9px; flex: none; background: linear-gradient(135deg, var(--primary), #0bbf8e); display: grid; place-items: center; font-size: 18px; color: #fff; box-shadow: 0 4px 12px var(--ring); }
+    .brand { font-weight: 700; font-size: 1.02rem; } .brand small { display: block; font-weight: 500; font-size: .76rem; color: var(--muted); }
+    .wrap { max-width: 820px; margin: 0 auto; padding: 22px 24px 60px; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 18px; margin-bottom: 18px; box-shadow: var(--shadow); }
+    .t { font-weight: 700; font-size: 1rem; margin-bottom: 12px; }
+    label { display: block; font-size: .78rem; font-weight: 600; color: var(--muted); margin-bottom: 6px; }
+    input, select, textarea { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: .95rem; font-family: inherit; }
+    input:focus, select:focus, textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 4px var(--ring); }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .grid-nums { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+    .btn { border: none; border-radius: 11px; padding: 12px 18px; font-size: .96rem; font-weight: 700; cursor: pointer; background: var(--primary); color: #fff; box-shadow: 0 6px 18px var(--ring); }
+    .btn:hover { background: var(--primary-hover); } .btn:active { transform: translateY(1px); }
+    .btn.sec { background: transparent; color: var(--text); border: 1px solid var(--border); box-shadow: none; }
+    .btn.block { width: 100%; }
+    .row { display: flex; gap: 8px; align-items: stretch; flex-wrap: wrap; }
+    .row .grow { flex: 1; min-width: 180px; }
+    .seg-cat { display: inline-flex; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; flex: none; }
+    .seg-cat button { border: none; background: transparent; color: var(--muted); font-weight: 700; padding: 9px 12px; cursor: pointer; font-size: .8rem; }
+    .seg-cat button.on { color: #fff; }
+    .seg-cat button[data-c="agenda"].on { background: var(--agenda); }
+    .seg-cat button[data-c="noshow"].on { background: var(--noshow); }
+    .seg-cat button[data-c="desq"].on { background: var(--desq); }
+    .entries { margin-top: 14px; display: flex; flex-direction: column; gap: 7px; }
+    .entry { display: flex; align-items: center; gap: 10px; padding: 8px 11px; border: 1px solid var(--border); border-radius: 9px; background: var(--bg); font-size: .9rem; }
+    .chip { flex: none; font-size: .68rem; font-weight: 800; letter-spacing: .03em; padding: 3px 8px; border-radius: 20px; color: #fff; }
+    .chip.agenda { background: var(--agenda); } .chip.noshow { background: var(--noshow); } .chip.desq { background: var(--desq); }
+    .entry .tx { flex: 1; } .entry .x { flex: none; cursor: pointer; color: var(--muted); }
+    .empty { color: var(--muted); font-size: .87rem; text-align: center; padding: 14px; }
+    pre { white-space: pre-wrap; word-break: break-word; background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: 16px; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: .86rem; line-height: 1.5; }
+    .result-head { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 8px; }
+    .muted { color: var(--muted); font-size: .82rem; }
+    .hidden { display: none; }
+    .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--primary); color: #fff; padding: 10px 18px; border-radius: 10px; font-weight: 600; box-shadow: var(--shadow); opacity: 0; transition: opacity .2s; }
+    .toast.show { opacity: 1; }
+    a { color: var(--primary); }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="header-in">
+      <div class="logo">📊</div>
+      <div class="brand">Report do Dia<small>Registre ao longo do dia · gere o resumo no fim</small></div>
+    </div>
+  </header>
+
+  <div class="wrap">
+    <!-- Cabeçalho -->
+    <div class="card">
+      <div class="grid2">
+        <div><label for="nome">Seu nome</label><input id="nome" type="text" placeholder="Ex.: Cauã Lima" /></div>
+        <div><label for="data">Data</label><input id="data" type="date" /></div>
+      </div>
+    </div>
+
+    <!-- Números do dia -->
+    <div class="card">
+      <div class="t">Números do dia</div>
+      <div class="grid-nums">
+        <div><label>Automáticas</label><input id="automaticas" type="number" min="0" value="0" /></div>
+        <div><label>Leads novos contatados</label><input id="leadsNovos" type="number" min="0" value="0" /></div>
+        <div><label>Respostas</label><input id="respostas" type="number" min="0" value="0" /></div>
+        <div><label>Recontatos</label><input id="recontatos" type="number" min="0" value="0" /></div>
+        <div><label>Ligações</label><input id="ligacoes" type="number" min="0" value="0" /></div>
+      </div>
+      <div class="muted" style="margin-top:8px">Depois dá pra preencher estes números automático pela extensão. Por ora, edite à mão.</div>
+    </div>
+
+    <!-- Registros (chatzinho) -->
+    <div class="card">
+      <div class="t">Registros do dia</div>
+      <div class="row">
+        <div class="seg-cat" id="seg">
+          <button data-c="agenda" class="on">Agenda caiu</button>
+          <button data-c="noshow">No show</button>
+          <button data-c="desq">Desqualificado</button>
+        </div>
+        <input id="entrada" class="grow" type="text" placeholder="Ex.: Luis às 14h sem respostas" />
+        <button id="add" class="btn">Adicionar</button>
+      </div>
+      <div class="muted" style="margin-top:8px" id="dicaCat">Vai para <b>Agendas que caíram</b>. Enter também adiciona.</div>
+      <div id="entries" class="entries"><div class="empty" id="empty">Nenhum registro ainda. Vá adicionando ao longo do dia.</div></div>
+    </div>
+
+    <div class="row" style="gap:10px">
+      <button id="gerar" class="btn" style="flex:1">Gerar report do dia</button>
+      <button id="limpar" class="btn sec">Limpar dia</button>
+    </div>
+
+    <!-- Resultado -->
+    <div id="resultado" class="card hidden" style="margin-top:18px">
+      <div class="result-head">
+        <div class="t" style="margin:0">Report pronto</div>
+        <div class="row" style="gap:8px">
+          <button id="copiar" class="btn">📋 Copiar</button>
+          <button id="baixar" class="btn sec">⬇ .txt</button>
+        </div>
+      </div>
+      <pre id="saida"></pre>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const KEY = 'reportDia_v1';
+    let cat = 'agenda';
+    let entries = []; // { cat, texto }
+
+    const rotuloCat = { agenda: 'Agendas que caíram', noshow: 'NO SHOW', desq: 'Desqualificados' };
+
+    function salvar() {
+      localStorage.setItem(KEY, JSON.stringify({
+        nome: $('nome').value, data: $('data').value,
+        nums: ['automaticas', 'leadsNovos', 'respostas', 'recontatos', 'ligacoes'].reduce((o, k) => (o[k] = $(k).value, o), {}),
+        entries,
+      }));
+    }
+    function carregar() {
+      const hoje = new Date().toISOString().slice(0, 10);
+      let s = {};
+      try { s = JSON.parse(localStorage.getItem(KEY)) || {}; } catch (_) {}
+      $('nome').value = s.nome || '';
+      $('data').value = s.data || hoje;
+      const nums = s.nums || {};
+      ['automaticas', 'leadsNovos', 'respostas', 'recontatos', 'ligacoes'].forEach((k) => { $(k).value = nums[k] != null ? nums[k] : 0; });
+      entries = Array.isArray(s.entries) ? s.entries : [];
+      render();
+    }
+
+    function render() {
+      const box = $('entries');
+      box.querySelectorAll('.entry').forEach((n) => n.remove());
+      $('empty').style.display = entries.length ? 'none' : '';
+      entries.forEach((e, i) => {
+        const div = document.createElement('div');
+        div.className = 'entry';
+        const nome = { agenda: 'AGENDA', noshow: 'NO SHOW', desq: 'DESQ' }[e.cat];
+        div.innerHTML = `<span class="chip ${e.cat}">${nome}</span><span class="tx"></span><span class="x" data-i="${i}" title="Remover">✕</span>`;
+        div.querySelector('.tx').textContent = e.texto;
+        box.appendChild(div);
+      });
+    }
+
+    $('entries').addEventListener('click', (ev) => {
+      const x = ev.target.closest('.x');
+      if (x) { entries.splice(+x.dataset.i, 1); render(); salvar(); }
+    });
+
+    $('seg').addEventListener('click', (ev) => {
+      const b = ev.target.closest('button'); if (!b) return;
+      cat = b.dataset.c;
+      [...$('seg').children].forEach((c) => c.classList.toggle('on', c === b));
+      $('dicaCat').innerHTML = `Vai para <b>${rotuloCat[cat]}</b>. Enter também adiciona.`;
+      $('entrada').placeholder = cat === 'desq' ? 'Ex.: Desqualificação financeira' : 'Ex.: Luis às 14h sem respostas';
+    });
+
+    function adicionar() {
+      const texto = $('entrada').value.trim();
+      if (!texto) return;
+      entries.push({ cat, texto });
+      $('entrada').value = '';
+      render(); salvar();
+    }
+    $('add').addEventListener('click', adicionar);
+    $('entrada').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); adicionar(); } });
+
+    ['nome', 'data', 'automaticas', 'leadsNovos', 'respostas', 'recontatos', 'ligacoes'].forEach((k) =>
+      $(k).addEventListener('input', salvar)
+    );
+
+    function fmtData(iso) {
+      if (!iso) return '';
+      const [y, m, d] = iso.split('-');
+      return `${d}/${m}`;
+    }
+
+    function montarReport() {
+      const nome = $('nome').value.trim() || 'SDR';
+      const linhas = [];
+      linhas.push(`REPORT ${nome} | ${fmtData($('data').value)}`);
+      linhas.push('');
+      linhas.push(`Automáticas: ${$('automaticas').value || 0}`);
+      linhas.push(`Leads novos contatados: ${$('leadsNovos').value || 0}`);
+      linhas.push(`Respostas: ${$('respostas').value || 0}`);
+      linhas.push(`Recontatos: ${$('recontatos').value || 0}`);
+      linhas.push(`Ligações: ${$('ligacoes').value || 0}`);
+      linhas.push('');
+
+      const agenda = entries.filter((e) => e.cat === 'agenda').map((e) => e.texto);
+      const noshow = entries.filter((e) => e.cat === 'noshow').map((e) => e.texto);
+      const desq = entries.filter((e) => e.cat === 'desq').map((e) => e.texto);
+
+      linhas.push('Agendas que caíram:');
+      agenda.forEach((t) => linhas.push(t.endsWith('.') ? t : t + '.'));
+      linhas.push('');
+
+      linhas.push('NO SHOW:');
+      noshow.forEach((t) => linhas.push(t.endsWith('.') ? t : t + '.'));
+      linhas.push('');
+
+      // Desqualificados: agrupa motivos iguais -> "Nx motivo"
+      const cont = new Map();
+      desq.forEach((t) => {
+        const chave = t.replace(/\.$/, '').trim();
+        const k = chave.toLowerCase();
+        cont.set(k, { n: (cont.get(k)?.n || 0) + 1, texto: cont.get(k)?.texto || chave });
+      });
+      linhas.push('Desqualificados:');
+      [...cont.values()].forEach((v) => linhas.push(`${v.n}x ${v.texto}.`));
+
+      return linhas.join('\n');
+    }
+
+    function toast(msg) {
+      const t = $('toast'); t.textContent = msg; t.classList.add('show');
+      setTimeout(() => t.classList.remove('show'), 1600);
+    }
+
+    $('gerar').addEventListener('click', () => {
+      $('saida').textContent = montarReport();
+      $('resultado').classList.remove('hidden');
+      $('resultado').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+    $('copiar').addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText($('saida').textContent); toast('Copiado!'); }
+      catch (_) { toast('Não consegui copiar — selecione e copie manual.'); }
+    });
+    $('baixar').addEventListener('click', () => {
+      const blob = new Blob([$('saida').textContent], { type: 'text/plain;charset=utf-8' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `report_${($('nome').value.trim() || 'dia').replace(/\s+/g, '-')}_${$('data').value}.txt`;
+      a.click();
+    });
+    $('limpar').addEventListener('click', () => {
+      if (!confirm('Limpar os registros e zerar os números deste dia? (o nome é mantido)')) return;
+      entries = [];
+      ['automaticas', 'leadsNovos', 'respostas', 'recontatos', 'ligacoes'].forEach((k) => ($(k).value = 0));
+      $('data').value = new Date().toISOString().slice(0, 10);
+      $('resultado').classList.add('hidden');
+      render(); salvar();
+    });
+
+    carregar();
+  </script>
+</body>
+</html>

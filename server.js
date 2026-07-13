@@ -38,6 +38,8 @@ app.get('/', (_req, res) => {
        <p>Ou cole a conversa manualmente no
        <a href="/manual" style="color:#25d366"><b>📝 Modo manual</b></a>
        (útil quando você já tem a conversa/áudios transcritos em texto).</p>
+       <p>Resumo diário de atividade:
+       <a href="/dia" style="color:#25d366"><b>📊 Report do dia</b></a>.</p>
        <p style="color:#888">Porta ${PORT} · provedor: ${process.env.LLM_PROVIDER || 'anthropic'}</p>
      </div>`
   );
@@ -63,6 +65,11 @@ app.post('/api/report-direto', async (req, res) => {
 // GET /manual — página para colar a conversa manualmente e gerar o report
 app.get('/manual', (_req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'manual.html'));
+});
+
+// GET /dia — relatório diário de atividade (registra ao longo do dia)
+app.get('/dia', (_req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'dia.html'));
 });
 
 // POST /api/transcrever — recebe áudio em base64 (JSON), transcreve com Whisper local
