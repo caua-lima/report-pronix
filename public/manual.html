@@ -100,21 +100,19 @@ LEAD: Uns 5 mil tranquilo.</div>
       return `<${tag}>${(arr || []).map((i) => `<li>${escapeHtml(i)}</li>`).join('')}</${tag}>`;
     }
     function renderReport(d) {
-      return `
-        <table>
-          <tr><td class="rot">Lead</td><td>${escapeHtml(d.lead)}</td></tr>
-          <tr><td class="rot">Status</td><td>${escapeHtml(d.status)}</td></tr>
-          <tr><td class="rot">Nicho</td><td>${escapeHtml(d.nicho)}</td></tr>
-          <tr><td class="rot">Investimento</td><td>${escapeHtml(d.investimento)}</td></tr>
-        </table>
-        <h2>👤 Perfil & Contexto</h2>${lista(d.perfil_contexto)}
-        <h2>📍 Momento Atual</h2>${lista(d.momento_atual)}
-        <h2>📈 Sinais de Tração</h2>${lista(d.sinais_tracao)}
-        <h2>💰 Capacidade & Decisão</h2>${lista(d.capacidade_decisao)}
-        <h2>📅 Agendamento & Status</h2>${lista(d.agendamento_status)}
-        <h2>🎯 Leitura Estratégica</h2>${lista(d.leitura_estrategica)}
-        <h2>✅ O que o closer deve bater</h2>${lista(d.closer_deve_bater, true)}
-        <h2>💬 Frase de Impacto</h2><p class="frase">"${escapeHtml(d.frase_impacto)}"</p>`;
+      const linhas = [];
+      if (d.lead) linhas.push(`<tr><td class="rot">Lead</td><td>${escapeHtml(d.lead)}</td></tr>`);
+      (d.resumo || []).forEach((r) =>
+        linhas.push(`<tr><td class="rot">${escapeHtml(r.rotulo)}</td><td>${escapeHtml(r.valor)}</td></tr>`)
+      );
+      const tabela = linhas.length ? `<table>${linhas.join('')}</table>` : '';
+      const secoes = (d.secoes || [])
+        .map((s) => `<h2>${escapeHtml(s.titulo)}</h2>${lista(s.itens, s.numerada)}`)
+        .join('');
+      const frase = d.frase_impacto
+        ? `<h2>💬 Frase de Impacto</h2><p class="frase">"${escapeHtml(d.frase_impacto)}"</p>`
+        : '';
+      return tabela + secoes + frase;
     }
 
     async function gerar() {

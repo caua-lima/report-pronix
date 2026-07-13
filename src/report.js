@@ -6,73 +6,70 @@ const { gerarDocx } = require('./generateDoc');
 
 const LLM_PROVIDER = (process.env.LLM_PROVIDER || 'anthropic').toLowerCase();
 
-// Chaves fixas esperadas no JSON do relatório.
-const CAMPOS_LISTA = [
-  'perfil_contexto',
-  'momento_atual',
-  'sinais_tracao',
-  'capacidade_decisao',
-  'agendamento_status',
-  'leitura_estrategica',
-  'closer_deve_bater',
-];
-const CAMPOS_TEXTO = ['lead', 'status', 'nicho', 'investimento', 'frase_impacto'];
-
+// Exemplo de um bom relatório — apenas referência de qualidade/estrutura.
+// A estrutura NÃO é fixa: a IA adapta seções e linhas do resumo à conversa.
 const EXEMPLO_FEWSHOT = {
   lead: 'Vitor da Silva',
-  status: 'Loja física + e-commerce',
-  nicho: 'Moto peças',
-  investimento: 'Mais de R$5.000',
-  perfil_contexto: [
-    'Vitor está saindo do CLT com o objetivo de ganhar qualidade de vida.',
-    'Já vende no Mercado Livre há 15 dias e está estruturando o e-commerce com foco em crescimento.',
-    'Tem uma loja física com a irmã, com divisão 50/50 nas decisões de investimento.',
+  resumo: [
+    { rotulo: 'Status', valor: 'Loja física + e-commerce' },
+    { rotulo: 'Nicho', valor: 'Moto peças' },
+    { rotulo: 'Investimento', valor: 'Mais de R$5.000' },
   ],
-  momento_atual: [
-    'Hoje a operação gira em torno de uma loja física já existente e da expansão para o digital.',
-    'Ele vende eletrônicos, fones e também uma pistola de alta pressão.',
-    'Ainda não tem Full liberado e está trocando o CNAE do ME.',
-  ],
-  sinais_tracao: [
-    'Em 15 dias no Mercado Livre já realizou 104 vendas.',
-    'Isso mostra que ele já superou a barreira de começar e está validando produto na prática.',
-    'O próximo passo é parar de depender só do impulso inicial e estruturar a operação para escala.',
-  ],
-  capacidade_decisao: [
-    'O comercial confirmou que há cerca de R$10 mil em estoque hoje e que a intenção é usar metade para o projeto.',
-    'A decisão é compartilhada com a irmã na operação da loja física, mas ele está à frente do movimento digital.',
-    'O investimento disponível é suficiente para avançar com organização e estratégia.',
-  ],
-  agendamento_status: [
-    'A reunião ficou confirmada para hoje, 06/07/2026, às 14h.',
-    'O grupo de alinhamento já foi encaminhado e o link será enviado por lá.',
-    'O contato mostrou boa abertura e seguiu as orientações de horários e alinhamento.',
-  ],
-  leitura_estrategica: [
-    'O lead já tem experiência prática, entende operação e está vendendo rápido, mas ainda precisa de estrutura para sair do modo correria.',
-    'O foco da conversa deve ser como acelerar a operação, organizar o catálogo e liberar Full.',
-    'Como ele quer sair do CLT por qualidade de vida, a reunião precisa mostrar caminho de transição com previsibilidade.',
-  ],
-  closer_deve_bater: [
-    'Validar a tração inicial de 104 vendas em 15 dias.',
-    'Mostrar como usar a estrutura da loja física para sustentar a operação digital.',
-    'Explicar o caminho para liberar Full e padronizar o crescimento.',
-    'Conectar a operação atual ao objetivo de qualidade de vida fora do CLT.',
+  secoes: [
+    {
+      titulo: '👤 Perfil & Contexto',
+      numerada: false,
+      itens: [
+        'Vitor está saindo do CLT com o objetivo de ganhar qualidade de vida.',
+        'Já vende no Mercado Livre há 15 dias e está estruturando o e-commerce.',
+        'Tem uma loja física com a irmã, com divisão 50/50 nas decisões de investimento.',
+      ],
+    },
+    {
+      titulo: '📈 Sinais de Tração',
+      numerada: false,
+      itens: [
+        'Em 15 dias no Mercado Livre já realizou 104 vendas.',
+        'Já superou a barreira de começar e está validando produto na prática.',
+      ],
+    },
+    {
+      titulo: '💰 Capacidade & Decisão',
+      numerada: false,
+      itens: [
+        'Há cerca de R$10 mil em estoque hoje e a intenção é usar metade no projeto.',
+        'Decisão compartilhada com a irmã, mas ele está à frente do movimento digital.',
+      ],
+    },
+    {
+      titulo: '✅ O que o closer deve bater',
+      numerada: true,
+      itens: [
+        'Validar a tração inicial de 104 vendas em 15 dias.',
+        'Mostrar como usar a loja física para sustentar a operação digital.',
+        'Conectar a operação atual ao objetivo de sair do CLT com qualidade de vida.',
+      ],
+    },
   ],
   frase_impacto:
-    'Ele já vendeu muito rápido no começo; agora a reunião precisa mostrar como transformar tração em estrutura para ele sair do CLT com segurança e sem perder o ritmo.',
+    'Ele já vendeu muito rápido no começo; agora a reunião precisa mostrar como transformar tração em estrutura para ele sair do CLT com segurança.',
 };
 
-const SYSTEM_PROMPT = `Você é um assistente de pré-vendas que lê a conversa completa de WhatsApp entre um vendedor (pré-vendedor) e um lead e produz um relatório de handoff para o closer.
+const SYSTEM_PROMPT = `Você é um assistente de pré-vendas que lê a conversa entre um vendedor e um lead e monta um relatório de handoff para o closer.
 
-REGRAS OBRIGATÓRIAS:
-- Responda APENAS com um objeto JSON válido, sem texto antes ou depois, sem blocos de markdown.
-- Use EXATAMENTE estas chaves, todas presentes, nada além delas: "lead", "status", "nicho", "investimento", "perfil_contexto", "momento_atual", "sinais_tracao", "capacidade_decisao", "agendamento_status", "leitura_estrategica", "closer_deve_bater", "frase_impacto".
-- "lead", "status", "nicho", "investimento" e "frase_impacto" são strings.
-- Os demais campos são arrays de strings (2 a 4 bullets curtos, linguagem direta e comercial, sem enrolação).
-- Use SOMENTE informações que realmente apareceram na conversa. NÃO invente números, datas ou fatos.
-- Se um campo não tiver informação suficiente na conversa, preencha com "Não identificado na conversa" (string) ou, no caso de arrays, com um único item ["Não identificado na conversa"].
-- "frase_impacto" é uma frase única e impactante, sem aspas dentro do texto.`;
+OBJETIVO: montar o MELHOR relatório possível com as informações que a conversa REALMENTE tem — não é um formulário fixo.
+
+REGRAS:
+- Use SOMENTE informações que apareceram na conversa. NÃO invente números, datas, nomes ou fatos.
+- Inclua apenas o que tem base na conversa. Se algo não foi falado, simplesmente NÃO crie a seção/linha para isso — nunca escreva "não identificado" nem force campos vazios.
+- Escolha as seções e os rótulos do resumo que fizerem sentido para ESTE lead. Use o exemplo como referência de qualidade, mas adapte livremente: remova o que não se aplica e crie seções novas se a conversa pedir.
+- Se a conversa for curta ou tiver pouca informação, faça um relatório mais curto — tudo bem.
+- Linguagem direta e comercial, sem enrolação. Bullets curtos.
+- Preencha pela ferramenta "gerar_relatorio":
+  - "lead": nome do lead (ou "" se não souber).
+  - "resumo": linhas curtas rótulo/valor para o topo (ex.: Status, Nicho, Investimento) — só as embasadas na conversa.
+  - "secoes": as seções do corpo; cada uma com "titulo" (começando com um emoji) e "itens" (bullets). Use "numerada": true nas seções de passos/ações.
+  - "frase_impacto": uma frase única de fechamento (ou "" se não fizer sentido).`;
 
 function montarHistoricoFormatado(historico) {
   return historico
@@ -115,22 +112,35 @@ function extrairJson(texto) {
   throw new Error('A LLM não retornou um JSON válido.');
 }
 
-/** Garante que todos os campos existem e têm o tipo certo. */
+/** Normaliza a saída flexível: valida resumo/seções e descarta vazios. */
 function normalizarDados(dados) {
   const out = {};
-  for (const campo of CAMPOS_TEXTO) {
-    const v = dados[campo];
-    out[campo] = typeof v === 'string' && v.trim() ? v.trim() : 'Não identificado na conversa';
-  }
-  for (const campo of CAMPOS_LISTA) {
-    const v = dados[campo];
-    if (Array.isArray(v) && v.length > 0) {
-      out[campo] = v.map((x) => String(x).trim()).filter(Boolean);
-      if (out[campo].length === 0) out[campo] = ['Não identificado na conversa'];
-    } else {
-      out[campo] = ['Não identificado na conversa'];
-    }
-  }
+  out.lead = typeof dados.lead === 'string' ? dados.lead.trim() : '';
+  out.frase_impacto = typeof dados.frase_impacto === 'string' ? dados.frase_impacto.trim() : '';
+
+  out.resumo = Array.isArray(dados.resumo)
+    ? dados.resumo
+        .filter(
+          (r) =>
+            r &&
+            typeof r.rotulo === 'string' &&
+            typeof r.valor === 'string' &&
+            r.rotulo.trim() &&
+            r.valor.trim()
+        )
+        .map((r) => ({ rotulo: r.rotulo.trim(), valor: r.valor.trim() }))
+    : [];
+
+  out.secoes = Array.isArray(dados.secoes)
+    ? dados.secoes
+        .map((s) => ({
+          titulo: typeof s.titulo === 'string' ? s.titulo.trim() : '',
+          numerada: !!s.numerada,
+          itens: Array.isArray(s.itens) ? s.itens.map((x) => String(x).trim()).filter(Boolean) : [],
+        }))
+        .filter((s) => s.titulo && s.itens.length > 0)
+    : [];
+
   return out;
 }
 
@@ -138,28 +148,39 @@ function normalizarDados(dados) {
 // sem texto em volta (mais confiável que pedir JSON no texto).
 const REPORT_TOOL = {
   name: 'gerar_relatorio',
-  description: 'Registra o relatório de handoff de pré-vendas extraído da conversa.',
+  description: 'Monta o relatório de handoff com as informações disponíveis na conversa.',
   input_schema: {
     type: 'object',
     properties: {
-      lead: { type: 'string' },
-      status: { type: 'string' },
-      nicho: { type: 'string' },
-      investimento: { type: 'string' },
-      perfil_contexto: { type: 'array', items: { type: 'string' } },
-      momento_atual: { type: 'array', items: { type: 'string' } },
-      sinais_tracao: { type: 'array', items: { type: 'string' } },
-      capacidade_decisao: { type: 'array', items: { type: 'string' } },
-      agendamento_status: { type: 'array', items: { type: 'string' } },
-      leitura_estrategica: { type: 'array', items: { type: 'string' } },
-      closer_deve_bater: { type: 'array', items: { type: 'string' } },
+      lead: { type: 'string', description: 'Nome do lead, ou "" se não souber.' },
+      resumo: {
+        type: 'array',
+        description: 'Linhas rótulo/valor para o topo (só as embasadas na conversa).',
+        items: {
+          type: 'object',
+          properties: {
+            rotulo: { type: 'string' },
+            valor: { type: 'string' },
+          },
+          required: ['rotulo', 'valor'],
+        },
+      },
+      secoes: {
+        type: 'array',
+        description: 'Seções do corpo do relatório, na ordem em que devem aparecer.',
+        items: {
+          type: 'object',
+          properties: {
+            titulo: { type: 'string', description: 'Título da seção, começando com um emoji.' },
+            itens: { type: 'array', items: { type: 'string' }, description: 'Bullets curtos.' },
+            numerada: { type: 'boolean', description: 'true = lista numerada (passos/ações).' },
+          },
+          required: ['titulo', 'itens'],
+        },
+      },
       frase_impacto: { type: 'string' },
     },
-    required: [
-      'lead', 'status', 'nicho', 'investimento', 'perfil_contexto', 'momento_atual',
-      'sinais_tracao', 'capacidade_decisao', 'agendamento_status', 'leitura_estrategica',
-      'closer_deve_bater', 'frase_impacto',
-    ],
+    required: ['lead', 'resumo', 'secoes'],
   },
 };
 
@@ -288,7 +309,7 @@ async function processarComLLM(userPrompt, nome) {
   dados = normalizarDados(dados);
 
   // Se a LLM não achou o nome, usa o nome informado (contato/lead).
-  if ((!dados.lead || dados.lead === 'Não identificado na conversa') && nome && nome.trim()) {
+  if (!dados.lead && nome && nome.trim()) {
     dados.lead = nome.trim();
   }
   return dados;

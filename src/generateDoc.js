@@ -20,17 +20,6 @@ const {
 
 const OUTPUT_DIR = path.join(__dirname, '..', 'output');
 
-// Ordem e rótulo/ícone de cada seção (chave do schema -> título com ícone).
-const SECOES = [
-  { chave: 'perfil_contexto', titulo: '👤 PERFIL & CONTEXTO', numerada: false },
-  { chave: 'momento_atual', titulo: '📍 MOMENTO ATUAL', numerada: false },
-  { chave: 'sinais_tracao', titulo: '📈 SINAIS DE TRAÇÃO', numerada: false },
-  { chave: 'capacidade_decisao', titulo: '💰 CAPACIDADE & DECISÃO', numerada: false },
-  { chave: 'agendamento_status', titulo: '📅 AGENDAMENTO & STATUS', numerada: false },
-  { chave: 'leitura_estrategica', titulo: '🎯 LEITURA ESTRATÉGICA', numerada: false },
-  { chave: 'closer_deve_bater', titulo: '✅ O QUE O CLOSER DEVE BATER', numerada: true },
-];
-
 function slugify(texto) {
   return String(texto || 'lead')
     .normalize('NFD')
@@ -76,8 +65,8 @@ function linhaTabela(rotulo, valor) {
 }
 
 /**
- * Gera o .docx de handoff.
- * @param {object} dados objeto no schema do relatório
+ * Gera o .docx de handoff a partir da estrutura flexível.
+ * @param {{lead?:string, resumo?:Array, secoes?:Array, frase_impacto?:string}} dados
  * @param {string} jid usado como fallback no nome do arquivo
  * @returns {Promise<string>} caminho absoluto do arquivo gerado
  */
@@ -85,49 +74,45 @@ async function gerarDocx(dados, jid) {
   if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true });
 
   const company = process.env.COMPANY_NAME || 'Empresa';
-
   const children = [];
 
   // Título (heading 1, negrito)
   children.push(
     new Paragraph({
       heading: HeadingLevel.HEADING_1,
-      children: [
-        new TextRun({ text: `📋 HANDOFF DE PRÉ-VENDAS – ${company}`, bold: true }),
-      ],
+      children: [new TextRun({ text: `📋 HANDOFF DE PRÉ-VENDAS – ${company}`, bold: true })],
     })
   );
   children.push(new Paragraph({ text: '' }));
 
-  // Tabela 4 linhas fixas
-  children.push(
-    new Table({
-      width: { size: 100, type: WidthType.PERCENTAGE },
-      borders: {
-        ...bordaSimples(),
-        insideHorizontal: { style: BorderStyle.SINGLE, size: 4, color: '999999' },
-        insideVertical: { style: BorderStyle.SINGLE, size: 4, color: '999999' },
-      },
-      rows: [
-        linhaTabela('Lead', dados.lead),
-        linhaTabela('Status', dados.status),
-        linhaTabela('Nicho', dados.nicho),
-        linhaTabela('Investimento', dados.investimento),
-      ],
-    })
-  );
-  children.push(new Paragraph({ text: '' }));
+  // Tabela de resumo: linha "Lead" (se houver) + as linhas que a IA montou.
+  const linhas = [];
+  if (dados.lead) linhas.push(linhaTabela('Lead', dados.lead));
+  (dados.resumo || []).forEach((r) => linhas.push(linhaTabela(r.rotulo, r.valor)));
+  if (linhas.length > 0) {
+    children.push(
+      new Table({
+        width: { size: 100, type: WidthType.PERCENTAGE },
+        borders: {
+          ...bordaSimples(),
+          insideHorizontal: { style: BorderStyle.SINGLE, size: 4, color: '999999' },
+          insideVertical: { style: BorderStyle.SINGLE, size: 4, color: '999999' },
+        },
+        rows: linhas,
+      })
+    );
+    children.push(new Paragraph({ text: '' }));
+  }
 
-  // Seções com bullets / lista numerada
-  for (const secao of SECOES) {
+  // Seções (títulos + bullets/lista numerada), na ordem que a IA definiu.
+  (dados.secoes || []).forEach((secao) => {
     children.push(
       new Paragraph({
         heading: HeadingLevel.HEADING_2,
         children: [new TextRun({ text: secao.titulo, bold: true })],
       })
     );
-    const itens = Array.isArray(dados[secao.chave]) ? dados[secao.chave] : [];
-    itens.forEach((item, i) => {
+    (secao.itens || []).forEach((item, i) => {
       if (secao.numerada) {
         children.push(
           new Paragraph({
@@ -137,35 +122,30 @@ async function gerarDocx(dados, jid) {
         );
       } else {
         children.push(
-          new Paragraph({
-            bullet: { level: 0 },
-            children: [new TextRun({ text: item })],
-          })
+          new Paragraph({ bullet: { level: 0 }, children: [new TextRun({ text: item })] })
         );
       }
     });
     children.push(new Paragraph({ text: '' }));
+  });
+
+  // Frase de impacto (opcional): itálico, entre aspas.
+  if (dados.frase_impacto) {
+    children.push(
+      new Paragraph({
+        heading: HeadingLevel.HEADING_2,
+        children: [new TextRun({ text: '💬 FRASE DE IMPACTO', bold: true })],
+      })
+    );
+    children.push(
+      new Paragraph({
+        alignment: AlignmentType.LEFT,
+        children: [new TextRun({ text: `"${dados.frase_impacto}"`, italics: true })],
+      })
+    );
   }
 
-  // Frase de impacto (parágrafo único, itálico, entre aspas)
-  children.push(
-    new Paragraph({
-      heading: HeadingLevel.HEADING_2,
-      children: [new TextRun({ text: '💬 FRASE DE IMPACTO', bold: true })],
-    })
-  );
-  children.push(
-    new Paragraph({
-      alignment: AlignmentType.LEFT,
-      children: [
-        new TextRun({ text: `"${dados.frase_impacto}"`, italics: true }),
-      ],
-    })
-  );
-
-  const doc = new Document({
-    sections: [{ properties: {}, children }],
-  });
+  const doc = new Document({ sections: [{ properties: {}, children }] });
 
   const nome = `relatorio_${slugify(dados.lead || jid)}_${timestampArquivo()}.docx`;
   const caminho = path.join(OUTPUT_DIR, nome);
