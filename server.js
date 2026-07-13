@@ -8,6 +8,7 @@ const express = require('express');
 
 const { gerarReportDireto, gerarReportDeTexto } = require('./src/report');
 const { transcribeBuffer } = require('./src/transcribe');
+const voz = require('./src/voiceprint');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -64,7 +65,7 @@ app.get('/manual', (_req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'manual.html'));
 });
 
-// POST /api/transcrever — recebe um arquivo de áudio (corpo binário) e devolve o texto
+// POST /api/transcrever — transcreve o áudio e, se houver voz cadastrada, marca EU/LEAD
 app.post(
   '/api/transcrever',
   express.raw({ type: () => true, limit: '100mb' }),
@@ -77,12 +78,57 @@ app.post(
       const nomeArq = (req.query.nome || '').toString();
       const ext = path.extname(nomeArq) || '.ogg';
       const texto = await transcribeBuffer(buffer, ext);
-      res.json({ texto });
+
+      // Classificação de voz é best-effort: nunca derruba a transcrição.
+      let quem = null;
+      let similaridade = null;
+      try {
+        if (voz.temVoiceprint()) {
+          const c = await voz.classificar(buffer, ext);
+          quem = c.quem;
+          similaridade = c.similaridade;
+        }
+      } catch (e) {
+        console.error('[voz] classificação falhou:', e.message);
+      }
+
+      res.json({ texto, quem, similaridade });
     } catch (err) {
       res.status(500).json({ erro: err.message });
     }
   }
 );
+
+// GET /api/voz — status do cadastro da sua voz
+app.get('/api/voz', (_req, res) => {
+  res.json({ cadastrada: voz.temVoiceprint() });
+});
+
+// POST /api/voz/cadastrar — recebe uma amostra da sua voz e guarda a impressão vocal
+app.post(
+  '/api/voz/cadastrar',
+  express.raw({ type: () => true, limit: '100mb' }),
+  async (req, res) => {
+    try {
+      const buffer = req.body;
+      if (!buffer || !buffer.length) {
+        return res.status(400).json({ erro: 'Nenhum áudio recebido.' });
+      }
+      const ext = path.extname((req.query.nome || '').toString()) || '.ogg';
+      const emb = await voz.embedBuffer(buffer, ext);
+      voz.salvarVoiceprint(emb);
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ erro: 'Não consegui processar sua voz: ' + err.message });
+    }
+  }
+);
+
+// POST /api/voz/remover — apaga a voz cadastrada
+app.post('/api/voz/remover', (_req, res) => {
+  voz.removerVoiceprint();
+  res.json({ ok: true });
+});
 
 // POST /api/report-texto — gera o report a partir da conversa colada como texto
 app.post('/api/report-texto', async (req, res) => {

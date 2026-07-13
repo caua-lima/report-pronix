@@ -140,6 +140,22 @@
   </header>
 
   <div class="wrap">
+    <!-- Sua voz (cadastro único) -->
+    <div class="card" id="vozCard">
+      <div class="step-head">
+        <div class="step-num">★</div>
+        <div class="step-title">Sua voz <span style="font-weight:500;color:var(--muted)">(cadastre uma vez)</span></div>
+      </div>
+      <div class="step-sub">Com sua voz cadastrada, o app marca cada áudio como <b>EU</b> ou <b>LEAD</b> automaticamente.</div>
+      <div id="vozStatus" class="status"></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:6px">
+        <input id="vozFile" type="file" accept="audio/*,.ogg,.opus,.m4a,.mp3,.aac,.wav" class="hidden" />
+        <button id="vozBtn" class="btn" style="padding:11px 16px;font-size:.92rem">Cadastrar minha voz</button>
+        <a id="vozRemover" href="#" class="hidden" style="font-size:.85rem;color:var(--danger)">remover voz cadastrada</a>
+      </div>
+      <div class="hint">Suba um áudio curto <b>só seu</b> (10–20s falando normalmente). Precisa da lib de voz: <code>pip install resemblyzer --break-system-packages</code>. Sem ela, os áudios entram como <code>(áudio)</code> normalmente.</div>
+    </div>
+
     <!-- Passo 1: áudios -->
     <div class="card">
       <div class="step-head">
@@ -284,9 +300,12 @@ LEAD: Uns 5 mil tranquilo.</div>
           const data = await r.json();
           if (!r.ok) throw new Error(data.erro || 'falhou');
           const texto = (data.texto || '').trim();
-          appendConversa(`(áudio): ${texto || '[áudio sem fala reconhecida]'}`);
+          const prefixo = data.quem ? `${data.quem}:` : '(áudio):';
+          appendConversa(`${prefixo} ${texto || '[áudio sem fala reconhecida]'}`);
+          const conf = data.similaridade != null ? ` (${Math.round(data.similaridade * 100)}%)` : '';
+          const marca = data.quem ? `${data.quem}${conf}` : 'adicionado';
           row.className = 'file-row ok';
-          row.innerHTML = `<span>✅</span><span class="nm">${escapeHtml(f.name)}</span><span class="st">adicionado</span>`;
+          row.innerHTML = `<span>✅</span><span class="nm">${escapeHtml(f.name)}</span><span class="st">${marca}</span>`;
           ok++;
         } catch (err) {
           row.className = 'file-row err';
@@ -312,6 +331,58 @@ LEAD: Uns 5 mil tranquilo.</div>
     );
 
     $('gerar').addEventListener('click', gerar);
+
+    // ---------- Sua voz (cadastro) ----------
+    function vozUI(cadastrada) {
+      if (cadastrada) {
+        setStatus('vozStatus', 'Voz cadastrada — os áudios serão marcados EU/LEAD automaticamente.', { ok: true });
+        $('vozBtn').textContent = 'Recadastrar minha voz';
+        $('vozRemover').classList.remove('hidden');
+      } else {
+        setStatus('vozStatus', 'Nenhuma voz cadastrada — os áudios entram como (áudio).');
+        $('vozBtn').textContent = 'Cadastrar minha voz';
+        $('vozRemover').classList.add('hidden');
+      }
+    }
+
+    async function carregarVoz() {
+      try {
+        const r = await fetch('/api/voz');
+        const j = await r.json();
+        vozUI(!!j.cadastrada);
+      } catch (_) {
+        setStatus('vozStatus', 'Servidor indisponível.', { erro: true });
+      }
+    }
+
+    async function cadastrarVoz(file) {
+      setStatus('vozStatus', 'Processando sua voz…', { loading: true });
+      try {
+        const r = await fetch('/api/voz/cadastrar?nome=' + encodeURIComponent(file.name), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/octet-stream' },
+          body: file,
+        });
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.erro || 'Falha ao cadastrar.');
+        vozUI(true);
+      } catch (err) {
+        setStatus('vozStatus', '❌ ' + err.message, { erro: true });
+      }
+    }
+
+    $('vozBtn').addEventListener('click', () => $('vozFile').click());
+    $('vozFile').addEventListener('change', () => {
+      if ($('vozFile').files[0]) cadastrarVoz($('vozFile').files[0]);
+      $('vozFile').value = '';
+    });
+    $('vozRemover').addEventListener('click', async (e) => {
+      e.preventDefault();
+      await fetch('/api/voz/remover', { method: 'POST' });
+      vozUI(false);
+    });
+
+    carregarVoz();
   </script>
 </body>
 </html>
