@@ -3,19 +3,17 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Closer Report — Montar conversa</title>
+  <title>Closer Report — Gerar relatório</title>
   <style>
     :root {
       --bg: #eef2f7; --card: #ffffff; --border: #e3e8ef; --text: #0f172a; --muted: #64748b;
       --primary: #0f9d76; --primary-hover: #0c8465; --primary-soft: #e7f6f1; --danger: #dc2626;
-      --eu: #d9f6ea; --eu-border: #a9e6cd; --eles: #f1f5f9; --eles-border: #e2e8f0;
       --ring: rgba(15,157,118,.25); --shadow: 0 1px 3px rgba(15,23,42,.08), 0 1px 2px rgba(15,23,42,.04);
     }
     @media (prefers-color-scheme: dark) {
       :root {
         --bg: #0b1220; --card: #131c2b; --border: #263248; --text: #e6edf6; --muted: #93a1b5;
         --primary: #16b487; --primary-hover: #12a079; --primary-soft: #123027; --danger: #f87171;
-        --eu: #143a2c; --eu-border: #1e5e46; --eles: #1b2536; --eles-border: #2a374d;
         --ring: rgba(22,180,135,.3); --shadow: 0 1px 3px rgba(0,0,0,.4);
       }
     }
@@ -23,24 +21,25 @@
     html, body { margin: 0; }
     body { font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); line-height: 1.55; -webkit-font-smoothing: antialiased; }
     code { background: var(--bg); padding: 1px 5px; border-radius: 5px; font-size: .85em; }
+    a { color: var(--primary); }
 
     header { position: sticky; top: 0; z-index: 10; background: color-mix(in srgb, var(--card) 88%, transparent); backdrop-filter: saturate(1.2) blur(8px); border-bottom: 1px solid var(--border); }
-    .header-in { max-width: 820px; margin: 0 auto; padding: 14px 24px; display: flex; align-items: center; gap: 12px; }
+    .header-in { max-width: 780px; margin: 0 auto; padding: 14px 24px; display: flex; align-items: center; gap: 12px; }
     .logo { width: 34px; height: 34px; border-radius: 9px; flex: none; background: linear-gradient(135deg, var(--primary), #0bbf8e); display: grid; place-items: center; font-size: 18px; color: #fff; box-shadow: 0 4px 12px var(--ring); }
     .brand { font-weight: 700; font-size: 1.02rem; }
     .brand small { display: block; font-weight: 500; font-size: .76rem; color: var(--muted); }
 
-    .wrap { max-width: 820px; margin: 0 auto; padding: 22px 24px 60px; }
-    .card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 18px; margin-bottom: 18px; box-shadow: var(--shadow); }
+    .wrap { max-width: 780px; margin: 0 auto; padding: 24px; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 20px; margin-bottom: 18px; box-shadow: var(--shadow); }
     .head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
-    .head .t { font-weight: 700; font-size: 1rem; }
+    .head .t { font-weight: 700; font-size: 1.02rem; }
     .head .sub { font-size: .8rem; color: var(--muted); font-weight: 500; }
 
-    label { display: block; font-size: .82rem; font-weight: 600; color: var(--muted); margin-bottom: 7px; }
-    input[type=text], textarea { width: 100%; padding: 11px 12px; border-radius: 11px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: .95rem; font-family: inherit; }
-    input[type=text]:focus, textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 4px var(--ring); }
+    label { display: block; font-size: .82rem; font-weight: 600; color: var(--muted); margin-bottom: 8px; }
+    textarea { width: 100%; padding: 12px 13px; border-radius: 11px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: .95rem; font-family: inherit; line-height: 1.6; min-height: 300px; resize: vertical; }
+    textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 4px var(--ring); }
 
-    .btn { border: none; border-radius: 11px; padding: 12px 18px; font-size: .98rem; font-weight: 700; cursor: pointer; background: var(--primary); color: #fff; transition: background .15s, transform .05s; box-shadow: 0 6px 18px var(--ring); }
+    .btn { border: none; border-radius: 12px; padding: 14px 22px; font-size: 1rem; font-weight: 700; cursor: pointer; background: var(--primary); color: #fff; transition: background .15s, transform .05s; box-shadow: 0 6px 18px var(--ring); }
     .btn:hover { background: var(--primary-hover); } .btn:active { transform: translateY(1px); }
     .btn:disabled { opacity: .55; cursor: not-allowed; box-shadow: none; }
     .btn.sec { background: transparent; color: var(--text); border: 1px solid var(--border); box-shadow: none; }
@@ -51,32 +50,22 @@
     .spinner { width: 15px; height: 15px; border: 2px solid color-mix(in srgb, var(--muted) 35%, transparent); border-top-color: var(--primary); border-radius: 50%; animation: spin .8s linear infinite; flex: none; }
     @keyframes spin { to { transform: rotate(360deg); } }
     .hidden { display: none; }
-    .hint { font-size: .8rem; color: var(--muted); margin-top: 8px; }
-
-    /* Chat / timeline */
-    .chat { border: 1px solid var(--border); border-radius: 14px; background: var(--bg); overflow: hidden; }
-    .chat.drag { border-color: var(--primary); box-shadow: 0 0 0 4px var(--ring) inset; }
-    .timeline { min-height: 180px; max-height: 46vh; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 8px; }
-    .empty { color: var(--muted); font-size: .88rem; text-align: center; margin: auto; padding: 30px 10px; }
-    .msg { max-width: 82%; padding: 8px 11px; border-radius: 12px; font-size: .92rem; position: relative; border: 1px solid transparent; }
-    .msg .meta { font-size: .68rem; font-weight: 700; letter-spacing: .02em; opacity: .8; margin-bottom: 2px; display: flex; align-items: center; gap: 5px; cursor: pointer; }
-    .msg.eu { align-self: flex-end; background: var(--eu); border-color: var(--eu-border); }
-    .msg.eles { align-self: flex-start; background: var(--eles); border-color: var(--eles-border); }
-    .msg .content { white-space: pre-wrap; word-break: break-word; }
-    .msg .del { position: absolute; top: 4px; right: 6px; color: var(--muted); cursor: pointer; font-size: .8rem; opacity: 0; }
-    .msg:hover .del { opacity: 1; }
-
-    .composer { border-top: 1px solid var(--border); padding: 10px; display: flex; flex-direction: column; gap: 8px; background: var(--card); }
-    .composer .row { display: flex; gap: 8px; align-items: flex-end; }
-    .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 9px; overflow: hidden; flex: none; }
-    .seg button { border: none; background: transparent; color: var(--muted); font-weight: 700; padding: 8px 12px; cursor: pointer; font-size: .82rem; }
-    .seg button.on { background: var(--primary); color: #fff; }
-    .composer textarea { min-height: 42px; max-height: 130px; border-radius: 10px; resize: none; }
-    .icon-btn { flex: none; width: 42px; height: 42px; border-radius: 10px; border: 1px solid var(--border); background: var(--card); cursor: pointer; font-size: 18px; }
-    .icon-btn:hover { border-color: var(--primary); }
-
-    /* Voz + resultado */
+    .hint { font-size: .8rem; color: var(--muted); margin-top: 10px; }
     .row-wrap { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+
+    /* Dropzone */
+    .dropzone { border: 2px dashed var(--border); border-radius: 13px; padding: 26px 18px; text-align: center; cursor: pointer; transition: all .15s; background: var(--bg); margin-bottom: 14px; }
+    .dropzone:hover { border-color: var(--primary); background: var(--primary-soft); }
+    .dropzone.drag { border-color: var(--primary); background: var(--primary-soft); box-shadow: 0 0 0 4px var(--ring); }
+    .dropzone .ic { font-size: 28px; } .dropzone .big { font-weight: 700; margin-top: 6px; } .dropzone .small { font-size: .82rem; color: var(--muted); margin-top: 2px; }
+    .files { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+    .file-row { display: flex; align-items: center; gap: 9px; font-size: .85rem; padding: 7px 11px; border: 1px solid var(--border); border-radius: 9px; background: var(--bg); }
+    .file-row .nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .file-row .st { flex: none; color: var(--muted); font-size: .8rem; }
+    .file-row.ok { border-color: color-mix(in srgb, var(--primary) 45%, var(--border)); }
+    .file-row.err .st { color: var(--danger); }
+
+    /* Report */
     .result-head { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 6px; }
     .dl { display: inline-flex; align-items: center; gap: 7px; background: var(--primary); color: #fff; font-weight: 700; text-decoration: none; padding: 11px 18px; border-radius: 11px; box-shadow: 0 6px 18px var(--ring); }
     .report h2 { font-size: 1rem; margin: 18px 0 6px; }
@@ -86,14 +75,13 @@
     .report ul, .report ol { margin: 4px 0 10px; padding-left: 20px; }
     .report li { margin: 4px 0; font-size: .92rem; }
     .frase { font-style: italic; background: var(--primary-soft); border-left: 3px solid var(--primary); padding: 10px 14px; border-radius: 0 8px 8px 0; }
-    a { color: var(--primary); }
   </style>
 </head>
 <body>
   <header>
     <div class="header-in">
       <div class="logo">📋</div>
-      <div class="brand">Closer Report<small>Monte a conversa e gere o relatório</small></div>
+      <div class="brand">Closer Report<small>Cole a conversa, jogue os áudios, gere o relatório</small></div>
     </div>
   </header>
 
@@ -102,7 +90,7 @@
     <div class="card">
       <div class="head">
         <div class="t">🎙️ Sua voz</div>
-        <div class="sub">(cadastre uma vez — os áudios são marcados EU/LEAD sozinhos)</div>
+        <div class="sub">(cadastre uma vez — os áudios são reconhecidos EU/LEAD sozinhos)</div>
       </div>
       <div id="vozStatus" class="status"></div>
       <div class="row-wrap" style="margin-top:6px">
@@ -110,41 +98,27 @@
         <button id="vozBtn" class="btn sec">Cadastrar minha voz</button>
         <a id="vozRemover" href="#" class="hidden" style="font-size:.85rem;color:var(--danger)">remover</a>
       </div>
-      <div class="hint">Suba um áudio curto só seu (10–20s). Fica salvo. Precisa de <code>pip install resemblyzer --break-system-packages</code>; sem isso, você escolhe EU/LEAD na mão.</div>
+      <div class="hint">Suba um áudio curto só seu (10–20s). Fica salvo. Precisa de <code>pip install resemblyzer --break-system-packages</code>.</div>
     </div>
 
-    <!-- Nome -->
-    <div class="card">
-      <label for="nome">Nome do lead (opcional)</label>
-      <input id="nome" type="text" placeholder="Ex.: Anderson Alves Mendes" />
-    </div>
-
-    <!-- Chat / linha do tempo -->
+    <!-- Conversa -->
     <div class="card">
       <div class="head">
         <div class="t">💬 Conversa</div>
-        <div class="sub">— digite mensagens e solte os áudios; tudo entra na ordem</div>
+        <div class="sub">— jogue os áudios e cole o texto; tudo vira o report</div>
       </div>
 
-      <div id="chat" class="chat">
-        <div id="timeline" class="timeline">
-          <div class="empty" id="empty">Comece adicionando mensagens abaixo ou <b>arrastando os áudios</b> para cá.</div>
-        </div>
-        <div class="composer">
-          <div class="row">
-            <div class="seg" id="seg">
-              <button data-v="eles" class="on">LEAD</button>
-              <button data-v="eu">EU</button>
-            </div>
-            <textarea id="entrada" placeholder="Escreva ou cole uma mensagem… (Enter envia, Shift+Enter quebra linha)"></textarea>
-            <button id="attach" class="icon-btn" title="Anexar áudios">🎤</button>
-            <button id="add" class="btn">Adicionar</button>
-          </div>
-          <input id="audio" type="file" accept="audio/*,.ogg,.opus,.m4a,.mp3,.aac,.wav" multiple class="hidden" />
-          <div id="statusAudio" class="status"></div>
-        </div>
+      <div id="dropzone" class="dropzone">
+        <div class="ic">🎧</div>
+        <div class="big">Arraste os áudios aqui</div>
+        <div class="small">ou clique para selecionar · vários de uma vez · o texto entra na conversa abaixo</div>
       </div>
-      <div class="hint">Dica: cole um trecho grande de uma vez — cada linha vira uma mensagem do lado selecionado. Clique no rótulo (EU/LEAD) de uma mensagem para trocá-lo.</div>
+      <input id="audio" type="file" accept="audio/*,.ogg,.opus,.m4a,.mp3,.aac,.wav" multiple class="hidden" />
+      <div id="files" class="files"></div>
+      <div id="statusAudio" class="status" style="margin-top:0"></div>
+
+      <label for="texto" style="margin-top:14px">Cole a conversa aqui (o texto dos áudios entra sozinho)</label>
+      <textarea id="texto" placeholder="Cole a conversa inteira aqui…"></textarea>
     </div>
 
     <button id="gerar" class="btn btn-block">Gerar Report</button>
@@ -152,7 +126,7 @@
 
     <div id="resultado" class="card hidden" style="margin-top:18px">
       <div class="result-head">
-        <div class="t" style="font-weight:700;font-size:1.05rem">✅ Report gerado</div>
+        <div style="font-weight:700;font-size:1.05rem">✅ Report gerado</div>
         <a id="dl" class="dl" target="_blank">⬇ Baixar .docx</a>
       </div>
       <div id="report" class="report"></div>
@@ -161,8 +135,6 @@
 
   <script>
     const $ = (id) => document.getElementById(id);
-    let mensagens = []; // { from:'eu'|'eles', type:'texto'|'audio', content }
-    let ladoAtual = 'eles';
 
     function setStatus(id, txt, opts) {
       const o = opts || {}; const el = $(id);
@@ -172,64 +144,27 @@
     function escapeHtml(s) {
       return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     }
-
-    // ---------- Timeline ----------
-    function render() {
-      const tl = $('timeline');
-      $('empty').style.display = mensagens.length ? 'none' : '';
-      tl.querySelectorAll('.msg').forEach((n) => n.remove());
-      mensagens.forEach((m, i) => {
-        const div = document.createElement('div');
-        div.className = 'msg ' + (m.from === 'eu' ? 'eu' : 'eles');
-        const quem = m.from === 'eu' ? 'EU' : 'LEAD';
-        const ic = m.type === 'audio' ? '🎤 ' : '';
-        div.innerHTML =
-          `<div class="meta" data-i="${i}" title="Trocar EU/LEAD">${ic}${quem} ⇄</div>` +
-          `<div class="content">${escapeHtml(m.content)}</div>` +
-          `<span class="del" data-i="${i}" title="Remover">✕</span>`;
-        tl.appendChild(div);
-      });
-      tl.scrollTop = tl.scrollHeight;
+    function appendConversa(linha) {
+      const ta = $('texto');
+      ta.value = (ta.value.trim() ? ta.value.replace(/\s*$/, '') + '\n' : '') + linha + '\n';
+      ta.scrollTop = ta.scrollHeight;
     }
-    function addMsg(from, type, content) {
-      const c = (content || '').trim();
-      if (!c) return;
-      mensagens.push({ from, type, content: c });
-    }
-    $('timeline').addEventListener('click', (e) => {
-      const meta = e.target.closest('.meta');
-      const del = e.target.closest('.del');
-      if (meta) { const i = +meta.dataset.i; mensagens[i].from = mensagens[i].from === 'eu' ? 'eles' : 'eu'; render(); }
-      else if (del) { mensagens.splice(+del.dataset.i, 1); render(); }
-    });
-
-    // Segmento EU/LEAD
-    $('seg').addEventListener('click', (e) => {
-      const b = e.target.closest('button'); if (!b) return;
-      ladoAtual = b.dataset.v;
-      [...$('seg').children].forEach((c) => c.classList.toggle('on', c === b));
-    });
-
-    // Adicionar texto (cada linha vira uma mensagem)
-    function adicionarTexto() {
-      const val = $('entrada').value;
-      if (!val.trim()) return;
-      val.split('\n').map((l) => l.trim()).filter(Boolean).forEach((l) => addMsg(ladoAtual, 'texto', l));
-      $('entrada').value = '';
-      render();
-    }
-    $('add').addEventListener('click', adicionarTexto);
-    $('entrada').addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); adicionarTexto(); }
-    });
 
     // ---------- Áudios ----------
+    function fileRow(nome) {
+      const row = document.createElement('div');
+      row.className = 'file-row';
+      row.innerHTML = `<span class="spinner"></span><span class="nm">${escapeHtml(nome)}</span><span class="st">transcrevendo…</span>`;
+      $('files').appendChild(row);
+      return row;
+    }
     async function transcreverFiles(files) {
       const lista = [...files].filter((f) => f && f.size);
       if (!lista.length) return;
       setStatus('statusAudio', `Transcrevendo ${lista.length} áudio(s)…`, { loading: true });
       let ok = 0;
       for (const f of lista) {
+        const row = fileRow(f.name);
         try {
           const r = await fetch('/api/transcrever?nome=' + encodeURIComponent(f.name), {
             method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: f,
@@ -237,24 +172,27 @@
           const data = await r.json();
           if (!r.ok) throw new Error(data.erro || 'falhou');
           const texto = (data.texto || '').trim() || '[áudio sem fala reconhecida]';
-          const from = data.quem === 'EU' ? 'eu' : data.quem === 'LEAD' ? 'eles' : ladoAtual;
-          addMsg(from, 'audio', texto);
-          render();
+          const prefixo = data.quem ? `${data.quem}:` : '(áudio):';
+          appendConversa(`${prefixo} ${texto}`);
+          const conf = data.similaridade != null ? ` (${Math.round(data.similaridade * 100)}%)` : '';
+          const marca = data.quem ? `${data.quem}${conf}` : 'adicionado';
+          row.className = 'file-row ok';
+          row.innerHTML = `<span>✅</span><span class="nm">${escapeHtml(f.name)}</span><span class="st">${marca}</span>`;
           ok++;
         } catch (err) {
-          setStatus('statusAudio', '❌ ' + f.name + ': ' + err.message, { erro: true });
+          row.className = 'file-row err';
+          row.innerHTML = `<span>⚠️</span><span class="nm">${escapeHtml(f.name)}</span><span class="st">${escapeHtml(err.message)}</span>`;
         }
       }
-      if (ok) setStatus('statusAudio', `${ok} áudio(s) adicionado(s) à conversa.`, { ok: true });
+      setStatus('statusAudio', `${ok} de ${lista.length} áudio(s) na conversa.`, { ok: ok > 0, erro: ok === 0 });
     }
-    $('attach').addEventListener('click', () => $('audio').click());
+    const dz = $('dropzone');
+    dz.addEventListener('click', () => $('audio').click());
+    dz.addEventListener('dragover', (e) => { e.preventDefault(); dz.classList.add('drag'); });
+    dz.addEventListener('dragleave', () => dz.classList.remove('drag'));
+    dz.addEventListener('drop', (e) => { e.preventDefault(); dz.classList.remove('drag'); transcreverFiles(e.dataTransfer.files); });
     $('audio').addEventListener('change', () => { transcreverFiles($('audio').files); $('audio').value = ''; });
-
-    const chat = $('chat');
-    chat.addEventListener('dragover', (e) => { e.preventDefault(); chat.classList.add('drag'); });
-    chat.addEventListener('dragleave', (e) => { if (!chat.contains(e.relatedTarget)) chat.classList.remove('drag'); });
-    chat.addEventListener('drop', (e) => { e.preventDefault(); chat.classList.remove('drag'); transcreverFiles(e.dataTransfer.files); });
-    ['dragover', 'drop'].forEach((ev) => window.addEventListener(ev, (e) => { if (!chat.contains(e.target)) e.preventDefault(); }));
+    ['dragover', 'drop'].forEach((ev) => window.addEventListener(ev, (e) => { if (e.target !== dz && !dz.contains(e.target)) e.preventDefault(); }));
 
     // ---------- Gerar report ----------
     function lista(arr, ord) { const t = ord ? 'ol' : 'ul'; return `<${t}>${(arr || []).map((i) => `<li>${escapeHtml(i)}</li>`).join('')}</${t}>`; }
@@ -268,13 +206,14 @@
       return tabela + secoes + frase;
     }
     async function gerar() {
-      if (mensagens.length === 0) { setStatus('status', 'Adicione a conversa antes de gerar.', { erro: true }); return; }
+      const texto = $('texto').value.trim();
+      if (!texto) { setStatus('status', 'Cole a conversa (ou jogue os áudios) antes de gerar.', { erro: true }); return; }
       $('gerar').disabled = true; $('resultado').classList.add('hidden');
       setStatus('status', 'Gerando report…', { loading: true });
       try {
-        const r = await fetch('/api/report-direto', {
+        const r = await fetch('/api/report-texto', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ mensagens, nome: $('nome').value.trim() }),
+          body: JSON.stringify({ texto }),
         });
         const data = await r.json();
         if (!r.ok) throw new Error(data.erro || 'Erro ao gerar o report.');
@@ -291,8 +230,8 @@
 
     // ---------- Voz ----------
     function vozUI(cad) {
-      if (cad) { setStatus('vozStatus', 'Voz cadastrada — áudios marcados EU/LEAD automaticamente.', { ok: true }); $('vozBtn').textContent = 'Recadastrar minha voz'; $('vozRemover').classList.remove('hidden'); }
-      else { setStatus('vozStatus', 'Nenhuma voz cadastrada — você escolhe EU/LEAD nos áudios.'); $('vozBtn').textContent = 'Cadastrar minha voz'; $('vozRemover').classList.add('hidden'); }
+      if (cad) { setStatus('vozStatus', 'Voz cadastrada — áudios reconhecidos EU/LEAD automaticamente.', { ok: true }); $('vozBtn').textContent = 'Recadastrar minha voz'; $('vozRemover').classList.remove('hidden'); }
+      else { setStatus('vozStatus', 'Nenhuma voz cadastrada — os áudios entram como (áudio).'); $('vozBtn').textContent = 'Cadastrar minha voz'; $('vozRemover').classList.add('hidden'); }
     }
     async function carregarVoz() { try { const j = await (await fetch('/api/voz')).json(); vozUI(!!j.cadastrada); } catch (_) { setStatus('vozStatus', 'Servidor indisponível.', { erro: true }); } }
     async function cadastrarVoz(file) {
@@ -308,7 +247,6 @@
     $('vozRemover').addEventListener('click', async (e) => { e.preventDefault(); await fetch('/api/voz/remover', { method: 'POST' }); vozUI(false); });
 
     carregarVoz();
-    render();
   </script>
 </body>
 </html>
