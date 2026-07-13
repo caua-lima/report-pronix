@@ -14,8 +14,8 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const OUTPUT_DIR = path.join(__dirname, 'output');
 
-// Conversas longas geram payloads grandes.
-app.use(express.json({ limit: '10mb' }));
+// Conversas longas + áudio em base64 geram payloads grandes.
+app.use(express.json({ limit: '25mb' }));
 
 // CORS — a extensão (origem chrome-extension://) chama este servidor local.
 app.use((req, res, next) => {
@@ -65,39 +65,36 @@ app.get('/manual', (_req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'manual.html'));
 });
 
-// POST /api/transcrever — transcreve o áudio e, se houver voz cadastrada, marca EU/LEAD
-app.post(
-  '/api/transcrever',
-  express.raw({ type: () => true, limit: '100mb' }),
-  async (req, res) => {
-    try {
-      const buffer = req.body;
-      if (!buffer || !buffer.length) {
-        return res.status(400).json({ erro: 'Nenhum áudio recebido.' });
-      }
-      const nomeArq = (req.query.nome || '').toString();
-      const ext = path.extname(nomeArq) || '.ogg';
-      const texto = await transcribeBuffer(buffer, ext);
-
-      // Classificação de voz é best-effort: nunca derruba a transcrição.
-      let quem = null;
-      let similaridade = null;
-      try {
-        if (voz.temVoiceprint()) {
-          const c = await voz.classificar(buffer, ext);
-          quem = c.quem;
-          similaridade = c.similaridade;
-        }
-      } catch (e) {
-        console.error('[voz] classificação falhou:', e.message);
-      }
-
-      res.json({ texto, quem, similaridade });
-    } catch (err) {
-      res.status(500).json({ erro: err.message });
+// POST /api/transcrever — recebe áudio em base64 (JSON), transcreve com Whisper local
+// e, se houver voz cadastrada, marca EU/LEAD.
+app.post('/api/transcrever', async (req, res) => {
+  try {
+    const { audioBase64, nome } = req.body || {};
+    if (!audioBase64) {
+      return res.status(400).json({ erro: 'Nenhum áudio recebido.' });
     }
+    const buffer = Buffer.from(audioBase64, 'base64');
+    const ext = path.extname((nome || '').toString()) || '.ogg';
+    const texto = await transcribeBuffer(buffer, ext);
+
+    // Classificação de voz é best-effort: nunca derruba a transcrição.
+    let quem = null;
+    let similaridade = null;
+    try {
+      if (voz.temVoiceprint()) {
+        const c = await voz.classificar(buffer, ext);
+        quem = c.quem;
+        similaridade = c.similaridade;
+      }
+    } catch (e) {
+      console.error('[voz] classificação falhou:', e.message);
+    }
+
+    res.json({ texto, quem, similaridade });
+  } catch (err) {
+    res.status(500).json({ erro: err.message });
   }
-);
+});
 
 // GET /api/voz — status do cadastro da sua voz
 app.get('/api/voz', (_req, res) => {

@@ -272,7 +272,7 @@ function normalizarMensagem(m) {
  * @param {{mensagens: Array, nome?: string}} payload
  * @returns {Promise<{dados: object, arquivo: string}>}
  */
-async function gerarReportDireto({ mensagens, nome } = {}) {
+async function dadosDireto({ mensagens, nome } = {}) {
   const historico = (Array.isArray(mensagens) ? mensagens : [])
     .map(normalizarMensagem)
     .filter((m) => m.content);
@@ -283,11 +283,13 @@ async function gerarReportDireto({ mensagens, nome } = {}) {
     );
   }
 
-  const historicoFormatado = montarHistoricoFormatado(historico);
-  const userPrompt = montarUserPrompt(historicoFormatado);
-  const dados = await processarComLLM(userPrompt, nome);
+  const userPrompt = montarUserPrompt(montarHistoricoFormatado(historico));
+  return processarComLLM(userPrompt, nome);
+}
 
-  const arquivo = await gerarDocx(dados, nome || dados.lead);
+async function gerarReportDireto(payload = {}) {
+  const dados = await dadosDireto(payload);
+  const arquivo = await gerarDocx(dados, payload.nome || dados.lead);
   return { dados, arquivo };
 }
 
@@ -321,17 +323,19 @@ async function processarComLLM(userPrompt, nome) {
  * @param {{texto: string, nome?: string}} payload
  * @returns {Promise<{dados: object, arquivo: string}>}
  */
-async function gerarReportDeTexto({ texto, nome } = {}) {
+async function dadosDeTexto({ texto, nome } = {}) {
   const conteudo = typeof texto === 'string' ? texto.trim() : '';
   if (!conteudo) {
     throw new Error('Cole a conversa antes de gerar o report.');
   }
-
   const userPrompt = montarUserPrompt(conteudo);
-  const dados = await processarComLLM(userPrompt, nome);
+  return processarComLLM(userPrompt, nome);
+}
 
-  const arquivo = await gerarDocx(dados, nome || dados.lead);
+async function gerarReportDeTexto(payload = {}) {
+  const dados = await dadosDeTexto(payload);
+  const arquivo = await gerarDocx(dados, payload.nome || dados.lead);
   return { dados, arquivo };
 }
 
-module.exports = { gerarReportDireto, gerarReportDeTexto };
+module.exports = { gerarReportDireto, gerarReportDeTexto, dadosDireto, dadosDeTexto };

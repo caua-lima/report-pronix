@@ -399,14 +399,19 @@
     return el;
   }
 
-  function mostrarBadge({ texto, cor = '#25d366', loading = false, arquivo = null, server = null }) {
+  function mostrarBadge({ texto, cor = '#25d366', loading = false, arquivo = null, server = null, docxBase64 = null }) {
     const el = badgeEl();
     el.style.borderLeftColor = cor;
     const spinner = loading
       ? '<span style="flex:none;width:14px;height:14px;border:2px solid rgba(255,255,255,.25);border-top-color:#fff;border-radius:50%;display:inline-block;animation:crspin .8s linear infinite"></span>'
       : '<span style="flex:none;font-size:15px">📋</span>';
     let acao = '';
-    if (arquivo && server) {
+    if (docxBase64) {
+      const url = 'data:application/vnd.openxmlformats-officedocument.wordprocessingml.document;base64,' + docxBase64;
+      acao =
+        `<a href="${url}" download="${arquivo || 'report.docx'}" style="display:inline-block;margin-top:8px;background:#25d366;color:#05130c;` +
+        `font-weight:700;text-decoration:none;padding:6px 10px;border-radius:7px">⬇ Baixar .docx</a>`;
+    } else if (arquivo && server) {
       const url = server + '/api/download/' + encodeURIComponent(arquivo);
       acao =
         `<a href="${url}" target="_blank" style="display:inline-block;margin-top:8px;background:#25d366;color:#05130c;` +
@@ -472,12 +477,13 @@
       }
 
       chrome.storage.local.set({
-        ultimoReport: { arquivo: resp.arquivo, dados: resp.dados, nome, server, quando: Date.now() },
+        ultimoReport: { arquivo: resp.arquivo, dados: resp.dados, docxBase64: resp.docxBase64, nome, server, quando: Date.now() },
       });
       mostrarBadge({
         texto: `<b>✅ Report pronto!</b> (${nome || 'lead'})`,
         arquivo: resp.arquivo,
         server,
+        docxBase64: resp.docxBase64,
       });
     } catch (e) {
       mostrarBadge({ texto: '❌ ' + e.message, cor: '#ff6b6b' });

@@ -1,23 +1,14 @@
-// Service worker — faz a chamada ao servidor local em nome do content script.
+// Service worker — faz as chamadas ao servidor (local ou nuvem) pelo content script.
 // (Fetch a partir da página do WhatsApp seria bloqueado pela CSP dela.)
-
-// Decodifica base64 -> Uint8Array (para reenviar o áudio ao servidor).
-function base64ToBytes(b64) {
-  const bin = atob(b64);
-  const bytes = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  return bytes;
-}
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg && msg.action === 'transcreverAudio') {
     (async () => {
       try {
-        const bytes = base64ToBytes(msg.base64);
-        const r = await fetch(msg.server + '/api/transcrever?nome=audio.ogg', {
+        const r = await fetch(msg.server + '/api/transcrever', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/octet-stream' },
-          body: bytes,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ audioBase64: msg.base64, nome: 'audio.ogg' }),
         });
         const data = await r.json();
         if (!r.ok) return sendResponse({ ok: false, erro: data.erro || 'falha' });
@@ -41,12 +32,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         if (!r.ok) {
           sendResponse({ ok: false, erro: data.erro || 'Erro ao gerar o relatório.' });
         } else {
-          sendResponse({ ok: true, dados: data.dados, arquivo: data.arquivo });
+          sendResponse({ ok: true, dados: data.dados, arquivo: data.arquivo, docxBase64: data.docxBase64 });
         }
       } catch (_) {
         sendResponse({
           ok: false,
-          erro: 'Servidor local não respondeu. Rode "npm start" e confira a porta.',
+          erro: 'Servidor não respondeu. Confira a URL do servidor no popup da extensão.',
         });
       }
     })();

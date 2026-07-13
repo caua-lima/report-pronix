@@ -86,8 +86,8 @@
   </header>
 
   <div class="wrap">
-    <!-- Voz -->
-    <div class="card">
+    <!-- Voz (só no modo local; escondido na nuvem) -->
+    <div class="card" id="vozCard">
       <div class="head">
         <div class="t">🎙️ Sua voz</div>
         <div class="sub">(cadastre uma vez — os áudios são reconhecidos EU/LEAD sozinhos)</div>
@@ -158,6 +158,14 @@
       $('files').appendChild(row);
       return row;
     }
+    function fileToBase64(file) {
+      return new Promise((resolve, reject) => {
+        const rd = new FileReader();
+        rd.onload = () => resolve(String(rd.result).split(',')[1]);
+        rd.onerror = reject;
+        rd.readAsDataURL(file);
+      });
+    }
     async function transcreverFiles(files) {
       const lista = [...files].filter((f) => f && f.size);
       if (!lista.length) return;
@@ -166,8 +174,10 @@
       for (const f of lista) {
         const row = fileRow(f.name);
         try {
-          const r = await fetch('/api/transcrever?nome=' + encodeURIComponent(f.name), {
-            method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: f,
+          const audioBase64 = await fileToBase64(f);
+          const r = await fetch('/api/transcrever', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ audioBase64, nome: f.name }),
           });
           const data = await r.json();
           if (!r.ok) throw new Error(data.erro || 'falhou');
@@ -218,7 +228,13 @@
         const data = await r.json();
         if (!r.ok) throw new Error(data.erro || 'Erro ao gerar o report.');
         $('report').innerHTML = renderReport(data.dados);
-        $('dl').href = '/api/download/' + encodeURIComponent(data.arquivo);
+        if (data.docxBase64) {
+          $('dl').href = 'data:application/vnd.openxmlformats-officedocument.wordprocessingml.document;base64,' + data.docxBase64;
+          $('dl').setAttribute('download', data.arquivo || 'report.docx');
+        } else {
+          $('dl').href = '/api/download/' + encodeURIComponent(data.arquivo);
+          $('dl').removeAttribute('download');
+        }
         $('resultado').classList.remove('hidden');
         setStatus('status', 'Report gerado com sucesso.', { ok: true });
         $('resultado').scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -233,7 +249,17 @@
       if (cad) { setStatus('vozStatus', 'Voz cadastrada — áudios reconhecidos EU/LEAD automaticamente.', { ok: true }); $('vozBtn').textContent = 'Recadastrar minha voz'; $('vozRemover').classList.remove('hidden'); }
       else { setStatus('vozStatus', 'Nenhuma voz cadastrada — os áudios entram como (áudio).'); $('vozBtn').textContent = 'Cadastrar minha voz'; $('vozRemover').classList.add('hidden'); }
     }
-    async function carregarVoz() { try { const j = await (await fetch('/api/voz')).json(); vozUI(!!j.cadastrada); } catch (_) { setStatus('vozStatus', 'Servidor indisponível.', { erro: true }); } }
+    async function carregarVoz() {
+      // Na nuvem (Vercel) não há /api/voz nem separação de voz: esconde o card.
+      try {
+        const r = await fetch('/api/voz');
+        if (!r.ok) { $('vozCard').style.display = 'none'; return; }
+        const j = await r.json();
+        vozUI(!!j.cadastrada);
+      } catch (_) {
+        $('vozCard').style.display = 'none';
+      }
+    }
     async function cadastrarVoz(file) {
       setStatus('vozStatus', 'Processando sua voz…', { loading: true });
       try {

@@ -109,7 +109,13 @@ function carregarUltimo() {
     if (!ultimoReport) return;
     $('report').innerHTML = renderReport(ultimoReport.dados);
     $('report').classList.remove('hidden');
-    $('dl').href = ultimoReport.server + '/api/download/' + encodeURIComponent(ultimoReport.arquivo);
+    if (ultimoReport.docxBase64) {
+      $('dl').href = 'data:application/vnd.openxmlformats-officedocument.wordprocessingml.document;base64,' + ultimoReport.docxBase64;
+      $('dl').setAttribute('download', ultimoReport.arquivo || 'report.docx');
+    } else {
+      $('dl').href = ultimoReport.server + '/api/download/' + encodeURIComponent(ultimoReport.arquivo);
+      $('dl').removeAttribute('download');
+    }
     $('dl').classList.remove('hidden');
     const quando = new Date(ultimoReport.quando).toLocaleString('pt-BR');
     setStatus(`Último report: ${ultimoReport.nome || 'lead'} · ${quando}`);

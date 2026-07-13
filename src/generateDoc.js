@@ -64,15 +64,8 @@ function linhaTabela(rotulo, valor) {
   });
 }
 
-/**
- * Gera o .docx de handoff a partir da estrutura flexível.
- * @param {{lead?:string, resumo?:Array, secoes?:Array, frase_impacto?:string}} dados
- * @param {string} jid usado como fallback no nome do arquivo
- * @returns {Promise<string>} caminho absoluto do arquivo gerado
- */
-async function gerarDocx(dados, jid) {
-  if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true });
-
+/** Monta o objeto Document (compartilhado por gerarDocx e gerarDocxBuffer). */
+function montarDocumento(dados) {
   const company = process.env.COMPANY_NAME || 'Empresa';
   const children = [];
 
@@ -145,13 +138,32 @@ async function gerarDocx(dados, jid) {
     );
   }
 
-  const doc = new Document({ sections: [{ properties: {}, children }] });
+  return new Document({ sections: [{ properties: {}, children }] });
+}
 
-  const nome = `relatorio_${slugify(dados.lead || jid)}_${timestampArquivo()}.docx`;
+function nomeDocx(dados, jid) {
+  return `relatorio_${slugify(dados.lead || jid)}_${timestampArquivo()}.docx`;
+}
+
+/**
+ * Gera o .docx em disco (modo local). Retorna o caminho do arquivo.
+ */
+async function gerarDocx(dados, jid) {
+  if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+  const doc = montarDocumento(dados);
+  const nome = nomeDocx(dados, jid);
   const caminho = path.join(OUTPUT_DIR, nome);
-  const buffer = await Packer.toBuffer(doc);
-  fs.writeFileSync(caminho, buffer);
+  fs.writeFileSync(caminho, await Packer.toBuffer(doc));
   return caminho;
 }
 
-module.exports = { gerarDocx, slugify };
+/**
+ * Gera o .docx em memória (serverless/Vercel). Retorna { buffer, nome }.
+ */
+async function gerarDocxBuffer(dados, jid) {
+  const doc = montarDocumento(dados);
+  const buffer = await Packer.toBuffer(doc);
+  return { buffer, nome: nomeDocx(dados, jid) };
+}
+
+module.exports = { gerarDocx, gerarDocxBuffer, slugify };
