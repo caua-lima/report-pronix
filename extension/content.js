@@ -28,50 +28,81 @@
     return btoa(bin);
   }
 
-  // Força o WhatsApp a materializar o áudio (dá play no mudo), captura os bytes
-  // do blob e pausa. Retorna base64 ou null.
+  // Blobs de áudio capturados pelo inject.js (hook do URL.createObjectURL).
+  const blobsAudio = [];
+  window.addEventListener('message', (ev) => {
+    if (ev.source === window && ev.data && ev.data.__crAudio && ev.data.url) {
+      blobsAudio.push({ url: ev.data.url, ts: ev.data.ts || Date.now() });
+      if (blobsAudio.length > 40) blobsAudio.shift();
+    }
+  });
+
+  async function bytesDeBlob(url) {
+    try {
+      const buf = await fetch(url).then((r) => r.arrayBuffer());
+      if (buf && buf.byteLength >= 300) return arrayBufferToBase64(buf);
+    } catch (_) {
+      /* revogado ou inacessível */
+    }
+    return null;
+  }
+
+  // Força o WhatsApp a materializar o áudio (baixa se preciso + play no mudo),
+  // captura os bytes (via <audio> ou via hook createObjectURL). Retorna base64 ou null.
   async function capturarBytes(el) {
+    // 1) Se houver botão de baixar (áudio não carregado ainda), clica primeiro.
+    const btnBaixar = el.querySelector(
+      '[data-icon="audio-download"], [data-icon="down"], [data-icon*="download" i], span[data-icon="audio-download"]'
+    );
+    if (btnBaixar) {
+      const alvo = btnBaixar.closest('button,[role="button"]') || btnBaixar;
+      try {
+        alvo.click();
+        await sleep(500);
+      } catch (_) {
+        /* ok */
+      }
+    }
+
+    // 2) Clica no play (dispara a descriptografia/criação do blob).
     const btn =
       el.querySelector('[data-icon*="play" i]')?.closest('button,[role="button"]') ||
       el.querySelector(
         'button[aria-label*="play" i], button[aria-label*="reproduzir" i], [role="button"][aria-label*="reproduzir" i]'
       ) ||
       el.querySelector('[data-icon*="play" i]') ||
-      el.querySelector('button');
-    if (!btn) return null;
-    try {
-      btn.click();
-    } catch (_) {
-      return null;
+      el.querySelector('button,[role="button"]');
+    const t0 = Date.now();
+    if (btn) {
+      try {
+        btn.click();
+      } catch (_) {
+        /* ok */
+      }
     }
-    let src = null;
-    for (let i = 0; i < 24; i++) {
+
+    // 3) Aguarda o blob aparecer — via <audio> OU via hook do createObjectURL.
+    for (let i = 0; i < 30; i++) {
       const a = el.querySelector('audio') || document.querySelector('audio');
       if (a) {
         a.muted = true;
         a.volume = 0;
         const s = a.currentSrc || a.src || '';
         if (s.startsWith('blob:')) {
-          src = s;
-          try {
-            a.pause();
-          } catch (_) {
-            /* ok */
-          }
-          break;
+          try { a.pause(); } catch (_) {}
+          const b64 = await bytesDeBlob(s);
+          if (b64) return b64;
         }
+      }
+      // blob capturado pelo hook depois do clique
+      const recente = blobsAudio.filter((b) => b.ts >= t0 - 500).pop();
+      if (recente) {
+        const b64 = await bytesDeBlob(recente.url);
+        if (b64) return b64;
       }
       await sleep(150);
     }
-    if (!src) return null;
-    let buf;
-    try {
-      buf = await fetch(src).then((r) => r.arrayBuffer());
-    } catch (_) {
-      return null;
-    }
-    if (!buf || buf.byteLength < 300) return null;
-    return arrayBufferToBase64(buf);
+    return null;
   }
 
   // Captura os bytes dos áudios visíveis ainda não capturados (mapeados por data-id).
