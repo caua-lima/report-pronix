@@ -6,6 +6,91 @@
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+  // Silencia qualquer <audio> que o WhatsApp criar (a captura "toca" no mudo).
+  try {
+    const mutar = () =>
+      document.querySelectorAll('audio').forEach((a) => {
+        a.muted = true;
+        a.volume = 0;
+      });
+    new MutationObserver(mutar).observe(document.documentElement, { childList: true, subtree: true });
+  } catch (_) {
+    /* ignora */
+  }
+
+  function arrayBufferToBase64(buf) {
+    const bytes = new Uint8Array(buf);
+    let bin = '';
+    const chunk = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunk) {
+      bin += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+    }
+    return btoa(bin);
+  }
+
+  // Força o WhatsApp a materializar o áudio (dá play no mudo), captura os bytes
+  // do blob e pausa. Retorna base64 ou null.
+  async function capturarBytes(el) {
+    const btn =
+      el.querySelector('[data-icon*="play" i]')?.closest('button,[role="button"]') ||
+      el.querySelector(
+        'button[aria-label*="play" i], button[aria-label*="reproduzir" i], [role="button"][aria-label*="reproduzir" i]'
+      ) ||
+      el.querySelector('[data-icon*="play" i]') ||
+      el.querySelector('button');
+    if (!btn) return null;
+    try {
+      btn.click();
+    } catch (_) {
+      return null;
+    }
+    let src = null;
+    for (let i = 0; i < 24; i++) {
+      const a = el.querySelector('audio') || document.querySelector('audio');
+      if (a) {
+        a.muted = true;
+        a.volume = 0;
+        const s = a.currentSrc || a.src || '';
+        if (s.startsWith('blob:')) {
+          src = s;
+          try {
+            a.pause();
+          } catch (_) {
+            /* ok */
+          }
+          break;
+        }
+      }
+      await sleep(150);
+    }
+    if (!src) return null;
+    let buf;
+    try {
+      buf = await fetch(src).then((r) => r.arrayBuffer());
+    } catch (_) {
+      return null;
+    }
+    if (!buf || buf.byteLength < 300) return null;
+    return arrayBufferToBase64(buf);
+  }
+
+  // Captura os bytes dos áudios visíveis ainda não capturados (mapeados por data-id).
+  async function capturarAudiosVisiveis(root, audioBytes) {
+    for (const el of acharMensagens(root)) {
+      if (!ehAudio(el)) continue;
+      const idEl = el.matches('[data-id]') ? el : el.closest('[data-id]') || el.querySelector('[data-id]');
+      const chave = idEl ? idEl.getAttribute('data-id') : null;
+      if (!chave || audioBytes.has(chave)) continue;
+      audioBytes.set(chave, null); // marca como tentado
+      try {
+        const b64 = await capturarBytes(el);
+        if (b64) audioBytes.set(chave, b64);
+      } catch (_) {
+        /* fica null */
+      }
+    }
+  }
+
   // Encontra os elementos de mensagem, tentando várias estratégias (o HTML do
   // WhatsApp Web muda de tempos em tempos).
   function acharMensagens(root) {
@@ -181,11 +266,12 @@
     };
   }
 
-  async function coletarConversa() {
+  async function coletarConversa(server, capturarAudio) {
     const root = document.querySelector('#main') || document;
 
     const scroller = acharScroller(acharMensagens(root)[0]);
     const mapa = new Map(); // chave -> registro (ordem = primeira aparição top→bottom)
+    const audioBytes = new Map(); // chave (data-id) -> base64 do áudio capturado
     let seq = 0;
 
     const capturar = () => {
@@ -222,6 +308,7 @@
       for (let i = 0; i < 500; i++) {
         await expandirTranscricoes(root); // revela transcrições de áudio recolhidas
         capturar();
+        if (capturarAudio) await capturarAudiosVisiveis(root, audioBytes);
         const antes = scroller.scrollTop;
         scroller.scrollTop = Math.min(antes + passo, scroller.scrollHeight);
         await sleep(280);
@@ -229,12 +316,40 @@
         if (scroller.scrollTop === antes || fim) {
           await expandirTranscricoes(root);
           capturar();
+          if (capturarAudio) await capturarAudiosVisiveis(root, audioBytes);
           break;
         }
       }
     } else {
       await expandirTranscricoes(root);
       capturar();
+      if (capturarAudio) await capturarAudiosVisiveis(root, audioBytes);
+    }
+
+    // Transcreve os áudios capturados (via service worker, evitando a CSP da página).
+    if (capturarAudio && server) {
+      const pendentes = [...mapa].filter(([chave, reg]) => reg.type === 'audio' && audioBytes.get(chave));
+      for (let i = 0; i < pendentes.length; i++) {
+        const [chave, reg] = pendentes[i];
+        mostrarBadge({
+          texto: `<b>Transcrevendo áudios…</b> (${i + 1}/${pendentes.length})`,
+          loading: true,
+        });
+        try {
+          const resp = await new Promise((r) =>
+            chrome.runtime.sendMessage(
+              { action: 'transcreverAudio', server, base64: audioBytes.get(chave) },
+              r
+            )
+          );
+          if (resp && resp.ok && resp.texto && resp.texto.trim()) {
+            reg.content = resp.texto.trim();
+            if (resp.quem) reg.from = resp.quem === 'EU' ? 'eu' : 'eles';
+          }
+        } catch (_) {
+          /* mantém o placeholder [áudio] */
+        }
+      }
     }
 
     const mensagens = [...mapa.values()]
@@ -319,10 +434,12 @@
     jobEmAndamento = true;
     try {
       mostrarBadge({
-        texto: '<b>Lendo a conversa…</b><br>Aguarde e <u>não troque de conversa agora</u>.',
+        texto:
+          '<b>Lendo a conversa…</b><br>Capturando e transcrevendo áudios pode demorar um pouco. ' +
+          '<u>Não troque de conversa agora</u>.',
         loading: true,
       });
-      const { mensagens, nome, stats } = await coletarConversa();
+      const { mensagens, nome, stats } = await coletarConversa(server, true);
       if (!mensagens.length) {
         mostrarBadge({ texto: '❌ Nenhuma mensagem encontrada nesta conversa.', cor: '#ff6b6b' });
         jobEmAndamento = false;
