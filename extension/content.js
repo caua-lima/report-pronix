@@ -51,7 +51,7 @@
 
   // Força o WhatsApp a materializar o áudio (baixa se preciso + play no mudo),
   // captura os bytes (via <audio> ou via hook createObjectURL). Retorna base64 ou null.
-  async function capturarBytes(el) {
+  async function capturarBytes(el, dbg) {
     // 1) Se houver botão de baixar (áudio não carregado ainda), clica primeiro.
     const btnBaixar = el.querySelector(
       '[data-icon="audio-download"], [data-icon="down"], [data-icon*="download" i], span[data-icon="audio-download"]'
@@ -66,7 +66,7 @@
       }
     }
 
-    // 2) Clica no play (dispara a descriptografia/criação do blob).
+    // 2) Clica no play (ajuda a materializar o blob se for criado no play).
     const btn =
       el.querySelector('[data-icon*="play" i]')?.closest('button,[role="button"]') ||
       el.querySelector(
@@ -83,47 +83,45 @@
       }
     }
 
-    // 3) Aguarda SÓ o blob criado por ESTE play (índice >= antes). Isso garante
-    //    o mapeamento 1:1 áudio↔blob (nada de pegar o blob de outro áudio).
+    // 3) Consome o próximo blob de áudio ainda não usado (ordem de criação =
+    //    ordem cronológica dos áudios, já que processamos de cima para baixo).
     for (let i = 0; i < 40; i++) {
-      for (let k = antes; k < blobsAudio.length; k++) {
-        const b = blobsAudio[k];
-        if (b && !b.usado) {
-          b.usado = true;
-          const b64 = await bytesDeBlob(b.url);
-          if (b64) return b64;
-        }
+      const b = blobsAudio.find((x) => !x.usado);
+      if (b) {
+        b.usado = true;
+        const idx = blobsAudio.indexOf(b);
+        const b64 = await bytesDeBlob(b.url);
+        logA(`áudio ${dbg || ''}: antes=${antes} novosAposPlay=${blobsAudio.length - antes} idx=${idx} ${b64 ? 'OK ' + b64.length : 'fetch falhou'}`);
+        return b64;
       }
-      // elemento <audio>, se esta versão do WhatsApp usar um
       const a = el.querySelector('audio') || document.querySelector('audio');
       if (a && (a.currentSrc || a.src || '').startsWith('blob:')) {
         a.muted = true;
         a.volume = 0;
         try { a.pause(); } catch (_) {}
         const b64 = await bytesDeBlob(a.currentSrc || a.src);
-        if (b64) return b64;
+        if (b64) { logA(`áudio ${dbg || ''}: via <audio> OK ${b64.length}`); return b64; }
       }
       await sleep(150);
     }
-    return null; // não captura: melhor ficar [áudio] do que transcrever o áudio errado
+    logA(`áudio ${dbg || ''}: SEM blob disponível (antes=${antes}, total=${blobsAudio.length})`);
+    return null;
   }
 
-  // Captura os bytes dos áudios visíveis. Retenta até 2x por áudio (em passadas
-  // diferentes o áudio pode estar melhor posicionado/carregado).
-  async function capturarAudiosVisiveis(root, audioBytes, tentativas) {
+  // Captura os bytes dos áudios visíveis. Processa cada áudio UMA vez, de cima
+  // para baixo, consumindo os blobs na ordem de criação (mapeamento cronológico).
+  async function capturarAudiosVisiveis(root, audioBytes, processados) {
     const audios = acharMensagens(root).filter((el) => ehAudio(el));
     for (const el of audios) {
       const idEl = el.matches('[data-id]') ? el : el.closest('[data-id]') || el.querySelector('[data-id]');
       const chave = idEl ? idEl.getAttribute('data-id') : null;
-      if (!chave || audioBytes.get(chave)) continue; // já capturado
-      const t = tentativas.get(chave) || 0;
-      if (t >= 2) continue; // desiste após 2 tentativas
-      tentativas.set(chave, t + 1);
+      if (!chave || processados.has(chave)) continue;
+      processados.add(chave);
       try {
-        const b64 = await capturarBytes(el);
+        const b64 = await capturarBytes(el, chave.slice(0, 8));
         if (b64) audioBytes.set(chave, b64);
       } catch (_) {
-        /* tenta de novo na próxima passada */
+        /* segue */
       }
     }
   }
@@ -336,7 +334,7 @@
     const scroller = acharScroller(acharMensagens(root)[0]);
     const mapa = new Map(); // chave -> registro (ordem = primeira aparição top→bottom)
     const audioBytes = new Map(); // chave (data-id) -> base64 do áudio capturado
-    const tentativasAudio = new Map(); // chave -> nº de tentativas de captura
+    const processadosAudio = new Set(); // áudios já tentados (1x cada)
     let seq = 0;
 
     const capturar = () => {
@@ -373,7 +371,7 @@
       for (let i = 0; i < 500; i++) {
         await expandirTranscricoes(root); // revela transcrições de áudio recolhidas
         capturar();
-        if (capturarAudio) await capturarAudiosVisiveis(root, audioBytes, tentativasAudio);
+        if (capturarAudio) await capturarAudiosVisiveis(root, audioBytes, processadosAudio);
         const antes = scroller.scrollTop;
         scroller.scrollTop = Math.min(antes + passo, scroller.scrollHeight);
         await sleep(280);
@@ -381,14 +379,14 @@
         if (scroller.scrollTop === antes || fim) {
           await expandirTranscricoes(root);
           capturar();
-          if (capturarAudio) await capturarAudiosVisiveis(root, audioBytes, tentativasAudio);
+          if (capturarAudio) await capturarAudiosVisiveis(root, audioBytes, processadosAudio);
           break;
         }
       }
     } else {
       await expandirTranscricoes(root);
       capturar();
-      if (capturarAudio) await capturarAudiosVisiveis(root, audioBytes, tentativasAudio);
+      if (capturarAudio) await capturarAudiosVisiveis(root, audioBytes, processadosAudio);
     }
 
     // Transcreve os áudios capturados (via service worker, evitando a CSP da página).
