@@ -127,7 +127,7 @@
     <div id="resultado" class="card hidden" style="margin-top:18px">
       <div class="result-head">
         <div style="font-weight:700;font-size:1.05rem">✅ Report gerado</div>
-        <a id="dl" class="dl" target="_blank">⬇ Baixar .docx</a>
+        <a id="dl" class="dl" target="_blank">⬇ Baixar PDF</a>
       </div>
       <div id="report" class="report"></div>
     </div>
@@ -212,8 +212,11 @@
       (d.resumo || []).forEach((r) => linhas.push(`<tr><td class="rot">${escapeHtml(r.rotulo)}</td><td>${escapeHtml(r.valor)}</td></tr>`));
       const tabela = linhas.length ? `<table>${linhas.join('')}</table>` : '';
       const secoes = (d.secoes || []).map((s) => `<h2>${escapeHtml(s.titulo)}</h2>${lista(s.itens, s.numerada)}`).join('');
-      const frase = d.frase_impacto ? `<h2>💬 Frase de Impacto</h2><p class="frase">"${escapeHtml(d.frase_impacto)}"</p>` : '';
-      return tabela + secoes + frase;
+      const cit = (d.citacoes && d.citacoes.length)
+        ? `<h2>💬 Nas palavras do lead</h2>` + d.citacoes.map((c) => `<p class="frase">"${escapeHtml(c)}"</p>`).join('')
+        : '';
+      const frase = d.frase_impacto ? `<h2>🎯 Frase de Impacto</h2><p class="frase">"${escapeHtml(d.frase_impacto)}"</p>` : '';
+      return tabela + secoes + cit + frase;
     }
     async function gerar() {
       const texto = $('texto').value.trim();

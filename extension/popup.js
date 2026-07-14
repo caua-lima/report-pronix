@@ -31,10 +31,13 @@ function renderReport(d) {
   const secoes = (d.secoes || [])
     .map((s) => `<h2>${escapeHtml(s.titulo)}</h2>${lista(s.itens, s.numerada)}`)
     .join('');
-  const frase = d.frase_impacto
-    ? `<h2>💬 Frase de Impacto</h2><p class="frase">"${escapeHtml(d.frase_impacto)}"</p>`
+  const cit = (d.citacoes && d.citacoes.length)
+    ? `<h2>💬 Nas palavras do lead</h2>` + d.citacoes.map((c) => `<p class="frase">"${escapeHtml(c)}"</p>`).join('')
     : '';
-  return tabela + secoes + frase;
+  const frase = d.frase_impacto
+    ? `<h2>🎯 Frase de Impacto</h2><p class="frase">"${escapeHtml(d.frase_impacto)}"</p>`
+    : '';
+  return tabela + secoes + cit + frase;
 }
 
 function getServer() {

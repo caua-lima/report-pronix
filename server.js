@@ -183,7 +183,7 @@ app.post('/api/report-texto', async (req, res) => {
 app.get('/api/download/:arquivo', (req, res) => {
   const nome = path.basename(req.params.arquivo); // evita path traversal
   const caminho = path.join(OUTPUT_DIR, nome);
-  if (!nome.endsWith('.docx') || !fs.existsSync(caminho)) {
+  if (!/\.(pdf|docx)$/i.test(nome) || !fs.existsSync(caminho)) {
     return res.status(404).json({ erro: 'Arquivo não encontrado.' });
   }
   res.download(caminho, nome);

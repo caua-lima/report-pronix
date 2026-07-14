@@ -474,12 +474,12 @@
       const url = 'data:application/vnd.openxmlformats-officedocument.wordprocessingml.document;base64,' + docxBase64;
       acao =
         `<a href="${url}" download="${arquivo || 'report.docx'}" style="display:inline-block;margin-top:8px;background:#25d366;color:#05130c;` +
-        `font-weight:700;text-decoration:none;padding:6px 10px;border-radius:7px">⬇ Baixar .docx</a>`;
+        `font-weight:700;text-decoration:none;padding:6px 10px;border-radius:7px">⬇ Baixar PDF</a>`;
     } else if (arquivo && server) {
       const url = server + '/api/download/' + encodeURIComponent(arquivo);
       acao =
         `<a href="${url}" target="_blank" style="display:inline-block;margin-top:8px;background:#25d366;color:#05130c;` +
-        `font-weight:700;text-decoration:none;padding:6px 10px;border-radius:7px">⬇ Baixar .docx</a>`;
+        `font-weight:700;text-decoration:none;padding:6px 10px;border-radius:7px">⬇ Baixar PDF</a>`;
     }
     el.innerHTML =
       (document.getElementById('crspin-style') ? '' : '<style id="crspin-style">@keyframes crspin{to{transform:rotate(360deg)}}</style>') +

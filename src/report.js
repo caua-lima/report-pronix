@@ -2,7 +2,7 @@
 
 require('dotenv').config();
 
-const { gerarDocx } = require('./generateDoc');
+const { gerarPdf } = require('./generatePdf');
 
 const LLM_PROVIDER = (process.env.LLM_PROVIDER || 'anthropic').toLowerCase();
 
@@ -53,6 +53,10 @@ const EXEMPLO_FEWSHOT = {
       ],
     },
   ],
+  citacoes: [
+    'Em 15 dias já fiz 104 vendas, tá saindo mais rápido do que eu imaginava.',
+    'Eu quero mesmo é sair do CLT e ter qualidade de vida.',
+  ],
   frase_impacto:
     'Ele já vendeu muito rápido no começo; agora a reunião precisa mostrar como transformar tração em estrutura para ele sair do CLT com segurança.',
 };
@@ -76,7 +80,8 @@ DEMAIS REGRAS:
   - "lead": nome do lead (ou "" se não souber).
   - "resumo": linhas rótulo/valor para o topo — inclua sempre Investimento, Decisor(es) e Prioridade, além de Status/Nicho e o que fizer sentido.
   - "secoes": as seções do corpo; cada uma com "titulo" (começando com um emoji) e "itens" (bullets). Use "numerada": true nas seções de passos/ações.
-  - "frase_impacto": uma frase única e afiada de fechamento para o closer.`;
+  - "citacoes": de 1 a 4 FALAS EXATAS do LEAD (copiadas LITERALMENTE, palavra por palavra, das linhas do LEAD — inclusive de áudios transcritos) que sejam fortes/úteis para o closer: dor, sinal de compra, objeção, objetivo ou urgência. NÃO parafraseie e NÃO use falas do vendedor. Se não houver falas marcantes, use [].
+  - "frase_impacto": uma frase única e afiada de fechamento para o closer (resumo seu, pode parafrasear).`;
 
 function montarHistoricoFormatado(historico) {
   return historico
@@ -148,6 +153,10 @@ function normalizarDados(dados) {
         .filter((s) => s.titulo && s.itens.length > 0)
     : [];
 
+  out.citacoes = Array.isArray(dados.citacoes)
+    ? dados.citacoes.map((x) => String(x).trim().replace(/^["“”']+|["“”']+$/g, '').trim()).filter(Boolean)
+    : [];
+
   return out;
 }
 
@@ -184,6 +193,11 @@ const REPORT_TOOL = {
           },
           required: ['titulo', 'itens'],
         },
+      },
+      citacoes: {
+        type: 'array',
+        description: 'Falas EXATAS (verbatim) do LEAD, fortes/úteis para o closer. Sem paráfrase.',
+        items: { type: 'string' },
       },
       frase_impacto: { type: 'string' },
     },
@@ -296,7 +310,7 @@ async function dadosDireto({ mensagens, nome } = {}) {
 
 async function gerarReportDireto(payload = {}) {
   const dados = await dadosDireto(payload);
-  const arquivo = await gerarDocx(dados, payload.nome || dados.lead);
+  const arquivo = await gerarPdf(dados, payload.nome || dados.lead);
   return { dados, arquivo };
 }
 
@@ -341,7 +355,7 @@ async function dadosDeTexto({ texto, nome } = {}) {
 
 async function gerarReportDeTexto(payload = {}) {
   const dados = await dadosDeTexto(payload);
-  const arquivo = await gerarDocx(dados, payload.nome || dados.lead);
+  const arquivo = await gerarPdf(dados, payload.nome || dados.lead);
   return { dados, arquivo };
 }
 
