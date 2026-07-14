@@ -195,11 +195,19 @@
 
   function ehAudio(el) {
     if (el.querySelector('audio')) return true;
-    if (el.querySelector('[data-icon^="audio"], [data-icon="ptt"], [data-icon="ptt-status"]')) {
+    // Barra de progresso (seek) é um sinal forte de mensagem de voz/áudio.
+    if (el.querySelector('input[type="range"]')) return true;
+    if (
+      el.querySelector(
+        '[data-icon*="audio" i], [data-icon*="ptt" i], [data-icon*="mic" i], [data-icon*="voice" i]'
+      )
+    ) {
       return true;
     }
     for (const r of el.querySelectorAll('[aria-label]')) {
-      if (/voz|voice|áudio|audio|ptt/i.test(r.getAttribute('aria-label') || '')) return true;
+      if (/voz|voice|áudio|audio|ptt|mensagem de voz|voice message/i.test(r.getAttribute('aria-label') || '')) {
+        return true;
+      }
     }
     return false;
   }
@@ -369,6 +377,9 @@
 
     // Transcreve os áudios capturados (via service worker, evitando a CSP da página).
     if (capturarAudio && server) {
+      const icons = [...new Set([...root.querySelectorAll('[data-icon]')].map((e) => e.getAttribute('data-icon')))];
+      logA('data-icons na conversa:', icons.join(', ') || '(nenhum)');
+      logA('inputs range (barra de áudio):', root.querySelectorAll('input[type="range"]').length);
       const totalAudios = [...mapa.values()].filter((r) => r.type === 'audio').length;
       const capturados = [...audioBytes.values()].filter(Boolean).length;
       const pendentes = [...mapa].filter(([chave, reg]) => reg.type === 'audio' && audioBytes.get(chave));
