@@ -77,7 +77,7 @@
       ) ||
       el.querySelector('[data-icon*="play" i]') ||
       el.querySelector('button,[role="button"]');
-    const t0 = Date.now();
+    const antes = blobsAudio.length;
     logA('capturarBytes: btnPlay?', !!btn);
     if (btn) {
       try {
@@ -87,8 +87,19 @@
       }
     }
 
-    // 3) Aguarda o blob aparecer — via <audio> OU via hook do createObjectURL.
+    // 3) Aguarda o blob. O WhatsApp usa Web Audio (sem <audio>), então a fonte
+    //    principal é o hook do createObjectURL. Consome blobs ainda não usados.
     for (let i = 0; i < 30; i++) {
+      // (a) blob novo criado após o clique (play)
+      if (blobsAudio.length > antes) {
+        const b = blobsAudio[blobsAudio.length - 1];
+        if (b && !b.usado) {
+          b.usado = true;
+          const b64 = await bytesDeBlob(b.url);
+          if (b64) return b64;
+        }
+      }
+      // (b) elemento <audio>, se existir
       const a = el.querySelector('audio') || document.querySelector('audio');
       if (a) {
         a.muted = true;
@@ -100,15 +111,16 @@
           if (b64) return b64;
         }
       }
-      // blob capturado pelo hook depois do clique
-      const recente = blobsAudio.filter((b) => b.ts >= t0 - 500).pop();
-      if (recente) {
-        const b64 = await bytesDeBlob(recente.url);
-        if (b64) return b64;
-      }
       await sleep(150);
     }
-    logA('capturarBytes: NÃO capturou bytes (nem <audio> nem hook). blobs vistos:', blobsAudio.length);
+    // (c) fallback: qualquer blob de áudio ainda não consumido (criados no render)
+    const naoUsado = blobsAudio.find((b) => !b.usado);
+    if (naoUsado) {
+      naoUsado.usado = true;
+      const b64 = await bytesDeBlob(naoUsado.url);
+      if (b64) return b64;
+    }
+    logA('capturarBytes: NÃO capturou bytes. blobs vistos:', blobsAudio.length, '| não usados:', blobsAudio.filter((b) => !b.usado).length);
     return null;
   }
 
