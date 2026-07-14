@@ -13,7 +13,9 @@ const EXEMPLO_FEWSHOT = {
   resumo: [
     { rotulo: 'Status', valor: 'Loja física + e-commerce' },
     { rotulo: 'Nicho', valor: 'Moto peças' },
-    { rotulo: 'Investimento', valor: 'Mais de R$5.000' },
+    { rotulo: 'Investimento', valor: 'Cerca de R$5.000 (metade do estoque de R$10 mil)' },
+    { rotulo: 'Decisor(es)', valor: 'Vitor decide o digital; investimento dividido 50/50 com a irmã' },
+    { rotulo: 'Prioridade', valor: 'Alta — quer sair do CLT e já está vendendo' },
   ],
   secoes: [
     {
@@ -55,21 +57,26 @@ const EXEMPLO_FEWSHOT = {
     'Ele já vendeu muito rápido no começo; agora a reunião precisa mostrar como transformar tração em estrutura para ele sair do CLT com segurança.',
 };
 
-const SYSTEM_PROMPT = `Você é um assistente de pré-vendas que lê a conversa entre um vendedor e um lead e monta um relatório de handoff para o closer.
+const SYSTEM_PROMPT = `Você é um assistente de pré-vendas que lê a conversa entre um vendedor e um lead e monta um relatório de handoff COMPLETO e ÚTIL para o closer que vai conduzir a reunião.
 
-OBJETIVO: montar o MELHOR relatório possível com as informações que a conversa REALMENTE tem — não é um formulário fixo.
+OBJETIVO: dar ao closer tudo que ele precisa para entrar na call preparado — contexto do lead, dor/necessidade, o que já foi conversado, e o que falta descobrir. Estrutura flexível (não é formulário fixo), mas rica e acionável.
 
-REGRAS:
+COBERTURA MÍNIMA OBRIGATÓRIA — o report SEMPRE deve deixar claro estes três, no "resumo" e/ou em seções:
+- 💰 INVESTIMENTO: capacidade/disponibilidade financeira do lead (quanto pode/quer investir).
+- 🧑‍⚖️ DECISOR(ES): quem decide/aprova a compra (só o lead? sócio? cônjuge? precisa de terceiros?).
+- 🔥 PRIORIDADE/URGÊNCIA: o quão quente e urgente está (motivação, prazo, dor latente).
+  Se a conversa NÃO trouxer algum desses três, NÃO invente: marque como "a confirmar na reunião" — isso é um recado útil (vira item a validar pelo closer). Essa é a ÚNICA exceção; para os demais campos, se não houver info, simplesmente omita.
+
+DEMAIS REGRAS:
 - Use SOMENTE informações que apareceram na conversa. NÃO invente números, datas, nomes ou fatos.
-- Inclua apenas o que tem base na conversa. Se algo não foi falado, simplesmente NÃO crie a seção/linha para isso — nunca escreva "não identificado" nem force campos vazios.
-- Escolha as seções e os rótulos do resumo que fizerem sentido para ESTE lead. Use o exemplo como referência de qualidade, mas adapte livremente: remova o que não se aplica e crie seções novas se a conversa pedir.
-- Se a conversa for curta ou tiver pouca informação, faça um relatório mais curto — tudo bem.
-- Linguagem direta e comercial, sem enrolação. Bullets curtos.
+- Fora dos três obrigatórios, inclua apenas o que tem base na conversa; não escreva "não identificado" nem force campos vazios.
+- Faça um report COMPLETO: perfil/contexto, momento atual do negócio, dor/necessidade e objetivo, sinais de interesse e objeções, capacidade & decisão, próximos passos, e o que o closer deve bater na reunião. Adapte as seções ao caso.
+- Linguagem direta e comercial, sem enrolação. Bullets curtos e informativos.
 - Preencha pela ferramenta "gerar_relatorio":
   - "lead": nome do lead (ou "" se não souber).
-  - "resumo": linhas curtas rótulo/valor para o topo (ex.: Status, Nicho, Investimento) — só as embasadas na conversa.
+  - "resumo": linhas rótulo/valor para o topo — inclua sempre Investimento, Decisor(es) e Prioridade, além de Status/Nicho e o que fizer sentido.
   - "secoes": as seções do corpo; cada uma com "titulo" (começando com um emoji) e "itens" (bullets). Use "numerada": true nas seções de passos/ações.
-  - "frase_impacto": uma frase única de fechamento (ou "" se não fizer sentido).`;
+  - "frase_impacto": uma frase única e afiada de fechamento para o closer.`;
 
 function montarHistoricoFormatado(historico) {
   return historico
