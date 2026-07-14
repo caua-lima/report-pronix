@@ -42,10 +42,9 @@
   async function bytesDeBlob(url) {
     try {
       const buf = await fetch(url).then((r) => r.arrayBuffer());
-      logA('blob fetch ok, bytes =', buf ? buf.byteLength : 0, 'url', String(url).slice(0, 30));
       if (buf && buf.byteLength >= 300) return arrayBufferToBase64(buf);
-    } catch (e) {
-      logA('blob fetch FALHOU:', e.message, String(url).slice(0, 30));
+    } catch (_) {
+      /* revogado ou inacessível */
     }
     return null;
   }
@@ -57,8 +56,6 @@
     const btnBaixar = el.querySelector(
       '[data-icon="audio-download"], [data-icon="down"], [data-icon*="download" i], span[data-icon="audio-download"]'
     );
-    logA('capturarBytes: btnBaixar?', !!btnBaixar, '| icons:',
-      [...el.querySelectorAll('[data-icon]')].map((i) => i.getAttribute('data-icon')).join(','));
     if (btnBaixar) {
       const alvo = btnBaixar.closest('button,[role="button"]') || btnBaixar;
       try {
@@ -78,7 +75,6 @@
       el.querySelector('[data-icon*="play" i]') ||
       el.querySelector('button,[role="button"]');
     const antes = blobsAudio.length;
-    logA('capturarBytes: btnPlay?', !!btn);
     if (btn) {
       try {
         btn.click();
@@ -126,9 +122,7 @@
 
   // Captura os bytes dos áudios visíveis ainda não capturados (mapeados por data-id).
   async function capturarAudiosVisiveis(root, audioBytes) {
-    const todas = acharMensagens(root);
-    const audios = todas.filter((el) => ehAudio(el));
-    if (audios.length) logA('visíveis:', todas.length, 'mensagens,', audios.length, 'áudios detectados');
+    const audios = acharMensagens(root).filter((el) => ehAudio(el));
     for (const el of audios) {
       const idEl = el.matches('[data-id]') ? el : el.closest('[data-id]') || el.querySelector('[data-id]');
       const chave = idEl ? idEl.getAttribute('data-id') : null;
@@ -137,9 +131,8 @@
       try {
         const b64 = await capturarBytes(el);
         audioBytes.set(chave, b64 || null);
-        logA('áudio', chave.slice(0, 24), b64 ? 'CAPTURADO (' + b64.length + ' b64)' : 'não capturado');
-      } catch (e) {
-        logA('erro capturando áudio:', e.message);
+      } catch (_) {
+        /* fica null */
       }
     }
   }
@@ -395,36 +388,9 @@
 
     // Transcreve os áudios capturados (via service worker, evitando a CSP da página).
     if (capturarAudio && server) {
-      const icons = [...new Set([...root.querySelectorAll('[data-icon]')].map((e) => e.getAttribute('data-icon')))];
-      logA('data-icons na conversa:', icons.join(', ') || '(nenhum)');
-      logA('inputs range (barra de áudio):', root.querySelectorAll('input[type="range"]').length);
-      logA('estratégia de leitura:', _estrategiaMsg);
-      // Revela as linhas SEM texto (mídia/áudio) e seus marcadores.
-      const rows = [...root.querySelectorAll('div[role="row"]')];
-      const semTexto = rows.filter((r) => !r.querySelector('.selectable-text, .copyable-text'));
-      logA(`role=row total: ${rows.length} | sem texto (mídia/áudio?): ${semTexto.length}`);
-      semTexto.slice(0, 10).forEach((r, i) => {
-        const ic = [...r.querySelectorAll('[data-icon]')].map((x) => x.getAttribute('data-icon'));
-        const btns = r.querySelectorAll('button,[role="button"]').length;
-        logA(
-          `  semTexto#${i} icons=[${ic.join(',')}] botoes=${btns} range=${!!r.querySelector('input[type="range"]')} audio=${!!r.querySelector('audio')} aria=[${[...r.querySelectorAll('[aria-label]')].map((a) => a.getAttribute('aria-label')).slice(0, 3).join('|')}]`
-        );
-      });
-      // Loga os ícones de cada mensagem que tem algum ícone (revela o balão de áudio).
-      acharMensagens(root).forEach((el, i) => {
-        const ic = [...el.querySelectorAll('[data-icon]')].map((x) => x.getAttribute('data-icon'));
-        const idEl = el.matches('[data-id]') ? el : el.closest('[data-id]');
-        const id = idEl ? idEl.getAttribute('data-id') || '' : '';
-        const temRange = !!el.querySelector('input[type="range"]');
-        const temAudioEl = !!el.querySelector('audio');
-        if (ic.length || temRange || temAudioEl) {
-          logA(`msg#${i} ${id.slice(0, 16)} icons=[${ic.join(',')}] range=${temRange} audioEl=${temAudioEl}`);
-        }
-      });
       const totalAudios = [...mapa.values()].filter((r) => r.type === 'audio').length;
-      const capturados = [...audioBytes.values()].filter(Boolean).length;
       const pendentes = [...mapa].filter(([chave, reg]) => reg.type === 'audio' && audioBytes.get(chave));
-      logA(`RESUMO: ${totalAudios} áudios na conversa | ${capturados} capturados | ${pendentes.length} p/ transcrever | servidor: ${server}`);
+      logA(`${totalAudios} áudios | ${pendentes.length} capturados p/ transcrever`);
       for (let i = 0; i < pendentes.length; i++) {
         const [chave, reg] = pendentes[i];
         mostrarBadge({
@@ -438,10 +404,11 @@
               r
             )
           );
-          logA('transcrição', i + 1, resp && resp.ok ? 'OK: "' + String(resp.texto || '').slice(0, 40) + '"' : 'FALHOU: ' + (resp && resp.erro));
           if (resp && resp.ok && resp.texto && resp.texto.trim()) {
             reg.content = resp.texto.trim();
             if (resp.quem) reg.from = resp.quem === 'EU' ? 'eu' : 'eles';
+          } else if (resp && resp.erro) {
+            logA('transcrição falhou:', resp.erro);
           }
         } catch (e) {
           logA('transcrição erro:', e.message);
