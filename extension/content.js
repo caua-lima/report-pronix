@@ -144,9 +144,13 @@
       return /^(true|false)_/.test(id) && el.querySelector('.copyable-text, .selectable-text, [data-icon], audio');
     });
     if (els.length) { _estrategiaMsg = 2; return els; }
-    // Fallback 2: role="row" que contenha texto selecionável.
+    // Fallback 2: role="row" com texto OU com mídia/áudio (para não perder áudios).
     els = [...root.querySelectorAll('div[role="row"]')].filter((el) =>
-      el.querySelector('.selectable-text, .copyable-text')
+      el.querySelector(
+        '.selectable-text, .copyable-text, [data-icon*="ptt" i], [data-icon*="mic" i], ' +
+          '[data-icon*="audio" i], [data-icon*="play" i], [data-icon*="pause" i], ' +
+          'input[type="range"], audio'
+      )
     );
     _estrategiaMsg = 3;
     return els;
@@ -383,6 +387,17 @@
       logA('data-icons na conversa:', icons.join(', ') || '(nenhum)');
       logA('inputs range (barra de áudio):', root.querySelectorAll('input[type="range"]').length);
       logA('estratégia de leitura:', _estrategiaMsg);
+      // Revela as linhas SEM texto (mídia/áudio) e seus marcadores.
+      const rows = [...root.querySelectorAll('div[role="row"]')];
+      const semTexto = rows.filter((r) => !r.querySelector('.selectable-text, .copyable-text'));
+      logA(`role=row total: ${rows.length} | sem texto (mídia/áudio?): ${semTexto.length}`);
+      semTexto.slice(0, 10).forEach((r, i) => {
+        const ic = [...r.querySelectorAll('[data-icon]')].map((x) => x.getAttribute('data-icon'));
+        const btns = r.querySelectorAll('button,[role="button"]').length;
+        logA(
+          `  semTexto#${i} icons=[${ic.join(',')}] botoes=${btns} range=${!!r.querySelector('input[type="range"]')} audio=${!!r.querySelector('audio')} aria=[${[...r.querySelectorAll('[aria-label]')].map((a) => a.getAttribute('aria-label')).slice(0, 3).join('|')}]`
+        );
+      });
       // Loga os ícones de cada mensagem que tem algum ícone (revela o balão de áudio).
       acharMensagens(root).forEach((el, i) => {
         const ic = [...el.querySelectorAll('[data-icon]')].map((x) => x.getAttribute('data-icon'));
