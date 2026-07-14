@@ -83,56 +83,47 @@
       }
     }
 
-    // 3) Aguarda o blob. O WhatsApp usa Web Audio (sem <audio>), então a fonte
-    //    principal é o hook do createObjectURL. Consome blobs ainda não usados.
-    for (let i = 0; i < 30; i++) {
-      // (a) blob novo criado após o clique (play)
-      if (blobsAudio.length > antes) {
-        const b = blobsAudio[blobsAudio.length - 1];
+    // 3) Aguarda SÓ o blob criado por ESTE play (índice >= antes). Isso garante
+    //    o mapeamento 1:1 áudio↔blob (nada de pegar o blob de outro áudio).
+    for (let i = 0; i < 40; i++) {
+      for (let k = antes; k < blobsAudio.length; k++) {
+        const b = blobsAudio[k];
         if (b && !b.usado) {
           b.usado = true;
           const b64 = await bytesDeBlob(b.url);
           if (b64) return b64;
         }
       }
-      // (b) elemento <audio>, se existir
+      // elemento <audio>, se esta versão do WhatsApp usar um
       const a = el.querySelector('audio') || document.querySelector('audio');
-      if (a) {
+      if (a && (a.currentSrc || a.src || '').startsWith('blob:')) {
         a.muted = true;
         a.volume = 0;
-        const s = a.currentSrc || a.src || '';
-        if (s.startsWith('blob:')) {
-          try { a.pause(); } catch (_) {}
-          const b64 = await bytesDeBlob(s);
-          if (b64) return b64;
-        }
+        try { a.pause(); } catch (_) {}
+        const b64 = await bytesDeBlob(a.currentSrc || a.src);
+        if (b64) return b64;
       }
       await sleep(150);
     }
-    // (c) fallback: qualquer blob de áudio ainda não consumido (criados no render)
-    const naoUsado = blobsAudio.find((b) => !b.usado);
-    if (naoUsado) {
-      naoUsado.usado = true;
-      const b64 = await bytesDeBlob(naoUsado.url);
-      if (b64) return b64;
-    }
-    logA('capturarBytes: NÃO capturou bytes. blobs vistos:', blobsAudio.length, '| não usados:', blobsAudio.filter((b) => !b.usado).length);
-    return null;
+    return null; // não captura: melhor ficar [áudio] do que transcrever o áudio errado
   }
 
-  // Captura os bytes dos áudios visíveis ainda não capturados (mapeados por data-id).
-  async function capturarAudiosVisiveis(root, audioBytes) {
+  // Captura os bytes dos áudios visíveis. Retenta até 2x por áudio (em passadas
+  // diferentes o áudio pode estar melhor posicionado/carregado).
+  async function capturarAudiosVisiveis(root, audioBytes, tentativas) {
     const audios = acharMensagens(root).filter((el) => ehAudio(el));
     for (const el of audios) {
       const idEl = el.matches('[data-id]') ? el : el.closest('[data-id]') || el.querySelector('[data-id]');
       const chave = idEl ? idEl.getAttribute('data-id') : null;
-      if (!chave || audioBytes.has(chave)) continue;
-      audioBytes.set(chave, null); // marca como tentado
+      if (!chave || audioBytes.get(chave)) continue; // já capturado
+      const t = tentativas.get(chave) || 0;
+      if (t >= 2) continue; // desiste após 2 tentativas
+      tentativas.set(chave, t + 1);
       try {
         const b64 = await capturarBytes(el);
-        audioBytes.set(chave, b64 || null);
+        if (b64) audioBytes.set(chave, b64);
       } catch (_) {
-        /* fica null */
+        /* tenta de novo na próxima passada */
       }
     }
   }
@@ -185,7 +176,20 @@
     if (el.querySelector('.message-in')) return false;
     const idEl = el.matches('[data-id]') ? el : el.closest('[data-id]') || el.querySelector('[data-id]');
     const id = idEl ? idEl.getAttribute('data-id') || '' : '';
-    return id.startsWith('true_'); // padrão: recebida (deles)
+    if (id.startsWith('true_')) return true;
+    if (id.startsWith('false_')) return false;
+    // aria-label "Você:" — nesta versão do WhatsApp marca mensagens enviadas por mim.
+    for (const a of el.querySelectorAll('[aria-label]')) {
+      if (/^você\b/i.test((a.getAttribute('aria-label') || '').trim())) return true;
+    }
+    // data-pre-plain-text: "[hora, data] Remetente: " — "Você" = eu; nome = deles.
+    const copy = el.querySelector('.copyable-text');
+    const pre = copy && copy.getAttribute('data-pre-plain-text');
+    if (pre) {
+      const m = pre.match(/\]\s*(.+?):\s*$/);
+      if (m) return /^você$/i.test(m[1].trim());
+    }
+    return false; // padrão: deles (lead)
   }
 
   // "20:57, 06/07/2026" -> { iso, ms }  (best-effort, formato pt-BR)
@@ -296,9 +300,9 @@
     }
 
     if (ehAudio(el)) {
-      const transc = extrairTranscricaoAudio(el);
-      const content = transc || '[áudio — sem transcrição disponível]';
-      return { from: fromMe ? 'eu' : 'eles', type: 'audio', content, timestamp, ts };
+      // Placeholder limpo; a transcrição real vem da captura + Whisper (não do DOM,
+      // que aqui só traria lixo como nome do remetente/duração).
+      return { from: fromMe ? 'eu' : 'eles', type: 'audio', content: '[áudio]', timestamp, ts };
     }
 
     const texto = extrairTexto(el);
@@ -332,6 +336,7 @@
     const scroller = acharScroller(acharMensagens(root)[0]);
     const mapa = new Map(); // chave -> registro (ordem = primeira aparição top→bottom)
     const audioBytes = new Map(); // chave (data-id) -> base64 do áudio capturado
+    const tentativasAudio = new Map(); // chave -> nº de tentativas de captura
     let seq = 0;
 
     const capturar = () => {
@@ -368,7 +373,7 @@
       for (let i = 0; i < 500; i++) {
         await expandirTranscricoes(root); // revela transcrições de áudio recolhidas
         capturar();
-        if (capturarAudio) await capturarAudiosVisiveis(root, audioBytes);
+        if (capturarAudio) await capturarAudiosVisiveis(root, audioBytes, tentativasAudio);
         const antes = scroller.scrollTop;
         scroller.scrollTop = Math.min(antes + passo, scroller.scrollHeight);
         await sleep(280);
@@ -376,14 +381,14 @@
         if (scroller.scrollTop === antes || fim) {
           await expandirTranscricoes(root);
           capturar();
-          if (capturarAudio) await capturarAudiosVisiveis(root, audioBytes);
+          if (capturarAudio) await capturarAudiosVisiveis(root, audioBytes, tentativasAudio);
           break;
         }
       }
     } else {
       await expandirTranscricoes(root);
       capturar();
-      if (capturarAudio) await capturarAudiosVisiveis(root, audioBytes);
+      if (capturarAudio) await capturarAudiosVisiveis(root, audioBytes, tentativasAudio);
     }
 
     // Transcreve os áudios capturados (via service worker, evitando a CSP da página).

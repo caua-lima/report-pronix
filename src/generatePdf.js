@@ -10,16 +10,19 @@ const { slugify } = require('./generateDoc');
 const OUTPUT_DIR = path.join(__dirname, '..', 'output');
 
 const VERDE = '#0f9d76';
-const CINZA = '#334155';
-const CLARO = '#eef2f7';
+const VERDE_ESC = '#0b3b2e';
+const CLARO = '#f4f7fb';
+const BORDA = '#e3e8ef';
+const TEXTO = '#1f2937';
+const MARGIN = 46;
 
-// Remove emojis (as fontes padrão do PDF não os renderizam).
-function semEmoji(texto) {
-  return String(texto || '')
+function semEmoji(t) {
+  return String(t || '')
     .replace(
-      /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2190}-\u{21FF}\u{2B00}-\u{2BFF}\u{FE00}-\u{FE0F}\u{1F1E6}-\u{1F1FF}\u{200D}]/gu,
+      /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2190}-\u{21FF}\u{2B00}-\u{2BFF}\u{FE00}-\u{FE0F}\u{1F1E6}-\u{1F1FF}\u{200D}\u{20E3}]/gu,
       ''
     )
+    .replace(/\s{2,}/g, ' ')
     .trim();
 }
 
@@ -28,71 +31,109 @@ function timestampArquivo(d = new Date()) {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}`;
 }
 
+function novaPaginaSePreciso(doc, alturaNecessaria) {
+  if (doc.y + alturaNecessaria > doc.page.height - MARGIN) doc.addPage();
+}
+
+function bullet(doc, marcador, texto, x, largura) {
+  const y = doc.y;
+  const wMarc = 18;
+  doc.text(marcador, x, y, { width: wMarc });
+  doc.text(texto, x + wMarc, y, { width: largura - wMarc, paragraphGap: 2 });
+}
+
 function render(doc, dados) {
   const company = process.env.COMPANY_NAME || 'Empresa';
-  const larguraUtil = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+  const larg = doc.page.width - MARGIN * 2;
 
-  // Título
-  doc.font('Helvetica-Bold').fontSize(17).fillColor(VERDE)
-    .text('HANDOFF DE PRÉ-VENDAS', { continued: false });
-  doc.font('Helvetica').fontSize(11).fillColor(CINZA).text(company);
-  doc.moveDown(0.8);
+  // ---- Cabeçalho (faixa) ----
+  doc.save().rect(0, 0, doc.page.width, 74).fill(VERDE).restore();
+  doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(19)
+    .text('HANDOFF DE PRÉ-VENDAS', MARGIN, 24, { width: larg });
+  doc.font('Helvetica').fontSize(11).fillColor('#dcfce7').text(company, MARGIN, 50);
+  doc.y = 94;
+  doc.x = MARGIN;
 
-  // Resumo (Lead + linhas rótulo/valor) num bloco claro
+  // ---- Cartão de resumo ----
   const linhas = [];
   if (dados.lead) linhas.push(['Lead', dados.lead]);
   (dados.resumo || []).forEach((r) => linhas.push([r.rotulo, r.valor]));
   if (linhas.length) {
-    const topo = doc.y;
-    doc.roundedRect(doc.x, topo, larguraUtil, 0, 8); // placeholder; desenhamos texto e depois a régua
-    linhas.forEach(([rot, val]) => {
-      doc.font('Helvetica-Bold').fontSize(10.5).fillColor('#0b3b2e')
-        .text(`${rot}:  `, { continued: true });
-      doc.font('Helvetica').fillColor('#111827').text(val);
-      doc.moveDown(0.15);
+    const pad = 13;
+    const wLabel = 130;
+    const wVal = larg - pad * 2 - wLabel - 10;
+    const alturas = linhas.map(([rot, val]) => {
+      doc.font('Helvetica-Bold').fontSize(10);
+      const hL = doc.heightOfString(String(rot), { width: wLabel });
+      doc.font('Helvetica').fontSize(10);
+      const hV = doc.heightOfString(String(val), { width: wVal });
+      return Math.max(hL, hV);
     });
-    doc.moveDown(0.4);
-    doc.moveTo(doc.page.margins.left, doc.y).lineTo(doc.page.width - doc.page.margins.right, doc.y)
-      .strokeColor('#d7dee8').lineWidth(1).stroke();
-    doc.moveDown(0.6);
+    const alturaCartao = pad * 2 + alturas.reduce((s, h) => s + h + 7, 0) - 7;
+    novaPaginaSePreciso(doc, alturaCartao + 10);
+    const y0 = doc.y;
+    doc.save().roundedRect(MARGIN, y0, larg, alturaCartao, 9).fillAndStroke(CLARO, BORDA).restore();
+    let y = y0 + pad;
+    linhas.forEach(([rot, val], i) => {
+      doc.font('Helvetica-Bold').fontSize(10).fillColor(VERDE_ESC).text(String(rot), MARGIN + pad, y, { width: wLabel });
+      doc.font('Helvetica').fontSize(10).fillColor(TEXTO).text(String(val), MARGIN + pad + wLabel + 10, y, { width: wVal });
+      y += alturas[i] + 7;
+    });
+    doc.y = y0 + alturaCartao + 16;
+    doc.x = MARGIN;
   }
 
-  // Seções
+  // ---- Seções ----
   (dados.secoes || []).forEach((secao) => {
-    doc.font('Helvetica-Bold').fontSize(12.5).fillColor(VERDE).text(semEmoji(secao.titulo));
-    doc.moveDown(0.2);
+    novaPaginaSePreciso(doc, 60);
+    doc.font('Helvetica-Bold').fontSize(12.5).fillColor('#0f172a').text(semEmoji(secao.titulo), MARGIN, doc.y);
+    const ly = doc.y + 1.5;
+    doc.save().moveTo(MARGIN, ly).lineTo(MARGIN + 44, ly).lineWidth(2).strokeColor(VERDE).stroke().restore();
+    doc.moveDown(0.55);
     doc.font('Helvetica').fontSize(10.5).fillColor('#111827');
     (secao.itens || []).forEach((item, i) => {
-      const marcador = secao.numerada ? `${i + 1}.  ` : '•  ';
-      doc.text(marcador + item, { paragraphGap: 3, indent: 6, align: 'left' });
+      novaPaginaSePreciso(doc, 26);
+      bullet(doc, secao.numerada ? `${i + 1}.` : '•', String(item), MARGIN, larg);
+      doc.moveDown(0.18);
     });
-    doc.moveDown(0.6);
+    doc.moveDown(0.7);
   });
 
-  // Nas palavras do lead (citações exatas, entre aspas)
+  // ---- Nas palavras do lead (citações) ----
   if (Array.isArray(dados.citacoes) && dados.citacoes.length) {
-    doc.font('Helvetica-Bold').fontSize(12.5).fillColor(VERDE).text('Nas palavras do lead');
-    doc.moveDown(0.2);
+    novaPaginaSePreciso(doc, 60);
+    doc.font('Helvetica-Bold').fontSize(12.5).fillColor('#0f172a').text('Nas palavras do lead', MARGIN, doc.y);
+    const ly = doc.y + 1.5;
+    doc.save().moveTo(MARGIN, ly).lineTo(MARGIN + 44, ly).lineWidth(2).strokeColor(VERDE).stroke().restore();
+    doc.moveDown(0.55);
     dados.citacoes.forEach((c) => {
-      doc.font('Helvetica-Oblique').fontSize(10.5).fillColor('#0b3b2e')
-        .text(`“${c}”`, { indent: 6, paragraphGap: 3 });
+      novaPaginaSePreciso(doc, 30);
+      const y0 = doc.y;
+      doc.font('Helvetica-Oblique').fontSize(10.5).fillColor('#334155')
+        .text(`“${c}”`, MARGIN + 14, y0, { width: larg - 14, paragraphGap: 5 });
+      doc.save().rect(MARGIN, y0, 3, doc.y - y0 - 5).fill(VERDE).restore();
     });
-    doc.moveDown(0.6);
+    doc.moveDown(0.4);
   }
 
-  // Frase de impacto
+  // ---- Frase de impacto ----
   if (dados.frase_impacto) {
-    doc.font('Helvetica-Bold').fontSize(12.5).fillColor(VERDE).text('Frase de impacto');
+    novaPaginaSePreciso(doc, 70);
     doc.moveDown(0.2);
-    doc.font('Helvetica-Oblique').fontSize(11).fillColor('#111827')
-      .text(`“${dados.frase_impacto}”`);
+    const y0 = doc.y;
+    doc.font('Helvetica-Oblique').fontSize(11.5).fillColor(VERDE_ESC);
+    const wTxt = larg - 26;
+    const h = doc.heightOfString(`“${dados.frase_impacto}”`, { width: wTxt });
+    doc.save().roundedRect(MARGIN, y0, larg, h + 20, 9).fillAndStroke('#e7f6f1', '#bfe6d7').restore();
+    doc.fillColor(VERDE_ESC).text(`“${dados.frase_impacto}”`, MARGIN + 13, y0 + 10, { width: wTxt });
+    doc.y = y0 + h + 20;
   }
 }
 
-async function gerarPdfBuffer(dados) {
+function gerarPdfBuffer(dados) {
   return new Promise((resolve, reject) => {
     try {
-      const doc = new PDFDocument({ size: 'A4', margin: 50 });
+      const doc = new PDFDocument({ size: 'A4', margin: MARGIN });
       const chunks = [];
       doc.on('data', (c) => chunks.push(c));
       doc.on('end', () => resolve(Buffer.concat(chunks)));
@@ -105,7 +146,6 @@ async function gerarPdfBuffer(dados) {
   });
 }
 
-/** Gera o PDF em disco e retorna o caminho. */
 async function gerarPdf(dados, jid) {
   if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true });
   const buffer = await gerarPdfBuffer(dados);
