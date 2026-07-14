@@ -134,19 +134,21 @@
 
   // Encontra os elementos de mensagem, tentando várias estratégias (o HTML do
   // WhatsApp Web muda de tempos em tempos).
+  let _estrategiaMsg = 0;
   function acharMensagens(root) {
     let els = [...root.querySelectorAll('div.message-in, div.message-out')];
-    if (els.length) return els;
+    if (els.length) { _estrategiaMsg = 1; return els; }
     // Fallback 1: linhas com data-id de mensagem (true_/false_ = enviada/recebida).
     els = [...root.querySelectorAll('[data-id]')].filter((el) => {
       const id = el.getAttribute('data-id') || '';
       return /^(true|false)_/.test(id) && el.querySelector('.copyable-text, .selectable-text, [data-icon], audio');
     });
-    if (els.length) return els;
+    if (els.length) { _estrategiaMsg = 2; return els; }
     // Fallback 2: role="row" que contenha texto selecionável.
     els = [...root.querySelectorAll('div[role="row"]')].filter((el) =>
       el.querySelector('.selectable-text, .copyable-text')
     );
+    _estrategiaMsg = 3;
     return els;
   }
 
@@ -380,6 +382,18 @@
       const icons = [...new Set([...root.querySelectorAll('[data-icon]')].map((e) => e.getAttribute('data-icon')))];
       logA('data-icons na conversa:', icons.join(', ') || '(nenhum)');
       logA('inputs range (barra de áudio):', root.querySelectorAll('input[type="range"]').length);
+      logA('estratégia de leitura:', _estrategiaMsg);
+      // Loga os ícones de cada mensagem que tem algum ícone (revela o balão de áudio).
+      acharMensagens(root).forEach((el, i) => {
+        const ic = [...el.querySelectorAll('[data-icon]')].map((x) => x.getAttribute('data-icon'));
+        const idEl = el.matches('[data-id]') ? el : el.closest('[data-id]');
+        const id = idEl ? idEl.getAttribute('data-id') || '' : '';
+        const temRange = !!el.querySelector('input[type="range"]');
+        const temAudioEl = !!el.querySelector('audio');
+        if (ic.length || temRange || temAudioEl) {
+          logA(`msg#${i} ${id.slice(0, 16)} icons=[${ic.join(',')}] range=${temRange} audioEl=${temAudioEl}`);
+        }
+      });
       const totalAudios = [...mapa.values()].filter((r) => r.type === 'audio').length;
       const capturados = [...audioBytes.values()].filter(Boolean).length;
       const pendentes = [...mapa].filter(([chave, reg]) => reg.type === 'audio' && audioBytes.get(chave));
