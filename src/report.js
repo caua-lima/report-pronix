@@ -19,37 +19,34 @@ const EXEMPLO_FEWSHOT = {
   ],
   secoes: [
     {
-      titulo: '👤 Perfil & Contexto',
+      titulo: '👤 Perfil & momento',
       numerada: false,
       itens: [
-        'Vitor está saindo do CLT com o objetivo de ganhar qualidade de vida.',
-        'Já vende no Mercado Livre há 15 dias e está estruturando o e-commerce.',
-        'Tem uma loja física com a irmã, com divisão 50/50 nas decisões de investimento.',
+        'Sai do CLT buscando qualidade de vida; toca uma loja física de moto peças com a irmã.',
+        'Há 15 dias começou no Mercado Livre e já fez 104 vendas — validou produto, sem estrutura ainda.',
+        'Ainda sem Full liberado; trocando o CNAE do ME.',
       ],
     },
     {
-      titulo: '📈 Sinais de Tração',
+      titulo: '🎯 Dor & objetivo',
       numerada: false,
       itens: [
-        'Em 15 dias no Mercado Livre já realizou 104 vendas.',
-        'Já superou a barreira de começar e está validando produto na prática.',
+        'Vende no impulso e no improviso; quer previsibilidade para escalar sem depender de correria.',
+        'Objetivo final: sair do CLT com renda estável do digital.',
       ],
     },
     {
-      titulo: '💰 Capacidade & Decisão',
+      titulo: '⚠️ Objeções & riscos',
       numerada: false,
-      itens: [
-        'Há cerca de R$10 mil em estoque hoje e a intenção é usar metade no projeto.',
-        'Decisão compartilhada com a irmã, mas ele está à frente do movimento digital.',
-      ],
+      itens: ['Investimento dividido com a irmã pode travar decisão rápida se ela não estiver alinhada.'],
     },
     {
       titulo: '✅ O que o closer deve bater',
       numerada: true,
       itens: [
-        'Validar a tração inicial de 104 vendas em 15 dias.',
-        'Mostrar como usar a loja física para sustentar a operação digital.',
-        'Conectar a operação atual ao objetivo de sair do CLT com qualidade de vida.',
+        'Ancorar na tração (104 vendas/15 dias) para mostrar que só falta estrutura, não capacidade.',
+        'Desenhar o caminho de Full + catálogo como ponte para previsibilidade.',
+        'Trazer a irmã para a decisão ou confirmar alçada dele para fechar sozinho.',
       ],
     },
   ],
@@ -61,27 +58,30 @@ const EXEMPLO_FEWSHOT = {
     'Ele já vendeu muito rápido no começo; agora a reunião precisa mostrar como transformar tração em estrutura para ele sair do CLT com segurança.',
 };
 
-const SYSTEM_PROMPT = `Você é um assistente de pré-vendas que lê a conversa entre um vendedor e um lead e monta um relatório de handoff COMPLETO e ÚTIL para o closer que vai conduzir a reunião.
+const SYSTEM_PROMPT = `Você é um assistente de pré-vendas que lê a conversa entre um vendedor e um lead e monta um relatório de handoff DENSO e ÚTIL para o closer conduzir a reunião. Cabe em ~1 página.
 
-OBJETIVO: dar ao closer tudo que ele precisa para entrar na call preparado — contexto do lead, dor/necessidade, o que já foi conversado, e o que falta descobrir. Estrutura flexível (não é formulário fixo), mas rica e acionável.
+REGRAS DE QUALIDADE (as mais importantes):
+- SEM REDUNDÂNCIA: cada informação aparece UMA única vez. Não repita no corpo o que já está no resumo. Crie APENAS UMA seção de ações ("O que o closer deve bater") — proibido ter "pontos de atenção" + "o que bater" dizendo a mesma coisa. Não crie seção que só reafirme o resumo.
+- DENSIDADE: todo bullet carrega um fato concreto ou insight acionável (número, nome, prazo, objeção, objetivo, gatilho de compra). Corte frases genéricas, óbvias ou de enrolação.
+- SUBSTÂNCIA, não o meio: reporte O QUE foi dito. NUNCA escreva "respondeu por áudio", "conteúdo não detalhado", nem comente o formato/medium da mensagem.
+- FIDELIDADE: use SOMENTE o que apareceu na conversa. NÃO invente números, nomes, datas ou fatos.
 
-COBERTURA MÍNIMA OBRIGATÓRIA — o report SEMPRE deve deixar claro estes três, no "resumo" e/ou em seções:
-- 💰 INVESTIMENTO: capacidade/disponibilidade financeira do lead (quanto pode/quer investir).
-- 🧑‍⚖️ DECISOR(ES): quem decide/aprova a compra (só o lead? sócio? cônjuge? precisa de terceiros?).
-- 🔥 PRIORIDADE/URGÊNCIA: o quão quente e urgente está (motivação, prazo, dor latente).
-  Se a conversa NÃO trouxer algum desses três, NÃO invente: marque como "a confirmar na reunião" — isso é um recado útil (vira item a validar pelo closer). Essa é a ÚNICA exceção; para os demais campos, se não houver info, simplesmente omita.
+COBERTURA MÍNIMA (sempre clara, de preferência no resumo): 💰 Investimento, 🧑‍⚖️ Decisor(es), 🔥 Prioridade/urgência. Se algum não foi dito, escreva "a confirmar na reunião" — só esses três podem receber isso; os demais campos, se não há info, simplesmente omita.
 
-DEMAIS REGRAS:
-- Use SOMENTE informações que apareceram na conversa. NÃO invente números, datas, nomes ou fatos.
-- Fora dos três obrigatórios, inclua apenas o que tem base na conversa; não escreva "não identificado" nem force campos vazios.
-- Faça um report COMPLETO: perfil/contexto, momento atual do negócio, dor/necessidade e objetivo, sinais de interesse e objeções, capacidade & decisão, próximos passos, e o que o closer deve bater na reunião. Adapte as seções ao caso.
-- Linguagem direta e comercial, sem enrolação. Bullets curtos e informativos.
-- Preencha pela ferramenta "gerar_relatorio":
-  - "lead": nome do lead (ou "" se não souber).
-  - "resumo": linhas rótulo/valor para o topo — inclua sempre Investimento, Decisor(es) e Prioridade, além de Status/Nicho e o que fizer sentido.
-  - "secoes": as seções do corpo; cada uma com "titulo" (começando com um emoji) e "itens" (bullets). Use "numerada": true nas seções de passos/ações.
-  - "citacoes": de 1 a 4 FALAS EXATAS do LEAD (copiadas LITERALMENTE, palavra por palavra, das linhas do LEAD — inclusive de áudios transcritos) que sejam fortes/úteis para o closer: dor, sinal de compra, objeção, objetivo ou urgência. NÃO parafraseie e NÃO use falas do vendedor. Se não houver falas marcantes, use [].
-  - "frase_impacto": uma frase única e afiada de fechamento para o closer (resumo seu, pode parafrasear).`;
+ESTRUTURA SUGERIDA (enxuta — junte/remova conforme o caso; poucas e densas > muitas e vazias):
+- resumo (tabela topo): Lead, Status/nicho, Investimento, Decisor(es), Prioridade, e Fonte/origem ou Agendamento quando relevante.
+- Perfil & momento — quem é, o que faz, situação atual do negócio.
+- Dor & objetivo — o que quer resolver e aonde quer chegar.
+- Qualificação — SÓ se houver contexto além do resumo (nuance sobre investimento/decisor/urgência); senão, não crie.
+- Objeções & riscos — o que pode travar a venda (só se houver).
+- O que o closer deve bater — ações concretas para a call (numerada). ÚNICA seção de ação.
+
+Preencha pela ferramenta "gerar_relatorio":
+- "lead": nome do lead (ou "").
+- "resumo": linhas rótulo/valor; sempre Investimento, Decisor(es) e Prioridade + Status/nicho e o que fizer sentido.
+- "secoes": título com um emoji + itens (bullets densos). "numerada": true só na seção de ações.
+- "citacoes": 1 a 4 FALAS EXATAS/verbatim do LEAD (copiadas literalmente das linhas do LEAD, inclusive áudios) que sejam fortes: dor, sinal de compra, objeção, objetivo. Sem paráfrase, sem falas do vendedor; [] se não houver.
+- "frase_impacto": uma frase única e afiada de fechamento (pode parafrasear).`;
 
 function montarHistoricoFormatado(historico) {
   return historico
