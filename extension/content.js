@@ -39,14 +39,34 @@
 
   const logA = (...a) => console.log('[CR-audio]', ...a);
 
-  async function bytesDeBlob(url) {
+  async function fetchArrayBuffer(url) {
     try {
-      const buf = await fetch(url).then((r) => r.arrayBuffer());
-      if (buf && buf.byteLength >= 300) return arrayBufferToBase64(buf);
+      return await fetch(url).then((r) => r.arrayBuffer());
     } catch (_) {
-      /* revogado ou inacessível */
+      return null;
     }
-    return null;
+  }
+
+  // Confere pelos magic bytes se o blob é mesmo áudio (descarta imagem/pdf/etc.).
+  function ehAudioBuffer(buf) {
+    if (!buf || buf.byteLength < 800) return false;
+    const b = new Uint8Array(buf.slice(0, 12));
+    const eq = (i, s) => s.split('').every((c, k) => b[i + k] === c.charCodeAt(0));
+    // Não-áudio conhecidos -> rejeita
+    if (b[0] === 0xff && b[1] === 0xd8) return false; // JPEG
+    if (b[0] === 0x89 && eq(1, 'PNG')) return false; // PNG
+    if (eq(0, 'GIF8')) return false;
+    if (eq(0, '%PDF')) return false;
+    if (eq(0, 'RIFF') && eq(8, 'WEBP')) return false; // WebP
+    // Áudio conhecidos -> aceita
+    if (eq(0, 'OggS')) return true; // ogg/opus (voz do WhatsApp)
+    if (eq(0, 'ID3')) return true; // mp3 com tag
+    if (b[0] === 0xff && (b[1] & 0xe0) === 0xe0) return true; // frame mp3
+    if (eq(0, 'fLaC')) return true; // flac
+    if (eq(0, 'RIFF')) return true; // wav
+    if (eq(4, 'ftyp')) return true; // mp4/m4a/aac
+    // Desconhecido, mas tamanho plausível de voz -> aceita
+    return buf.byteLength >= 1500 && buf.byteLength < 8000000;
   }
 
   // Força o WhatsApp a materializar o áudio (baixa se preciso + play no mudo),
@@ -83,28 +103,32 @@
       }
     }
 
-    // 3) Consome o próximo blob de áudio ainda não usado (ordem de criação =
-    //    ordem cronológica dos áudios, já que processamos de cima para baixo).
+    // 3) Consome o próximo blob que SEJA áudio (valida magic bytes; descarta
+    //    imagem/pdf/etc.). Áudios processados de cima p/ baixo = ordem cronológica.
+    let descartados = 0;
     for (let i = 0; i < 40; i++) {
-      const b = blobsAudio.find((x) => !x.usado);
-      if (b) {
+      for (const b of blobsAudio) {
+        if (b.usado) continue;
         b.usado = true;
-        const idx = blobsAudio.indexOf(b);
-        const b64 = await bytesDeBlob(b.url);
-        logA(`áudio ${dbg || ''}: antes=${antes} novosAposPlay=${blobsAudio.length - antes} idx=${idx} ${b64 ? 'OK ' + b64.length : 'fetch falhou'}`);
-        return b64;
+        const buf = await fetchArrayBuffer(b.url);
+        if (ehAudioBuffer(buf)) {
+          logA(`áudio ${dbg || ''}: OK ${buf.byteLength} bytes (descartados ${descartados} não-áudio)`);
+          return arrayBufferToBase64(buf);
+        }
+        descartados++;
       }
+      // elemento <audio>, se esta versão usar
       const a = el.querySelector('audio') || document.querySelector('audio');
       if (a && (a.currentSrc || a.src || '').startsWith('blob:')) {
         a.muted = true;
         a.volume = 0;
         try { a.pause(); } catch (_) {}
-        const b64 = await bytesDeBlob(a.currentSrc || a.src);
-        if (b64) { logA(`áudio ${dbg || ''}: via <audio> OK ${b64.length}`); return b64; }
+        const buf = await fetchArrayBuffer(a.currentSrc || a.src);
+        if (ehAudioBuffer(buf)) { logA(`áudio ${dbg || ''}: via <audio> OK ${buf.byteLength}`); return arrayBufferToBase64(buf); }
       }
       await sleep(150);
     }
-    logA(`áudio ${dbg || ''}: SEM blob disponível (antes=${antes}, total=${blobsAudio.length})`);
+    logA(`áudio ${dbg || ''}: sem blob de áudio (blobs vistos=${blobsAudio.length}, antes=${antes})`);
     return null;
   }
 
