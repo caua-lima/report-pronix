@@ -66,7 +66,7 @@ function linhaTabela(rotulo, valor) {
 
 /** Monta o objeto Document (compartilhado por gerarDocx e gerarDocxBuffer). */
 function montarDocumento(dados) {
-  const company = process.env.COMPANY_NAME || 'Empresa';
+  const company = process.env.COMPANY_NAME || 'PRONIX';
   const children = [];
 
   // Título (heading 1, negrito)

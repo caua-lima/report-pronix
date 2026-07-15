@@ -61,8 +61,8 @@
 <body>
   <header>
     <div class="header-in">
-      <div class="logo">📊</div>
-      <div class="brand">Report do Dia<small>Registre ao longo do dia · gere o resumo no fim</small></div>
+      <div class="logo"><svg width="20" height="20" viewBox="0 0 30 30" fill="none"><path d="M4 22 L11 9 L16 17 L26 3" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><circle cx="26" cy="3.5" r="2.6" fill="#fff"/></svg></div>
+      <div class="brand">PRONIX · Report do Dia<small>Registre ao longo do dia · gere o resumo no fim · SDR: Cauã Lima</small></div>
     </div>
   </header>
 
@@ -143,7 +143,7 @@
       const hoje = new Date().toISOString().slice(0, 10);
       let s = {};
       try { s = JSON.parse(localStorage.getItem(KEY)) || {}; } catch (_) {}
-      $('nome').value = s.nome || '';
+      $('nome').value = s.nome || 'Cauã Lima';
       $('data').value = s.data || hoje;
       const nums = s.nums || {};
       ['automaticas', 'leadsNovos', 'respostas', 'recontatos', 'ligacoes'].forEach((k) => { $(k).value = nums[k] != null ? nums[k] : 0; });

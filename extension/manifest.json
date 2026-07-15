@@ -1,17 +1,29 @@
 {
   "manifest_version": 3,
-  "name": "WhatsApp Closer Report",
+  "name": "PRONIX Closer Report",
   "version": "1.0.0",
-  "description": "Lê a conversa aberta no WhatsApp Web e gera um relatório de handoff de pré-vendas em .docx com um clique.",
+  "description": "Lê a conversa do WhatsApp Web (texto + áudios transcritos), rastreia a atividade do dia e gera o relatório de handoff da PRONIX em PDF.",
   "permissions": ["activeTab", "scripting", "storage"],
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
   "host_permissions": [
     "https://web.whatsapp.com/*",
     "http://localhost/*",
     "http://127.0.0.1/*"
   ],
   "action": {
-    "default_title": "Closer Report",
-    "default_popup": "popup.html"
+    "default_title": "PRONIX Closer Report",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
   },
   "background": {
     "service_worker": "background.js"

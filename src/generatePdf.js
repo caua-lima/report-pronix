@@ -43,15 +43,26 @@ function bullet(doc, marcador, texto, x, largura) {
 }
 
 function render(doc, dados) {
-  const company = process.env.COMPANY_NAME || 'Empresa';
+  const company = process.env.COMPANY_NAME || 'PRONIX';
+  const sdr = process.env.SDR_NAME || 'Cauã Lima';
+  const dataStr = new Date().toLocaleDateString('pt-BR');
   const larg = doc.page.width - MARGIN * 2;
 
-  // ---- Cabeçalho (faixa) ----
-  doc.save().rect(0, 0, doc.page.width, 74).fill(VERDE).restore();
-  doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(19)
-    .text('HANDOFF DE PRÉ-VENDAS', MARGIN, 24, { width: larg });
-  doc.font('Helvetica').fontSize(11).fillColor('#dcfce7').text(company, MARGIN, 50);
-  doc.y = 94;
+  // ---- Cabeçalho (faixa + logo) ----
+  doc.save().rect(0, 0, doc.page.width, 84).fill(VERDE).restore();
+  // Marca: linha de crescimento (logo)
+  const lx = MARGIN;
+  const ly = 26;
+  doc.save();
+  doc.lineWidth(2.4).strokeColor('#ffffff').lineJoin('round').lineCap('round')
+    .moveTo(lx, ly + 22).lineTo(lx + 9, ly + 7).lineTo(lx + 16, ly + 15).lineTo(lx + 27, ly + 1).stroke();
+  doc.circle(lx + 27, ly + 1, 2.3).fill('#ffffff');
+  doc.restore();
+  const tx = MARGIN + 42;
+  doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(18).text('HANDOFF DE PRÉ-VENDAS', tx, 24);
+  doc.font('Helvetica-Bold').fontSize(12).fillColor('#eafff6').text(company, tx, 48, { continued: true })
+    .font('Helvetica').fontSize(10.5).fillColor('#d6f2e6').text(`     SDR: ${sdr}     ·     ${dataStr}`);
+  doc.y = 104;
   doc.x = MARGIN;
 
   // ---- Cartão de resumo ----
