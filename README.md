@@ -95,6 +95,33 @@ npm start        # deixe o servidor rodando
 > muito longas isso pode levar alguns segundos. Só a fase de leitura exige ficar na
 > conversa; a geração roda em background.
 
+## Colocar online para a equipe (Cloudflare Tunnel)
+
+O servidor roda no seu PC e o túnel dá uma **URL pública gratuita** para o time — mantendo
+todas as funcionalidades (Whisper local + reconhecimento de voz).
+
+```bash
+# terminal 1 — servidor
+npm start
+
+# terminal 2 — túnel (URL pública)
+npm run tunel
+```
+
+O `cloudflared` imprime uma URL tipo `https://algo-aleatorio.trycloudflare.com`.
+
+**Onboarding do time:**
+1. Abra `SUA_URL/admin`, entre com a `ADMIN_PASSWORD` do `.env`.
+2. Crie um acesso por SDR → copie a **chave** (`pnx_...`) de cada um.
+3. Cada SDR instala a extensão, cola a **URL do servidor** e a **chave** no popup e clica
+   em **Validar** (mostra "Conectado como Fulano").
+4. Cada um cadastra a **própria voz** em `SUA_URL/manual` (voz e contadores do dia ficam
+   separados por pessoa).
+
+> ⚠️ A URL do `trycloudflare` **muda a cada reinício** do túnel. Para uma URL fixa
+> (ex.: `report.pronix.com.br`), crie um túnel nomeado com uma conta Cloudflare + domínio.
+> E o PC precisa ficar ligado enquanto a equipe usa.
+
 ## Riscos e custos
 
 - **Risco de ban:** baixo. A extensão apenas **lê** a página que você já tem aberta e
