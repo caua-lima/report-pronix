@@ -10,6 +10,7 @@ const { dadosDireto, dadosDeTexto } = require('./src/report');
 const { gerarPdfBuffer } = require('./src/generatePdf');
 const { transcribeBuffer } = require('./src/transcribe');
 const usuarios = require('./src/usuarios');
+const stats = require('./src/stats');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -57,23 +58,13 @@ function admin(req, res, next) {
 // ---------------------------------------------------------------------------
 // Páginas
 // ---------------------------------------------------------------------------
-app.get('/', (_req, res) => {
-  res.type('html').send(
-    `<!doctype html><meta charset="utf-8"><title>PRONIX Closer Report</title>
-     <div style="font-family:system-ui;max-width:560px;margin:60px auto;line-height:1.6;color:#121214">
-       <h2 style="margin-bottom:4px">⚡ PRONIX · Closer Report</h2>
-       <p style="color:#6b6b76;margin-top:0">Servidor no ar.</p>
-       <p>Equipe: use a <b>extensão no WhatsApp Web</b> com a sua chave.</p>
-       <p><a href="/admin" style="color:#a67c00"><b>🔑 Painel de acessos (admin)</b></a> ·
-          <a href="/manual" style="color:#a67c00">📝 Modo manual</a> ·
-          <a href="/dia" style="color:#a67c00">📊 Report do dia</a></p>
-     </div>`
-  );
-});
+const dashboard = (_req, res) => res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
 
-app.get('/manual', (_req, res) => res.sendFile(path.join(__dirname, 'public', 'manual.html')));
+// Tudo cai no dashboard: as abas de dentro fazem o resto.
+app.get('/', dashboard);
+app.get('/manual', dashboard);
+app.get('/admin', dashboard);
 app.get('/dia', (_req, res) => res.sendFile(path.join(__dirname, 'public', 'dia.html')));
-app.get('/admin', (_req, res) => res.sendFile(path.join(__dirname, 'public', 'admin.html')));
 
 // Status é público (serve para o botão "Testar" da extensão).
 app.get('/api/status', (_req, res) => {
@@ -108,11 +99,20 @@ app.delete('/api/admin/usuarios/:id', admin, (req, res) => {
   res.json({ ok: true });
 });
 
+/** Números do dashboard: quantos reports, por quem, quando. */
+app.get('/api/admin/stats', admin, (_req, res) => res.json(stats.resumo()));
+
 // ---------------------------------------------------------------------------
 // Report (extensão e modo manual) — devolve o PDF em base64 (sem disco).
 // ---------------------------------------------------------------------------
-async function responderReport(res, dados, nome) {
+async function responderReport(req, res, dados, nome, origem) {
   const buffer = await gerarPdfBuffer(dados);
+  stats.registrar({
+    usuarioId: req.usuario.id,
+    usuarioNome: req.usuario.nome,
+    lead: dados.lead || nome || '',
+    origem,
+  });
   const empresa = (process.env.COMPANY_NAME || 'PRONIX').toUpperCase().replace(/[^A-Z0-9]/g, '') || 'PRONIX';
   const slug = String(dados.lead || nome || 'lead')
     .normalize('NFD').replace(/[̀-ͯ]/g, '')
@@ -131,7 +131,7 @@ app.post('/api/report-direto', auth, async (req, res) => {
   try {
     const { mensagens, nome } = req.body || {};
     const dados = await dadosDireto({ mensagens, nome });
-    await responderReport(res, dados, nome);
+    await responderReport(req, res, dados, nome, 'extensao');
   } catch (err) {
     res.status(/Nenhuma mensagem/i.test(err.message) ? 400 : 500).json({ erro: err.message });
   }
@@ -141,7 +141,7 @@ app.post('/api/report-texto', auth, async (req, res) => {
   try {
     const { texto, nome } = req.body || {};
     const dados = await dadosDeTexto({ texto, nome });
-    await responderReport(res, dados, nome);
+    await responderReport(req, res, dados, nome, 'manual');
   } catch (err) {
     res.status(/Cole a conversa/i.test(err.message) ? 400 : 500).json({ erro: err.message });
   }
@@ -168,7 +168,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 app.listen(PORT, () => {
   console.log(`⚡ PRONIX Closer Report em http://localhost:${PORT}`);
-  console.log(`   Painel de acessos: http://localhost:${PORT}/admin`);
+  console.log(`   Dashboard (report, acessos e números): http://localhost:${PORT}`);
   if (!process.env.ADMIN_PASSWORD) {
     console.log('   ⚠ Defina ADMIN_PASSWORD no .env para usar o painel de admin.');
   }
