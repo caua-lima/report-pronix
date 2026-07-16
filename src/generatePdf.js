@@ -11,9 +11,10 @@ const OUTPUT_DIR = path.join(__dirname, '..', 'output');
 
 // Cores PRONIX: preto + dourado.
 const OURO = '#ffc400';
+const OURO_ESC = '#a67c00'; // dourado legível sobre fundo claro
 const PRETO = '#121214';
-const CLARO = '#f6f7f9';
-const BORDA = '#e3e8ef';
+const CLARO = '#faf9f5';
+const BORDA = '#e6e2d6';
 const TEXTO = '#1f2937';
 const MARGIN = 46;
 
@@ -53,11 +54,15 @@ function novaPaginaSePreciso(doc, alturaNecessaria) {
   if (doc.y + alturaNecessaria > doc.page.height - MARGIN) doc.addPage();
 }
 
+// Marcador em dourado + texto escuro (padrão PRONIX).
 function bullet(doc, marcador, texto, x, largura) {
   const y = doc.y;
   const wMarc = 18;
-  doc.text(marcador, x, y, { width: wMarc });
-  doc.text(texto, x + wMarc, y, { width: largura - wMarc, paragraphGap: 2 });
+  doc.font('Helvetica-Bold').fillColor(OURO_ESC).text(marcador, x, y, { width: wMarc });
+  doc.font('Helvetica').fillColor('#1f2937').text(texto, x + wMarc, y, {
+    width: largura - wMarc,
+    paragraphGap: 2,
+  });
 }
 
 function render(doc, dados) {
@@ -95,10 +100,12 @@ function render(doc, dados) {
     novaPaginaSePreciso(doc, alturaCartao + 10);
     const y0 = doc.y;
     doc.save().roundedRect(MARGIN, y0, larg, alturaCartao, 9).fillAndStroke(CLARO, BORDA).restore();
+    // faixa dourada na lateral esquerda (marca)
+    doc.save().rect(MARGIN + 1, y0 + 1, 4, alturaCartao - 2).fill(OURO).restore();
     let y = y0 + pad;
     linhas.forEach(([rot, val], i) => {
-      doc.font('Helvetica-Bold').fontSize(10).fillColor(PRETO).text(String(rot), MARGIN + pad, y, { width: wLabel });
-      doc.font('Helvetica').fontSize(10).fillColor(TEXTO).text(String(val), MARGIN + pad + wLabel + 10, y, { width: wVal });
+      doc.font('Helvetica-Bold').fontSize(10).fillColor(PRETO).text(String(rot), MARGIN + pad + 4, y, { width: wLabel });
+      doc.font('Helvetica').fontSize(10).fillColor(TEXTO).text(String(val), MARGIN + pad + wLabel + 14, y, { width: wVal });
       y += alturas[i] + 7;
     });
     doc.y = y0 + alturaCartao + 16;
@@ -138,17 +145,19 @@ function render(doc, dados) {
     doc.moveDown(0.4);
   }
 
-  // ---- Frase de impacto ----
+  // ---- Frase de impacto (caixa preta com texto dourado = marca PRONIX) ----
   if (dados.frase_impacto) {
-    novaPaginaSePreciso(doc, 70);
+    novaPaginaSePreciso(doc, 80);
     doc.moveDown(0.2);
     const y0 = doc.y;
-    doc.font('Helvetica-Oblique').fontSize(11.5).fillColor(PRETO);
-    const wTxt = larg - 26;
+    doc.font('Helvetica-Oblique').fontSize(11.5);
+    const wTxt = larg - 30;
     const h = doc.heightOfString(`“${dados.frase_impacto}”`, { width: wTxt });
-    doc.save().roundedRect(MARGIN, y0, larg, h + 20, 9).fillAndStroke('#fff8e1', '#f0d48a').restore();
-    doc.fillColor(PRETO).text(`“${dados.frase_impacto}”`, MARGIN + 13, y0 + 10, { width: wTxt });
-    doc.y = y0 + h + 20;
+    doc.save().roundedRect(MARGIN, y0, larg, h + 24, 9).fill(PRETO).restore();
+    doc.save().rect(MARGIN + 1, y0 + 1, 4, h + 22).fill(OURO).restore();
+    doc.font('Helvetica-Oblique').fontSize(11.5).fillColor(OURO)
+      .text(`“${dados.frase_impacto}”`, MARGIN + 15, y0 + 12, { width: wTxt });
+    doc.y = y0 + h + 24;
   }
 }
 
@@ -169,11 +178,21 @@ function gerarPdfBuffer(dados) {
       const range = doc.bufferedPageRange();
       for (let i = 0; i < range.count; i++) {
         doc.switchToPage(range.start + i);
-        doc.font('Helvetica').fontSize(8).fillColor('#94a3b8').text(
-          `${company}  ·  Handoff de pré-vendas  ·  SDR: ${sdr}  ·  ${i + 1}/${range.count}`,
+        const yRod = doc.page.height - 34;
+        // linha dourada acima do rodapé
+        doc.save().moveTo(MARGIN, yRod).lineTo(doc.page.width - MARGIN, yRod)
+          .lineWidth(1.5).strokeColor(OURO).stroke().restore();
+        doc.font('Helvetica-Bold').fontSize(8).fillColor(PRETO).text(
+          `${company}`,
           MARGIN,
-          doc.page.height - 30,
-          { width: doc.page.width - MARGIN * 2, align: 'center', lineBreak: false }
+          yRod + 7,
+          { width: doc.page.width - MARGIN * 2, align: 'left', lineBreak: false }
+        );
+        doc.font('Helvetica').fontSize(8).fillColor('#8b8b95').text(
+          `Handoff de pré-vendas  ·  SDR: ${sdr}  ·  ${i + 1}/${range.count}`,
+          MARGIN,
+          yRod + 7,
+          { width: doc.page.width - MARGIN * 2, align: 'right', lineBreak: false }
         );
       }
 
