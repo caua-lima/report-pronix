@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PRONIX · Acessos da equipe</title>
+  <style>
+    :root {
+      --bg: #f5f5f7; --card: #fff; --border: #e4e4e8; --text: #121214; --muted: #6b6b76;
+      --primary: #ffc400; --primary-hover: #e6b000; --gold-ink: #8a6d00; --danger: #dc2626;
+      --ring: rgba(255,196,0,.35); --shadow: 0 1px 3px rgba(0,0,0,.08);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg: #131315; --card: #1c1c20; --border: #2e2e35; --text: #f2f2f4; --muted: #9a9aa6; --gold-ink: #ffc400; }
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; }
+    body { font-family: -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); line-height: 1.55; }
+    header { background: linear-gradient(120deg, #1c1c20, #0b0b0d); color: #fff; }
+    .header-in { max-width: 820px; margin: 0 auto; padding: 16px 24px; display: flex; align-items: center; gap: 12px; }
+    .brand b { font-size: 1.05rem; letter-spacing: .04em; display: block; line-height: 1.15; }
+    .brand small { font-size: .78rem; opacity: .9; }
+    .wrap { max-width: 820px; margin: 0 auto; padding: 24px; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 18px; margin-bottom: 18px; box-shadow: var(--shadow); }
+    label { display: block; font-size: .8rem; font-weight: 600; color: var(--muted); margin-bottom: 6px; }
+    input { width: 100%; padding: 11px 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: .95rem; }
+    input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 4px var(--ring); }
+    .btn { border: none; border-radius: 10px; padding: 11px 18px; font-weight: 700; cursor: pointer; background: var(--primary); color: #121214; font-size: .95rem; }
+    .btn:hover { background: var(--primary-hover); }
+    .btn.sec { background: transparent; color: var(--text); border: 1px solid var(--border); }
+    .row { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+    .row .grow { flex: 1; min-width: 200px; }
+    .status { min-height: 18px; margin-top: 10px; font-size: .88rem; color: var(--muted); }
+    .status.erro { color: var(--danger); }
+    .status.ok { color: var(--gold-ink); font-weight: 600; }
+    .hidden { display: none; }
+    table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+    th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--border); font-size: .9rem; vertical-align: middle; }
+    th { font-size: .75rem; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+    .chave { font-family: ui-monospace, Consolas, monospace; font-size: .78rem; background: var(--bg); padding: 4px 7px; border-radius: 6px; border: 1px solid var(--border); }
+    .acoes { display: flex; gap: 6px; }
+    .mini { border: 1px solid var(--border); background: transparent; color: var(--text); border-radius: 7px; padding: 5px 9px; cursor: pointer; font-size: .78rem; font-weight: 600; }
+    .mini.del { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 35%, var(--border)); }
+    .hint { font-size: .82rem; color: var(--muted); margin-top: 10px; }
+    .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #121214; color: #ffc400; padding: 10px 18px; border-radius: 10px; font-weight: 600; opacity: 0; transition: opacity .2s; }
+    .toast.show { opacity: 1; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="header-in">
+      <svg width="26" height="26" viewBox="0 0 30 30"><path d="M18.2 2.5 L8.5 16.8 L14.2 16.8 L11.6 27.5 L21.5 12.6 L15.8 12.6 Z" fill="#ffc400"/></svg>
+      <div class="brand"><b>PRONIX</b><small>Acessos da equipe · Closer Report</small></div>
+    </div>
+  </header>
+
+  <div class="wrap">
+    <!-- Login admin -->
+    <div class="card" id="cardLogin">
+      <label for="senha">Senha de admin</label>
+      <div class="row">
+        <input id="senha" class="grow" type="password" placeholder="ADMIN_PASSWORD do .env" />
+        <button id="entrar" class="btn">Entrar</button>
+      </div>
+      <div id="statusLogin" class="status"></div>
+    </div>
+
+    <!-- Painel -->
+    <div id="painel" class="hidden">
+      <div class="card">
+        <label for="nome">Criar acesso para um SDR</label>
+        <div class="row">
+          <input id="nome" class="grow" type="text" placeholder="Nome do SDR (ex.: João Pedro)" />
+          <button id="criar" class="btn">Criar acesso</button>
+        </div>
+        <div id="statusCriar" class="status"></div>
+        <div class="hint">Cada SDR cola a chave dele no popup da extensão. A voz e os contadores do dia ficam separados por pessoa.</div>
+      </div>
+
+      <div class="card">
+        <div style="font-weight:700;margin-bottom:6px">Equipe</div>
+        <table>
+          <thead><tr><th>Nome</th><th>Chave</th><th>Criado</th><th></th></tr></thead>
+          <tbody id="lista"></tbody>
+        </table>
+        <div id="vazio" class="hint">Nenhum acesso criado ainda.</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    let senhaAdmin = '';
+
+    function toast(msg) {
+      const t = $('toast'); t.textContent = msg; t.classList.add('show');
+      setTimeout(() => t.classList.remove('show'), 1600);
+    }
+    function setStatus(id, txt, cls) { const e = $(id); e.className = 'status' + (cls ? ' ' + cls : ''); e.textContent = txt || ''; }
+    function esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+    async function api(metodo, url, corpo) {
+      const r = await fetch(url, {
+        method: metodo,
+        headers: { 'Content-Type': 'application/json', 'x-admin-pass': senhaAdmin },
+        body: corpo ? JSON.stringify(corpo) : undefined,
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.erro || 'Falha na requisição.');
+      return j;
+    }
+
+    async function entrar() {
+      senhaAdmin = $('senha').value;
+      setStatus('statusLogin', 'Entrando…');
+      try {
+        await api('POST', '/api/admin/login', {});
+        $('cardLogin').classList.add('hidden');
+        $('painel').classList.remove('hidden');
+        sessionStorage.setItem('adminPass', senhaAdmin);
+        carregar();
+      } catch (e) {
+        setStatus('statusLogin', '❌ ' + e.message, 'erro');
+      }
+    }
+
+    async function carregar() {
+      try {
+        const { usuarios } = await api('GET', '/api/admin/usuarios');
+        $('vazio').style.display = usuarios.length ? 'none' : '';
+        $('lista').innerHTML = usuarios.map((u) => `
+          <tr>
+            <td><b>${esc(u.nome)}</b></td>
+            <td><span class="chave">${esc(u.chave)}</span></td>
+            <td style="color:var(--muted);font-size:.8rem">${new Date(u.criadoEm).toLocaleDateString('pt-BR')}</td>
+            <td><div class="acoes">
+              <button class="mini" data-copiar="${esc(u.chave)}">Copiar chave</button>
+              <button class="mini del" data-remover="${u.id}" data-nome="${esc(u.nome)}">Remover</button>
+            </div></td>
+          </tr>`).join('');
+      } catch (e) {
+        setStatus('statusCriar', '❌ ' + e.message, 'erro');
+      }
+    }
+
+    $('lista').addEventListener('click', async (ev) => {
+      const c = ev.target.closest('[data-copiar]');
+      const d = ev.target.closest('[data-remover]');
+      if (c) {
+        try { await navigator.clipboard.writeText(c.dataset.copiar); toast('Chave copiada!'); }
+        catch (_) { toast('Copie manualmente.'); }
+      } else if (d) {
+        if (!confirm(`Remover o acesso de ${d.dataset.nome}? A voz e os contadores dele serão apagados.`)) return;
+        try { await api('DELETE', '/api/admin/usuarios/' + d.dataset.remover); carregar(); toast('Acesso removido.'); }
+        catch (e) { setStatus('statusCriar', '❌ ' + e.message, 'erro'); }
+      }
+    });
+
+    async function criar() {
+      const nome = $('nome').value.trim();
+      if (!nome) { setStatus('statusCriar', 'Informe o nome do SDR.', 'erro'); return; }
+      setStatus('statusCriar', 'Criando…');
+      try {
+        const { usuario } = await api('POST', '/api/admin/usuarios', { nome });
+        $('nome').value = '';
+        setStatus('statusCriar', `✅ Acesso de ${usuario.nome} criado — copie a chave e envie para ele.`, 'ok');
+        carregar();
+      } catch (e) {
+        setStatus('statusCriar', '❌ ' + e.message, 'erro');
+      }
+    }
+
+    $('entrar').addEventListener('click', entrar);
+    $('senha').addEventListener('keydown', (e) => { if (e.key === 'Enter') entrar(); });
+    $('criar').addEventListener('click', criar);
+    $('nome').addEventListener('keydown', (e) => { if (e.key === 'Enter') criar(); });
+
+    // Se já logou nesta aba, entra direto.
+    const salva = sessionStorage.getItem('adminPass');
+    if (salva) { $('senha').value = salva; entrar(); }
+  </script>
+</body>
+</html>

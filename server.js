@@ -6,86 +6,215 @@ const path = require('path');
 const fs = require('fs');
 const express = require('express');
 
-const { gerarReportDireto, gerarReportDeTexto } = require('./src/report');
+const { dadosDireto, dadosDeTexto } = require('./src/report');
+const { gerarPdfBuffer } = require('./src/generatePdf');
 const { transcribeBuffer } = require('./src/transcribe');
+const usuarios = require('./src/usuarios');
 const voz = require('./src/voiceprint');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const OUTPUT_DIR = path.join(__dirname, 'output');
 
 // Conversas longas + áudio em base64 geram payloads grandes.
 app.use(express.json({ limit: '25mb' }));
 
-// CORS — a extensão (origem chrome-extension://) chama este servidor local.
+// CORS — a extensão (chrome-extension://) chama este servidor.
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Headers', 'Content-Type');
-  res.header('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, x-cr-key, x-admin-pass');
+  res.header('Access-Control-Allow-Methods', 'GET,POST,DELETE,OPTIONS');
   if (req.method === 'OPTIONS') return res.sendStatus(204);
   next();
 });
 
-// Página simples de status (a UI de verdade é a extensão).
+// ---------------------------------------------------------------------------
+// Autenticação
+// ---------------------------------------------------------------------------
+
+/** Exige a chave do SDR (header x-cr-key ou ?chave=). Popula req.usuario. */
+function auth(req, res, next) {
+  const chave = req.get('x-cr-key') || req.query.chave;
+  const u = usuarios.porChave(chave && String(chave).trim());
+  if (!u) {
+    return res.status(401).json({
+      erro: 'Chave inválida ou ausente. Peça sua chave ao admin e cole no popup da extensão.',
+    });
+  }
+  req.usuario = u;
+  next();
+}
+
+/** Exige a senha de admin (ADMIN_PASSWORD no .env). */
+function admin(req, res, next) {
+  const esperada = process.env.ADMIN_PASSWORD;
+  if (!esperada) {
+    return res.status(500).json({ erro: 'ADMIN_PASSWORD não configurada no .env do servidor.' });
+  }
+  const senha = req.get('x-admin-pass') || (req.body && req.body.senha) || req.query.senha;
+  if (senha !== esperada) return res.status(401).json({ erro: 'Senha de admin incorreta.' });
+  next();
+}
+
+// ---------------------------------------------------------------------------
+// Páginas
+// ---------------------------------------------------------------------------
 app.get('/', (_req, res) => {
   res.type('html').send(
-    `<!doctype html><meta charset="utf-8">
-     <title>Closer Report</title>
-     <div style="font-family:sans-serif;max-width:520px;margin:60px auto;line-height:1.5">
-       <h2>✅ Servidor do Closer Report rodando</h2>
-       <p>Deixe este servidor ligado e use a <b>extensão no WhatsApp Web</b>:
-       abra uma conversa e clique em <b>Gerar Report</b>.</p>
-       <p>Ou cole a conversa manualmente no
-       <a href="/manual" style="color:#25d366"><b>📝 Modo manual</b></a>
-       (útil quando você já tem a conversa/áudios transcritos em texto).</p>
-       <p>Resumo diário de atividade:
-       <a href="/dia" style="color:#25d366"><b>📊 Report do dia</b></a>.</p>
-       <p style="color:#888">Porta ${PORT} · provedor: ${process.env.LLM_PROVIDER || 'anthropic'}</p>
+    `<!doctype html><meta charset="utf-8"><title>PRONIX Closer Report</title>
+     <div style="font-family:system-ui;max-width:560px;margin:60px auto;line-height:1.6;color:#121214">
+       <h2 style="margin-bottom:4px">⚡ PRONIX · Closer Report</h2>
+       <p style="color:#6b6b76;margin-top:0">Servidor no ar.</p>
+       <p>Equipe: use a <b>extensão no WhatsApp Web</b> com a sua chave.</p>
+       <p><a href="/admin" style="color:#a67c00"><b>🔑 Painel de acessos (admin)</b></a> ·
+          <a href="/manual" style="color:#a67c00">📝 Modo manual</a> ·
+          <a href="/dia" style="color:#a67c00">📊 Report do dia</a></p>
      </div>`
   );
 });
 
-// Health check para a extensão testar a conexão.
+app.get('/manual', (_req, res) => res.sendFile(path.join(__dirname, 'public', 'manual.html')));
+app.get('/dia', (_req, res) => res.sendFile(path.join(__dirname, 'public', 'dia.html')));
+app.get('/admin', (_req, res) => res.sendFile(path.join(__dirname, 'public', 'admin.html')));
+
+// Status é público (serve para o botão "Testar" da extensão).
 app.get('/api/status', (_req, res) => {
   res.json({ ok: true, provider: process.env.LLM_PROVIDER || 'anthropic' });
 });
 
-// POST /api/report-direto — recebe a conversa raspada e devolve dados + arquivo .docx
-app.post('/api/report-direto', async (req, res) => {
+/** Quem sou eu (valida a chave e devolve o nome). */
+app.get('/api/eu', auth, (req, res) => {
+  res.json({ ok: true, nome: req.usuario.nome, id: req.usuario.id });
+});
+
+// ---------------------------------------------------------------------------
+// Admin: criar/listar/remover acessos da equipe
+// ---------------------------------------------------------------------------
+app.post('/api/admin/login', admin, (_req, res) => res.json({ ok: true }));
+
+app.get('/api/admin/usuarios', admin, (_req, res) => {
+  res.json({ usuarios: usuarios.listar() });
+});
+
+app.post('/api/admin/usuarios', admin, (req, res) => {
   try {
-    const { mensagens, nome } = req.body || {};
-    const { dados, arquivo } = await gerarReportDireto({ mensagens, nome });
-    res.json({ dados, arquivo: path.basename(arquivo) });
+    const u = usuarios.criar(req.body && req.body.nome);
+    res.json({ ok: true, usuario: u });
   } catch (err) {
-    const semMsgs = /Nenhuma mensagem/i.test(err.message);
-    res.status(semMsgs ? 400 : 500).json({ erro: err.message });
+    res.status(400).json({ erro: err.message });
   }
 });
 
-// GET /manual — página para colar a conversa manualmente e gerar o report
-app.get('/manual', (_req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'manual.html'));
+app.delete('/api/admin/usuarios/:id', admin, (req, res) => {
+  usuarios.remover(req.params.id);
+  res.json({ ok: true });
 });
 
-// GET /dia — relatório diário de atividade (registra ao longo do dia)
-app.get('/dia', (_req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'dia.html'));
-});
-
-// Contadores automáticos do dia (enviados pela extensão) — guardados em data/.
-const DATA_DIR = path.join(__dirname, 'data');
-function arquivoDia(data) {
-  const d = /^\d{4}-\d{2}-\d{2}$/.test(data || '') ? data : new Date().toISOString().slice(0, 10);
-  return path.join(DATA_DIR, `dia_${d}.json`);
+// ---------------------------------------------------------------------------
+// Report (extensão e modo manual) — devolve o PDF em base64 (sem disco).
+// ---------------------------------------------------------------------------
+async function responderReport(res, dados, nome) {
+  const buffer = await gerarPdfBuffer(dados);
+  const empresa = (process.env.COMPANY_NAME || 'PRONIX').toUpperCase().replace(/[^A-Z0-9]/g, '') || 'PRONIX';
+  const slug = String(dados.lead || nome || 'lead')
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 50) || 'lead';
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, '0');
+  const carimbo = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}`;
+  res.json({
+    dados,
+    arquivo: `${empresa}_relatorio_${slug}_${carimbo}.pdf`,
+    arquivoBase64: buffer.toString('base64'),
+  });
 }
 
-// POST /api/dia — a extensão envia { data, iniciados, respostas, recontatos }
-app.post('/api/dia', (req, res) => {
+app.post('/api/report-direto', auth, async (req, res) => {
+  try {
+    const { mensagens, nome } = req.body || {};
+    const dados = await dadosDireto({ mensagens, nome });
+    await responderReport(res, dados, nome);
+  } catch (err) {
+    res.status(/Nenhuma mensagem/i.test(err.message) ? 400 : 500).json({ erro: err.message });
+  }
+});
+
+app.post('/api/report-texto', auth, async (req, res) => {
+  try {
+    const { texto, nome } = req.body || {};
+    const dados = await dadosDeTexto({ texto, nome });
+    await responderReport(res, dados, nome);
+  } catch (err) {
+    res.status(/Cole a conversa/i.test(err.message) ? 400 : 500).json({ erro: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Transcrição (Whisper local) + reconhecimento de voz DO USUÁRIO
+// ---------------------------------------------------------------------------
+app.post('/api/transcrever', auth, async (req, res) => {
+  try {
+    const { audioBase64, nome } = req.body || {};
+    if (!audioBase64) return res.status(400).json({ erro: 'Nenhum áudio recebido.' });
+    const buffer = Buffer.from(audioBase64, 'base64');
+    const ext = path.extname((nome || '').toString()) || '.ogg';
+    const texto = await transcribeBuffer(buffer, ext);
+
+    let quem = null;
+    let similaridade = null;
+    try {
+      if (voz.temVoiceprint(req.usuario.id)) {
+        const c = await voz.classificar(req.usuario.id, buffer, ext);
+        quem = c.quem;
+        similaridade = c.similaridade;
+      }
+    } catch (e) {
+      console.error('[voz] classificação falhou:', e.message);
+    }
+    res.json({ texto, quem, similaridade });
+  } catch (err) {
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Voz do usuário
+// ---------------------------------------------------------------------------
+app.get('/api/voz', auth, (req, res) => {
+  res.json({ cadastrada: voz.temVoiceprint(req.usuario.id), nome: req.usuario.nome });
+});
+
+app.post('/api/voz/cadastrar', auth, async (req, res) => {
+  try {
+    const { audioBase64, nome } = req.body || {};
+    if (!audioBase64) return res.status(400).json({ erro: 'Nenhum áudio recebido.' });
+    const buffer = Buffer.from(audioBase64, 'base64');
+    const ext = path.extname((nome || '').toString()) || '.ogg';
+    const emb = await voz.embedBuffer(buffer, ext);
+    voz.salvarVoiceprint(req.usuario.id, emb);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ erro: 'Não consegui processar sua voz: ' + err.message });
+  }
+});
+
+app.post('/api/voz/remover', auth, (req, res) => {
+  voz.removerVoiceprint(req.usuario.id);
+  res.json({ ok: true });
+});
+
+// ---------------------------------------------------------------------------
+// Contadores do dia — por usuário
+// ---------------------------------------------------------------------------
+function arquivoDia(userId, data) {
+  const d = /^\d{4}-\d{2}-\d{2}$/.test(data || '') ? data : new Date().toISOString().slice(0, 10);
+  return path.join(usuarios.dirUsuario(userId), `dia_${d}.json`);
+}
+
+app.post('/api/dia', auth, (req, res) => {
   try {
     const { data, iniciados = 0, respostas = 0, recontatos = 0 } = req.body || {};
-    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
     fs.writeFileSync(
-      arquivoDia(data),
+      arquivoDia(req.usuario.id, data),
       JSON.stringify({ data, iniciados, respostas, recontatos, atualizado: new Date().toISOString() })
     );
     res.json({ ok: true });
@@ -94,10 +223,9 @@ app.post('/api/dia', (req, res) => {
   }
 });
 
-// GET /api/dia/hoje — a página /dia lê os contadores automáticos do dia
-app.get('/api/dia/hoje', (_req, res) => {
+app.get('/api/dia/hoje', auth, (req, res) => {
   try {
-    const caminho = arquivoDia(new Date().toISOString().slice(0, 10));
+    const caminho = arquivoDia(req.usuario.id, new Date().toISOString().slice(0, 10));
     if (!fs.existsSync(caminho)) return res.json({ iniciados: 0, respostas: 0, recontatos: 0, vazio: true });
     res.json(JSON.parse(fs.readFileSync(caminho, 'utf8')));
   } catch (err) {
@@ -105,91 +233,12 @@ app.get('/api/dia/hoje', (_req, res) => {
   }
 });
 
-// POST /api/transcrever — recebe áudio em base64 (JSON), transcreve com Whisper local
-// e, se houver voz cadastrada, marca EU/LEAD.
-app.post('/api/transcrever', async (req, res) => {
-  try {
-    const { audioBase64, nome } = req.body || {};
-    if (!audioBase64) {
-      return res.status(400).json({ erro: 'Nenhum áudio recebido.' });
-    }
-    const buffer = Buffer.from(audioBase64, 'base64');
-    const ext = path.extname((nome || '').toString()) || '.ogg';
-    const texto = await transcribeBuffer(buffer, ext);
-
-    // Classificação de voz é best-effort: nunca derruba a transcrição.
-    let quem = null;
-    let similaridade = null;
-    try {
-      if (voz.temVoiceprint()) {
-        const c = await voz.classificar(buffer, ext);
-        quem = c.quem;
-        similaridade = c.similaridade;
-      }
-    } catch (e) {
-      console.error('[voz] classificação falhou:', e.message);
-    }
-
-    res.json({ texto, quem, similaridade });
-  } catch (err) {
-    res.status(500).json({ erro: err.message });
-  }
-});
-
-// GET /api/voz — status do cadastro da sua voz
-app.get('/api/voz', (_req, res) => {
-  res.json({ cadastrada: voz.temVoiceprint() });
-});
-
-// POST /api/voz/cadastrar — recebe uma amostra da sua voz e guarda a impressão vocal
-app.post(
-  '/api/voz/cadastrar',
-  express.raw({ type: () => true, limit: '100mb' }),
-  async (req, res) => {
-    try {
-      const buffer = req.body;
-      if (!buffer || !buffer.length) {
-        return res.status(400).json({ erro: 'Nenhum áudio recebido.' });
-      }
-      const ext = path.extname((req.query.nome || '').toString()) || '.ogg';
-      const emb = await voz.embedBuffer(buffer, ext);
-      voz.salvarVoiceprint(emb);
-      res.json({ ok: true });
-    } catch (err) {
-      res.status(500).json({ erro: 'Não consegui processar sua voz: ' + err.message });
-    }
-  }
-);
-
-// POST /api/voz/remover — apaga a voz cadastrada
-app.post('/api/voz/remover', (_req, res) => {
-  voz.removerVoiceprint();
-  res.json({ ok: true });
-});
-
-// POST /api/report-texto — gera o report a partir da conversa colada como texto
-app.post('/api/report-texto', async (req, res) => {
-  try {
-    const { texto, nome } = req.body || {};
-    const { dados, arquivo } = await gerarReportDeTexto({ texto, nome });
-    res.json({ dados, arquivo: path.basename(arquivo) });
-  } catch (err) {
-    const vazio = /Cole a conversa/i.test(err.message);
-    res.status(vazio ? 400 : 500).json({ erro: err.message });
-  }
-});
-
-// GET /api/download/:arquivo — baixa o .docx gerado
-app.get('/api/download/:arquivo', (req, res) => {
-  const nome = path.basename(req.params.arquivo); // evita path traversal
-  const caminho = path.join(OUTPUT_DIR, nome);
-  if (!/\.(pdf|docx)$/i.test(nome) || !fs.existsSync(caminho)) {
-    return res.status(404).json({ erro: 'Arquivo não encontrado.' });
-  }
-  res.download(caminho, nome);
-});
+app.use(express.static(path.join(__dirname, 'public')));
 
 app.listen(PORT, () => {
-  console.log(`✅ Closer Report rodando em http://localhost:${PORT}`);
-  console.log('   Deixe ligado e use a extensão no WhatsApp Web.');
+  console.log(`⚡ PRONIX Closer Report em http://localhost:${PORT}`);
+  console.log(`   Painel de acessos: http://localhost:${PORT}/admin`);
+  if (!process.env.ADMIN_PASSWORD) {
+    console.log('   ⚠ Defina ADMIN_PASSWORD no .env para usar o painel de admin.');
+  }
 });

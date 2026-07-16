@@ -73,15 +73,26 @@ async function enviarStart(tabId, server) {
   }
 }
 
+function getChave() {
+  return ($('chave').value || '').trim();
+}
+
+// Valida a chave contra o servidor e mostra de quem ela é.
 async function testarConexao() {
   const server = getServer();
-  setStatus('Testando conexão…', { loading: true });
+  const chave = getChave();
+  if (!chave) {
+    setStatus('Cole a sua chave de acesso (peça ao admin).', { erro: true });
+    return;
+  }
+  setStatus('Validando…', { loading: true });
   try {
-    const r = await fetch(server + '/api/status');
-    const j = await r.json();
-    setStatus(`✅ Servidor OK (provedor: ${j.provider}).`);
-  } catch (_) {
-    setStatus('❌ Servidor não respondeu. Rode "npm start" na pasta do projeto.', { erro: true });
+    const r = await fetch(server + '/api/eu', { headers: { 'x-cr-key': chave } });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.erro || 'Chave inválida.');
+    setStatus(`✅ Conectado como <b>${escapeHtml(j.nome)}</b>.`);
+  } catch (err) {
+    setStatus('❌ ' + (err.message === 'Failed to fetch' ? 'Servidor não respondeu — confira a URL.' : err.message), { erro: true });
   }
 }
 
@@ -112,27 +123,30 @@ function carregarUltimo() {
     if (!ultimoReport) return;
     $('report').innerHTML = renderReport(ultimoReport.dados);
     $('report').classList.remove('hidden');
-    if (ultimoReport.docxBase64) {
-      $('dl').href = 'data:application/vnd.openxmlformats-officedocument.wordprocessingml.document;base64,' + ultimoReport.docxBase64;
-      $('dl').setAttribute('download', ultimoReport.arquivo || 'report.docx');
-    } else {
-      $('dl').href = ultimoReport.server + '/api/download/' + encodeURIComponent(ultimoReport.arquivo);
-      $('dl').removeAttribute('download');
-    }
+    if (!ultimoReport.arquivoBase64) return;
+    $('dl').href = 'data:application/pdf;base64,' + ultimoReport.arquivoBase64;
+    $('dl').setAttribute('download', ultimoReport.arquivo || 'report.pdf');
     $('dl').classList.remove('hidden');
     const quando = new Date(ultimoReport.quando).toLocaleString('pt-BR');
     setStatus(`Último report: ${ultimoReport.nome || 'lead'} · ${quando}`);
   });
 }
 
-// Inicialização.
-chrome.storage.local.get({ server: DEFAULT_SERVER }, (cfg) => {
+// Inicialização: carrega servidor e chave salvos.
+chrome.storage.local.get({ server: DEFAULT_SERVER, chave: '' }, (cfg) => {
   $('server').value = cfg.server || DEFAULT_SERVER;
+  $('chave').value = cfg.chave || '';
+  if (cfg.chave) testarConexao();
 });
 $('server').addEventListener('change', () => {
   chrome.storage.local.set({ server: getServer() });
 });
-$('testar').addEventListener('click', testarConexao);
+$('chave').addEventListener('change', () => {
+  chrome.storage.local.set({ chave: getChave() });
+});
+$('testar').addEventListener('click', () => {
+  chrome.storage.local.set({ server: getServer(), chave: getChave() }, testarConexao);
+});
 $('gerar').addEventListener('click', gerar);
 carregarUltimo();
 

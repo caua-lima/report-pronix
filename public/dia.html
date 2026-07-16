@@ -72,6 +72,7 @@
       <div class="grid2">
         <div><label for="nome">Seu nome</label><input id="nome" type="text" placeholder="Ex.: Cauã Lima" /></div>
         <div><label for="data">Data</label><input id="data" type="date" /></div>
+        <div style="grid-column:1/-1"><label for="chave">Sua chave de acesso (para puxar seus números automáticos)</label><input id="chave" type="password" placeholder="pnx_..." /></div>
       </div>
     </div>
 
@@ -126,6 +127,7 @@
 
   <script>
     const $ = (id) => document.getElementById(id);
+    const getChave = () => ($('chave') && $('chave').value || '').trim();
     const KEY = 'reportDia_v1';
     let cat = 'agenda';
     let entries = []; // { cat, texto }
@@ -134,7 +136,7 @@
 
     function salvar() {
       localStorage.setItem(KEY, JSON.stringify({
-        nome: $('nome').value, data: $('data').value,
+        nome: $('nome').value, data: $('data').value, chave: getChave(),
         nums: ['automaticas', 'leadsNovos', 'respostas', 'recontatos', 'ligacoes'].reduce((o, k) => (o[k] = $(k).value, o), {}),
         entries,
       }));
@@ -144,6 +146,7 @@
       let s = {};
       try { s = JSON.parse(localStorage.getItem(KEY)) || {}; } catch (_) {}
       $('nome').value = s.nome || 'Cauã Lima';
+      if ($('chave')) $('chave').value = s.chave || '';
       $('data').value = s.data || hoje;
       const nums = s.nums || {};
       ['automaticas', 'leadsNovos', 'respostas', 'recontatos', 'ligacoes'].forEach((k) => { $(k).value = nums[k] != null ? nums[k] : 0; });
@@ -188,7 +191,7 @@
     $('add').addEventListener('click', adicionar);
     $('entrada').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); adicionar(); } });
 
-    ['nome', 'data', 'automaticas', 'leadsNovos', 'respostas', 'recontatos', 'ligacoes'].forEach((k) =>
+    ['nome', 'data', 'chave', 'automaticas', 'leadsNovos', 'respostas', 'recontatos', 'ligacoes'].forEach((k) =>
       $(k).addEventListener('input', salvar)
     );
 
@@ -268,7 +271,8 @@
     // Preenche Leads novos / Respostas / Recontatos com os contadores da extensão.
     async function carregarAuto() {
       try {
-        const r = await fetch('/api/dia/hoje');
+        if (!getChave()) return;
+        const r = await fetch('/api/dia/hoje', { headers: { 'x-cr-key': getChave() } });
         if (!r.ok) return;
         const j = await r.json();
         if (j.vazio) return;

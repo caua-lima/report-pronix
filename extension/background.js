@@ -1,56 +1,63 @@
-// Service worker — faz as chamadas ao servidor (local ou nuvem) pelo content script.
+// Service worker — faz as chamadas ao servidor pelo content script.
 // (Fetch a partir da página do WhatsApp seria bloqueado pela CSP dela.)
+
+const getChave = () =>
+  new Promise((r) => chrome.storage.local.get({ chave: '' }, (c) => r((c.chave || '').trim())));
+
+async function chamar(url, corpo) {
+  const chave = await getChave();
+  if (!chave) {
+    return { ok: false, erro: 'Sem chave de acesso. Cole a sua chave no popup da extensão.' };
+  }
+  try {
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-cr-key': chave },
+      body: JSON.stringify(corpo),
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) return { ok: false, erro: data.erro || `Erro ${r.status}` };
+    return { ok: true, data };
+  } catch (_) {
+    return { ok: false, erro: 'Servidor não respondeu. Confira a URL do servidor no popup.' };
+  }
+}
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg && msg.action === 'transcreverAudio') {
     (async () => {
-      try {
-        const r = await fetch(msg.server + '/api/transcrever', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ audioBase64: msg.base64, nome: 'audio.ogg' }),
-        });
-        const data = await r.json();
-        if (!r.ok) return sendResponse({ ok: false, erro: data.erro || 'falha' });
-        sendResponse({ ok: true, texto: data.texto, quem: data.quem });
-      } catch (e) {
-        sendResponse({ ok: false, erro: e.message });
-      }
+      const r = await chamar(msg.server + '/api/transcrever', {
+        audioBase64: msg.base64,
+        nome: 'audio.ogg',
+      });
+      if (!r.ok) return sendResponse({ ok: false, erro: r.erro });
+      sendResponse({ ok: true, texto: r.data.texto, quem: r.data.quem });
     })();
-    return true; // resposta assíncrona
+    return true;
   }
 
   if (msg && msg.action === 'pushDia') {
-    // Best-effort: envia os contadores do dia ao servidor (para a página /dia).
-    fetch(msg.server + '/api/dia', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(msg.dia),
-    }).catch(() => {});
-    return false; // não precisa de resposta
+    // Best-effort: envia os contadores do dia ao servidor.
+    (async () => {
+      await chamar(msg.server + '/api/dia', msg.dia);
+    })();
+    return false;
   }
 
   if (msg && msg.action === 'reportFetch') {
     (async () => {
-      try {
-        const r = await fetch(msg.server + '/api/report-direto', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ mensagens: msg.mensagens, nome: msg.nome }),
-        });
-        const data = await r.json();
-        if (!r.ok) {
-          sendResponse({ ok: false, erro: data.erro || 'Erro ao gerar o relatório.' });
-        } else {
-          sendResponse({ ok: true, dados: data.dados, arquivo: data.arquivo, docxBase64: data.docxBase64 });
-        }
-      } catch (_) {
-        sendResponse({
-          ok: false,
-          erro: 'Servidor não respondeu. Confira a URL do servidor no popup da extensão.',
-        });
-      }
+      const r = await chamar(msg.server + '/api/report-direto', {
+        mensagens: msg.mensagens,
+        nome: msg.nome,
+      });
+      if (!r.ok) return sendResponse({ ok: false, erro: r.erro });
+      sendResponse({
+        ok: true,
+        dados: r.data.dados,
+        arquivo: r.data.arquivo,
+        arquivoBase64: r.data.arquivoBase64,
+      });
     })();
-    return true; // resposta assíncrona
+    return true;
   }
 });

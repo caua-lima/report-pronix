@@ -5,9 +5,12 @@ const os = require('os');
 const fs = require('fs');
 const { spawn } = require('child_process');
 
+const { dirUsuario } = require('./usuarios');
+
 const PYTHON_BIN = process.env.PYTHON_BIN || 'python';
 const SCRIPT = path.join(__dirname, '..', 'scripts', 'voiceprint.py');
-const STORE = path.join(__dirname, '..', 'data', 'voiceprint.json');
+// Cada usuário tem a própria voz: data/usuarios/<id>/voiceprint.json
+const storeDoUsuario = (userId) => path.join(dirUsuario(userId), 'voiceprint.json');
 // Similaridade de cosseno acima disso = mesma pessoa (a sua voz).
 const THRESHOLD = parseFloat(process.env.VOICE_THRESHOLD || '0.75');
 
@@ -66,38 +69,37 @@ function cosine(a, b) {
   return den ? dot / den : 0;
 }
 
-function salvarVoiceprint(emb) {
-  fs.mkdirSync(path.dirname(STORE), { recursive: true });
-  fs.writeFileSync(STORE, JSON.stringify({ emb, criadoEm: new Date().toISOString() }));
+function salvarVoiceprint(userId, emb) {
+  fs.writeFileSync(storeDoUsuario(userId), JSON.stringify({ emb, criadoEm: new Date().toISOString() }));
 }
 
-function carregarVoiceprint() {
+function carregarVoiceprint(userId) {
   try {
-    const j = JSON.parse(fs.readFileSync(STORE, 'utf8'));
+    const j = JSON.parse(fs.readFileSync(storeDoUsuario(userId), 'utf8'));
     return Array.isArray(j.emb) ? j.emb : null;
   } catch (_) {
     return null;
   }
 }
 
-function temVoiceprint() {
-  return !!carregarVoiceprint();
+function temVoiceprint(userId) {
+  return !!carregarVoiceprint(userId);
 }
 
-function removerVoiceprint() {
+function removerVoiceprint(userId) {
   try {
-    fs.unlinkSync(STORE);
+    fs.unlinkSync(storeDoUsuario(userId));
   } catch (_) {
     /* já não existe */
   }
 }
 
 /**
- * Classifica um áudio como 'EU' ou 'LEAD' comparando com a voz cadastrada.
+ * Classifica um áudio como 'EU' ou 'LEAD' comparando com a voz DO USUÁRIO.
  * @returns {Promise<{quem: 'EU'|'LEAD'|null, similaridade: number|null}>}
  */
-async function classificar(buffer, ext = '.ogg') {
-  const vp = carregarVoiceprint();
+async function classificar(userId, buffer, ext = '.ogg') {
+  const vp = carregarVoiceprint(userId);
   if (!vp) return { quem: null, similaridade: null };
   const emb = await embedBuffer(buffer, ext);
   const sim = cosine(emb, vp);

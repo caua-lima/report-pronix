@@ -86,7 +86,17 @@
   </header>
 
   <div class="wrap">
-    <!-- Voz (só no modo local; escondido na nuvem) -->
+    <!-- Chave de acesso -->
+    <div class="card">
+      <div class="head"><div class="t">🔑 Sua chave</div><div class="sub">— identifica você (voz e números do dia)</div></div>
+      <div class="row-wrap">
+        <input id="chave" type="password" placeholder="pnx_..." style="flex:1;min-width:220px;padding:10px 12px;border-radius:10px;border:1px solid var(--border);background:var(--bg);color:var(--text)" />
+        <button id="validar" class="btn sec">Validar</button>
+      </div>
+      <div id="statusChave" class="status"></div>
+    </div>
+
+    <!-- Voz do usuário -->
     <div class="card" id="vozCard">
       <div class="head">
         <div class="t">🎙️ Sua voz</div>
@@ -135,6 +145,8 @@
 
   <script>
     const $ = (id) => document.getElementById(id);
+    const getChave = () => ($('chave').value || '').trim();
+    const hdr = (extra) => Object.assign({ 'x-cr-key': getChave() }, extra || {});
 
     function setStatus(id, txt, opts) {
       const o = opts || {}; const el = $(id);
@@ -176,7 +188,7 @@
         try {
           const audioBase64 = await fileToBase64(f);
           const r = await fetch('/api/transcrever', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            method: 'POST', headers: hdr({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({ audioBase64, nome: f.name }),
           });
           const data = await r.json();
@@ -225,14 +237,14 @@
       setStatus('status', 'Gerando report…', { loading: true });
       try {
         const r = await fetch('/api/report-texto', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          method: 'POST', headers: hdr({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({ texto }),
         });
         const data = await r.json();
         if (!r.ok) throw new Error(data.erro || 'Erro ao gerar o report.');
         $('report').innerHTML = renderReport(data.dados);
-        if (data.docxBase64) {
-          $('dl').href = 'data:application/vnd.openxmlformats-officedocument.wordprocessingml.document;base64,' + data.docxBase64;
+        if (data.arquivoBase64) {
+          $('dl').href = 'data:application/pdf;base64,' + data.arquivoBase64;
           $('dl').setAttribute('download', data.arquivo || 'report.docx');
         } else {
           $('dl').href = '/api/download/' + encodeURIComponent(data.arquivo);
@@ -255,7 +267,7 @@
     async function carregarVoz() {
       // Na nuvem (Vercel) não há /api/voz nem separação de voz: esconde o card.
       try {
-        const r = await fetch('/api/voz');
+        const r = await fetch('/api/voz', { headers: hdr() });
         if (!r.ok) { $('vozCard').style.display = 'none'; return; }
         const j = await r.json();
         vozUI(!!j.cadastrada);
@@ -266,16 +278,34 @@
     async function cadastrarVoz(file) {
       setStatus('vozStatus', 'Processando sua voz…', { loading: true });
       try {
-        const r = await fetch('/api/voz/cadastrar?nome=' + encodeURIComponent(file.name), { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: file });
+        const audioBase64 = await fileToBase64(file);
+        const r = await fetch('/api/voz/cadastrar', { method: 'POST', headers: hdr({ 'Content-Type': 'application/json' }), body: JSON.stringify({ audioBase64, nome: file.name }) });
         const data = await r.json(); if (!r.ok) throw new Error(data.erro || 'Falha ao cadastrar.');
         vozUI(true);
       } catch (err) { setStatus('vozStatus', '❌ ' + err.message, { erro: true }); }
     }
     $('vozBtn').addEventListener('click', () => $('vozFile').click());
     $('vozFile').addEventListener('change', () => { if ($('vozFile').files[0]) cadastrarVoz($('vozFile').files[0]); $('vozFile').value = ''; });
-    $('vozRemover').addEventListener('click', async (e) => { e.preventDefault(); await fetch('/api/voz/remover', { method: 'POST' }); vozUI(false); });
+    $('vozRemover').addEventListener('click', async (e) => { e.preventDefault(); await fetch('/api/voz/remover', { method: 'POST', headers: hdr() }); vozUI(false); });
 
-    carregarVoz();
+    // ---------- Chave de acesso ----------
+    async function validarChave() {
+      const c = getChave();
+      if (!c) { setStatus('statusChave', 'Cole a chave que o admin te passou.', { erro: true }); return false; }
+      localStorage.setItem('crChave', c);
+      try {
+        const r = await fetch('/api/eu', { headers: hdr() });
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.erro || 'Chave inválida.');
+        setStatus('statusChave', `Conectado como ${j.nome}.`, { ok: true });
+        carregarVoz();
+        return true;
+      } catch (e) { setStatus('statusChave', '❌ ' + e.message, { erro: true }); return false; }
+    }
+    $('validar').addEventListener('click', validarChave);
+    $('chave').addEventListener('change', () => localStorage.setItem('crChave', getChave()));
+    $('chave').value = localStorage.getItem('crChave') || '';
+    if (getChave()) validarChave(); else setStatus('statusChave', 'Cole a sua chave para usar.', {});
   </script>
 </body>
 </html>

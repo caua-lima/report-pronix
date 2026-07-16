@@ -72,12 +72,15 @@
 
   <div class="body">
     <div class="row">
-      <input id="server" type="text" placeholder="http://localhost:3000" />
-      <button id="testar" class="ghost" title="Testar conexão com o servidor">Testar</button>
+      <input id="server" type="text" placeholder="https://report.pronix... (URL do servidor)" />
+    </div>
+    <div class="row">
+      <input id="chave" type="password" placeholder="Sua chave de acesso (pnx_...)" />
+      <button id="testar" class="ghost" title="Validar chave e conexão">Validar</button>
     </div>
 
     <button id="gerar">Gerar Report da conversa aberta</button>
-    <div class="hint">Deixe o servidor (<code>npm start</code>) rodando e uma conversa aberta no WhatsApp Web.</div>
+    <div class="hint">Cole a <b>chave</b> que o admin te passou. Ela identifica você (sua voz e seus números do dia).</div>
 
     <div id="status" class="status"></div>
 
