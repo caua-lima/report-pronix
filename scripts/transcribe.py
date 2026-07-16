@@ -9,6 +9,14 @@ Aceita o que o PyAV/ffmpeg decodificar (opus/ogg, mp3, m4a, wav, webm...).
 """
 import sys
 
+# No Windows o stdout do Python sai em cp1252 por padrão e quebra os acentos
+# ("não" -> "n?o"). Força UTF-8 para o Node ler a transcrição corretamente.
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
+except Exception:  # noqa: BLE001
+    pass
+
 
 def main():
     if len(sys.argv) < 2:

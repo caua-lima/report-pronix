@@ -144,12 +144,28 @@ function render(doc, dados) {
 function gerarPdfBuffer(dados) {
   return new Promise((resolve, reject) => {
     try {
-      const doc = new PDFDocument({ size: 'A4', margin: MARGIN });
+      const doc = new PDFDocument({ size: 'A4', margin: MARGIN, bufferPages: true });
       const chunks = [];
       doc.on('data', (c) => chunks.push(c));
       doc.on('end', () => resolve(Buffer.concat(chunks)));
       doc.on('error', reject);
+
       render(doc, dados);
+
+      // Rodapé com a marca em todas as páginas.
+      const company = process.env.COMPANY_NAME || 'PRONIX';
+      const sdr = process.env.SDR_NAME || 'Cauã Lima';
+      const range = doc.bufferedPageRange();
+      for (let i = 0; i < range.count; i++) {
+        doc.switchToPage(range.start + i);
+        doc.font('Helvetica').fontSize(8).fillColor('#94a3b8').text(
+          `${company}  ·  Handoff de pré-vendas  ·  SDR: ${sdr}  ·  ${i + 1}/${range.count}`,
+          MARGIN,
+          doc.page.height - 30,
+          { width: doc.page.width - MARGIN * 2, align: 'center', lineBreak: false }
+        );
+      }
+
       doc.end();
     } catch (err) {
       reject(err);
@@ -160,7 +176,8 @@ function gerarPdfBuffer(dados) {
 async function gerarPdf(dados, jid) {
   if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true });
   const buffer = await gerarPdfBuffer(dados);
-  const nome = `relatorio_${slugify(dados.lead || jid)}_${timestampArquivo()}.pdf`;
+  const empresa = (process.env.COMPANY_NAME || 'PRONIX').toUpperCase().replace(/[^A-Z0-9]/g, '') || 'PRONIX';
+  const nome = `${empresa}_relatorio_${slugify(dados.lead || jid)}_${timestampArquivo()}.pdf`;
   const caminho = path.join(OUTPUT_DIR, nome);
   fs.writeFileSync(caminho, buffer);
   return caminho;

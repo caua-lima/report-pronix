@@ -16,13 +16,18 @@ const SCRIPT = path.join(__dirname, '..', 'scripts', 'transcribe.py');
  */
 function transcribeFile(audioPath) {
   return new Promise((resolve, reject) => {
-    const proc = spawn(PYTHON_BIN, [SCRIPT, audioPath, WHISPER_MODEL_SIZE]);
+    // PYTHONIOENCODING garante acentos corretos (no Windows o padrão é cp1252).
+    const proc = spawn(PYTHON_BIN, [SCRIPT, audioPath, WHISPER_MODEL_SIZE], {
+      env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' },
+    });
+    proc.stdout.setEncoding('utf8');
+    proc.stderr.setEncoding('utf8');
 
     let stdout = '';
     let stderr = '';
 
-    proc.stdout.on('data', (d) => (stdout += d.toString()));
-    proc.stderr.on('data', (d) => (stderr += d.toString()));
+    proc.stdout.on('data', (d) => (stdout += d));
+    proc.stderr.on('data', (d) => (stderr += d));
 
     proc.on('error', (err) => {
       reject(new Error(`Falha ao iniciar Python (${PYTHON_BIN}): ${err.message}`));

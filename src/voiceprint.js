@@ -14,7 +14,9 @@ const THRESHOLD = parseFloat(process.env.VOICE_THRESHOLD || '0.75');
 /** Roda o script Python e devolve o embedding (array de números). */
 function embedFile(audioPath) {
   return new Promise((resolve, reject) => {
-    const proc = spawn(PYTHON_BIN, [SCRIPT, audioPath]);
+    const proc = spawn(PYTHON_BIN, [SCRIPT, audioPath], {
+      env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' },
+    });
     let out = '';
     let err = '';
     proc.stdout.on('data', (d) => (out += d.toString()));
