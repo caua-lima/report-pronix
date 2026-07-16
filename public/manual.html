@@ -96,20 +96,6 @@
       <div id="statusChave" class="status"></div>
     </div>
 
-    <!-- Voz do usuário -->
-    <div class="card" id="vozCard">
-      <div class="head">
-        <div class="t">🎙️ Sua voz</div>
-        <div class="sub">(cadastre uma vez — os áudios são reconhecidos EU/LEAD sozinhos)</div>
-      </div>
-      <div id="vozStatus" class="status"></div>
-      <div class="row-wrap" style="margin-top:6px">
-        <input id="vozFile" type="file" accept="audio/*,.ogg,.opus,.m4a,.mp3,.aac,.wav" class="hidden" />
-        <button id="vozBtn" class="btn sec">Cadastrar minha voz</button>
-        <a id="vozRemover" href="#" class="hidden" style="font-size:.85rem;color:var(--danger)">remover</a>
-      </div>
-      <div class="hint">Suba um áudio curto só seu (10–20s). Fica salvo. Precisa de <code>pip install resemblyzer --break-system-packages</code>.</div>
-    </div>
 
     <!-- Conversa -->
     <div class="card">
@@ -194,10 +180,9 @@
           const data = await r.json();
           if (!r.ok) throw new Error(data.erro || 'falhou');
           const texto = (data.texto || '').trim() || '[áudio sem fala reconhecida]';
-          const prefixo = data.quem ? `${data.quem}:` : '(áudio):';
+          const prefixo = '(áudio):';
           appendConversa(`${prefixo} ${texto}`);
-          const conf = data.similaridade != null ? ` (${Math.round(data.similaridade * 100)}%)` : '';
-          const marca = data.quem ? `${data.quem}${conf}` : 'adicionado';
+          const marca = 'adicionado';
           row.className = 'file-row ok';
           row.innerHTML = `<span>✅</span><span class="nm">${escapeHtml(f.name)}</span><span class="st">${marca}</span>`;
           ok++;
@@ -259,34 +244,6 @@
     }
     $('gerar').addEventListener('click', gerar);
 
-    // ---------- Voz ----------
-    function vozUI(cad) {
-      if (cad) { setStatus('vozStatus', 'Voz cadastrada — áudios reconhecidos EU/LEAD automaticamente.', { ok: true }); $('vozBtn').textContent = 'Recadastrar minha voz'; $('vozRemover').classList.remove('hidden'); }
-      else { setStatus('vozStatus', 'Nenhuma voz cadastrada — os áudios entram como (áudio).'); $('vozBtn').textContent = 'Cadastrar minha voz'; $('vozRemover').classList.add('hidden'); }
-    }
-    async function carregarVoz() {
-      // Na nuvem (Vercel) não há /api/voz nem separação de voz: esconde o card.
-      try {
-        const r = await fetch('/api/voz', { headers: hdr() });
-        if (!r.ok) { $('vozCard').style.display = 'none'; return; }
-        const j = await r.json();
-        vozUI(!!j.cadastrada);
-      } catch (_) {
-        $('vozCard').style.display = 'none';
-      }
-    }
-    async function cadastrarVoz(file) {
-      setStatus('vozStatus', 'Processando sua voz…', { loading: true });
-      try {
-        const audioBase64 = await fileToBase64(file);
-        const r = await fetch('/api/voz/cadastrar', { method: 'POST', headers: hdr({ 'Content-Type': 'application/json' }), body: JSON.stringify({ audioBase64, nome: file.name }) });
-        const data = await r.json(); if (!r.ok) throw new Error(data.erro || 'Falha ao cadastrar.');
-        vozUI(true);
-      } catch (err) { setStatus('vozStatus', '❌ ' + err.message, { erro: true }); }
-    }
-    $('vozBtn').addEventListener('click', () => $('vozFile').click());
-    $('vozFile').addEventListener('change', () => { if ($('vozFile').files[0]) cadastrarVoz($('vozFile').files[0]); $('vozFile').value = ''; });
-    $('vozRemover').addEventListener('click', async (e) => { e.preventDefault(); await fetch('/api/voz/remover', { method: 'POST', headers: hdr() }); vozUI(false); });
 
     // ---------- Chave de acesso ----------
     async function validarChave() {
@@ -298,7 +255,6 @@
         const j = await r.json();
         if (!r.ok) throw new Error(j.erro || 'Chave inválida.');
         setStatus('statusChave', `Conectado como ${j.nome}.`, { ok: true });
-        carregarVoz();
         return true;
       } catch (e) { setStatus('statusChave', '❌ ' + e.message, { erro: true }); return false; }
     }

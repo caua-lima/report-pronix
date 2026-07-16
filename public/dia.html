@@ -72,7 +72,6 @@
       <div class="grid2">
         <div><label for="nome">Seu nome</label><input id="nome" type="text" placeholder="Ex.: Cauã Lima" /></div>
         <div><label for="data">Data</label><input id="data" type="date" /></div>
-        <div style="grid-column:1/-1"><label for="chave">Sua chave de acesso (para puxar seus números automáticos)</label><input id="chave" type="password" placeholder="pnx_..." /></div>
       </div>
     </div>
 
@@ -86,7 +85,7 @@
         <div><label>Recontatos</label><input id="recontatos" type="number" min="0" value="0" /></div>
         <div><label>Ligações</label><input id="ligacoes" type="number" min="0" value="0" /></div>
       </div>
-      <div class="muted" style="margin-top:8px" id="autoNota">Leads novos, Respostas e Recontatos são preenchidos automático pela extensão (se estiver rodando). Automáticas e Ligações você edita à mão. Pode ajustar tudo.</div>
+      <div class="muted" style="margin-top:8px" id="autoNota">Preencha os números do dia à mão.</div>
     </div>
 
     <!-- Registros (chatzinho) -->
@@ -268,26 +267,8 @@
       render(); salvar();
     });
 
-    // Preenche Leads novos / Respostas / Recontatos com os contadores da extensão.
-    async function carregarAuto() {
-      try {
-        if (!getChave()) return;
-        const r = await fetch('/api/dia/hoje', { headers: { 'x-cr-key': getChave() } });
-        if (!r.ok) return;
-        const j = await r.json();
-        if (j.vazio) return;
-        if (j.iniciados != null) $('leadsNovos').value = j.iniciados;
-        if (j.respostas != null) $('respostas').value = j.respostas;
-        if (j.recontatos != null) $('recontatos').value = j.recontatos;
-        salvar();
-      } catch (_) {
-        /* sem servidor: mantém manual */
-      }
-    }
 
     carregar();
-    carregarAuto();
-    setInterval(carregarAuto, 60000); // atualiza ao longo do dia
   </script>
 </body>
 </html>

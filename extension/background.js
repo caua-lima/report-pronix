@@ -31,17 +31,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         nome: 'audio.ogg',
       });
       if (!r.ok) return sendResponse({ ok: false, erro: r.erro });
-      sendResponse({ ok: true, texto: r.data.texto, quem: r.data.quem });
+      sendResponse({ ok: true, texto: r.data.texto });
     })();
     return true;
-  }
-
-  if (msg && msg.action === 'pushDia') {
-    // Best-effort: envia os contadores do dia ao servidor.
-    (async () => {
-      await chamar(msg.server + '/api/dia', msg.dia);
-    })();
-    return false;
   }
 
   if (msg && msg.action === 'reportFetch') {

@@ -90,6 +90,7 @@ async function testarConexao() {
     const r = await fetch(server + '/api/eu', { headers: { 'x-cr-key': chave } });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.erro || 'Chave inválida.');
+    $('sdrNome').textContent = j.nome;
     setStatus(`✅ Conectado como <b>${escapeHtml(j.nome)}</b>.`);
   } catch (err) {
     setStatus('❌ ' + (err.message === 'Failed to fetch' ? 'Servidor não respondeu — confira a URL.' : err.message), { erro: true });
@@ -150,14 +151,3 @@ $('testar').addEventListener('click', () => {
 $('gerar').addEventListener('click', gerar);
 carregarUltimo();
 
-// Contadores do dia (rastreados pela extensão).
-function carregarContadores() {
-  const hoje = new Date().toISOString().slice(0, 10);
-  chrome.storage.local.get(['crDia'], ({ crDia }) => {
-    const d = crDia && crDia.data === hoje ? crDia : { iniciados: [], respostas: [], recontatos: [] };
-    $('cIni').textContent = (d.iniciados || []).length;
-    $('cResp').textContent = (d.respostas || []).length;
-    $('cRec').textContent = (d.recontatos || []).length;
-  });
-}
-carregarContadores();

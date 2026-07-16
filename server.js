@@ -10,7 +10,6 @@ const { dadosDireto, dadosDeTexto } = require('./src/report');
 const { gerarPdfBuffer } = require('./src/generatePdf');
 const { transcribeBuffer } = require('./src/transcribe');
 const usuarios = require('./src/usuarios');
-const voz = require('./src/voiceprint');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -149,7 +148,7 @@ app.post('/api/report-texto', auth, async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// Transcrição (Whisper local) + reconhecimento de voz DO USUÁRIO
+// Transcrição de áudio (Whisper local)
 // ---------------------------------------------------------------------------
 app.post('/api/transcrever', auth, async (req, res) => {
   try {
@@ -159,75 +158,7 @@ app.post('/api/transcrever', auth, async (req, res) => {
     const ext = path.extname((nome || '').toString()) || '.ogg';
     const texto = await transcribeBuffer(buffer, ext);
 
-    let quem = null;
-    let similaridade = null;
-    try {
-      if (voz.temVoiceprint(req.usuario.id)) {
-        const c = await voz.classificar(req.usuario.id, buffer, ext);
-        quem = c.quem;
-        similaridade = c.similaridade;
-      }
-    } catch (e) {
-      console.error('[voz] classificação falhou:', e.message);
-    }
-    res.json({ texto, quem, similaridade });
-  } catch (err) {
-    res.status(500).json({ erro: err.message });
-  }
-});
-
-// ---------------------------------------------------------------------------
-// Voz do usuário
-// ---------------------------------------------------------------------------
-app.get('/api/voz', auth, (req, res) => {
-  res.json({ cadastrada: voz.temVoiceprint(req.usuario.id), nome: req.usuario.nome });
-});
-
-app.post('/api/voz/cadastrar', auth, async (req, res) => {
-  try {
-    const { audioBase64, nome } = req.body || {};
-    if (!audioBase64) return res.status(400).json({ erro: 'Nenhum áudio recebido.' });
-    const buffer = Buffer.from(audioBase64, 'base64');
-    const ext = path.extname((nome || '').toString()) || '.ogg';
-    const emb = await voz.embedBuffer(buffer, ext);
-    voz.salvarVoiceprint(req.usuario.id, emb);
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ erro: 'Não consegui processar sua voz: ' + err.message });
-  }
-});
-
-app.post('/api/voz/remover', auth, (req, res) => {
-  voz.removerVoiceprint(req.usuario.id);
-  res.json({ ok: true });
-});
-
-// ---------------------------------------------------------------------------
-// Contadores do dia — por usuário
-// ---------------------------------------------------------------------------
-function arquivoDia(userId, data) {
-  const d = /^\d{4}-\d{2}-\d{2}$/.test(data || '') ? data : new Date().toISOString().slice(0, 10);
-  return path.join(usuarios.dirUsuario(userId), `dia_${d}.json`);
-}
-
-app.post('/api/dia', auth, (req, res) => {
-  try {
-    const { data, iniciados = 0, respostas = 0, recontatos = 0 } = req.body || {};
-    fs.writeFileSync(
-      arquivoDia(req.usuario.id, data),
-      JSON.stringify({ data, iniciados, respostas, recontatos, atualizado: new Date().toISOString() })
-    );
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ erro: err.message });
-  }
-});
-
-app.get('/api/dia/hoje', auth, (req, res) => {
-  try {
-    const caminho = arquivoDia(req.usuario.id, new Date().toISOString().slice(0, 10));
-    if (!fs.existsSync(caminho)) return res.json({ iniciados: 0, respostas: 0, recontatos: 0, vazio: true });
-    res.json(JSON.parse(fs.readFileSync(caminho, 'utf8')));
+    res.json({ texto });
   } catch (err) {
     res.status(500).json({ erro: err.message });
   }
