@@ -3,20 +3,22 @@
 <head>
   <meta charset="UTF-8" />
   <style>
+    /* Cores PRONIX: preto + dourado */
     :root {
-      --bg: #f4f7fb; --card: #ffffff; --border: #e3e8ef; --text: #0f172a; --muted: #64748b;
-      --primary: #0f9d76; --primary-hover: #0c8465; --primary-soft: #e7f6f1; --danger: #dc2626;
-      --ring: rgba(15,157,118,.25);
+      --bg: #f5f5f7; --card: #ffffff; --border: #e4e4e8; --text: #121214; --muted: #6b6b76;
+      --primary: #ffc400; --primary-hover: #e6b000; --on-primary: #121214;
+      --primary-soft: #fff8e1; --danger: #dc2626; --ring: rgba(255,196,0,.35);
     }
     @media (prefers-color-scheme: dark) {
-      :root { --bg: #0b1220; --card: #131c2b; --border: #263248; --text: #e6edf6; --muted: #93a1b5;
-        --primary: #16b487; --primary-hover: #12a079; --primary-soft: #123027; --danger: #f87171; --ring: rgba(22,180,135,.3); }
+      :root { --bg: #131315; --card: #1c1c20; --border: #2e2e35; --text: #f2f2f4; --muted: #9a9aa6;
+        --primary: #ffc400; --primary-hover: #ffd23d; --on-primary: #121214;
+        --primary-soft: #2a2410; --danger: #f87171; --ring: rgba(255,196,0,.3); }
     }
     * { box-sizing: border-box; }
     body { width: 384px; margin: 0; font-family: -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); font-size: 14px; }
 
-    /* Header com faixa e logo */
-    .topbar { background: linear-gradient(120deg, #0f9d76, #0bbf8e); padding: 14px 16px; display: flex; align-items: center; gap: 11px; color: #fff; }
+    /* Header com faixa preta e raio dourado */
+    .topbar { background: linear-gradient(120deg, #1c1c20, #0b0b0d); padding: 14px 16px; display: flex; align-items: center; gap: 11px; color: #fff; }
     .logo { flex: none; }
     .brand b { font-size: 16px; font-weight: 800; letter-spacing: .04em; display: block; line-height: 1.1; }
     .brand small { font-size: 11px; opacity: .92; }
@@ -26,7 +28,7 @@
     .row { display: flex; gap: 8px; align-items: center; margin-bottom: 11px; }
     input { flex: 1; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--card); color: var(--text); font-size: 12.5px; }
     input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--ring); }
-    button { padding: 9px 13px; border-radius: 9px; border: none; background: var(--primary); color: #fff; font-weight: 700; cursor: pointer; font-size: 14px; }
+    button { padding: 9px 13px; border-radius: 9px; border: none; background: var(--primary); color: var(--on-primary); font-weight: 700; cursor: pointer; font-size: 14px; }
     button:hover { background: var(--primary-hover); }
     button.ghost { background: transparent; color: var(--muted); border: 1px solid var(--border); font-weight: 600; }
     button:disabled { opacity: .55; cursor: not-allowed; }
@@ -40,7 +42,7 @@
 
     .contadores { display: flex; gap: 8px; margin: 4px 0 2px; }
     .kpi { flex: 1; background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 8px 6px; text-align: center; }
-    .kpi b { display: block; font-size: 17px; color: var(--primary); }
+    .kpi b { display: block; font-size: 17px; color: var(--text); }
     .kpi span { font-size: 10px; color: var(--muted); }
 
     .hidden { display: none; }
@@ -53,20 +55,19 @@
     .report td.rot { font-weight: 700; width: 34%; background: var(--bg); }
     .report ul, .report ol { margin: 3px 0 6px; padding-left: 18px; }
     .report li { margin: 2px 0; font-size: 11.5px; }
-    .frase { font-style: italic; color: var(--primary); border-left: 3px solid var(--primary); padding-left: 9px; font-size: 11.5px; }
+    .frase { font-style: italic; color: var(--text); border-left: 3px solid var(--primary); padding-left: 9px; font-size: 11.5px; }
     code { background: var(--bg); padding: 1px 4px; border-radius: 4px; font-size: 11px; }
   </style>
 </head>
 <body>
   <div class="topbar">
     <span class="logo">
-      <svg width="30" height="30" viewBox="0 0 30 30" fill="none">
-        <path d="M4 22 L11 9 L16 17 L26 3" stroke="#ffffff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
-        <circle cx="26" cy="3.5" r="2.4" fill="#ffffff"/>
+      <svg width="30" height="30" viewBox="0 0 30 30">
+        <path d="M18.2 2.5 L8.5 16.8 L14.2 16.8 L11.6 27.5 L21.5 12.6 L15.8 12.6 Z" fill="#ffc400"/>
       </svg>
     </span>
     <div class="brand"><b>PRONIX</b><small>Closer Report</small></div>
-    <div class="sdr">SDR<br /><b>Cauã Lima</b></div>
+    <div class="sdr">SDR<br /><b style="color:#ffc400">Cauã Lima</b></div>
   </div>
 
   <div class="body">

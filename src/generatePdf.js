@@ -9,12 +9,30 @@ const { slugify } = require('./generateDoc');
 
 const OUTPUT_DIR = path.join(__dirname, '..', 'output');
 
-const VERDE = '#0f9d76';
-const VERDE_ESC = '#0b3b2e';
-const CLARO = '#f4f7fb';
+// Cores PRONIX: preto + dourado.
+const OURO = '#ffc400';
+const PRETO = '#121214';
+const CLARO = '#f6f7f9';
 const BORDA = '#e3e8ef';
 const TEXTO = '#1f2937';
 const MARGIN = 46;
+
+// Raio da marca PRONIX (espaço 0..30).
+const RAIO = [
+  [18.2, 2.5], [8.5, 16.8], [14.2, 16.8], [11.6, 27.5], [21.5, 12.6], [15.8, 12.6],
+];
+function desenharRaio(doc, x, y, tam, cor) {
+  const s = tam / 30;
+  doc.save().fillColor(cor);
+  RAIO.forEach(([px, py], i) => {
+    const X = x + px * s;
+    const Y = y + py * s;
+    if (i === 0) doc.moveTo(X, Y);
+    else doc.lineTo(X, Y);
+  });
+  doc.closePath().fill();
+  doc.restore();
+}
 
 function semEmoji(t) {
   return String(t || '')
@@ -48,20 +66,13 @@ function render(doc, dados) {
   const dataStr = new Date().toLocaleDateString('pt-BR');
   const larg = doc.page.width - MARGIN * 2;
 
-  // ---- Cabeçalho (faixa + logo) ----
-  doc.save().rect(0, 0, doc.page.width, 84).fill(VERDE).restore();
-  // Marca: linha de crescimento (logo)
-  const lx = MARGIN;
-  const ly = 26;
-  doc.save();
-  doc.lineWidth(2.4).strokeColor('#ffffff').lineJoin('round').lineCap('round')
-    .moveTo(lx, ly + 22).lineTo(lx + 9, ly + 7).lineTo(lx + 16, ly + 15).lineTo(lx + 27, ly + 1).stroke();
-  doc.circle(lx + 27, ly + 1, 2.3).fill('#ffffff');
-  doc.restore();
+  // ---- Cabeçalho (faixa preta + raio dourado) ----
+  doc.save().rect(0, 0, doc.page.width, 84).fill(PRETO).restore();
+  desenharRaio(doc, MARGIN, 26, 32, OURO);
   const tx = MARGIN + 42;
   doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(18).text('HANDOFF DE PRÉ-VENDAS', tx, 24);
-  doc.font('Helvetica-Bold').fontSize(12).fillColor('#eafff6').text(company, tx, 48, { continued: true })
-    .font('Helvetica').fontSize(10.5).fillColor('#d6f2e6').text(`     SDR: ${sdr}     ·     ${dataStr}`);
+  doc.font('Helvetica-Bold').fontSize(12).fillColor(OURO).text(company, tx, 48, { continued: true })
+    .font('Helvetica').fontSize(10.5).fillColor('#c9ced6').text(`     SDR: ${sdr}     ·     ${dataStr}`);
   doc.y = 104;
   doc.x = MARGIN;
 
@@ -86,7 +97,7 @@ function render(doc, dados) {
     doc.save().roundedRect(MARGIN, y0, larg, alturaCartao, 9).fillAndStroke(CLARO, BORDA).restore();
     let y = y0 + pad;
     linhas.forEach(([rot, val], i) => {
-      doc.font('Helvetica-Bold').fontSize(10).fillColor(VERDE_ESC).text(String(rot), MARGIN + pad, y, { width: wLabel });
+      doc.font('Helvetica-Bold').fontSize(10).fillColor(PRETO).text(String(rot), MARGIN + pad, y, { width: wLabel });
       doc.font('Helvetica').fontSize(10).fillColor(TEXTO).text(String(val), MARGIN + pad + wLabel + 10, y, { width: wVal });
       y += alturas[i] + 7;
     });
@@ -99,7 +110,7 @@ function render(doc, dados) {
     novaPaginaSePreciso(doc, 60);
     doc.font('Helvetica-Bold').fontSize(12.5).fillColor('#0f172a').text(semEmoji(secao.titulo), MARGIN, doc.y);
     const ly = doc.y + 1.5;
-    doc.save().moveTo(MARGIN, ly).lineTo(MARGIN + 44, ly).lineWidth(2).strokeColor(VERDE).stroke().restore();
+    doc.save().moveTo(MARGIN, ly).lineTo(MARGIN + 44, ly).lineWidth(2).strokeColor(OURO).stroke().restore();
     doc.moveDown(0.55);
     doc.font('Helvetica').fontSize(10.5).fillColor('#111827');
     (secao.itens || []).forEach((item, i) => {
@@ -115,14 +126,14 @@ function render(doc, dados) {
     novaPaginaSePreciso(doc, 60);
     doc.font('Helvetica-Bold').fontSize(12.5).fillColor('#0f172a').text('Nas palavras do lead', MARGIN, doc.y);
     const ly = doc.y + 1.5;
-    doc.save().moveTo(MARGIN, ly).lineTo(MARGIN + 44, ly).lineWidth(2).strokeColor(VERDE).stroke().restore();
+    doc.save().moveTo(MARGIN, ly).lineTo(MARGIN + 44, ly).lineWidth(2).strokeColor(OURO).stroke().restore();
     doc.moveDown(0.55);
     dados.citacoes.forEach((c) => {
       novaPaginaSePreciso(doc, 30);
       const y0 = doc.y;
       doc.font('Helvetica-Oblique').fontSize(10.5).fillColor('#334155')
         .text(`“${c}”`, MARGIN + 14, y0, { width: larg - 14, paragraphGap: 5 });
-      doc.save().rect(MARGIN, y0, 3, doc.y - y0 - 5).fill(VERDE).restore();
+      doc.save().rect(MARGIN, y0, 3, doc.y - y0 - 5).fill(OURO).restore();
     });
     doc.moveDown(0.4);
   }
@@ -132,11 +143,11 @@ function render(doc, dados) {
     novaPaginaSePreciso(doc, 70);
     doc.moveDown(0.2);
     const y0 = doc.y;
-    doc.font('Helvetica-Oblique').fontSize(11.5).fillColor(VERDE_ESC);
+    doc.font('Helvetica-Oblique').fontSize(11.5).fillColor(PRETO);
     const wTxt = larg - 26;
     const h = doc.heightOfString(`“${dados.frase_impacto}”`, { width: wTxt });
-    doc.save().roundedRect(MARGIN, y0, larg, h + 20, 9).fillAndStroke('#e7f6f1', '#bfe6d7').restore();
-    doc.fillColor(VERDE_ESC).text(`“${dados.frase_impacto}”`, MARGIN + 13, y0 + 10, { width: wTxt });
+    doc.save().roundedRect(MARGIN, y0, larg, h + 20, 9).fillAndStroke('#fff8e1', '#f0d48a').restore();
+    doc.fillColor(PRETO).text(`“${dados.frase_impacto}”`, MARGIN + 13, y0 + 10, { width: wTxt });
     doc.y = y0 + h + 20;
   }
 }

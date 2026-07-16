@@ -7,25 +7,25 @@
   <style>
     :root {
       --bg: #eef2f7; --card: #ffffff; --border: #e3e8ef; --text: #0f172a; --muted: #64748b;
-      --primary: #0f9d76; --primary-hover: #0c8465; --primary-soft: #e7f6f1; --danger: #dc2626;
-      --ring: rgba(15,157,118,.25); --shadow: 0 1px 3px rgba(15,23,42,.08), 0 1px 2px rgba(15,23,42,.04);
+      --primary: #ffc400; --primary-hover: #e6b000; --primary-soft: #fff8e1; --gold-ink: #8a6d00; --danger: #dc2626;
+      --ring: rgba(255,196,0,.35); --shadow: 0 1px 3px rgba(15,23,42,.08), 0 1px 2px rgba(15,23,42,.04);
     }
     @media (prefers-color-scheme: dark) {
       :root {
-        --bg: #0b1220; --card: #131c2b; --border: #263248; --text: #e6edf6; --muted: #93a1b5;
-        --primary: #16b487; --primary-hover: #12a079; --primary-soft: #123027; --danger: #f87171;
-        --ring: rgba(22,180,135,.3); --shadow: 0 1px 3px rgba(0,0,0,.4);
+        --bg: #131315; --card: #1c1c20; --border: #2e2e35; --text: #f2f2f4; --muted: #9a9aa6;
+        --primary: #ffc400; --primary-hover: #ffd23d; --primary-soft: #2a2410; --gold-ink: #ffc400; --danger: #f87171;
+        --ring: rgba(255,196,0,.3); --shadow: 0 1px 3px rgba(0,0,0,.4);
       }
     }
     * { box-sizing: border-box; }
     html, body { margin: 0; }
     body { font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); line-height: 1.55; -webkit-font-smoothing: antialiased; }
     code { background: var(--bg); padding: 1px 5px; border-radius: 5px; font-size: .85em; }
-    a { color: var(--primary); }
+    a { color: var(--gold-ink); }
 
     header { position: sticky; top: 0; z-index: 10; background: color-mix(in srgb, var(--card) 88%, transparent); backdrop-filter: saturate(1.2) blur(8px); border-bottom: 1px solid var(--border); }
     .header-in { max-width: 780px; margin: 0 auto; padding: 14px 24px; display: flex; align-items: center; gap: 12px; }
-    .logo { width: 34px; height: 34px; border-radius: 9px; flex: none; background: linear-gradient(135deg, var(--primary), #0bbf8e); display: grid; place-items: center; font-size: 18px; color: #fff; box-shadow: 0 4px 12px var(--ring); }
+    .logo { width: 34px; height: 34px; border-radius: 9px; flex: none; background: linear-gradient(135deg, #1c1c20, #0b0b0d); display: grid; place-items: center; font-size: 18px; color: #fff; box-shadow: 0 4px 12px var(--ring); }
     .brand { font-weight: 700; font-size: 1.02rem; }
     .brand small { display: block; font-weight: 500; font-size: .76rem; color: var(--muted); }
 
@@ -39,14 +39,14 @@
     textarea { width: 100%; padding: 12px 13px; border-radius: 11px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: .95rem; font-family: inherit; line-height: 1.6; min-height: 300px; resize: vertical; }
     textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 4px var(--ring); }
 
-    .btn { border: none; border-radius: 12px; padding: 14px 22px; font-size: 1rem; font-weight: 700; cursor: pointer; background: var(--primary); color: #fff; transition: background .15s, transform .05s; box-shadow: 0 6px 18px var(--ring); }
+    .btn { border: none; border-radius: 12px; padding: 14px 22px; font-size: 1rem; font-weight: 700; cursor: pointer; background: var(--primary); color: #121214; transition: background .15s, transform .05s; box-shadow: 0 6px 18px var(--ring); }
     .btn:hover { background: var(--primary-hover); } .btn:active { transform: translateY(1px); }
     .btn:disabled { opacity: .55; cursor: not-allowed; box-shadow: none; }
     .btn.sec { background: transparent; color: var(--text); border: 1px solid var(--border); box-shadow: none; }
     .btn-block { width: 100%; }
 
     .status { min-height: 18px; margin-top: 10px; font-size: .88rem; color: var(--muted); display: flex; align-items: center; gap: 8px; }
-    .status.erro { color: var(--danger); } .status.ok { color: var(--primary); font-weight: 600; }
+    .status.erro { color: var(--danger); } .status.ok { color: var(--gold-ink); font-weight: 600; }
     .spinner { width: 15px; height: 15px; border: 2px solid color-mix(in srgb, var(--muted) 35%, transparent); border-top-color: var(--primary); border-radius: 50%; animation: spin .8s linear infinite; flex: none; }
     @keyframes spin { to { transform: rotate(360deg); } }
     .hidden { display: none; }
@@ -67,7 +67,7 @@
 
     /* Report */
     .result-head { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 6px; }
-    .dl { display: inline-flex; align-items: center; gap: 7px; background: var(--primary); color: #fff; font-weight: 700; text-decoration: none; padding: 11px 18px; border-radius: 11px; box-shadow: 0 6px 18px var(--ring); }
+    .dl { display: inline-flex; align-items: center; gap: 7px; background: var(--primary); color: #121214; font-weight: 700; text-decoration: none; padding: 11px 18px; border-radius: 11px; box-shadow: 0 6px 18px var(--ring); }
     .report h2 { font-size: 1rem; margin: 18px 0 6px; }
     .report table { border-collapse: collapse; width: 100%; margin: 6px 0 14px; }
     .report td { border: 1px solid var(--border); padding: 9px 12px; font-size: .9rem; }
@@ -80,7 +80,7 @@
 <body>
   <header>
     <div class="header-in">
-      <div class="logo"><svg width="20" height="20" viewBox="0 0 30 30" fill="none"><path d="M4 22 L11 9 L16 17 L26 3" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><circle cx="26" cy="3.5" r="2.6" fill="#fff"/></svg></div>
+      <div class="logo"><svg width="19" height="19" viewBox="0 0 30 30"><path d="M18.2 2.5 L8.5 16.8 L14.2 16.8 L11.6 27.5 L21.5 12.6 L15.8 12.6 Z" fill="#ffc400"/></svg></div>
       <div class="brand">PRONIX<small>Closer Report · cole a conversa e gere o report · SDR: Cauã Lima</small></div>
     </div>
   </header>
