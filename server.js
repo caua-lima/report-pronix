@@ -137,6 +137,8 @@ app.get('/api/admin/stats', admin, async (_req, res) => {
 // Report (extensão e modo manual) — devolve o PDF em base64 (sem disco).
 // ---------------------------------------------------------------------------
 async function responderReport(req, res, dados, nome, origem) {
+  // Quem assina o report é o dono da chave, não uma variável do servidor.
+  dados.sdr = req.usuario.nome;
   const buffer = await gerarPdfBuffer(dados);
   // O report é o que importa: se o registro falhar, não derruba a entrega do PDF.
   await stats
@@ -147,16 +149,17 @@ async function responderReport(req, res, dados, nome, origem) {
       origem,
     })
     .catch((err) => console.error('Falha ao registrar o report:', err.message));
-  const empresa = (process.env.COMPANY_NAME || 'PRONIX').toUpperCase().replace(/[^A-Z0-9]/g, '') || 'PRONIX';
-  const slug = String(dados.lead || nome || 'lead')
+  // Report_Nome_Data.pdf — "Nome" é o lead, que é de quem o report fala.
+  const limpo = String(dados.lead || nome || 'Lead')
     .normalize('NFD').replace(/[̀-ͯ]/g, '')
-    .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 50) || 'lead';
+    .replace(/[^A-Za-z0-9 ]+/g, ' ')
+    .trim().split(/\s+/).slice(0, 3).join('-').slice(0, 40) || 'Lead';
   const d = new Date();
   const p = (n) => String(n).padStart(2, '0');
-  const carimbo = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}`;
+  const data = `${p(d.getDate())}-${p(d.getMonth() + 1)}-${d.getFullYear()}`;
   res.json({
     dados,
-    arquivo: `${empresa}_relatorio_${slug}_${carimbo}.pdf`,
+    arquivo: `Report_${limpo}_${data}.pdf`,
     arquivoBase64: buffer.toString('base64'),
   });
 }

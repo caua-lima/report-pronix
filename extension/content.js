@@ -570,8 +570,18 @@
       chrome.storage.local.set({
         ultimoReport: { arquivo: resp.arquivo, dados: resp.dados, arquivoBase64: resp.arquivoBase64, nome, server, quando: Date.now() },
       });
+      // O resumo dos áudios fica no aviso final: o "Gerando report…" some rápido
+      // demais para dar tempo de ler, e é a dúvida de sempre — transcreveu ou não?
+      const resumoAudio =
+        stats.audios === 0
+          ? '<span style="color:#8b98a5">Sem áudios nesta conversa</span>'
+          : stats.audiosTranscritos === stats.audios
+            ? `🎤 ${stats.audios} áudio(s) transcrito(s)`
+            : `⚠️ ${stats.audiosTranscritos} de ${stats.audios} áudio(s) transcrito(s)` +
+              ' <span style="color:#8b98a5">— o resto entrou como [áudio]</span>';
+
       mostrarBadge({
-        texto: `<b>✅ Report pronto!</b> (${nome || 'lead'})`,
+        texto: `<b>✅ Report pronto!</b> (${nome || 'lead'})<br>${resumoAudio}`,
         arquivo: resp.arquivo,
         server,
         arquivoBase64: resp.arquivoBase64,

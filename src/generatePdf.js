@@ -65,9 +65,12 @@ function bullet(doc, marcador, texto, x, largura) {
   });
 }
 
+// Quem gerou vem da chave usada (dados.sdr). SDR_NAME é só o padrão de quem roda local.
+const nomeSdr = (dados) => (dados && dados.sdr) || process.env.SDR_NAME || 'Cauã Lima';
+
 function render(doc, dados) {
   const company = process.env.COMPANY_NAME || 'PRONIX';
-  const sdr = process.env.SDR_NAME || 'Cauã Lima';
+  const sdr = nomeSdr(dados);
   const dataStr = new Date().toLocaleDateString('pt-BR');
   const larg = doc.page.width - MARGIN * 2;
 
@@ -174,7 +177,7 @@ function gerarPdfBuffer(dados) {
 
       // Rodapé com a marca em todas as páginas.
       const company = process.env.COMPANY_NAME || 'PRONIX';
-      const sdr = process.env.SDR_NAME || 'Cauã Lima';
+      const sdr = nomeSdr(dados);
       const range = doc.bufferedPageRange();
       for (let i = 0; i < range.count; i++) {
         doc.switchToPage(range.start + i);
