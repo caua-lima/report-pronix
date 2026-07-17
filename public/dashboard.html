@@ -73,7 +73,15 @@
     .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 18px; }
     .kpi { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 16px; box-shadow: var(--shadow); }
     .kpi .n { font-size: 1.9rem; font-weight: 800; line-height: 1.1; color: var(--gold-ink); }
+    .kpi .n.peq { font-size: 1.25rem; color: var(--text); }
     .kpi .l { font-size: .78rem; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+
+    /* Filtro de período */
+    .periodos { display: flex; gap: 6px; flex-wrap: wrap; }
+    .chip { border: 1px solid var(--border); background: transparent; color: var(--text); border-radius: 20px; padding: 7px 14px; cursor: pointer; font-size: .84rem; font-weight: 600; font-family: inherit; }
+    .chip:hover { border-color: var(--primary); }
+    .chip.on { background: var(--primary); color: #121214; border-color: var(--primary); }
+    .num { font-variant-numeric: tabular-nums; }
 
     /* Dropzone */
     .dropzone { border: 2px dashed var(--border); border-radius: 13px; padding: 26px 18px; text-align: center; cursor: pointer; transition: all .15s; background: var(--bg); margin-bottom: 14px; }
@@ -208,35 +216,80 @@
       </div>
 
       <div class="admin-area hidden">
+        <!-- Filtros -->
+        <div class="card">
+          <div class="head"><div class="t">🔎 Filtro</div><div class="sub">— período e pessoa</div></div>
+          <div class="periodos">
+            <button class="chip on" data-dias="0">Hoje</button>
+            <button class="chip" data-dias="2">Últimos 3 dias</button>
+            <button class="chip" data-dias="6">Últimos 7 dias</button>
+            <button class="chip" data-dias="29">Últimos 30 dias</button>
+            <button class="chip" data-dias="-1">Tudo</button>
+          </div>
+          <div class="row" style="margin-top:12px">
+            <div style="flex:1;min-width:140px"><label for="de">De</label><input id="de" type="date" /></div>
+            <div style="flex:1;min-width:140px"><label for="ate">Até</label><input id="ate" type="date" /></div>
+            <div style="flex:1;min-width:160px">
+              <label for="filtroSdr">SDR</label>
+              <select id="filtroSdr" style="width:100%;padding:11px 12px;border-radius:10px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:.95rem;font-family:inherit">
+                <option value="">Todos</option>
+              </select>
+            </div>
+            <button id="aplicar" class="btn">Ver</button>
+          </div>
+          <div id="statusFiltro" class="status"></div>
+        </div>
+
+        <!-- Números do período filtrado -->
         <div class="kpis">
-          <div class="kpi"><div class="n" id="kHoje">0</div><div class="l">Hoje</div></div>
-          <div class="kpi"><div class="n" id="kSemana">0</div><div class="l">Últimos 7 dias</div></div>
-          <div class="kpi"><div class="n" id="kTotal">0</div><div class="l">Total</div></div>
+          <div class="kpi"><div class="n" id="kTotal">0</div><div class="l">Reports no período</div></div>
+          <div class="kpi"><div class="n" id="kCusto">$0</div><div class="l">Gasto no período</div></div>
+          <div class="kpi"><div class="n" id="kMedio">$0</div><div class="l">Média por report</div></div>
+        </div>
+        <div class="kpis">
+          <div class="kpi"><div class="n peq" id="gHoje">0</div><div class="l">Hoje (geral)</div></div>
+          <div class="kpi"><div class="n peq" id="gCustoMes">$0</div><div class="l">Gasto no mês</div></div>
+          <div class="kpi"><div class="n peq" id="gTotal">0</div><div class="l">Total desde sempre</div></div>
+          <div class="kpi"><div class="n peq" id="gCusto">$0</div><div class="l">Gasto total</div></div>
         </div>
 
         <div class="card">
-          <div class="head"><div class="t">👤 Por SDR</div><div class="sub">— quem está gerando report</div></div>
+          <div class="head"><div class="t">👤 Por SDR</div><div class="sub">— reports e gasto de cada um, no período</div></div>
           <table>
-            <thead><tr><th>SDR</th><th>Hoje</th><th>Total</th></tr></thead>
+            <thead><tr><th>SDR</th><th>Reports</th><th>Gasto</th><th>Média</th><th>Tokens</th></tr></thead>
             <tbody id="porUsuario"></tbody>
           </table>
-          <div id="vazioUsuarios" class="hint">Nenhum report gerado ainda.</div>
+          <div id="vazioUsuarios" class="hint">Nenhum report neste período.</div>
         </div>
 
         <div class="card">
-          <div class="head"><div class="t">🕒 Últimos reports</div></div>
+          <div class="head"><div class="t">📅 Por dia</div><div class="sub">— quanto saiu em cada dia</div></div>
           <table>
-            <thead><tr><th>Lead</th><th>SDR</th><th>Origem</th><th>Quando</th></tr></thead>
+            <thead><tr><th>Dia</th><th>Reports</th><th>Gasto</th></tr></thead>
+            <tbody id="porDia"></tbody>
+          </table>
+        </div>
+
+        <div class="card">
+          <div class="head"><div class="t">🕒 Reports do período</div><div class="sub">— o custo de cada um</div></div>
+          <table>
+            <thead><tr><th>Lead</th><th>SDR</th><th>Origem</th><th>Quando</th><th>Custo</th></tr></thead>
             <tbody id="ultimos"></tbody>
           </table>
         </div>
 
-        <button id="atualizar" class="btn sec">↻ Atualizar</button>
+        <div class="hint">Valores em dólar, cobrados pela Anthropic conforme os tokens de cada report. A transcrição dos áudios (Groq) está no plano gratuito.</div>
       </div>
     </section>
 
     <!-- ================= ABA: EXTENSÃO ================= -->
     <section id="aba-extensao" class="hidden">
+      <div class="card">
+        <div class="head"><div class="t">⬇ Arquivo da extensão</div><div class="sub">— mande este link para o SDR</div></div>
+        <a class="dl" href="/PRONIX-extensao.zip" download>⬇ Baixar PRONIX-extensao.zip</a>
+        <div class="hint">Link direto para o time: <span class="chave" id="urlZip"></span></div>
+      </div>
+
       <div class="card">
         <div class="head"><div class="t">🧩 Como cada pessoa da equipe usa</div></div>
         <ol style="padding-left:20px;margin:0">
@@ -416,29 +469,91 @@
 
     // ---------- Aba: Números ----------
     const quando = (iso) => new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+    const diaBR = (d) => d.split('-').reverse().slice(0, 2).join('/');
+    const nTok = (n) => (n >= 1000 ? (n / 1000).toFixed(1).replace('.', ',') + 'k' : String(n || 0));
+
+    /** Custos por report são centavos de dólar: 2 casas viram $0,00 e escondem o número. */
+    const usd = (v) => {
+      const n = Number(v) || 0;
+      if (n === 0) return '$0';
+      if (n < 0.01) return '$' + n.toFixed(4);
+      return '$' + n.toFixed(2);
+    };
+    const hojeISO = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+    const menosDias = (n) => new Date(Date.now() - new Date().getTimezoneOffset() * 60000 - n * 864e5).toISOString().slice(0, 10);
+
+    /** Botões de período preenchem as datas; mexer nas datas na mão desliga os botões. */
+    function usarPreset(dias) {
+      document.querySelectorAll('.chip').forEach((c) => c.classList.toggle('on', Number(c.dataset.dias) === dias));
+      if (dias < 0) { $('de').value = ''; $('ate').value = ''; }
+      else { $('de').value = menosDias(dias); $('ate').value = hojeISO(); }
+    }
+    document.querySelectorAll('.chip').forEach((c) =>
+      c.addEventListener('click', () => { usarPreset(Number(c.dataset.dias)); carregarStats(); })
+    );
+    ['de', 'ate'].forEach((id) =>
+      $(id).addEventListener('change', () => {
+        document.querySelectorAll('.chip').forEach((c) => c.classList.remove('on'));
+        carregarStats();
+      })
+    );
+    $('aplicar').addEventListener('click', carregarStats);
+    $('filtroSdr').addEventListener('change', carregarStats);
 
     async function carregarStats() {
       if (!souAdmin && !senhaAdmin) return;
+      const q = new URLSearchParams();
+      if ($('de').value) q.set('de', $('de').value);
+      if ($('ate').value) q.set('ate', $('ate').value);
+      if ($('filtroSdr').value) q.set('sdr', $('filtroSdr').value);
+      setStatus('statusFiltro', 'Carregando…', { loading: true });
       try {
-        const s = await api('GET', '/api/admin/stats');
-        $('kHoje').textContent = s.hoje;
-        $('kSemana').textContent = s.semana;
+        const s = await api('GET', '/api/admin/stats?' + q.toString());
+
         $('kTotal').textContent = s.total;
+        $('kCusto').textContent = usd(s.custo);
+        $('kMedio').textContent = usd(s.custoMedio);
+        $('gHoje').textContent = s.geral.hoje;
+        $('gCustoMes').textContent = usd(s.geral.custoMes);
+        $('gTotal').textContent = s.geral.total;
+        $('gCusto').textContent = usd(s.geral.custo);
+
+        // Mantém a escolha atual do filtro ao repovoar a lista de SDRs.
+        const sel = $('filtroSdr');
+        const atual = sel.value;
+        sel.innerHTML = '<option value="">Todos</option>' +
+          s.geral.sdrs.map((n) => `<option value="${esc(n)}">${esc(n)}</option>`).join('');
+        sel.value = atual;
+
         $('vazioUsuarios').style.display = s.porUsuario.length ? 'none' : '';
         $('porUsuario').innerHTML = s.porUsuario.map((u) => `
-          <tr><td><b>${esc(u.nome)}</b></td><td>${u.hoje}</td><td>${u.total}</td></tr>`).join('');
+          <tr>
+            <td><b>${esc(u.nome)}</b></td>
+            <td class="num">${u.total}</td>
+            <td class="num">${usd(u.custo)}</td>
+            <td class="num" style="color:var(--muted)">${usd(u.total ? u.custo / u.total : 0)}</td>
+            <td class="num" style="color:var(--muted);font-size:.8rem">${nTok(u.entrada)} in · ${nTok(u.saida)} out</td>
+          </tr>`).join('');
+
+        $('porDia').innerHTML = s.porDia.map((d) => `
+          <tr><td>${diaBR(d.dia)}</td><td class="num">${d.total}</td><td class="num">${usd(d.custo)}</td></tr>`).join('')
+          || '<tr><td colspan="3" style="color:var(--muted)">Nenhum report neste período.</td></tr>';
+
         $('ultimos').innerHTML = s.ultimos.map((r) => `
           <tr>
             <td>${esc(r.lead || '—')}</td>
             <td>${esc(r.usuarioNome || '—')}</td>
             <td><span class="tag">${r.origem === 'manual' ? 'manual' : 'extensão'}</span></td>
             <td style="color:var(--muted);font-size:.82rem">${quando(r.quando)}</td>
-          </tr>`).join('');
+            <td class="num">${usd(r.custo)}</td>
+          </tr>`).join('')
+          || '<tr><td colspan="5" style="color:var(--muted)">Nenhum report neste período.</td></tr>';
+
+        setStatus('statusFiltro', `${s.total} report(s) · ${usd(s.custo)} no período.`, { ok: true });
       } catch (e) {
-        toast('Erro ao carregar os números.');
+        setStatus('statusFiltro', '❌ ' + e.message, { erro: true });
       }
     }
-    $('atualizar').addEventListener('click', carregarStats);
 
     // ---------- Aba: Gerar report ----------
     const getChave = () => ($('chave').value || '').trim();
@@ -568,6 +683,8 @@
 
     // ---------- Início ----------
     $('urlServidor').textContent = location.origin;
+    $('urlZip').textContent = location.origin + '/PRONIX-extensao.zip';
+    usarPreset(0); // abre em "Hoje"
     aplicarPapel();
     abrir((location.hash || '').replace('#', '') || 'report');
   </script>

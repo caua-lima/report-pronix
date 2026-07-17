@@ -124,10 +124,20 @@ app.delete('/api/admin/usuarios/:id', admin, async (req, res) => {
   }
 });
 
-/** Números do dashboard: quantos reports, por quem, quando. */
-app.get('/api/admin/stats', admin, async (_req, res) => {
+/**
+ * Números do dashboard: quantos reports, por quem, quanto custou.
+ * Filtros: ?de=YYYY-MM-DD&ate=YYYY-MM-DD&sdr=Nome (todos opcionais).
+ */
+app.get('/api/admin/stats', admin, async (req, res) => {
   try {
-    res.json(await stats.resumo());
+    const dataOk = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(String(v || '')) ? String(v) : undefined);
+    res.json(
+      await stats.resumo({
+        de: dataOk(req.query.de),
+        ate: dataOk(req.query.ate),
+        sdr: req.query.sdr ? String(req.query.sdr) : undefined,
+      })
+    );
   } catch (err) {
     res.status(500).json({ erro: err.message });
   }
@@ -139,6 +149,8 @@ app.get('/api/admin/stats', admin, async (_req, res) => {
 async function responderReport(req, res, dados, nome, origem) {
   // Quem assina o report é o dono da chave, não uma variável do servidor.
   dados.sdr = req.usuario.nome;
+  const uso = dados.uso;
+  delete dados.uso; // consumo é assunto do admin: não vai junto do report.
   const buffer = await gerarPdfBuffer(dados);
   // O report é o que importa: se o registro falhar, não derruba a entrega do PDF.
   await stats
@@ -147,6 +159,7 @@ async function responderReport(req, res, dados, nome, origem) {
       usuarioNome: req.usuario.nome,
       lead: dados.lead || nome || '',
       origem,
+      uso,
     })
     .catch((err) => console.error('Falha ao registrar o report:', err.message));
   // Report_Nome_Data.pdf — "Nome" é o lead, que é de quem o report fala.

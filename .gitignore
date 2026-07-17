@@ -7,3 +7,5 @@ auth/
 
 # Zip da extensão gerado para distribuir ao time
 *.zip
+# ...menos o que o dashboard serve para o time baixar
+!public/PRONIX-extensao.zip

@@ -7,7 +7,8 @@
   "scripts": {
     "start": "node server.js",
     "server": "node server.js",
-    "tunel": "cloudflared tunnel --url http://localhost:3000"
+    "tunel": "cloudflared tunnel --url http://localhost:3000",
+    "empacotar": "powershell -NoProfile -Command \"Compress-Archive -Path extension* -DestinationPath public/PRONIX-extensao.zip -Force\""
   },
   "license": "MIT",
   "engines": {

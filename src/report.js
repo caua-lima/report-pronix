@@ -235,13 +235,19 @@ async function chamarAnthropic(userPrompt) {
   }
 
   const json = await resp.json();
+  // usage é o que a Anthropic cobra: é daqui que sai o custo do report.
+  const uso = {
+    modelo: json.model || model,
+    entrada: (json.usage && json.usage.input_tokens) || 0,
+    saida: (json.usage && json.usage.output_tokens) || 0,
+  };
   // A saída estruturada vem num bloco tool_use, com o objeto já pronto em .input.
   const toolUse = (json.content || []).find((b) => b.type === 'tool_use');
-  if (toolUse && toolUse.input) return JSON.stringify(toolUse.input);
+  if (toolUse && toolUse.input) return { texto: JSON.stringify(toolUse.input), uso };
   // Fallback: texto puro (caso o modelo não use a ferramenta).
   const texto = (json.content || []).map((b) => b.text || '').join('').trim();
   if (!texto) throw new Error('Resposta vazia da Anthropic.');
-  return texto;
+  return { texto, uso };
 }
 
 async function chamarOllama(userPrompt) {
@@ -270,7 +276,8 @@ async function chamarOllama(userPrompt) {
   const json = await resp.json();
   const texto = json.message?.content?.trim();
   if (!texto) throw new Error('Resposta vazia do Ollama.');
-  return texto;
+  // Ollama roda na sua máquina: sem custo por token.
+  return { texto, uso: { modelo: `ollama/${model}`, entrada: 0, saida: 0 } };
 }
 
 async function chamarLLM(userPrompt) {
@@ -316,7 +323,7 @@ async function gerarReportDireto(payload = {}) {
 
 /** Roda o prompt na LLM, valida o JSON e devolve os dados normalizados. */
 async function processarComLLM(userPrompt, nome) {
-  const respostaBruta = await chamarLLM(userPrompt);
+  const { texto: respostaBruta, uso } = await chamarLLM(userPrompt);
 
   let dados;
   try {
@@ -335,6 +342,8 @@ async function processarComLLM(userPrompt, nome) {
   if (!dados.lead && nome && nome.trim()) {
     dados.lead = nome.trim();
   }
+  // O servidor registra o consumo e tira este campo antes de devolver o report.
+  dados.uso = uso;
   return dados;
 }
 
