@@ -12,19 +12,18 @@ const LLM_PROVIDER = (process.env.LLM_PROVIDER || 'anthropic').toLowerCase();
 const EXEMPLO_PEQUENO = {
   lead: 'Vitor da Silva',
   resumo: [
-    { rotulo: 'Status', valor: 'Loja física + e-commerce' },
-    { rotulo: 'Nicho', valor: 'Moto peças' },
-    { rotulo: 'Investimento', valor: 'Cerca de R$5.000 (metade do estoque de R$10 mil)' },
-    { rotulo: 'Decisor(es)', valor: 'Vitor decide o digital; investimento dividido 50/50 com a irmã, que não estará na call' },
-    { rotulo: 'Urgência', valor: 'Quer sair do CLT; já está vendendo e quer estrutura para escalar' },
+    { rotulo: 'Status', valor: 'Loja física de moto peças, começando no digital' },
+    { rotulo: 'Investimento', valor: 'A partir de R$3.000 — respondeu "OK" ao valor mínimo proposto pelo vendedor' },
+    { rotulo: 'Motivação', valor: 'Sair do CLT e ter renda previsível; já vende, quer estrutura para escalar' },
+    { rotulo: 'Decisor(es)', valor: 'Decide sozinho (não mencionou outra pessoa)' },
   ],
   secoes: [
     {
       titulo: '👤 Perfil & momento',
       numerada: false,
       itens: [
-        'Sai do CLT buscando qualidade de vida; toca uma loja física de moto peças com a irmã.',
-        'Há 15 dias começou no Mercado Livre e já fez 104 vendas — validou produto, sem estrutura ainda.',
+        'Toca uma loja física de moto peças; começou no Mercado Livre há 15 dias.',
+        'Já fez 104 vendas nesses 15 dias — validou produto, mas ainda sem estrutura.',
         'Ainda sem Full liberado; trocando o CNAE do ME.',
       ],
     },
@@ -37,17 +36,12 @@ const EXEMPLO_PEQUENO = {
       ],
     },
     {
-      titulo: '⚠️ Objeções & riscos',
-      numerada: false,
-      itens: ['Investimento dividido com a irmã pode travar decisão rápida se ela não estiver alinhada.'],
-    },
-    {
       titulo: '✅ O que o closer deve bater',
       numerada: true,
       itens: [
         'Ancorar na tração (104 vendas/15 dias) para mostrar que só falta estrutura, não capacidade.',
         'Desenhar o caminho de Full + catálogo como ponte para previsibilidade.',
-        'Trazer a irmã para a decisão ou confirmar alçada dele para fechar sozinho.',
+        'Como ele já confirmou o investimento e decide sozinho, mirar direto no plano de execução.',
       ],
     },
   ],
@@ -59,16 +53,17 @@ const EXEMPLO_PEQUENO = {
     'Ele já vendeu muito rápido no começo; agora a reunião precisa mostrar como transformar tração em estrutura para ele sair do CLT com segurança.',
 };
 
-// Mesmo trabalho, conversa diferente: aqui a capacidade aparece como faturamento e
-// estoque (não como "investimento"), a urgência vem da fala do lead e o decisor não
-// vai participar. Repare que os rótulos e as seções não são os mesmos do exemplo acima.
+// Mesmo trabalho, conversa diferente: aqui o INVESTIMENTO aparece como faturamento e
+// estoque (o lead demonstrou capacidade sem falar em "investir"), a MOTIVAÇÃO é escoar
+// o estoque parado, e o DECISOR não vai participar. As três obrigatórias continuam lá,
+// só com rótulos e valores tirados desta conversa.
 const EXEMPLO_GRANDE = {
   lead: 'Márcia Gonçalves',
   resumo: [
     { rotulo: 'Negócio', valor: 'Distribuidora de cosméticos, 12 funcionários, só atacado' },
-    { rotulo: 'Faturamento', valor: 'R$2M/mês' },
-    { rotulo: 'Estoque', valor: 'R$100 mil parados em produto de giro lento' },
-    { rotulo: 'Decisor(es)', valor: 'Márcia decide com o sócio Rogério — Rogério NÃO participa da reunião' },
+    { rotulo: 'Investimento', valor: 'Fatura R$2M/mês; R$100 mil de estoque parado — capacidade sobra' },
+    { rotulo: 'Motivação', valor: 'Escoar o estoque de giro lento sem queimar preço no atacado' },
+    { rotulo: 'Decisor(es)', valor: 'Decide com o sócio Rogério — Rogério NÃO participa da reunião' },
     { rotulo: 'Urgência', valor: '"Preciso começar no Mercado Livre" — canal já decidido internamente' },
   ],
   secoes: [
@@ -113,13 +108,18 @@ O RELATÓRIO SAI DA CONVERSA — não existe modelo fixo:
 - Assunto que não apareceu na conversa NÃO vira linha do relatório. Nada de campo vazio, "não informado" ou "não mencionado" — apenas omita (as duas exceções estão abaixo).
 - Reporte o que o lead disse, na medida em que ele disse. Não traduza a fala dele para uma escala ou categoria que ele não usou.
 
-SEMPRE NO RELATÓRIO (o closer não entra na call sem estes dois):
+QUALIFICAÇÃO MÍNIMA — estas TRÊS linhas SEMPRE aparecem no resumo, preenchidas com o que a conversa deu. É PROIBIDO escrever "a confirmar" nelas. O SDR já qualifica isso na conversa, então a informação ESTÁ lá — sua obrigação é achar, inclusive em respostas curtas ("ok", "sim", "fechado"). Se você escreveu "a confirmar" em uma destas três, você leu errado: volte e releia a conversa inteira.
 
-1. CAPACIDADE (poder de investimento / estrutura) — do jeito que o lead expressou: faturamento, estoque, verba, capital, tamanho da operação, número de funcionários. NÃO converta em "investimento" se ele não falou em investir: quem fatura R$2M/mês ou tem R$100 mil de estoque já demonstrou capacidade, e o dado é esse — não faz sentido perguntar se ele tem R$3 mil. Use o rótulo que couber ("Faturamento", "Estoque", "Verba mensal", "Estrutura"). Só escreva "a confirmar na reunião" se não houver NADA na conversa sobre porte, dinheiro ou operação.
+1. INVESTIMENTO — o poder de investir do lead.
+   - CONFIRMAÇÃO CONTA: se o vendedor propôs um valor e o lead concordou — "ok", "consigo", "fechado", "dá sim", "tenho", "pode ser", "tranquilo", "beleza", "isso" — então ESSE valor está confirmado. Ex.: VENDEDOR "o investimento é no mínimo R$3 mil, consegue?" + LEAD "OK" → Investimento: "A partir de R$3.000 — lead confirmou". NUNCA "a confirmar": ele acabou de confirmar.
+   - Se o lead expressou capacidade de outro jeito (faturamento, estoque, verba, porte, nº de funcionários), use isso — quem fatura R$2M/mês ou tem R$100 mil de estoque já demonstrou poder de investimento. O rótulo pode virar "Faturamento", "Estoque" etc., mas a linha de capacidade financeira SEMPRE existe.
+   - Só não invente um número que ninguém disse. Mas se houve qualquer sinal — valor aceito, faixa, faturamento, porte — ele vira a linha.
 
-2. DECISOR(ES) — quem bate o martelo. Se ficou claro que o decisor NÃO vai participar da reunião (ou que quem está falando não decide sozinho), diga isso explicitamente: muda a condução da call inteira. Se não foi dito, "a confirmar na reunião".
+2. MOTIVAÇÃO — por que o lead quer isso: a dor ou o objetivo que o move (sair do CLT, escalar, escoar estoque parado, ter previsibilidade, parar de depender de indicação...). Sempre há um motivo na conversa; tire da fala dele.
 
-URGÊNCIA: entra SÓ se o lead demonstrou — e nas palavras dele. "Preciso começar no Mercado Livre" já é urgência verbalizada: reporte o que ele disse, não invente "Prioridade: alta" nem peça confirmação de algo que ele já afirmou. Se ele não deu sinal nenhum de urgência, não crie a linha: não force escala e não peça para confirmar.
+3. DECISOR(ES) — quem bate o martelo. Se o lead NÃO disse explicitamente, o padrão é que quem está conversando é o decisor — assuma isso e escreva "Decide sozinho (não mencionou outra pessoa)". Se ficou claro que precisa de um terceiro (sócio, cônjuge) OU que o decisor NÃO estará na reunião, isso é OBRIGATÓRIO reportar — muda a call inteira.
+
+URGÊNCIA (opcional, é a única que pode não existir): entra só se o lead demonstrou, nas palavras dele. "Preciso começar no Mercado Livre" já é urgência verbalizada — reporte o que ele disse. Sem sinal nenhum, não crie a linha e não peça para confirmar.
 
 REGRAS DE QUALIDADE:
 - SEM REDUNDÂNCIA: cada informação aparece UMA vez. Não repita no corpo o que está no resumo. UMA única seção de ação — proibido "pontos de atenção" + "o que bater" dizendo o mesmo.
@@ -131,7 +131,7 @@ TAMANHO (é um handoff, não um dossiê): resumo com 4 a 7 linhas; no máximo 4 
 
 Preencha pela ferramenta "gerar_relatorio":
 - "lead": SÓ o nome do lead, como ele aparece na conversa (ou ""). Sem parênteses, sem comentário, sem "a confirmar" — este campo vira o título e o nome do arquivo.
-- "resumo": linhas rótulo/valor tiradas da conversa, incluindo sempre capacidade e decisor(es).
+- "resumo": linhas rótulo/valor tiradas da conversa, SEMPRE com Investimento, Motivação e Decisor(es) preenchidos (nunca "a confirmar"), mais o que fizer sentido (status/nicho, urgência quando houver).
 - "secoes": título com um emoji + bullets densos. As seções que fizerem sentido para ESTA conversa (perfil/momento, dor/objetivo, objeções/riscos, o que o closer deve bater...). "numerada": true só na de ação.
 - "citacoes": 1 a 3 FALAS EXATAS/verbatim do LEAD (copiadas literalmente das linhas do LEAD, inclusive áudios): dor, sinal de compra, objeção, objetivo. Sem paráfrase, sem falas do vendedor; [] se não houver.
 - "frase_impacto": uma frase única e afiada de fechamento (pode parafrasear).`;
