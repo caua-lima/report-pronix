@@ -71,7 +71,7 @@
 
   // Força o WhatsApp a materializar o áudio (baixa se preciso + play no mudo),
   // captura os bytes (via <audio> ou via hook createObjectURL). Retorna base64 ou null.
-  async function capturarBytes(el, dbg) {
+  async function capturarBytes(el, dbg, iteracoes = 40) {
     // 1) Se houver botão de baixar (áudio não carregado ainda), clica primeiro.
     const btnBaixar = el.querySelector(
       '[data-icon="audio-download"], [data-icon="down"], [data-icon*="download" i], span[data-icon="audio-download"]'
@@ -105,8 +105,10 @@
 
     // 3) Consome o próximo blob que SEJA áudio (valida magic bytes; descarta
     //    imagem/pdf/etc.). Áudios processados de cima p/ baixo = ordem cronológica.
+    //    iteracoes controla a paciência (cada iteração ~150ms): a repescagem
+    //    aumenta isso para os áudios que demoram a carregar.
     let descartados = 0;
-    for (let i = 0; i < 40; i++) {
+    for (let i = 0; i < iteracoes; i++) {
       for (const b of blobsAudio) {
         if (b.usado) continue;
         b.usado = true;
@@ -132,20 +134,51 @@
     return null;
   }
 
-  // Captura os bytes dos áudios visíveis. Processa cada áudio UMA vez, de cima
-  // para baixo, consumindo os blobs na ordem de criação (mapeamento cronológico).
-  async function capturarAudiosVisiveis(root, audioBytes, processados) {
+  // Captura os bytes dos áudios visíveis, de cima para baixo (mapeamento
+  // cronológico). Pula os que JÁ foram capturados (audioBytes) — nunca desiste de
+  // um que ainda falta. tentadosNestaPassada evita reclicar o mesmo áudio enquanto
+  // ele fica na tela durante a rolagem; zera a cada passada de repescagem.
+  async function capturarAudiosVisiveis(root, audioBytes, tentadosNestaPassada, iteracoes) {
     const audios = acharMensagens(root).filter((el) => ehAudio(el));
     for (const el of audios) {
       const idEl = el.matches('[data-id]') ? el : el.closest('[data-id]') || el.querySelector('[data-id]');
       const chave = idEl ? idEl.getAttribute('data-id') : null;
-      if (!chave || processados.has(chave)) continue;
-      processados.add(chave);
+      if (!chave || audioBytes.has(chave) || tentadosNestaPassada.has(chave)) continue;
+      tentadosNestaPassada.add(chave);
       try {
-        const b64 = await capturarBytes(el, chave.slice(0, 8));
+        const b64 = await capturarBytes(el, chave.slice(0, 8), iteracoes);
         if (b64) audioBytes.set(chave, b64);
       } catch (_) {
         /* segue */
+      }
+    }
+  }
+
+  // Rola do topo até o fim uma vez, capturando os áudios que ainda faltam.
+  async function passadaDeCaptura(scroller, root, capturar, audioBytes, expandir, iteracoes) {
+    const tentados = new Set(); // reinicia a cada passada: os que faltam serão retentados
+    if (!scroller) {
+      await expandir(root);
+      capturar();
+      await capturarAudiosVisiveis(root, audioBytes, tentados, iteracoes);
+      return;
+    }
+    scroller.scrollTop = 0;
+    await sleep(300);
+    const passo = Math.max(200, Math.floor(scroller.clientHeight * 0.6));
+    for (let i = 0; i < 500; i++) {
+      await expandir(root);
+      capturar();
+      await capturarAudiosVisiveis(root, audioBytes, tentados, iteracoes);
+      const antes = scroller.scrollTop;
+      scroller.scrollTop = Math.min(antes + passo, scroller.scrollHeight);
+      await sleep(280);
+      const fim = scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 5;
+      if (scroller.scrollTop === antes || fim) {
+        await expandir(root);
+        capturar();
+        await capturarAudiosVisiveis(root, audioBytes, tentados, iteracoes);
+        break;
       }
     }
   }
@@ -358,7 +391,6 @@
     const scroller = acharScroller(acharMensagens(root)[0]);
     const mapa = new Map(); // chave -> registro (ordem = primeira aparição top→bottom)
     const audioBytes = new Map(); // chave (data-id) -> base64 do áudio capturado
-    const processadosAudio = new Set(); // áudios já tentados (1x cada)
     let seq = 0;
 
     const capturar = () => {
@@ -372,9 +404,11 @@
         if (!mapa.has(chave)) mapa.set(chave, { ...reg, _ord: seq++ });
       });
     };
+    const faltamAudios = () =>
+      [...mapa].filter(([chave, reg]) => reg.type === 'audio' && !audioBytes.has(chave)).length;
 
     if (scroller) {
-      // 1) Rola até o topo para carregar o histórico antigo.
+      // 1) Rola até o topo para carregar o histórico antigo (uma vez só).
       let alturaAnterior = -1;
       let estavel = 0;
       for (let i = 0; i < 150 && estavel < 3; i++) {
@@ -387,30 +421,30 @@
           alturaAnterior = h;
         }
       }
+    }
 
-      // 2) Desce do topo até o fim capturando em ordem cronológica.
-      scroller.scrollTop = 0;
-      await sleep(300);
-      const passo = Math.max(200, Math.floor(scroller.clientHeight * 0.6));
-      for (let i = 0; i < 500; i++) {
-        await expandirTranscricoes(root); // revela transcrições de áudio recolhidas
-        capturar();
-        if (capturarAudio) await capturarAudiosVisiveis(root, audioBytes, processadosAudio);
-        const antes = scroller.scrollTop;
-        scroller.scrollTop = Math.min(antes + passo, scroller.scrollHeight);
-        await sleep(280);
-        const fim = scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 5;
-        if (scroller.scrollTop === antes || fim) {
-          await expandirTranscricoes(root);
-          capturar();
-          if (capturarAudio) await capturarAudiosVisiveis(root, audioBytes, processadosAudio);
-          break;
-        }
+    // 2) Passadas de captura: desce do topo capturando os áudios que faltam.
+    //    A primeira pega a maioria; as seguintes voltam nos teimosos com mais
+    //    paciência, até não faltar nenhum (ou esgotar as tentativas).
+    const MAX_PASSADAS = 6;
+    let faltaramAntes = Infinity;
+    for (let passada = 0; passada < MAX_PASSADAS; passada++) {
+      const iteracoes = 40 + passada * 25; // ~6s na 1ª, subindo até ~24s por áudio
+      if (passada > 0 && capturarAudio) {
+        mostrarBadge({
+          texto: `<b>Repescando áudios…</b> faltam ${faltamAudios()} (tentativa ${passada + 1})`,
+          loading: true,
+        });
       }
-    } else {
-      await expandirTranscricoes(root);
-      capturar();
-      if (capturarAudio) await capturarAudiosVisiveis(root, audioBytes, processadosAudio);
+      await passadaDeCaptura(scroller, root, capturar, audioBytes, expandirTranscricoes, iteracoes);
+
+      if (!capturarAudio) break; // sem áudio: uma passada basta
+      const faltam = faltamAudios();
+      if (faltam === 0) break; // pegou todos
+      // Se uma passada inteira não recuperou NENHUM novo, insistir não ajuda:
+      // provavelmente é mídia que o WhatsApp não consegue mais baixar.
+      if (faltam >= faltaramAntes) break;
+      faltaramAntes = faltam;
     }
 
     // Transcreve os áudios capturados (via service worker, evitando a CSP da página).
