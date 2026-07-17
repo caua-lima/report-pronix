@@ -1,7 +1,8 @@
 'use strict';
 
 const $ = (id) => document.getElementById(id);
-const DEFAULT_SERVER = 'http://localhost:3000';
+// A equipe usa a nuvem: só cola a chave. Trocar para http://localhost:3000 ao testar local.
+const DEFAULT_SERVER = 'https://report-closer.vercel.app';
 
 function setStatus(txt, { erro = false, loading = false } = {}) {
   const el = $('status');
