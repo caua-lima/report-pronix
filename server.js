@@ -11,6 +11,7 @@ const { gerarPdfBuffer } = require('./src/generatePdf');
 const { transcribeBuffer } = require('./src/transcribe');
 const usuarios = require('./src/usuarios');
 const stats = require('./src/stats');
+const db = require('./src/db');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -32,16 +33,20 @@ app.use((req, res, next) => {
 // ---------------------------------------------------------------------------
 
 /** Exige a chave do SDR (header x-cr-key ou ?chave=). Popula req.usuario. */
-function auth(req, res, next) {
-  const chave = req.get('x-cr-key') || req.query.chave;
-  const u = usuarios.porChave(chave && String(chave).trim());
-  if (!u) {
-    return res.status(401).json({
-      erro: 'Chave inválida ou ausente. Peça sua chave ao admin e cole no popup da extensão.',
-    });
+async function auth(req, res, next) {
+  try {
+    const chave = req.get('x-cr-key') || req.query.chave;
+    const u = await usuarios.porChave(chave && String(chave).trim());
+    if (!u) {
+      return res.status(401).json({
+        erro: 'Chave inválida ou ausente. Peça sua chave ao admin e cole no popup da extensão.',
+      });
+    }
+    req.usuario = u;
+    next();
+  } catch (err) {
+    res.status(500).json({ erro: err.message });
   }
-  req.usuario = u;
-  next();
 }
 
 /** Exige a senha de admin (ADMIN_PASSWORD no .env). */
@@ -81,38 +86,55 @@ app.get('/api/eu', auth, (req, res) => {
 // ---------------------------------------------------------------------------
 app.post('/api/admin/login', admin, (_req, res) => res.json({ ok: true }));
 
-app.get('/api/admin/usuarios', admin, (_req, res) => {
-  res.json({ usuarios: usuarios.listar() });
+app.get('/api/admin/usuarios', admin, async (_req, res) => {
+  try {
+    res.json({ usuarios: await usuarios.listar() });
+  } catch (err) {
+    res.status(500).json({ erro: err.message });
+  }
 });
 
-app.post('/api/admin/usuarios', admin, (req, res) => {
+app.post('/api/admin/usuarios', admin, async (req, res) => {
   try {
-    const u = usuarios.criar(req.body && req.body.nome);
+    const u = await usuarios.criar(req.body && req.body.nome);
     res.json({ ok: true, usuario: u });
   } catch (err) {
     res.status(400).json({ erro: err.message });
   }
 });
 
-app.delete('/api/admin/usuarios/:id', admin, (req, res) => {
-  usuarios.remover(req.params.id);
-  res.json({ ok: true });
+app.delete('/api/admin/usuarios/:id', admin, async (req, res) => {
+  try {
+    await usuarios.remover(req.params.id);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ erro: err.message });
+  }
 });
 
 /** Números do dashboard: quantos reports, por quem, quando. */
-app.get('/api/admin/stats', admin, (_req, res) => res.json(stats.resumo()));
+app.get('/api/admin/stats', admin, async (_req, res) => {
+  try {
+    res.json(await stats.resumo());
+  } catch (err) {
+    res.status(500).json({ erro: err.message });
+  }
+});
 
 // ---------------------------------------------------------------------------
 // Report (extensão e modo manual) — devolve o PDF em base64 (sem disco).
 // ---------------------------------------------------------------------------
 async function responderReport(req, res, dados, nome, origem) {
   const buffer = await gerarPdfBuffer(dados);
-  stats.registrar({
-    usuarioId: req.usuario.id,
-    usuarioNome: req.usuario.nome,
-    lead: dados.lead || nome || '',
-    origem,
-  });
+  // O report é o que importa: se o registro falhar, não derruba a entrega do PDF.
+  await stats
+    .registrar({
+      usuarioId: req.usuario.id,
+      usuarioNome: req.usuario.nome,
+      lead: dados.lead || nome || '',
+      origem,
+    })
+    .catch((err) => console.error('Falha ao registrar o report:', err.message));
   const empresa = (process.env.COMPANY_NAME || 'PRONIX').toUpperCase().replace(/[^A-Z0-9]/g, '') || 'PRONIX';
   const slug = String(dados.lead || nome || 'lead')
     .normalize('NFD').replace(/[̀-ͯ]/g, '')
@@ -166,10 +188,17 @@ app.post('/api/transcrever', auth, async (req, res) => {
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-app.listen(PORT, () => {
-  console.log(`⚡ PRONIX Closer Report em http://localhost:${PORT}`);
-  console.log(`   Dashboard (report, acessos e números): http://localhost:${PORT}`);
-  if (!process.env.ADMIN_PASSWORD) {
-    console.log('   ⚠ Defina ADMIN_PASSWORD no .env para usar o painel de admin.');
-  }
-});
+// Na Vercel o app é exportado (api/index.js) e a plataforma cuida da porta.
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`⚡ PRONIX Closer Report em http://localhost:${PORT}`);
+    console.log(`   Dashboard (report, acessos e números): http://localhost:${PORT}`);
+    console.log(`   Dados: ${db.usandoRedis ? 'Redis (KV)' : 'arquivo local (data/)'}`);
+    console.log(`   Transcrição: ${process.env.GROQ_API_KEY ? 'Groq (API)' : 'Whisper local (Python)'}`);
+    if (!process.env.ADMIN_PASSWORD) {
+      console.log('   ⚠ Defina ADMIN_PASSWORD no .env para usar o painel de admin.');
+    }
+  });
+}
+
+module.exports = app;

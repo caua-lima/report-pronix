@@ -1,50 +1,34 @@
 'use strict';
 
-// Histórico de reports gerados (para o dashboard).
-// Interface pensada para trocar o armazenamento (arquivo -> banco) sem mexer no resto.
+// Histórico de reports gerados (alimenta a aba "Reports gerados" do dashboard).
 
-const fs = require('fs');
-const path = require('path');
 const crypto = require('crypto');
+const db = require('./db');
 
-const DATA_DIR = path.join(__dirname, '..', 'data');
-const ARQ = path.join(DATA_DIR, 'reports.json');
+const CHAVE_DB = 'reports';
 const LIMITE = 5000;
 
-function ler() {
-  try {
-    const j = JSON.parse(fs.readFileSync(ARQ, 'utf8'));
-    return Array.isArray(j.reports) ? j : { reports: [] };
-  } catch (_) {
-    return { reports: [] };
-  }
-}
-
-function salvar(db) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-  fs.writeFileSync(ARQ, JSON.stringify(db, null, 2), 'utf8');
-}
-
 /** Registra um report gerado. */
-function registrar({ usuarioId, usuarioNome, lead, origem }) {
-  const db = ler();
-  db.reports.push({
-    id: crypto.randomBytes(5).toString('hex'),
-    usuarioId: usuarioId || '',
-    usuarioNome: usuarioNome || '',
-    lead: lead || '',
-    origem: origem || 'extensao', // extensao | manual
-    quando: new Date().toISOString(),
-  });
-  if (db.reports.length > LIMITE) db.reports = db.reports.slice(-LIMITE);
-  salvar(db);
+async function registrar({ usuarioId, usuarioNome, lead, origem }) {
+  await db.push(
+    CHAVE_DB,
+    {
+      id: crypto.randomBytes(5).toString('hex'),
+      usuarioId: usuarioId || '',
+      usuarioNome: usuarioNome || '',
+      lead: lead || '',
+      origem: origem || 'extensao', // extensao | manual
+      quando: new Date().toISOString(),
+    },
+    LIMITE
+  );
 }
 
 const dia = (iso) => String(iso || '').slice(0, 10);
 
 /** Resumo para o dashboard: totais, por usuário e os últimos gerados. */
-function resumo() {
-  const reports = ler().reports;
+async function resumo() {
+  const reports = await db.range(CHAVE_DB);
   const hoje = new Date().toISOString().slice(0, 10);
   const seteDiasAtras = new Date(Date.now() - 6 * 864e5).toISOString().slice(0, 10);
 

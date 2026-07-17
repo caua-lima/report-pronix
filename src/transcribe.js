@@ -4,6 +4,7 @@ const path = require('path');
 const os = require('os');
 const fs = require('fs');
 const { spawn } = require('child_process');
+const { transcreverGroq } = require('./groq');
 
 const PYTHON_BIN = process.env.PYTHON_BIN || 'python';
 const WHISPER_MODEL_SIZE = process.env.WHISPER_MODEL_SIZE || 'small';
@@ -41,13 +42,16 @@ function transcribeFile(audioPath) {
 }
 
 /**
- * Grava um buffer de áudio em arquivo temporário, transcreve e limpa.
+ * Transcreve um buffer de áudio.
+ * Com GROQ_API_KEY vai pela API (é o caminho na Vercel, onde não há Python).
+ * Sem ela, usa o faster-whisper local.
  * @param {Buffer} buffer
  * @param {string} [ext='.ogg'] extensão original (ajuda o decoder)
  * @returns {Promise<string>}
  */
 async function transcribeBuffer(buffer, ext = '.ogg') {
   const seguro = /^\.[a-z0-9]{1,5}$/i.test(ext) ? ext : '.ogg';
+  if (process.env.GROQ_API_KEY) return transcreverGroq(buffer, `audio${seguro}`);
   const tmpPath = path.join(
     os.tmpdir(),
     `audio-${Date.now()}-${Math.random().toString(36).slice(2)}${seguro}`

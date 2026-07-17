@@ -12,6 +12,7 @@
   },
   "host_permissions": [
     "https://web.whatsapp.com/*",
+    "https://*.vercel.app/*",
     "http://localhost/*",
     "http://127.0.0.1/*"
   ],
