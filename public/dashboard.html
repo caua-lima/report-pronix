@@ -359,7 +359,7 @@
         <div class="card">
           <div class="head"><div class="t">🕒 Reports do período</div><div class="sub">— o custo de cada um</div></div>
           <table>
-            <thead><tr><th>Lead</th><th>SDR</th><th>Origem</th><th>Quando</th><th>Custo</th></tr></thead>
+            <thead><tr><th>Lead</th><th>SDR</th><th>Origem</th><th>Quando</th><th>Custo</th><th></th></tr></thead>
             <tbody id="ultimos"></tbody>
           </table>
         </div>
@@ -586,6 +586,22 @@
     $('aplicar').addEventListener('click', carregarStats);
     $('filtroSdr').addEventListener('change', carregarStats);
 
+    // Remover report do histórico — não dá para desfazer, então confirma mostrando qual é.
+    $('ultimos').addEventListener('click', async (ev) => {
+      const b = ev.target.closest('[data-remover-report]');
+      if (!b) return;
+      if (!confirm(`Tirar este report do histórico?\n\n${b.dataset.desc}\n\nOs números do dashboard mudam. O PDF que já foi baixado não é afetado. Não dá para desfazer.`)) return;
+      b.disabled = true;
+      try {
+        await api('DELETE', '/api/admin/reports/' + b.dataset.removerReport);
+        toast('Report removido.');
+        carregarStats();
+      } catch (e) {
+        b.disabled = false;
+        setStatus('statusFiltro', '❌ ' + e.message, { erro: true });
+      }
+    });
+
     async function carregarStats() {
       if (!souAdmin && !senhaAdmin) return;
       const q = new URLSearchParams();
@@ -632,8 +648,11 @@
             <td><span class="tag">${r.origem === 'manual' ? 'manual' : 'extensão'}</span></td>
             <td style="color:var(--muted);font-size:.82rem">${quando(r.quando)}</td>
             <td class="num">${usd(r.custo)}</td>
+            <td><div class="acoes"><button class="mini del" data-remover-report="${r.id}"
+              data-desc="${esc((r.lead || 'sem lead') + ' · ' + (r.usuarioNome || '—') + ' · ' + quando(r.quando))}"
+              title="Tirar do histórico">Remover</button></div></td>
           </tr>`).join('')
-          || '<tr><td colspan="5" style="color:var(--muted)">Nenhum report neste período.</td></tr>';
+          || '<tr><td colspan="6" style="color:var(--muted)">Nenhum report neste período.</td></tr>';
 
         setStatus('statusFiltro', `${s.total} report(s) · ${usd(s.custo)} no período.`, { ok: true });
       } catch (e) {

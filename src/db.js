@@ -106,4 +106,33 @@ async function range(chave) {
     .filter(Boolean);
 }
 
-module.exports = { getJson, setJson, push, range, usandoRedis };
+/**
+ * Remove da lista o primeiro item que casar com o predicado.
+ * No Redis é um LREM do valor exato — uma operação só. Reescrever a lista
+ * (apagar e regravar) arriscaria perder o histórico inteiro se falhasse no meio.
+ * @returns {Promise<boolean>} true se achou e removeu.
+ */
+async function removerDaLista(chave, predicado) {
+  exigirBanco();
+  if (!usandoRedis) {
+    const bruto = lerArquivo(chave, []);
+    const lista = Array.isArray(bruto) ? bruto : [];
+    const restantes = lista.filter((i) => !predicado(i));
+    if (restantes.length === lista.length) return false;
+    salvarArquivo(chave, restantes);
+    return true;
+  }
+  const brutos = (await redis(['LRANGE', chave, 0, -1])) || [];
+  // Guarda a string original: o LREM casa por valor exato, então ela tem que ir intacta.
+  const alvo = brutos.find((s) => {
+    try {
+      return predicado(JSON.parse(s));
+    } catch (_) {
+      return false;
+    }
+  });
+  if (alvo === undefined) return false;
+  return Number(await redis(['LREM', chave, 1, alvo])) > 0;
+}
+
+module.exports = { getJson, setJson, push, range, removerDaLista, usandoRedis };

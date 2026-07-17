@@ -181,8 +181,13 @@ function gerarPdfBuffer(dados) {
       const range = doc.bufferedPageRange();
       for (let i = 0; i < range.count; i++) {
         doc.switchToPage(range.start + i);
+        // O rodapé fica abaixo da margem inferior. Para o pdfkit, escrever fora da
+        // área útil significa "a página acabou" e ele cria outra — era daí que vinham
+        // as páginas em branco. Zerar a margem durante a escrita evita isso.
+        const margemBaixo = doc.page.margins.bottom;
+        doc.page.margins.bottom = 0;
+
         const yRod = doc.page.height - 34;
-        // linha dourada acima do rodapé
         doc.save().moveTo(MARGIN, yRod).lineTo(doc.page.width - MARGIN, yRod)
           .lineWidth(1.5).strokeColor(OURO).stroke().restore();
         doc.font('Helvetica-Bold').fontSize(8).fillColor(PRETO).text(
@@ -197,6 +202,8 @@ function gerarPdfBuffer(dados) {
           yRod + 7,
           { width: doc.page.width - MARGIN * 2, align: 'right', lineBreak: false }
         );
+
+        doc.page.margins.bottom = margemBaixo;
       }
 
       doc.end();

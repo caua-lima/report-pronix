@@ -124,6 +124,17 @@ app.delete('/api/admin/usuarios/:id', admin, async (req, res) => {
   }
 });
 
+/** Tira um report do histórico (testes que sujam os números). */
+app.delete('/api/admin/reports/:id', admin, async (req, res) => {
+  try {
+    const ok = await stats.remover(req.params.id);
+    if (!ok) return res.status(404).json({ erro: 'Report não encontrado (já foi removido?).' });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ erro: err.message });
+  }
+});
+
 /**
  * Números do dashboard: quantos reports, por quem, quanto custou.
  * Filtros: ?de=YYYY-MM-DD&ate=YYYY-MM-DD&sdr=Nome (todos opcionais).

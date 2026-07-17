@@ -6,16 +6,17 @@ const { gerarPdf } = require('./generatePdf');
 
 const LLM_PROVIDER = (process.env.LLM_PROVIDER || 'anthropic').toLowerCase();
 
-// Exemplo de um bom relatório — apenas referência de qualidade/estrutura.
-// A estrutura NÃO é fixa: a IA adapta seções e linhas do resumo à conversa.
-const EXEMPLO_FEWSHOT = {
+// DOIS exemplos, de propósito com formatos diferentes: um exemplo só ensinaria a IA
+// a copiar aquele formato. Lado a lado, eles ensinam que o relatório se molda à conversa
+// — rótulos, seções e o que entra mudam conforme o que o lead falou.
+const EXEMPLO_PEQUENO = {
   lead: 'Vitor da Silva',
   resumo: [
     { rotulo: 'Status', valor: 'Loja física + e-commerce' },
     { rotulo: 'Nicho', valor: 'Moto peças' },
     { rotulo: 'Investimento', valor: 'Cerca de R$5.000 (metade do estoque de R$10 mil)' },
-    { rotulo: 'Decisor(es)', valor: 'Vitor decide o digital; investimento dividido 50/50 com a irmã' },
-    { rotulo: 'Prioridade', valor: 'Alta — quer sair do CLT e já está vendendo' },
+    { rotulo: 'Decisor(es)', valor: 'Vitor decide o digital; investimento dividido 50/50 com a irmã, que não estará na call' },
+    { rotulo: 'Urgência', valor: 'Quer sair do CLT; já está vendendo e quer estrutura para escalar' },
   ],
   secoes: [
     {
@@ -58,29 +59,81 @@ const EXEMPLO_FEWSHOT = {
     'Ele já vendeu muito rápido no começo; agora a reunião precisa mostrar como transformar tração em estrutura para ele sair do CLT com segurança.',
 };
 
-const SYSTEM_PROMPT = `Você é um assistente de pré-vendas que lê a conversa entre um vendedor e um lead e monta um relatório de handoff DENSO e ÚTIL para o closer conduzir a reunião. Cabe em ~1 página.
+// Mesmo trabalho, conversa diferente: aqui a capacidade aparece como faturamento e
+// estoque (não como "investimento"), a urgência vem da fala do lead e o decisor não
+// vai participar. Repare que os rótulos e as seções não são os mesmos do exemplo acima.
+const EXEMPLO_GRANDE = {
+  lead: 'Márcia Gonçalves',
+  resumo: [
+    { rotulo: 'Negócio', valor: 'Distribuidora de cosméticos, 12 funcionários, só atacado' },
+    { rotulo: 'Faturamento', valor: 'R$2M/mês' },
+    { rotulo: 'Estoque', valor: 'R$100 mil parados em produto de giro lento' },
+    { rotulo: 'Decisor(es)', valor: 'Márcia decide com o sócio Rogério — Rogério NÃO participa da reunião' },
+    { rotulo: 'Urgência', valor: '"Preciso começar no Mercado Livre" — canal já decidido internamente' },
+  ],
+  secoes: [
+    {
+      titulo: '👤 Perfil & momento',
+      numerada: false,
+      itens: [
+        'Distribuidora consolidada no atacado; nunca vendeu direto ao consumidor.',
+        'Abriu a conversa já decidida pelo Mercado Livre, para escoar o giro lento sem queimar preço no atacado.',
+      ],
+    },
+    {
+      titulo: '⚠️ Objeções & riscos',
+      numerada: false,
+      itens: [
+        'Rogério aprova o investimento e não estará na call: risco de travar depois da reunião.',
+        'Teme conflito de canal — cliente do atacado ver o preço no varejo.',
+      ],
+    },
+    {
+      titulo: '✅ O que o closer deve bater',
+      numerada: true,
+      itens: [
+        'Tratar o canal como decidido: ela não precisa ser convencida do ML, e sim do como.',
+        'Resolver o conflito de canal (linha e precificação separadas) antes de falar de preço.',
+        'Combinar como levar o Rogério: material para ele ou segunda call com os dois.',
+      ],
+    },
+  ],
+  citacoes: [
+    'Preciso começar no Mercado Livre, isso aí já tá decidido.',
+    'Tenho uns 100 mil parados em produto que não gira, isso me incomoda todo mês.',
+  ],
+  frase_impacto:
+    'Ela não precisa ser vendida no canal — precisa de um caminho que não brigue com o atacado e que o sócio aprove sem estar na sala.',
+};
 
-REGRAS DE QUALIDADE (as mais importantes):
-- SEM REDUNDÂNCIA: cada informação aparece UMA única vez. Não repita no corpo o que já está no resumo. Crie APENAS UMA seção de ações ("O que o closer deve bater") — proibido ter "pontos de atenção" + "o que bater" dizendo a mesma coisa. Não crie seção que só reafirme o resumo.
-- DENSIDADE: todo bullet carrega um fato concreto ou insight acionável (número, nome, prazo, objeção, objetivo, gatilho de compra). Corte frases genéricas, óbvias ou de enrolação.
-- SUBSTÂNCIA, não o meio: reporte O QUE foi dito. NUNCA escreva "respondeu por áudio", "conteúdo não detalhado", nem comente o formato/medium da mensagem.
+const SYSTEM_PROMPT = `Você é um assistente de pré-vendas que lê a conversa entre um vendedor e um lead e monta o relatório de handoff que o closer vai usar para conduzir a reunião. CABE EM 1 PÁGINA.
+
+O RELATÓRIO SAI DA CONVERSA — não existe modelo fixo:
+- Os rótulos do resumo e os títulos das seções nascem do que foi dito, não de uma lista pronta. Se o lead falou de faturamento, o rótulo é "Faturamento". Se falou de estoque, é "Estoque". Se falou de verba mensal, é "Verba". Se falou de quantos pedidos manda por dia, é isso.
+- Assunto que não apareceu na conversa NÃO vira linha do relatório. Nada de campo vazio, "não informado" ou "não mencionado" — apenas omita (as duas exceções estão abaixo).
+- Reporte o que o lead disse, na medida em que ele disse. Não traduza a fala dele para uma escala ou categoria que ele não usou.
+
+SEMPRE NO RELATÓRIO (o closer não entra na call sem estes dois):
+
+1. CAPACIDADE (poder de investimento / estrutura) — do jeito que o lead expressou: faturamento, estoque, verba, capital, tamanho da operação, número de funcionários. NÃO converta em "investimento" se ele não falou em investir: quem fatura R$2M/mês ou tem R$100 mil de estoque já demonstrou capacidade, e o dado é esse — não faz sentido perguntar se ele tem R$3 mil. Use o rótulo que couber ("Faturamento", "Estoque", "Verba mensal", "Estrutura"). Só escreva "a confirmar na reunião" se não houver NADA na conversa sobre porte, dinheiro ou operação.
+
+2. DECISOR(ES) — quem bate o martelo. Se ficou claro que o decisor NÃO vai participar da reunião (ou que quem está falando não decide sozinho), diga isso explicitamente: muda a condução da call inteira. Se não foi dito, "a confirmar na reunião".
+
+URGÊNCIA: entra SÓ se o lead demonstrou — e nas palavras dele. "Preciso começar no Mercado Livre" já é urgência verbalizada: reporte o que ele disse, não invente "Prioridade: alta" nem peça confirmação de algo que ele já afirmou. Se ele não deu sinal nenhum de urgência, não crie a linha: não force escala e não peça para confirmar.
+
+REGRAS DE QUALIDADE:
+- SEM REDUNDÂNCIA: cada informação aparece UMA vez. Não repita no corpo o que está no resumo. UMA única seção de ação — proibido "pontos de atenção" + "o que bater" dizendo o mesmo.
+- DENSIDADE: todo bullet carrega um fato concreto ou algo acionável (número, nome, prazo, objeção, objetivo, gatilho). Corte o genérico e o óbvio.
+- SUBSTÂNCIA, não o meio: reporte O QUE foi dito. NUNCA escreva "respondeu por áudio" ou "conteúdo não detalhado".
 - FIDELIDADE: use SOMENTE o que apareceu na conversa. NÃO invente números, nomes, datas ou fatos.
 
-COBERTURA MÍNIMA (sempre clara, de preferência no resumo): 💰 Investimento, 🧑‍⚖️ Decisor(es), 🔥 Prioridade/urgência. Se algum não foi dito, escreva "a confirmar na reunião" — só esses três podem receber isso; os demais campos, se não há info, simplesmente omita.
-
-ESTRUTURA SUGERIDA (enxuta — junte/remova conforme o caso; poucas e densas > muitas e vazias):
-- resumo (tabela topo): Lead, Status/nicho, Investimento, Decisor(es), Prioridade, e Fonte/origem ou Agendamento quando relevante.
-- Perfil & momento — quem é, o que faz, situação atual do negócio.
-- Dor & objetivo — o que quer resolver e aonde quer chegar.
-- Qualificação — SÓ se houver contexto além do resumo (nuance sobre investimento/decisor/urgência); senão, não crie.
-- Objeções & riscos — o que pode travar a venda (só se houver).
-- O que o closer deve bater — ações concretas para a call (numerada). ÚNICA seção de ação.
+TAMANHO (é um handoff, não um dossiê): resumo com 4 a 7 linhas; no máximo 4 seções; no máximo 4 bullets por seção, cada um de 1 a 2 linhas. Conversa curta gera relatório curto — 2 seções bastam. Não encha para parecer completo.
 
 Preencha pela ferramenta "gerar_relatorio":
-- "lead": nome do lead (ou "").
-- "resumo": linhas rótulo/valor; sempre Investimento, Decisor(es) e Prioridade + Status/nicho e o que fizer sentido.
-- "secoes": título com um emoji + itens (bullets densos). "numerada": true só na seção de ações.
-- "citacoes": 1 a 4 FALAS EXATAS/verbatim do LEAD (copiadas literalmente das linhas do LEAD, inclusive áudios) que sejam fortes: dor, sinal de compra, objeção, objetivo. Sem paráfrase, sem falas do vendedor; [] se não houver.
+- "lead": SÓ o nome do lead, como ele aparece na conversa (ou ""). Sem parênteses, sem comentário, sem "a confirmar" — este campo vira o título e o nome do arquivo.
+- "resumo": linhas rótulo/valor tiradas da conversa, incluindo sempre capacidade e decisor(es).
+- "secoes": título com um emoji + bullets densos. As seções que fizerem sentido para ESTA conversa (perfil/momento, dor/objetivo, objeções/riscos, o que o closer deve bater...). "numerada": true só na de ação.
+- "citacoes": 1 a 3 FALAS EXATAS/verbatim do LEAD (copiadas literalmente das linhas do LEAD, inclusive áudios): dor, sinal de compra, objeção, objetivo. Sem paráfrase, sem falas do vendedor; [] se não houver.
 - "frase_impacto": uma frase única e afiada de fechamento (pode parafrasear).`;
 
 function montarHistoricoFormatado(historico) {
@@ -96,12 +149,18 @@ function montarHistoricoFormatado(historico) {
 
 function montarUserPrompt(historicoFormatado) {
   return (
-    'Exemplo de um relatório bem preenchido (apenas para calibrar tom e nível de detalhe, ' +
-    'NÃO copie os dados):\n\n' +
-    JSON.stringify(EXEMPLO_FEWSHOT, null, 2) +
+    'Dois relatórios bem feitos, de conversas diferentes. Servem para calibrar tom e ' +
+    'densidade — NÃO copie os dados nem a estrutura. Repare que os rótulos do resumo e ' +
+    'as seções MUDAM de um para o outro, porque cada conversa pediu uma coisa: o formato ' +
+    'do seu relatório tem que sair da conversa que você recebeu.\n\n' +
+    'EXEMPLO A (lead pequeno, começando, falou em investir):\n' +
+    JSON.stringify(EXEMPLO_PEQUENO, null, 2) +
+    '\n\nEXEMPLO B (operação grande, capacidade aparece como faturamento/estoque, ' +
+    'urgência veio da fala dele, decisor não participa):\n' +
+    JSON.stringify(EXEMPLO_GRANDE, null, 2) +
     '\n\n---\n\nConversa real a ser analisada (ordem cronológica):\n\n' +
     historicoFormatado +
-    '\n\n---\n\nGere agora o relatório em JSON estrito, seguindo o schema e as regras.'
+    '\n\n---\n\nGere agora o relatório desta conversa, com os rótulos e as seções que ELA pede.'
   );
 }
 
@@ -168,7 +227,11 @@ const REPORT_TOOL = {
   input_schema: {
     type: 'object',
     properties: {
-      lead: { type: 'string', description: 'Nome do lead, ou "" se não souber.' },
+      lead: {
+        type: 'string',
+        description:
+          'Só o nome do lead, ou "" se não souber. Vira o título e o nome do arquivo: sem parênteses, comentários ou "a confirmar".',
+      },
       resumo: {
         type: 'array',
         description: 'Linhas rótulo/valor para o topo (só as embasadas na conversa).',

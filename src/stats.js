@@ -109,4 +109,13 @@ async function resumo({ de, ate, sdr } = {}) {
   };
 }
 
-module.exports = { registrar, resumo, hojeStr };
+/**
+ * Remove um report do histórico (para tirar testes que sujam os números).
+ * @returns {Promise<boolean>} true se achou e removeu.
+ */
+async function remover(id) {
+  if (!id) return false;
+  return db.removerDaLista(CHAVE_DB, (r) => r.id === id);
+}
+
+module.exports = { registrar, resumo, remover, hojeStr };
