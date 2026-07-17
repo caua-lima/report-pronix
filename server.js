@@ -49,15 +49,27 @@ async function auth(req, res, next) {
   }
 }
 
-/** Exige a senha de admin (ADMIN_PASSWORD no .env). */
-function admin(req, res, next) {
-  const esperada = process.env.ADMIN_PASSWORD;
-  if (!esperada) {
-    return res.status(500).json({ erro: 'ADMIN_PASSWORD não configurada no .env do servidor.' });
+/**
+ * Exige admin: a chave de um usuário com papel admin ou, como reserva, a
+ * ADMIN_PASSWORD (é ela que permite criar o primeiro admin).
+ */
+async function admin(req, res, next) {
+  try {
+    const chave = req.get('x-cr-key') || req.query.chave;
+    if (chave) {
+      const u = await usuarios.porChave(String(chave).trim());
+      if (u && u.papel === 'admin') {
+        req.usuario = u;
+        return next();
+      }
+    }
+    const esperada = process.env.ADMIN_PASSWORD;
+    const senha = req.get('x-admin-pass') || (req.body && req.body.senha) || req.query.senha;
+    if (esperada && senha === esperada) return next();
+    res.status(401).json({ erro: 'Acesso de admin necessário.' });
+  } catch (err) {
+    res.status(500).json({ erro: err.message });
   }
-  const senha = req.get('x-admin-pass') || (req.body && req.body.senha) || req.query.senha;
-  if (senha !== esperada) return res.status(401).json({ erro: 'Senha de admin incorreta.' });
-  next();
 }
 
 // ---------------------------------------------------------------------------
@@ -76,9 +88,9 @@ app.get('/api/status', (_req, res) => {
   res.json({ ok: true, provider: process.env.LLM_PROVIDER || 'anthropic' });
 });
 
-/** Quem sou eu (valida a chave e devolve o nome). */
+/** Quem sou eu (valida a chave e devolve nome e papel). */
 app.get('/api/eu', auth, (req, res) => {
-  res.json({ ok: true, nome: req.usuario.nome, id: req.usuario.id });
+  res.json({ ok: true, nome: req.usuario.nome, id: req.usuario.id, papel: req.usuario.papel });
 });
 
 // ---------------------------------------------------------------------------
@@ -96,7 +108,7 @@ app.get('/api/admin/usuarios', admin, async (_req, res) => {
 
 app.post('/api/admin/usuarios', admin, async (req, res) => {
   try {
-    const u = await usuarios.criar(req.body && req.body.nome);
+    const u = await usuarios.criar(req.body && req.body.nome, req.body && req.body.papel);
     res.json({ ok: true, usuario: u });
   } catch (err) {
     res.status(400).json({ erro: err.message });

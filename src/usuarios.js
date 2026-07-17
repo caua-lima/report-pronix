@@ -8,16 +8,20 @@ const db = require('./db');
 
 const CHAVE_DB = 'usuarios';
 
+// Quem já existia antes dos papéis entra como sdr — nunca como admin.
+const normalizar = (u) => ({ ...u, papel: u.papel === 'admin' ? 'admin' : 'sdr' });
+
 async function ler() {
   const j = await db.getJson(CHAVE_DB, { usuarios: [] });
-  return Array.isArray(j && j.usuarios) ? j : { usuarios: [] };
+  const lista = Array.isArray(j && j.usuarios) ? j.usuarios : [];
+  return { usuarios: lista.map(normalizar) };
 }
 
 async function listar() {
   return (await ler()).usuarios;
 }
 
-async function criar(nome) {
+async function criar(nome, papel) {
   const limpo = String(nome || '').trim();
   if (!limpo) throw new Error('Informe o nome do SDR.');
   const dados = await ler();
@@ -27,6 +31,7 @@ async function criar(nome) {
   const usuario = {
     id: crypto.randomBytes(6).toString('hex'),
     nome: limpo,
+    papel: papel === 'admin' ? 'admin' : 'sdr',
     chave: 'pnx_' + crypto.randomBytes(18).toString('base64url'),
     criadoEm: new Date().toISOString(),
   };

@@ -111,9 +111,9 @@
     </div>
     <nav class="menu">
       <button class="tab on" data-aba="report">📝 Gerar report</button>
-      <button class="tab" data-aba="acessos">🔑 Acessos</button>
-      <button class="tab" data-aba="numeros">📊 Reports gerados</button>
-      <button class="tab" data-aba="extensao">🧩 Extensão</button>
+      <button class="tab so-admin hidden" data-aba="acessos">🔑 Acessos</button>
+      <button class="tab so-admin hidden" data-aba="numeros">📊 Reports gerados</button>
+      <button class="tab so-admin hidden" data-aba="extensao">🧩 Extensão</button>
     </nav>
   </header>
 
@@ -160,10 +160,11 @@
     <!-- ================= ABA: ACESSOS ================= -->
     <section id="aba-acessos" class="hidden">
       <div class="card admin-login hidden">
-        <div class="head"><div class="t">🔒 Área do admin</div><div class="sub">— só você entra aqui</div></div>
+        <div class="head"><div class="t">🔒 Área do admin</div><div class="sub">— entre com a sua chave de admin na aba "Gerar report"</div></div>
+        <div class="hint" style="margin:0 0 12px">Chave reserva: se você ainda não tem um acesso de admin (ou perdeu o seu), entre com a senha do servidor.</div>
         <div class="row">
-          <input class="grow senha-admin" type="password" placeholder="Senha de admin (ADMIN_PASSWORD do .env)" />
-          <button class="btn entrar-admin">Entrar</button>
+          <input class="grow senha-admin" type="password" placeholder="Senha de admin (ADMIN_PASSWORD)" />
+          <button class="btn sec entrar-admin">Entrar com a senha</button>
         </div>
         <div class="status status-admin"></div>
       </div>
@@ -173,10 +174,14 @@
           <div class="head"><div class="t">➕ Criar acesso</div><div class="sub">— nome do SDR, sem e-mail</div></div>
           <div class="row">
             <input id="nome" class="grow" type="text" placeholder="Nome do SDR (ex.: João Pedro)" />
+            <select id="papel" style="padding:11px 12px;border-radius:10px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:.95rem;font-family:inherit">
+              <option value="sdr">Usuário (só gera report)</option>
+              <option value="admin">Admin (vê tudo)</option>
+            </select>
             <button id="criar" class="btn">Criar acesso</button>
           </div>
           <div id="statusCriar" class="status"></div>
-          <div class="hint">Cada acesso vira uma <b>chave</b>. Copie e mande para o SDR — ele cola no popup da extensão e já está usando.</div>
+          <div class="hint">Cada acesso vira uma <b>chave</b>. Copie e mande para o SDR — ele cola no popup da extensão e já está usando. <b>Usuário</b> enxerga só a aba de gerar report; <b>admin</b> enxerga tudo isto aqui.</div>
         </div>
 
         <div class="card">
@@ -193,10 +198,11 @@
     <!-- ================= ABA: NÚMEROS ================= -->
     <section id="aba-numeros" class="hidden">
       <div class="card admin-login hidden">
-        <div class="head"><div class="t">🔒 Área do admin</div><div class="sub">— só você entra aqui</div></div>
+        <div class="head"><div class="t">🔒 Área do admin</div><div class="sub">— entre com a sua chave de admin na aba "Gerar report"</div></div>
+        <div class="hint" style="margin:0 0 12px">Chave reserva: se você ainda não tem um acesso de admin (ou perdeu o seu), entre com a senha do servidor.</div>
         <div class="row">
-          <input class="grow senha-admin" type="password" placeholder="Senha de admin (ADMIN_PASSWORD do .env)" />
-          <button class="btn entrar-admin">Entrar</button>
+          <input class="grow senha-admin" type="password" placeholder="Senha de admin (ADMIN_PASSWORD)" />
+          <button class="btn sec entrar-admin">Entrar com a senha</button>
         </div>
         <div class="status status-admin"></div>
       </div>
@@ -268,12 +274,28 @@
 
     // ---------- Menu ----------
     const ABAS = ['report', 'acessos', 'numeros', 'extensao'];
+    const SO_ADMIN = ['acessos', 'numeros', 'extensao'];
+    let souAdmin = false;
+    // Guardado porque a chave é validada de forma assíncrona: quem abre direto
+    // em #acessos ainda não é admin nesse instante e seria mandado para #report.
+    const abaPedida = (location.hash || '').replace('#', '') || 'report';
+
     function abrir(aba) {
       if (!ABAS.includes(aba)) aba = 'report';
+      // O SDR não passa das abas dele nem digitando o endereço na mão.
+      // (Isto é só a tela: quem barra de verdade é o servidor.)
+      if (SO_ADMIN.includes(aba) && !souAdmin && !senhaAdmin) aba = 'report';
       ABAS.forEach((a) => $('aba-' + a).classList.toggle('hidden', a !== aba));
       document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('on', t.dataset.aba === aba));
       location.hash = aba;
-      if (aba === 'acessos' || aba === 'numeros') pedirAdmin(aba);
+      if (aba === 'acessos' || aba === 'numeros') pedirAdmin();
+    }
+
+    /** Mostra ou esconde as abas de admin conforme o papel da chave. */
+    function aplicarPapel() {
+      const liberado = souAdmin || Boolean(senhaAdmin);
+      document.querySelectorAll('.tab.so-admin').forEach((t) => t.classList.toggle('hidden', !liberado));
+      if (!liberado && SO_ADMIN.includes((location.hash || '').replace('#', ''))) abrir('report');
     }
     document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () => abrir(t.dataset.aba)));
 
@@ -281,9 +303,13 @@
     let senhaAdmin = sessionStorage.getItem('adminPass') || '';
 
     async function api(metodo, url, corpo) {
+      // O servidor aceita a chave de admin ou a senha reserva — mandamos o que tiver.
+      const headers = { 'Content-Type': 'application/json' };
+      if (getChave()) headers['x-cr-key'] = getChave();
+      if (senhaAdmin) headers['x-admin-pass'] = senhaAdmin;
       const r = await fetch(url, {
         method: metodo,
-        headers: { 'Content-Type': 'application/json', 'x-admin-pass': senhaAdmin },
+        headers,
         body: corpo ? JSON.stringify(corpo) : undefined,
       });
       const j = await r.json().catch(() => ({}));
@@ -303,6 +329,7 @@
         await api('POST', '/api/admin/login', {});
         sessionStorage.setItem('adminPass', senhaAdmin);
         mostrarAdmin(true);
+        aplicarPapel();
         carregarUsuarios();
         carregarStats();
         return true;
@@ -310,14 +337,23 @@
         senhaAdmin = '';
         sessionStorage.removeItem('adminPass');
         mostrarAdmin(false);
+        aplicarPapel();
         document.querySelectorAll('.status-admin').forEach((s) => setStatus(s, '❌ ' + e.message, { erro: true }));
         return false;
       }
     }
 
     function pedirAdmin() {
-      if (senhaAdmin) entrarAdmin(senhaAdmin);
-      else mostrarAdmin(false);
+      // Chave de admin já basta; a senha é só o caminho reserva.
+      if (souAdmin) {
+        mostrarAdmin(true);
+        carregarUsuarios();
+        carregarStats();
+      } else if (senhaAdmin) {
+        entrarAdmin(senhaAdmin);
+      } else {
+        mostrarAdmin(false);
+      }
     }
     document.querySelectorAll('.entrar-admin').forEach((b) =>
       b.addEventListener('click', () => entrarAdmin(b.closest('.card').querySelector('.senha-admin').value))
@@ -328,13 +364,13 @@
 
     // ---------- Aba: Acessos ----------
     async function carregarUsuarios() {
-      if (!senhaAdmin) return;
+      if (!souAdmin && !senhaAdmin) return;
       try {
         const { usuarios } = await api('GET', '/api/admin/usuarios');
         $('vazio').style.display = usuarios.length ? 'none' : '';
         $('lista').innerHTML = usuarios.map((u) => `
           <tr>
-            <td><b>${esc(u.nome)}</b></td>
+            <td><b>${esc(u.nome)}</b>${u.papel === 'admin' ? ' <span class="tag" style="color:var(--gold-ink);border-color:var(--primary)">admin</span>' : ''}</td>
             <td><span class="chave">${esc(u.chave)}</span></td>
             <td style="color:var(--muted);font-size:.8rem">${new Date(u.criadoEm).toLocaleDateString('pt-BR')}</td>
             <td><div class="acoes">
@@ -362,12 +398,14 @@
 
     async function criar() {
       const nome = $('nome').value.trim();
+      const papel = $('papel').value;
       if (!nome) { setStatus('statusCriar', 'Informe o nome do SDR.', { erro: true }); return; }
       setStatus('statusCriar', 'Criando…', { loading: true });
       try {
-        const { usuario } = await api('POST', '/api/admin/usuarios', { nome });
+        const { usuario } = await api('POST', '/api/admin/usuarios', { nome, papel });
         $('nome').value = '';
-        setStatus('statusCriar', `✅ Acesso de ${esc(usuario.nome)} criado — copie a chave e envie para ele.`, { ok: true });
+        const tipo = usuario.papel === 'admin' ? 'admin' : 'usuário';
+        setStatus('statusCriar', `✅ Acesso de ${esc(usuario.nome)} (${tipo}) criado — copie a chave e envie para ele.`, { ok: true });
         carregarUsuarios();
       } catch (e) {
         setStatus('statusCriar', '❌ ' + e.message, { erro: true });
@@ -380,7 +418,7 @@
     const quando = (iso) => new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 
     async function carregarStats() {
-      if (!senhaAdmin) return;
+      if (!souAdmin && !senhaAdmin) return;
       try {
         const s = await api('GET', '/api/admin/stats');
         $('kHoje').textContent = s.hoje;
@@ -506,10 +544,18 @@
         const r = await fetch('/api/eu', { headers: hdr() });
         const j = await r.json();
         if (!r.ok) throw new Error(j.erro || 'Chave inválida.');
-        setStatus('statusChave', `Conectado como ${esc(j.nome)}.`, { ok: true });
-        $('quem').innerHTML = 'SDR: <b>' + esc(j.nome) + '</b>';
+        souAdmin = j.papel === 'admin';
+        setStatus('statusChave', `Conectado como ${esc(j.nome)}${souAdmin ? ' (admin)' : ''}.`, { ok: true });
+        $('quem').innerHTML = (souAdmin ? 'Admin: <b>' : 'SDR: <b>') + esc(j.nome) + '</b>';
+        aplicarPapel();
+        if (souAdmin) {
+          pedirAdmin();
+          if (SO_ADMIN.includes(abaPedida)) abrir(abaPedida); // agora sim ele pode
+        }
         return true;
       } catch (e) {
+        souAdmin = false;
+        aplicarPapel();
         setStatus('statusChave', '❌ ' + e.message, { erro: true });
         $('quem').textContent = '';
         return false;
@@ -522,6 +568,7 @@
 
     // ---------- Início ----------
     $('urlServidor').textContent = location.origin;
+    aplicarPapel();
     abrir((location.hash || '').replace('#', '') || 'report');
   </script>
 </body>
