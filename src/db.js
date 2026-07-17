@@ -14,6 +14,18 @@ const usandoRedis = Boolean(URL_REDIS && TOKEN_REDIS);
 const DATA_DIR = path.join(__dirname, '..', 'data');
 const arquivo = (chave) => path.join(DATA_DIR, `${chave}.json`);
 
+// Na Vercel sem KV o disco é só leitura: falha na hora, com o motivo, em vez de
+// dar um EROFS sem sentido na primeira vez que alguém criar um acesso.
+if (process.env.VERCEL && !usandoRedis) {
+  console.error('⚠ Sem KV_REST_API_URL/KV_REST_API_TOKEN: conecte o KV ao projeto na Vercel.');
+}
+
+function exigirBanco() {
+  if (process.env.VERCEL && !usandoRedis) {
+    throw new Error('Banco não configurado: conecte o KV (Upstash) ao projeto na Vercel.');
+  }
+}
+
 async function redis(comando) {
   const r = await fetch(URL_REDIS, {
     method: 'POST',
@@ -40,6 +52,7 @@ function salvarArquivo(chave, valor) {
 
 /** Lê um documento JSON inteiro. */
 async function getJson(chave, padrao) {
+  exigirBanco();
   if (!usandoRedis) return lerArquivo(chave, padrao);
   const v = await redis(['GET', chave]);
   if (v == null) return padrao;
@@ -52,6 +65,7 @@ async function getJson(chave, padrao) {
 
 /** Grava um documento JSON inteiro. */
 async function setJson(chave, valor) {
+  exigirBanco();
   if (!usandoRedis) return salvarArquivo(chave, valor);
   await redis(['SET', chave, JSON.stringify(valor)]);
 }
@@ -61,6 +75,7 @@ async function setJson(chave, valor) {
  * Em lista o append é atômico: dois SDRs gerando report ao mesmo tempo não se atropelam.
  */
 async function push(chave, item, limite) {
+  exigirBanco();
   if (!usandoRedis) {
     const bruto = lerArquivo(chave, []);
     const lista = Array.isArray(bruto) ? bruto : [];
@@ -74,6 +89,7 @@ async function push(chave, item, limite) {
 
 /** Lê a lista inteira. */
 async function range(chave) {
+  exigirBanco();
   if (!usandoRedis) {
     const bruto = lerArquivo(chave, []);
     return Array.isArray(bruto) ? bruto : [];
