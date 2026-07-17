@@ -3,85 +3,137 @@
 <head>
   <meta charset="UTF-8" />
   <style>
-    /* Cores PRONIX: preto + dourado */
+    /* Mesmo sistema visual do dashboard: preto e neutros na estrutura, dourado como acento. */
     :root {
-      --bg: #f5f5f7; --card: #ffffff; --border: #e4e4e8; --text: #121214; --muted: #6b6b76;
-      --primary: #ffc400; --primary-hover: #e6b000; --on-primary: #121214;
-      --primary-soft: #fff8e1; --danger: #dc2626; --ring: rgba(255,196,0,.35);
+      color-scheme: light dark;
+      --preto: #0c0c0e;
+      --ouro: #ffc400; --ouro-claro: #ffd449; --ouro-tinta: #8a6a00;
+      --bg: #f4f4f6; --card: #ffffff; --card-2: #fafafb;
+      --border: #e7e7ee; --border-forte: #d5d5df;
+      --text: #16161a; --text-2: #55555f; --muted: #8a8a96;
+      --danger: #d92d20; --ring: rgba(255,196,0,.3);
+      --r: 10px;
     }
     @media (prefers-color-scheme: dark) {
-      :root { --bg: #131315; --card: #1c1c20; --border: #2e2e35; --text: #f2f2f4; --muted: #9a9aa6;
-        --primary: #ffc400; --primary-hover: #ffd23d; --on-primary: #121214;
-        --primary-soft: #2a2410; --danger: #f87171; --ring: rgba(255,196,0,.3); }
+      :root {
+        --bg: #0d0d0f; --card: #151519; --card-2: #1b1b21;
+        --border: #26262e; --border-forte: #34343f;
+        --text: #f3f3f5; --text-2: #a6a6b2; --muted: #7b7b87;
+        --ouro-tinta: #ffc400; --danger: #ff6b6b;
+      }
     }
     * { box-sizing: border-box; }
-    body { width: 384px; margin: 0; font-family: -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); font-size: 14px; }
+    body {
+      width: 380px; margin: 0; font-size: 14px; line-height: 1.5;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg); color: var(--text); -webkit-font-smoothing: antialiased;
+    }
+    ::selection { background: var(--ouro); color: #121214; }
 
-    /* Header com faixa preta e raio dourado */
-    .topbar { background: linear-gradient(120deg, #1c1c20, #0b0b0d); padding: 14px 16px; display: flex; align-items: center; gap: 11px; color: #fff; }
-    .logo { flex: none; }
-    .brand b { font-size: 16px; font-weight: 800; letter-spacing: .04em; display: block; line-height: 1.1; }
-    .brand small { font-size: 11px; opacity: .92; }
-    .sdr { margin-left: auto; text-align: right; font-size: 10.5px; opacity: .95; line-height: 1.25; }
+    /* ---------- Topo ---------- */
+    .topbar { background: var(--preto); padding: 14px 16px; display: flex; align-items: center; gap: 11px; color: #fff; }
+    .logo { flex: none; display: flex; }
+    .brand b { font-size: 14px; font-weight: 800; letter-spacing: .12em; display: block; line-height: 1.1; }
+    .brand small { font-size: 10.5px; color: rgba(255,255,255,.5); }
+    .sdr {
+      margin-left: auto; text-align: right; font-size: 10px; line-height: 1.3;
+      color: rgba(255,255,255,.45); text-transform: uppercase; letter-spacing: .06em; font-weight: 600;
+    }
+    .sdr b { display: block; font-size: 12px; color: var(--ouro); text-transform: none; letter-spacing: 0; }
 
-    .body { padding: 14px 16px 16px; }
-    .row { display: flex; gap: 8px; align-items: center; margin-bottom: 11px; }
-    input { flex: 1; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--card); color: var(--text); font-size: 12.5px; }
-    input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--ring); }
-    button { padding: 9px 13px; border-radius: 9px; border: none; background: var(--primary); color: var(--on-primary); font-weight: 700; cursor: pointer; font-size: 14px; }
-    button:hover { background: var(--primary-hover); }
-    button.ghost { background: transparent; color: var(--muted); border: 1px solid var(--border); font-weight: 600; }
-    button:disabled { opacity: .55; cursor: not-allowed; }
-    #gerar { width: 100%; box-shadow: 0 6px 16px var(--ring); }
-    .hint { font-size: 11px; color: var(--muted); margin-top: 7px; }
+    .body { padding: 16px; }
+    label { display: block; font-size: 11px; font-weight: 600; color: var(--text-2); margin-bottom: 6px; }
+    .row { display: flex; gap: 8px; align-items: center; }
 
-    .status { min-height: 18px; margin: 11px 0; color: var(--muted); font-size: 12.5px; display: flex; align-items: center; gap: 8px; }
+    input {
+      flex: 1; width: 100%; padding: 9px 11px; border-radius: var(--r);
+      border: 1px solid var(--border-forte); background: var(--card-2); color: var(--text);
+      font-size: 12.5px; font-family: inherit; transition: border-color .15s, box-shadow .15s;
+    }
+    input::placeholder { color: var(--muted); }
+    input:hover { border-color: var(--muted); }
+    input:focus { outline: none; border-color: var(--ouro); box-shadow: 0 0 0 3px var(--ring); }
+
+    button {
+      padding: 9px 14px; border-radius: var(--r); border: 1px solid transparent;
+      background: var(--ouro); color: #121214; font-weight: 650; cursor: pointer;
+      font-size: 13px; font-family: inherit; transition: background .15s, transform .06s;
+    }
+    button:hover { background: var(--ouro-claro); }
+    button:active { transform: translateY(1px); }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+    button.ghost { background: var(--card); color: var(--text-2); border-color: var(--border-forte); font-weight: 600; }
+    button.ghost:hover { background: var(--card-2); color: var(--text); border-color: var(--muted); }
+
+    #gerar { width: 100%; margin-top: 14px; padding: 12px; font-size: 14px; font-weight: 700; }
+    .hint { font-size: 11px; color: var(--muted); margin-top: 8px; line-height: 1.5; }
+
+    .status { min-height: 18px; margin: 12px 0 0; color: var(--muted); font-size: 12px; display: flex; align-items: center; gap: 8px; }
     .status.erro { color: var(--danger); }
-    .spinner { width: 14px; height: 14px; border: 2px solid rgba(120,130,140,.3); border-top-color: var(--primary); border-radius: 50%; animation: spin .8s linear infinite; flex: none; }
+    .status.ok { color: var(--ouro-tinta); font-weight: 600; }
+    .spinner { width: 13px; height: 13px; border: 2px solid color-mix(in srgb, var(--muted) 30%, transparent); border-top-color: var(--ouro); border-radius: 50%; animation: spin .7s linear infinite; flex: none; }
     @keyframes spin { to { transform: rotate(360deg); } }
+    .hidden { display: none !important; }
 
+    /* Servidor: já vem certo, então fica fora do caminho. */
+    details { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 12px; }
+    summary { font-size: 11px; color: var(--muted); cursor: pointer; list-style: none; user-select: none; font-weight: 600; }
+    summary::-webkit-details-marker { display: none; }
+    summary::before { content: '⚙ '; }
+    summary:hover { color: var(--text-2); }
+    details[open] summary { margin-bottom: 8px; }
 
-    .hidden { display: none; }
-    #dl { display: block; margin: 12px 0; }
+    #dl { display: block; margin-top: 12px; text-decoration: none; }
     #dl button { width: 100%; }
-    .report { max-height: 300px; overflow: auto; background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin-top: 4px; }
-    .report h2 { font-size: 12.5px; margin: 12px 0 4px; }
-    .report table { border-collapse: collapse; width: 100%; margin-bottom: 10px; }
-    .report td { border: 1px solid var(--border); padding: 5px 8px; font-size: 11.5px; }
-    .report td.rot { font-weight: 700; width: 34%; background: var(--bg); }
-    .report ul, .report ol { margin: 3px 0 6px; padding-left: 18px; }
-    .report li { margin: 2px 0; font-size: 11.5px; }
-    .frase { font-style: italic; color: var(--text); border-left: 3px solid var(--primary); padding-left: 9px; font-size: 11.5px; }
-    code { background: var(--bg); padding: 1px 4px; border-radius: 4px; font-size: 11px; }
+
+    /* ---------- Report ---------- */
+    .report {
+      max-height: 300px; overflow: auto; background: var(--card); border: 1px solid var(--border);
+      border-radius: 12px; padding: 13px; margin-top: 12px;
+    }
+    .report h2 { font-size: 12px; margin: 13px 0 5px; letter-spacing: -.01em; }
+    .report h2:first-child { margin-top: 0; }
+    .report table { border-collapse: collapse; width: 100%; margin-bottom: 10px; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+    .report td { border-bottom: 1px solid var(--border); padding: 6px 9px; font-size: 11.5px; }
+    .report tr:last-child td { border-bottom: none; }
+    .report td.rot { font-weight: 650; width: 34%; background: var(--card-2); color: var(--text-2); }
+    .report ul, .report ol { margin: 3px 0 8px; padding-left: 18px; }
+    .report li { margin: 3px 0; font-size: 11.5px; }
+    .frase { font-style: italic; color: var(--text-2); background: var(--card-2); border-left: 2px solid var(--ouro); padding: 7px 10px; border-radius: 0 8px 8px 0; font-size: 11.5px; margin: 6px 0; }
+    code { background: var(--card-2); border: 1px solid var(--border); padding: 1px 5px; border-radius: 5px; font-size: 11px; font-family: ui-monospace, Consolas, monospace; }
   </style>
 </head>
 <body>
   <div class="topbar">
     <span class="logo">
-      <svg width="30" height="30" viewBox="0 0 30 30">
+      <svg width="28" height="28" viewBox="0 0 30 30">
         <path d="M18.2 2.5 L8.5 16.8 L14.2 16.8 L11.6 27.5 L21.5 12.6 L15.8 12.6 Z" fill="#ffc400"/>
       </svg>
     </span>
     <div class="brand"><b>PRONIX</b><small>Closer Report</small></div>
-    <div class="sdr">SDR<br /><b id="sdrNome" style="color:#ffc400">—</b></div>
+    <div class="sdr">SDR<b id="sdrNome">—</b></div>
   </div>
 
   <div class="body">
+    <label for="chave">Sua chave de acesso</label>
     <div class="row">
-      <input id="server" type="text" placeholder="https://report.pronix... (URL do servidor)" />
-    </div>
-    <div class="row">
-      <input id="chave" type="password" placeholder="Sua chave de acesso (pnx_...)" />
+      <input id="chave" type="password" placeholder="pnx_…" />
       <button id="testar" class="ghost" title="Validar chave e conexão">Validar</button>
     </div>
 
     <button id="gerar">Gerar Report da conversa aberta</button>
-    <div class="hint">Cole a <b>chave</b> que o admin te passou — ela identifica você no servidor.</div>
+    <div class="hint">Abra a conversa do lead no WhatsApp Web e clique acima. Pode seguir usando o WhatsApp: o report roda em segundo plano.</div>
 
     <div id="status" class="status"></div>
 
     <a id="dl" class="hidden" target="_blank"><button>⬇ Baixar PDF</button></a>
     <div id="report" class="report hidden"></div>
+
+    <details>
+      <summary>Servidor</summary>
+      <input id="server" type="text" placeholder="https://…" />
+      <div class="hint">Já vem configurado. Só mexa se o admin pedir.</div>
+    </details>
   </div>
 
   <script src="popup.js"></script>
