@@ -39,6 +39,33 @@
 
   const logA = (...a) => console.log('[CR-audio]', ...a);
 
+  // O gancho que intercepta os áudios precisa rodar no contexto da PÁGINA. O
+  // manifesto pede isso com world:"MAIN", mas nem todo Chromium respeita (Brave e
+  // versões antigas ignoram em silêncio) — e sem gancho a captura devolve zero.
+  // Aqui garantimos o gancho injetando o inject.js como <script>, que funciona em
+  // todos. O marcador no DOM é a única forma de o content script (outro "mundo")
+  // saber se o gancho está de pé.
+  const ganchoInstalado = () => document.documentElement.getAttribute('data-cr-audio-hook') === '1';
+
+  async function garantirGanchoAudio() {
+    if (ganchoInstalado()) return true;
+    try {
+      const s = document.createElement('script');
+      s.src = chrome.runtime.getURL('inject.js');
+      s.async = false;
+      s.onload = () => s.remove();
+      (document.head || document.documentElement).appendChild(s);
+    } catch (e) {
+      logA('falha ao injetar o gancho:', e.message);
+    }
+    for (let i = 0; i < 20 && !ganchoInstalado(); i++) await sleep(50);
+    logA(ganchoInstalado() ? 'gancho de áudio ativo' : 'GANCHO DE ÁUDIO NÃO INSTALOU');
+    return ganchoInstalado();
+  }
+
+  // Instala o quanto antes; os áudios só criam blob quando clicados, bem depois.
+  garantirGanchoAudio();
+
   async function fetchArrayBuffer(url) {
     try {
       return await fetch(url).then((r) => r.arrayBuffer());
@@ -423,6 +450,9 @@
       }
     }
 
+    // Sem o gancho instalado nenhum áudio é interceptado — tenta de novo antes de rolar.
+    if (capturarAudio) await garantirGanchoAudio();
+
     // 2) Passadas de captura: desce do topo capturando os áudios que faltam.
     //    A primeira pega a maioria; as seguintes voltam nos teimosos com mais
     //    paciência, até não faltar nenhum (ou esgotar as tentativas).
@@ -611,8 +641,12 @@
           ? '<span style="color:#8b98a5">Sem áudios nesta conversa</span>'
           : stats.audiosTranscritos === stats.audios
             ? `🎤 ${stats.audios} áudio(s) transcrito(s)`
-            : `⚠️ ${stats.audiosTranscritos} de ${stats.audios} áudio(s) transcrito(s)` +
-              ' <span style="color:#8b98a5">— o resto entrou como [áudio]</span>';
+            : stats.audiosTranscritos === 0 && !ganchoInstalado()
+              ? // Nenhum capturado E sem gancho: não é áudio difícil, é a página.
+                '⚠️ <b>Recarregue a aba do WhatsApp (F5)</b>' +
+                ' <span style="color:#8b98a5">e gere de novo — a leitura de áudio não iniciou</span>'
+              : `⚠️ ${stats.audiosTranscritos} de ${stats.audios} áudio(s) transcrito(s)` +
+                ' <span style="color:#8b98a5">— o resto entrou como [áudio]</span>';
 
       mostrarBadge({
         texto: `<b>✅ Report pronto!</b> (${nome || 'lead'})<br>${resumoAudio}`,
