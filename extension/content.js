@@ -251,27 +251,51 @@
   }
 
   // Descobre se a mensagem foi enviada por mim (várias pistas).
+  // Decide se a mensagem é MINHA (vendedor) ou do LEAD. Precisa funcionar em áudio,
+  // que não tem texto nem data-pre-plain-text — por isso não basta o sinal textual.
   function ehDeMim(el) {
-    if (el.classList.contains('message-out')) return true;
-    if (el.classList.contains('message-in')) return false;
-    if (el.querySelector('.message-out')) return true;
-    if (el.querySelector('.message-in')) return false;
-    const idEl = el.matches('[data-id]') ? el : el.closest('[data-id]') || el.querySelector('[data-id]');
+    // Sobe até a linha inteira: o elemento de áudio às vezes é estreito e não contém
+    // os sinais (data-id da mensagem, tique de status) que ficam na meta da bolha.
+    const row = (el.closest && (el.closest('[role="row"]') || el.closest('[data-id]'))) || el;
+
+    // 1) data-id da mensagem: "true_" = eu, "false_" = lead. É o sinal canônico do
+    //    WhatsApp e vale para áudio. Prefere o data-id da própria linha (não de uma
+    //    citação aninhada, que poderia ter outro remetente).
+    const idEl = row.matches && row.matches('[data-id]') ? row : row.querySelector && row.querySelector('[data-id]');
     const id = idEl ? idEl.getAttribute('data-id') || '' : '';
-    if (id.startsWith('true_')) return true;
-    if (id.startsWith('false_')) return false;
-    // aria-label "Você:" — nesta versão do WhatsApp marca mensagens enviadas por mim.
-    for (const a of el.querySelectorAll('[aria-label]')) {
-      if (/^você\b/i.test((a.getAttribute('aria-label') || '').trim())) return true;
+    if (/^true_/.test(id)) return true;
+    if (/^false_/.test(id)) return false;
+
+    // 2) Classes explícitas (quando esta versão do WhatsApp as usa).
+    if (row.classList && (row.classList.contains('message-out') || row.querySelector('.message-out'))) return true;
+    if (row.classList && (row.classList.contains('message-in') || row.querySelector('.message-in'))) return false;
+
+    // 3) Tique de status (enviado/entregue/lido): SÓ mensagem MINHA tem confirmação.
+    //    O lead nunca tem tique — então achar um aqui garante que é minha. Funciona em
+    //    áudio, que era o furo: a voz da Agatha não tinha texto, mas TEM tique.
+    if (
+      row.querySelector &&
+      row.querySelector('[data-icon^="msg-check"], [data-icon^="msg-dblcheck"], [data-icon="status-dblcheck"], [data-icon="status-check"]')
+    ) {
+      return true;
     }
-    // data-pre-plain-text: "[hora, data] Remetente: " — "Você" = eu; nome = deles.
-    const copy = el.querySelector('.copyable-text');
+
+    // 4) aria-label "Você:".
+    if (row.querySelectorAll) {
+      for (const a of row.querySelectorAll('[aria-label]')) {
+        if (/^você\b/i.test((a.getAttribute('aria-label') || '').trim())) return true;
+      }
+    }
+
+    // 5) data-pre-plain-text: "[hora, data] Remetente: " — "Você" = eu; nome = deles.
+    const copy = row.querySelector && row.querySelector('.copyable-text');
     const pre = copy && copy.getAttribute('data-pre-plain-text');
     if (pre) {
       const m = pre.match(/\]\s*(.+?):\s*$/);
       if (m) return /^você$/i.test(m[1].trim());
     }
-    return false; // padrão: deles (lead)
+
+    return false; // padrão: lead
   }
 
   // "20:57, 06/07/2026" -> { iso, ms }  (best-effort, formato pt-BR)
@@ -382,6 +406,17 @@
     }
 
     if (ehAudio(el)) {
+      // Log de diagnóstico: se algum áudio for atribuído errado, esta linha mostra
+      // qual data-id tinha e o que decidiu — basta o SDR copiar do console.
+      const row = (el.closest && (el.closest('[role="row"]') || el.closest('[data-id]'))) || el;
+      const idDbg = (row.querySelector && row.querySelector('[data-id]')) || (row.matches && row.matches('[data-id]') ? row : null);
+      const temTique = !!(row.querySelector && row.querySelector('[data-icon^="msg-check"], [data-icon^="msg-dblcheck"]'));
+      logA(
+        'áudio →',
+        fromMe ? 'VENDEDOR (meu)' : 'LEAD',
+        '| data-id:', idDbg ? (idDbg.getAttribute('data-id') || '').slice(0, 14) : 'nenhum',
+        '| tique:', temTique
+      );
       // Placeholder limpo; a transcrição real vem da captura + Whisper (não do DOM,
       // que aqui só traria lixo como nome do remetente/duração).
       return { from: fromMe ? 'eu' : 'eles', type: 'audio', content: '[áudio]', timestamp, ts };
