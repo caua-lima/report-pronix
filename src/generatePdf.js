@@ -164,13 +164,47 @@ function render(doc, dados) {
   }
 }
 
-function gerarPdfBuffer(dados) {
+const MAX_PAGINAS = 2;
+
+// Cortes progressivos para caber no limite, do menos essencial para o mais.
+// O RESUMO (a qualificação) nunca é tocado — é o motivo do relatório existir.
+const CORTES = [
+  (d) => { d.citacoes = (d.citacoes || []).slice(0, 2); },
+  (d) => { d.citacoes = (d.citacoes || []).slice(0, 1); },
+  (d) => { d.secoes = (d.secoes || []).map((s) => ({ ...s, itens: (s.itens || []).slice(0, 3) })); },
+  (d) => { d.citacoes = []; },
+  (d) => { d.secoes = (d.secoes || []).map((s) => ({ ...s, itens: (s.itens || []).slice(0, 2) })); },
+  (d) => { d.secoes = (d.secoes || []).slice(0, 3); },
+  (d) => { d.secoes = (d.secoes || []).slice(0, 2); },
+];
+
+/** Aplica os cortes 0..n numa CÓPIA (a tela continua mostrando o relatório inteiro). */
+function enxugar(dados, ate) {
+  const d = JSON.parse(JSON.stringify(dados));
+  for (let i = 0; i <= ate && i < CORTES.length; i++) CORTES[i](d);
+  return d;
+}
+
+/**
+ * Gera o PDF respeitando o teto de páginas. Renderiza, mede e, se passou,
+ * enxuga o conteúdo menos essencial e tenta de novo (render em memória é barato).
+ */
+async function gerarPdfBuffer(dados) {
+  let ultimo = await renderizarPdf(dados);
+  for (let n = 0; ultimo.paginas > MAX_PAGINAS && n < CORTES.length; n++) {
+    ultimo = await renderizarPdf(enxugar(dados, n));
+  }
+  return ultimo.buffer;
+}
+
+function renderizarPdf(dados) {
   return new Promise((resolve, reject) => {
     try {
       const doc = new PDFDocument({ size: 'A4', margin: MARGIN, bufferPages: true });
       const chunks = [];
+      let paginas = 0;
       doc.on('data', (c) => chunks.push(c));
-      doc.on('end', () => resolve(Buffer.concat(chunks)));
+      doc.on('end', () => resolve({ buffer: Buffer.concat(chunks), paginas }));
       doc.on('error', reject);
 
       render(doc, dados);
@@ -179,6 +213,7 @@ function gerarPdfBuffer(dados) {
       const company = process.env.COMPANY_NAME || 'PRONIX';
       const sdr = nomeSdr(dados);
       const range = doc.bufferedPageRange();
+      paginas = range.count;
       for (let i = 0; i < range.count; i++) {
         doc.switchToPage(range.start + i);
         // O rodapé fica abaixo da margem inferior. Para o pdfkit, escrever fora da

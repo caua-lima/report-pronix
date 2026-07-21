@@ -235,6 +235,9 @@
         <div id="files" class="files"></div>
         <div id="statusAudio" class="status" style="margin-top:0"></div>
 
+        <label for="nomeLead" style="margin-top:14px">Nome do lead</label>
+        <input id="nomeLead" type="text" placeholder="Ex.: Jô, Márcia Gonçalves… (vira o título e o nome do PDF)" />
+
         <label for="texto" style="margin-top:14px">Cole a conversa aqui (o texto dos áudios entra sozinho)</label>
         <textarea id="texto" placeholder="Cole a conversa inteira aqui…"></textarea>
       </div>
@@ -739,7 +742,7 @@
       try {
         const r = await fetch('/api/report-texto', {
           method: 'POST', headers: hdr({ 'Content-Type': 'application/json' }),
-          body: JSON.stringify({ texto }),
+          body: JSON.stringify({ texto, nome: $('nomeLead').value.trim() }),
         });
         const data = await r.json();
         if (!r.ok) throw new Error(data.erro || 'Erro ao gerar o report.');
