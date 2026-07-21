@@ -127,6 +127,11 @@ REGRAS DE QUALIDADE:
 - SUBSTÂNCIA, não o meio: reporte O QUE foi dito. NUNCA escreva "respondeu por áudio" ou "conteúdo não detalhado".
 - FIDELIDADE: use SOMENTE o que apareceu na conversa. NÃO invente números, nomes, datas ou fatos.
 
+NOMES DE PESSOAS — a regra mais rígida do relatório. Nome inventado faz o closer chamar a pessoa errada na reunião:
+- NOME DO LEAD: copie EXATAMENTE como aparece. Nunca complete, corrija, "conserte" ou expanda um nome curto: "Jô" é "Jô" e jamais vira "João"; "Rô" não vira "Rodrigo"; "Fê" não vira "Fernanda". Apelido é nome. Se veio o NOME OFICIAL DO CONTATO, ele manda — mesmo que na conversa apareça diferente.
+- TERCEIROS (sócio, esposa, marido, irmão, gerente): só escreva o nome se o lead DISSE o nome. Se ele falou "decido com minha esposa" sem citar, escreva "Decide com a esposa (nome não mencionado)". NUNCA batize a pessoa — é proibido escolher um nome plausível.
+- Na dúvida sobre qualquer nome: descreva o papel ("o sócio", "a esposa") em vez de arriscar um nome.
+
 TAMANHO (é um handoff, não um dossiê): resumo com 4 a 7 linhas; no máximo 4 seções; no máximo 4 bullets por seção, cada um de 1 a 2 linhas. Conversa curta gera relatório curto — 2 seções bastam. Não encha para parecer completo.
 
 Preencha pela ferramenta "gerar_relatorio":
@@ -147,7 +152,16 @@ function montarHistoricoFormatado(historico) {
     .join('\n');
 }
 
-function montarUserPrompt(historicoFormatado) {
+function montarUserPrompt(historicoFormatado, nomeContato) {
+  const contato = (nomeContato || '').trim();
+  const blocoContato = contato
+    ? `\n\nNOME OFICIAL DO CONTATO (lido do WhatsApp, é a fonte da verdade): "${contato}"\n` +
+      'Use este nome EXATAMENTE assim no campo "lead". Não complete, não corrija, não expanda.\n'
+    : '';
+  return montarUserPromptBase(historicoFormatado, blocoContato);
+}
+
+function montarUserPromptBase(historicoFormatado, blocoContato) {
   return (
     'Dois relatórios bem feitos, de conversas diferentes. Servem para calibrar tom e ' +
     'densidade — NÃO copie os dados nem a estrutura. Repare que os rótulos do resumo e ' +
@@ -160,7 +174,9 @@ function montarUserPrompt(historicoFormatado) {
     JSON.stringify(EXEMPLO_GRANDE, null, 2) +
     '\n\n---\n\nConversa real a ser analisada (ordem cronológica):\n\n' +
     historicoFormatado +
-    '\n\n---\n\nGere agora o relatório desta conversa, com os rótulos e as seções que ELA pede.'
+    blocoContato +
+    '\n\n---\n\nGere agora o relatório desta conversa, com os rótulos e as seções que ELA pede. ' +
+    'Nomes de pessoas: copie exatamente como aparecem; se não foi dito, não invente.'
   );
 }
 
@@ -374,7 +390,7 @@ async function dadosDireto({ mensagens, nome } = {}) {
     );
   }
 
-  const userPrompt = montarUserPrompt(montarHistoricoFormatado(historico));
+  const userPrompt = montarUserPrompt(montarHistoricoFormatado(historico), nome);
   return processarComLLM(userPrompt, nome);
 }
 
@@ -385,6 +401,46 @@ async function gerarReportDireto(payload = {}) {
 }
 
 /** Roda o prompt na LLM, valida o JSON e devolve os dados normalizados. */
+/** Sem acento, minúsculo e sem pontuação — para comparar nomes com segurança. */
+const normalizarNome = (s) =>
+  String(s || '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9 ]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+/**
+ * Decide o nome do lead entre o que a LLM devolveu e o nome oficial do contato
+ * (lido do WhatsApp). O contato é a fonte da verdade quando a LLM só "completou"
+ * um nome curto — foi assim que "Jô" virou "João".
+ */
+function escolherNomeDoLead(daLLM, doContato) {
+  const llm = String(daLLM || '').trim();
+  const contato = String(doContato || '').trim();
+  if (!contato) return llm;
+  if (!llm) return contato;
+
+  const nLlm = normalizarNome(llm);
+  const nCon = normalizarNome(contato);
+  if (!nCon) return llm;
+
+  // Contato só com dígitos (telefone não salvo) não serve de nome: fica o da LLM.
+  if (/^[0-9 +]+$/.test(nCon)) return llm;
+
+  // Mesmo nome: vale a grafia do WhatsApp (acento certo — "Jô", não "Jo").
+  if (nLlm === nCon) return contato;
+
+  // Um é começo do outro => é o mesmo nome completado/encurtado ("jo" vs "joao",
+  // "marcia" vs "marcia goncalves"). Nesse caso vale o do WhatsApp.
+  if (nLlm.startsWith(nCon) || nCon.startsWith(nLlm)) return contato;
+
+  // Nomes claramente diferentes: o contato pode ser um apelido de agenda
+  // ("Lead Insta 22") e a LLM ter achado o nome real na conversa. Mantém a LLM.
+  return llm;
+}
+
 async function processarComLLM(userPrompt, nome) {
   const { texto: respostaBruta, uso } = await chamarLLM(userPrompt);
 
@@ -401,10 +457,7 @@ async function processarComLLM(userPrompt, nome) {
 
   dados = normalizarDados(dados);
 
-  // Se a LLM não achou o nome, usa o nome informado (contato/lead).
-  if (!dados.lead && nome && nome.trim()) {
-    dados.lead = nome.trim();
-  }
+  dados.lead = escolherNomeDoLead(dados.lead, nome);
   // O servidor registra o consumo e tira este campo antes de devolver o report.
   dados.uso = uso;
   return dados;
@@ -421,7 +474,7 @@ async function dadosDeTexto({ texto, nome } = {}) {
   if (!conteudo) {
     throw new Error('Cole a conversa antes de gerar o report.');
   }
-  const userPrompt = montarUserPrompt(conteudo);
+  const userPrompt = montarUserPrompt(conteudo, nome);
   return processarComLLM(userPrompt, nome);
 }
 
