@@ -3,6 +3,7 @@
 require('dotenv').config();
 
 const { gerarPdf } = require('./generatePdf');
+const base = require('./base');
 
 const LLM_PROVIDER = (process.env.LLM_PROVIDER || 'anthropic').toLowerCase();
 
@@ -284,7 +285,7 @@ const REPORT_TOOL = {
   },
 };
 
-async function chamarAnthropic(userPrompt) {
+async function chamarAnthropic(userPrompt, system) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     throw new Error('ANTHROPIC_API_KEY não configurada no .env.');
@@ -301,7 +302,7 @@ async function chamarAnthropic(userPrompt) {
     body: JSON.stringify({
       model,
       max_tokens: 4000,
-      system: SYSTEM_PROMPT,
+      system,
       tools: [REPORT_TOOL],
       tool_choice: { type: 'tool', name: 'gerar_relatorio' },
       messages: [{ role: 'user', content: userPrompt }],
@@ -329,7 +330,7 @@ async function chamarAnthropic(userPrompt) {
   return { texto, uso };
 }
 
-async function chamarOllama(userPrompt) {
+async function chamarOllama(userPrompt, system) {
   const model = process.env.OLLAMA_MODEL || 'llama3.1';
   const url = (process.env.OLLAMA_URL || 'http://localhost:11434').replace(/\/$/, '');
 
@@ -341,7 +342,7 @@ async function chamarOllama(userPrompt) {
       stream: false,
       format: 'json',
       messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'system', content: system },
         { role: 'user', content: userPrompt },
       ],
     }),
@@ -359,9 +360,9 @@ async function chamarOllama(userPrompt) {
   return { texto, uso: { modelo: `ollama/${model}`, entrada: 0, saida: 0 } };
 }
 
-async function chamarLLM(userPrompt) {
-  if (LLM_PROVIDER === 'ollama') return chamarOllama(userPrompt);
-  if (LLM_PROVIDER === 'anthropic') return chamarAnthropic(userPrompt);
+async function chamarLLM(userPrompt, system) {
+  if (LLM_PROVIDER === 'ollama') return chamarOllama(userPrompt, system);
+  if (LLM_PROVIDER === 'anthropic') return chamarAnthropic(userPrompt, system);
   throw new Error(`LLM_PROVIDER inválido: "${LLM_PROVIDER}" (use "anthropic" ou "ollama").`);
 }
 
@@ -441,8 +442,20 @@ function escolherNomeDoLead(daLLM, doContato) {
   return llm;
 }
 
+/** System prompt + playbook da empresa (quando cadastrado). */
+async function montarSystem() {
+  let playbook = '';
+  try {
+    playbook = await base.paraPrompt();
+  } catch (err) {
+    // Base indisponível não pode impedir a geração do report.
+    console.error('[report] não consegui ler a base de conhecimento:', err.message);
+  }
+  return playbook ? `${SYSTEM_PROMPT}\n\n---\n\n${playbook}` : SYSTEM_PROMPT;
+}
+
 async function processarComLLM(userPrompt, nome) {
-  const { texto: respostaBruta, uso } = await chamarLLM(userPrompt);
+  const { texto: respostaBruta, uso } = await chamarLLM(userPrompt, await montarSystem());
 
   let dados;
   try {

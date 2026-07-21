@@ -12,6 +12,7 @@ const { transcribeBuffer } = require('./src/transcribe');
 const usuarios = require('./src/usuarios');
 const stats = require('./src/stats');
 const db = require('./src/db');
+const base = require('./src/base');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -119,6 +120,23 @@ app.delete('/api/admin/usuarios/:id', admin, async (req, res) => {
   try {
     await usuarios.remover(req.params.id);
     res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// Base de conhecimento (playbook) que entra em todo report.
+app.get('/api/admin/base', admin, async (_req, res) => {
+  try {
+    res.json(await base.ler());
+  } catch (err) {
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+app.post('/api/admin/base', admin, async (req, res) => {
+  try {
+    res.json({ ok: true, base: await base.salvar(req.body || {}) });
   } catch (err) {
     res.status(500).json({ erro: err.message });
   }

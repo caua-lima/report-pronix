@@ -207,6 +207,7 @@
       <button class="tab on" data-aba="report">📝 Gerar report</button>
       <button class="tab so-admin hidden" data-aba="acessos">🔑 Acessos</button>
       <button class="tab so-admin hidden" data-aba="numeros">📊 Reports gerados</button>
+      <button class="tab so-admin hidden" data-aba="base">📋 Base</button>
       <button class="tab so-admin hidden" data-aba="extensao">🧩 Extensão</button>
     </nav>
   </header>
@@ -371,6 +372,53 @@
       </div>
     </section>
 
+    <!-- ================= ABA: BASE (PLAYBOOK) ================= -->
+    <section id="aba-base" class="hidden">
+      <div class="card admin-login hidden">
+        <div class="head"><div class="t">🔒 Área do admin</div><div class="sub">— entre com a sua chave de admin na aba "Gerar report"</div></div>
+        <div class="hint" style="margin:0 0 12px">Chave reserva: se você ainda não tem um acesso de admin (ou perdeu o seu), entre com a senha do servidor.</div>
+        <div class="row">
+          <input class="grow senha-admin" type="password" placeholder="Senha de admin (ADMIN_PASSWORD)" />
+          <button class="btn sec entrar-admin">Entrar com a senha</button>
+        </div>
+        <div class="status status-admin"></div>
+      </div>
+
+      <div class="admin-area hidden">
+        <div class="card">
+          <div class="head"><div class="t">📋 Base de conhecimento</div><div class="sub">— entra em todo report, de todos os SDRs</div></div>
+          <div class="hint" style="margin:0 0 4px">
+            Serve para a IA <b>entender melhor</b> a conversa — não vira informação sobre o lead.
+            Se o playbook diz que o ticket é R$3 mil e ninguém falou de dinheiro, esse valor
+            <b>não</b> aparece no report. Salvar vale na hora, para todos, sem reinstalar nada.
+          </div>
+        </div>
+
+        <div class="card">
+          <label for="bScript">🎯 Script de qualificação <span style="font-weight:400;color:var(--muted)">— o que o SDR deve levantar</span></label>
+          <textarea id="bScript" style="min-height:150px" placeholder="Ex.: 1) Entender o momento do negócio…&#10;2) Levantar faturamento/estoque…&#10;3) Confirmar quem decide…"></textarea>
+        </div>
+
+        <div class="card">
+          <label for="bOferta">💰 Oferta e valores <span style="font-weight:400;color:var(--muted)">— o que a PRONIX vende e por quanto</span></label>
+          <textarea id="bOferta" style="min-height:130px" placeholder="Ex.: Programa de estruturação em marketplace. Ticket a partir de R$3.000…"></textarea>
+        </div>
+
+        <div class="card">
+          <label for="bObjecoes">⚠️ Objeções comuns <span style="font-weight:400;color:var(--muted)">— o que trava e como contornar</span></label>
+          <textarea id="bObjecoes" style="min-height:130px" placeholder="Ex.: &quot;Preciso falar com meu sócio&quot; → …&#10;&quot;Achei caro&quot; → …"></textarea>
+        </div>
+
+        <div class="card">
+          <label for="bPerfil">👤 Perfil de cliente ideal <span style="font-weight:400;color:var(--muted)">— quem é bom lead e quem não é</span></label>
+          <textarea id="bPerfil" style="min-height:130px" placeholder="Ex.: Ideal: já vende e quer escalar, fatura acima de…&#10;Fora do perfil: quem ainda não tem produto…"></textarea>
+        </div>
+
+        <button id="salvarBase" class="btn btn-block">Salvar base</button>
+        <div id="statusBase" class="status"></div>
+      </div>
+    </section>
+
     <!-- ================= ABA: EXTENSÃO ================= -->
     <section id="aba-extensao" class="hidden">
       <div class="card">
@@ -415,8 +463,8 @@
     }
 
     // ---------- Menu ----------
-    const ABAS = ['report', 'acessos', 'numeros', 'extensao'];
-    const SO_ADMIN = ['acessos', 'numeros', 'extensao'];
+    const ABAS = ['report', 'acessos', 'numeros', 'base', 'extensao'];
+    const SO_ADMIN = ['acessos', 'numeros', 'base', 'extensao'];
     let souAdmin = false;
     // Guardado porque a chave é validada de forma assíncrona: quem abre direto
     // em #acessos ainda não é admin nesse instante e seria mandado para #report.
@@ -430,7 +478,7 @@
       ABAS.forEach((a) => $('aba-' + a).classList.toggle('hidden', a !== aba));
       document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('on', t.dataset.aba === aba));
       location.hash = aba;
-      if (aba === 'acessos' || aba === 'numeros') pedirAdmin();
+      if (SO_ADMIN.includes(aba)) pedirAdmin();
     }
 
     /** Mostra ou esconde as abas de admin conforme o papel da chave. */
@@ -474,6 +522,7 @@
         aplicarPapel();
         carregarUsuarios();
         carregarStats();
+        carregarBase();
         return true;
       } catch (e) {
         senhaAdmin = '';
@@ -491,6 +540,7 @@
         mostrarAdmin(true);
         carregarUsuarios();
         carregarStats();
+        carregarBase();
       } else if (senhaAdmin) {
         entrarAdmin(senhaAdmin);
       } else {
@@ -555,6 +605,37 @@
     }
     $('criar').addEventListener('click', criar);
     $('nome').addEventListener('keydown', (e) => { if (e.key === 'Enter') criar(); });
+
+    // ---------- Aba: Base de conhecimento ----------
+    const CAMPOS_BASE = { script: 'bScript', oferta: 'bOferta', objecoes: 'bObjecoes', perfil: 'bPerfil' };
+
+    async function carregarBase() {
+      if (!souAdmin && !senhaAdmin) return;
+      try {
+        const b = await api('GET', '/api/admin/base');
+        Object.entries(CAMPOS_BASE).forEach(([campo, id]) => { $(id).value = b[campo] || ''; });
+        setStatus('statusBase', b.atualizadoEm
+          ? 'Última atualização: ' + quando(b.atualizadoEm) + '.'
+          : 'Nada cadastrado ainda — o report sai normalmente sem isto.', {});
+      } catch (e) {
+        setStatus('statusBase', '❌ ' + e.message, { erro: true });
+      }
+    }
+
+    $('salvarBase').addEventListener('click', async () => {
+      const corpo = {};
+      Object.entries(CAMPOS_BASE).forEach(([campo, id]) => { corpo[campo] = $(id).value; });
+      $('salvarBase').disabled = true;
+      setStatus('statusBase', 'Salvando…', { loading: true });
+      try {
+        await api('POST', '/api/admin/base', corpo);
+        setStatus('statusBase', '✅ Salvo — já vale para os próximos reports de toda a equipe.', { ok: true });
+      } catch (e) {
+        setStatus('statusBase', '❌ ' + e.message, { erro: true });
+      } finally {
+        $('salvarBase').disabled = false;
+      }
+    });
 
     // ---------- Aba: Números ----------
     const quando = (iso) => new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
