@@ -20,7 +20,7 @@ const EXEMPLO_PEQUENO = {
   ],
   secoes: [
     {
-      titulo: '👤 Perfil & momento',
+      titulo: 'Perfil & momento',
       numerada: false,
       itens: [
         'Toca uma loja física de moto peças; começou no Mercado Livre há 15 dias.',
@@ -29,7 +29,7 @@ const EXEMPLO_PEQUENO = {
       ],
     },
     {
-      titulo: '🎯 Dor & objetivo',
+      titulo: 'Dor & objetivo',
       numerada: false,
       itens: [
         'Vende no impulso e no improviso; quer previsibilidade para escalar sem depender de correria.',
@@ -37,7 +37,7 @@ const EXEMPLO_PEQUENO = {
       ],
     },
     {
-      titulo: '✅ O que o closer deve bater',
+      titulo: 'O que o closer deve bater',
       numerada: true,
       itens: [
         'Ancorar na tração (104 vendas/15 dias) para mostrar que só falta estrutura, não capacidade.',
@@ -69,7 +69,7 @@ const EXEMPLO_GRANDE = {
   ],
   secoes: [
     {
-      titulo: '👤 Perfil & momento',
+      titulo: 'Perfil & momento',
       numerada: false,
       itens: [
         'Distribuidora consolidada no atacado; nunca vendeu direto ao consumidor.',
@@ -77,7 +77,7 @@ const EXEMPLO_GRANDE = {
       ],
     },
     {
-      titulo: '⚠️ Objeções & riscos',
+      titulo: 'Objeções & riscos',
       numerada: false,
       itens: [
         'Rogério aprova o investimento e não estará na call: risco de travar depois da reunião.',
@@ -85,7 +85,7 @@ const EXEMPLO_GRANDE = {
       ],
     },
     {
-      titulo: '✅ O que o closer deve bater',
+      titulo: 'O que o closer deve bater',
       numerada: true,
       itens: [
         'Tratar o canal como decidido: ela não precisa ser convencida do ML, e sim do como.',
@@ -138,7 +138,7 @@ TAMANHO (é um handoff, não um dossiê): resumo com 4 a 7 linhas; no máximo 4 
 Preencha pela ferramenta "gerar_relatorio":
 - "lead": SÓ o nome do lead, como ele aparece na conversa (ou ""). Sem parênteses, sem comentário, sem "a confirmar" — este campo vira o título e o nome do arquivo.
 - "resumo": linhas rótulo/valor tiradas da conversa, SEMPRE com Investimento, Motivação e Decisor(es) preenchidos (nunca "a confirmar"), mais o que fizer sentido (status/nicho, urgência quando houver).
-- "secoes": título com um emoji + bullets densos. As seções que fizerem sentido para ESTA conversa (perfil/momento, dor/objetivo, objeções/riscos, o que o closer deve bater...). "numerada": true só na de ação.
+- "secoes": título curto e direto (SEM emoji, SEM símbolo) + bullets densos. As seções que fizerem sentido para ESTA conversa (perfil/momento, dor/objetivo, objeções/riscos, o que o closer deve bater...). "numerada": true só na de ação.
 - "citacoes": 1 a 3 FALAS EXATAS/verbatim do LEAD (copiadas literalmente das linhas do LEAD, inclusive áudios): dor, sinal de compra, objeção, objetivo. Sem paráfrase, sem falas do vendedor; [] se não houver.
 - "frase_impacto": uma frase única e afiada de fechamento (pode parafrasear).`;
 
@@ -267,7 +267,7 @@ const REPORT_TOOL = {
         items: {
           type: 'object',
           properties: {
-            titulo: { type: 'string', description: 'Título da seção, começando com um emoji.' },
+            titulo: { type: 'string', description: 'Título curto da seção, em texto puro — sem emoji nem símbolo.' },
             itens: { type: 'array', items: { type: 'string' }, description: 'Bullets curtos.' },
             numerada: { type: 'boolean', description: 'true = lista numerada (passos/ações).' },
           },

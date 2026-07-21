@@ -594,18 +594,18 @@
     el.style.borderLeftColor = cor;
     const spinner = loading
       ? '<span style="flex:none;width:14px;height:14px;border:2px solid rgba(255,255,255,.25);border-top-color:#fff;border-radius:50%;display:inline-block;animation:crspin .8s linear infinite"></span>'
-      : '<span style="flex:none;font-size:15px">📋</span>';
+      : '<span style="flex:none;display:flex">' + "<svg viewBox=\"0 0 24 24\" width=\"15\" height=\"15\" style=\"vertical-align:-2px;flex:none\" fill=\"none\" stroke=\"#ffc400\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect width=\"8\" height=\"4\" x=\"8\" y=\"2\" rx=\"1\"/><path d=\"M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2\"/></svg>" + '</span>';
     let acao = '';
     if (arquivoBase64) {
       const url = 'data:application/pdf;base64,' + arquivoBase64;
       acao =
         `<a href="${url}" download="${arquivo || 'report.docx'}" style="display:inline-block;margin-top:8px;background:#25d366;color:#05130c;` +
-        `font-weight:700;text-decoration:none;padding:6px 10px;border-radius:7px">⬇ Baixar PDF</a>`;
+        `font-weight:700;text-decoration:none;padding:6px 10px;border-radius:7px"><svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:-2px;flex:none" fill="none" stroke="#121214" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg> Baixar PDF</a>`;
     } else if (arquivo && server) {
       const url = server + '/api/download/' + encodeURIComponent(arquivo);
       acao =
         `<a href="${url}" target="_blank" style="display:inline-block;margin-top:8px;background:#25d366;color:#05130c;` +
-        `font-weight:700;text-decoration:none;padding:6px 10px;border-radius:7px">⬇ Baixar PDF</a>`;
+        `font-weight:700;text-decoration:none;padding:6px 10px;border-radius:7px"><svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:-2px;flex:none" fill="none" stroke="#121214" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg> Baixar PDF</a>`;
     }
     el.innerHTML =
       (document.getElementById('crspin-style') ? '' : '<style id="crspin-style">@keyframes crspin{to{transform:rotate(360deg)}}</style>') +
@@ -636,14 +636,14 @@
       });
       const { mensagens, nome, stats } = await coletarConversa(server, true);
       if (!mensagens.length) {
-        mostrarBadge({ texto: '❌ Nenhuma mensagem encontrada nesta conversa.', cor: '#ff6b6b' });
+        mostrarBadge({ texto: 'Nenhuma mensagem encontrada nesta conversa.', cor: '#ff6b6b' });
         jobEmAndamento = false;
         return;
       }
 
       const linhaAudio =
         stats.audios > 0
-          ? `🎤 ${stats.audios} áudio(s), ${stats.audiosTranscritos} com transcrição` +
+          ? `<svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:-2px;flex:none" fill="none" stroke="#ffc400" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/></svg> ${stats.audios} áudio(s), ${stats.audiosTranscritos} com transcrição` +
             (stats.audiosTranscritos < stats.audios
               ? ' <span style="color:#8b98a5">(os demais entram como [áudio])</span>'
               : '')
@@ -652,7 +652,7 @@
       mostrarBadge({
         texto:
           `<b>Gerando report…</b> (${stats.total} mensagens)<br>` +
-          `${linhaAudio}<br>✅ Já pode responder outros leads.`,
+          `${linhaAudio}<br><svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:-2px;flex:none" fill="none" stroke="#25d366" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="m9 11 3 3L22 4"/></svg> Já pode responder outros leads.`,
         loading: true,
       });
 
@@ -661,7 +661,7 @@
       );
 
       if (!resp || !resp.ok) {
-        mostrarBadge({ texto: '❌ ' + ((resp && resp.erro) || 'Falha ao gerar o report.'), cor: '#ff6b6b' });
+        mostrarBadge({ texto: '' + ((resp && resp.erro) || 'Falha ao gerar o report.'), cor: '#ff6b6b' });
         jobEmAndamento = false;
         return;
       }
@@ -675,22 +675,22 @@
         stats.audios === 0
           ? '<span style="color:#8b98a5">Sem áudios nesta conversa</span>'
           : stats.audiosTranscritos === stats.audios
-            ? `🎤 ${stats.audios} áudio(s) transcrito(s)`
+            ? `<svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:-2px;flex:none" fill="none" stroke="#ffc400" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/></svg> ${stats.audios} áudio(s) transcrito(s)`
             : stats.audiosTranscritos === 0 && !ganchoInstalado()
               ? // Nenhum capturado E sem gancho: não é áudio difícil, é a página.
-                '⚠️ <b>Recarregue a aba do WhatsApp (F5)</b>' +
+                '<svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:-2px;flex:none" fill="none" stroke="#f0ad4e" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m21.7 18-8-14a2 2 0 0 0-3.4 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg> <b>Recarregue a aba do WhatsApp (F5)</b>' +
                 ' <span style="color:#8b98a5">e gere de novo — a leitura de áudio não iniciou</span>'
-              : `⚠️ ${stats.audiosTranscritos} de ${stats.audios} áudio(s) transcrito(s)` +
+              : `<svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:-2px;flex:none" fill="none" stroke="#f0ad4e" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m21.7 18-8-14a2 2 0 0 0-3.4 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg> ${stats.audiosTranscritos} de ${stats.audios} áudio(s) transcrito(s)` +
                 ' <span style="color:#8b98a5">— o resto entrou como [áudio]</span>';
 
       mostrarBadge({
-        texto: `<b>✅ Report pronto!</b> (${nome || 'lead'})<br>${resumoAudio}`,
+        texto: `<svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:-2px;flex:none" fill="none" stroke="#25d366" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="m9 11 3 3L22 4"/></svg> <b>Report pronto!</b> (${nome || 'lead'})<br>${resumoAudio}`,
         arquivo: resp.arquivo,
         server,
         arquivoBase64: resp.arquivoBase64,
       });
     } catch (e) {
-      mostrarBadge({ texto: '❌ ' + e.message, cor: '#ff6b6b' });
+      mostrarBadge({ texto: '' + e.message, cor: '#ff6b6b' });
     } finally {
       jobEmAndamento = false;
     }

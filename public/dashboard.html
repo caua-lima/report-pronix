@@ -120,6 +120,19 @@
     .hidden { display: none !important; }
     .hint { font-size: .8rem; color: var(--muted); margin-top: 10px; line-height: 1.6; }
 
+    /* ---------- Ícones ---------- */
+    /* Traço fino em currentColor: acompanham a cor e o tamanho do texto ao lado. */
+    .ic { display: inline-flex; align-items: center; justify-content: center; flex: none; }
+    .ic svg { width: 1em; height: 1em; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+    .tab .ic { font-size: 15px; margin-right: 8px; vertical-align: -2px; }
+    .head .ic { font-size: 16px; color: var(--muted); margin-right: 3px; align-self: center; }
+    label .ic { font-size: 13px; margin-right: 6px; vertical-align: -2px; color: var(--muted); }
+    .dropzone .ic { font-size: 26px; color: var(--muted); }
+    .dl .ic, .btn .ic { font-size: 15px; margin-right: 7px; vertical-align: -2px; }
+    .mini .ic { font-size: 13px; margin-right: 5px; vertical-align: -2px; }
+    .status .ic { font-size: 14px; }
+    .report h2 .ic { font-size: 14px; color: var(--muted); margin-right: 6px; vertical-align: -2px; }
+
     /* ---------- Tabelas ---------- */
     .card table { width: 100%; border-collapse: collapse; }
     th, td { text-align: left; padding: 11px 10px; font-size: .875rem; vertical-align: middle; }
@@ -204,11 +217,11 @@
       <div class="quem" id="quem"></div>
     </div>
     <nav class="menu">
-      <button class="tab on" data-aba="report">📝 Gerar report</button>
-      <button class="tab so-admin hidden" data-aba="acessos">🔑 Acessos</button>
-      <button class="tab so-admin hidden" data-aba="numeros">📊 Reports gerados</button>
-      <button class="tab so-admin hidden" data-aba="base">📋 Base</button>
-      <button class="tab so-admin hidden" data-aba="extensao">🧩 Extensão</button>
+      <button class="tab on" data-aba="report"><i data-ic="file-text"></i>Gerar report</button>
+      <button class="tab so-admin hidden" data-aba="acessos"><i data-ic="key"></i>Acessos</button>
+      <button class="tab so-admin hidden" data-aba="numeros"><i data-ic="chart"></i>Reports gerados</button>
+      <button class="tab so-admin hidden" data-aba="base"><i data-ic="clipboard"></i>Base</button>
+      <button class="tab so-admin hidden" data-aba="extensao"><i data-ic="package"></i>Extensão</button>
     </nav>
   </header>
 
@@ -216,7 +229,7 @@
     <!-- ================= ABA: GERAR REPORT ================= -->
     <section id="aba-report">
       <div class="card">
-        <div class="head"><div class="t">🔑 Sua chave</div><div class="sub">— identifica quem está gerando</div></div>
+        <div class="head"><div class="t"><i data-ic="key"></i>Sua chave</div><div class="sub">— identifica quem está gerando</div></div>
         <div class="row">
           <input id="chave" class="grow" type="password" placeholder="pnx_…" />
           <button id="validar" class="btn sec">Validar</button>
@@ -225,10 +238,10 @@
       </div>
 
       <div class="card">
-        <div class="head"><div class="t">💬 Conversa</div><div class="sub">— jogue os áudios e cole o texto; tudo vira o report</div></div>
+        <div class="head"><div class="t"><i data-ic="message"></i>Conversa</div><div class="sub">— jogue os áudios e cole o texto; tudo vira o report</div></div>
 
         <div id="dropzone" class="dropzone">
-          <div class="ic">🎧</div>
+          <i class="ic" data-ic="headphones"></i>
           <div class="big">Arraste os áudios aqui</div>
           <div class="small">ou clique para selecionar · vários de uma vez · o texto entra na conversa abaixo</div>
         </div>
@@ -248,8 +261,8 @@
 
       <div id="resultado" class="card hidden" style="margin-top:18px">
         <div class="result-head">
-          <div style="font-weight:700;font-size:1.05rem">✅ Report gerado</div>
-          <a id="dl" class="dl" target="_blank">⬇ Baixar PDF</a>
+          <div style="font-weight:700;font-size:1.05rem"><i data-ic="check"></i>Report gerado</div>
+          <a id="dl" class="dl" target="_blank"><i data-ic="download"></i>Baixar PDF</a>
         </div>
         <div id="report" class="report"></div>
       </div>
@@ -258,7 +271,7 @@
     <!-- ================= ABA: ACESSOS ================= -->
     <section id="aba-acessos" class="hidden">
       <div class="card admin-login hidden">
-        <div class="head"><div class="t">🔒 Área do admin</div><div class="sub">— entre com a sua chave de admin na aba "Gerar report"</div></div>
+        <div class="head"><div class="t"><i data-ic="lock"></i>Área do admin</div><div class="sub">— entre com a sua chave de admin na aba "Gerar report"</div></div>
         <div class="hint" style="margin:0 0 12px">Chave reserva: se você ainda não tem um acesso de admin (ou perdeu o seu), entre com a senha do servidor.</div>
         <div class="row">
           <input class="grow senha-admin" type="password" placeholder="Senha de admin (ADMIN_PASSWORD)" />
@@ -269,7 +282,7 @@
 
       <div class="admin-area hidden">
         <div class="card">
-          <div class="head"><div class="t">➕ Criar acesso</div><div class="sub">— nome do SDR, sem e-mail</div></div>
+          <div class="head"><div class="t"><i data-ic="plus"></i>Criar acesso</div><div class="sub">— nome do SDR, sem e-mail</div></div>
           <div class="row">
             <input id="nome" class="grow" type="text" placeholder="Nome do SDR (ex.: João Pedro)" />
             <select id="papel" style="width:auto;min-width:190px">
@@ -283,7 +296,7 @@
         </div>
 
         <div class="card">
-          <div class="head"><div class="t">👥 Equipe</div></div>
+          <div class="head"><div class="t"><i data-ic="users"></i>Equipe</div></div>
           <table>
             <thead><tr><th>Nome</th><th>Chave</th><th>Criado</th><th></th></tr></thead>
             <tbody id="lista"></tbody>
@@ -296,7 +309,7 @@
     <!-- ================= ABA: NÚMEROS ================= -->
     <section id="aba-numeros" class="hidden">
       <div class="card admin-login hidden">
-        <div class="head"><div class="t">🔒 Área do admin</div><div class="sub">— entre com a sua chave de admin na aba "Gerar report"</div></div>
+        <div class="head"><div class="t"><i data-ic="lock"></i>Área do admin</div><div class="sub">— entre com a sua chave de admin na aba "Gerar report"</div></div>
         <div class="hint" style="margin:0 0 12px">Chave reserva: se você ainda não tem um acesso de admin (ou perdeu o seu), entre com a senha do servidor.</div>
         <div class="row">
           <input class="grow senha-admin" type="password" placeholder="Senha de admin (ADMIN_PASSWORD)" />
@@ -308,7 +321,7 @@
       <div class="admin-area hidden">
         <!-- Filtros -->
         <div class="card">
-          <div class="head"><div class="t">🔎 Filtro</div><div class="sub">— período e pessoa</div></div>
+          <div class="head"><div class="t"><i data-ic="filter"></i>Filtro</div><div class="sub">— período e pessoa</div></div>
           <div class="periodos">
             <button class="chip on" data-dias="0">Hoje</button>
             <button class="chip" data-dias="2">Últimos 3 dias</button>
@@ -344,7 +357,7 @@
         </div>
 
         <div class="card">
-          <div class="head"><div class="t">👤 Por SDR</div><div class="sub">— reports e gasto de cada um, no período</div></div>
+          <div class="head"><div class="t"><i data-ic="user"></i>Por SDR</div><div class="sub">— reports e gasto de cada um, no período</div></div>
           <table>
             <thead><tr><th>SDR</th><th>Reports</th><th>Gasto</th><th>Média</th><th>Tokens</th></tr></thead>
             <tbody id="porUsuario"></tbody>
@@ -353,7 +366,7 @@
         </div>
 
         <div class="card">
-          <div class="head"><div class="t">📅 Por dia</div><div class="sub">— quanto saiu em cada dia</div></div>
+          <div class="head"><div class="t"><i data-ic="calendar"></i>Por dia</div><div class="sub">— quanto saiu em cada dia</div></div>
           <table>
             <thead><tr><th>Dia</th><th>Reports</th><th>Gasto</th></tr></thead>
             <tbody id="porDia"></tbody>
@@ -361,7 +374,7 @@
         </div>
 
         <div class="card">
-          <div class="head"><div class="t">🕒 Reports do período</div><div class="sub">— o custo de cada um</div></div>
+          <div class="head"><div class="t"><i data-ic="clock"></i>Reports do período</div><div class="sub">— o custo de cada um</div></div>
           <table>
             <thead><tr><th>Lead</th><th>SDR</th><th>Origem</th><th>Quando</th><th>Custo</th><th></th></tr></thead>
             <tbody id="ultimos"></tbody>
@@ -375,7 +388,7 @@
     <!-- ================= ABA: BASE (PLAYBOOK) ================= -->
     <section id="aba-base" class="hidden">
       <div class="card admin-login hidden">
-        <div class="head"><div class="t">🔒 Área do admin</div><div class="sub">— entre com a sua chave de admin na aba "Gerar report"</div></div>
+        <div class="head"><div class="t"><i data-ic="lock"></i>Área do admin</div><div class="sub">— entre com a sua chave de admin na aba "Gerar report"</div></div>
         <div class="hint" style="margin:0 0 12px">Chave reserva: se você ainda não tem um acesso de admin (ou perdeu o seu), entre com a senha do servidor.</div>
         <div class="row">
           <input class="grow senha-admin" type="password" placeholder="Senha de admin (ADMIN_PASSWORD)" />
@@ -386,7 +399,7 @@
 
       <div class="admin-area hidden">
         <div class="card">
-          <div class="head"><div class="t">📋 Base de conhecimento</div><div class="sub">— entra em todo report, de todos os SDRs</div></div>
+          <div class="head"><div class="t"><i data-ic="clipboard"></i>Base de conhecimento</div><div class="sub">— entra em todo report, de todos os SDRs</div></div>
           <div class="hint" style="margin:0 0 4px">
             Serve para a IA <b>entender melhor</b> a conversa — não vira informação sobre o lead.
             Se o playbook diz que o ticket é R$3 mil e ninguém falou de dinheiro, esse valor
@@ -395,22 +408,22 @@
         </div>
 
         <div class="card">
-          <label for="bScript">🎯 Script de qualificação <span style="font-weight:400;color:var(--muted)">— o que o SDR deve levantar</span></label>
+          <label for="bScript"><i data-ic="target"></i> Script de qualificação <span style="font-weight:400;color:var(--muted)">— o que o SDR deve levantar</span></label>
           <textarea id="bScript" style="min-height:150px" placeholder="Ex.: 1) Entender o momento do negócio…&#10;2) Levantar faturamento/estoque…&#10;3) Confirmar quem decide…"></textarea>
         </div>
 
         <div class="card">
-          <label for="bOferta">💰 Oferta e valores <span style="font-weight:400;color:var(--muted)">— o que a PRONIX vende e por quanto</span></label>
+          <label for="bOferta"><i data-ic="dollar"></i> Oferta e valores <span style="font-weight:400;color:var(--muted)">— o que a PRONIX vende e por quanto</span></label>
           <textarea id="bOferta" style="min-height:130px" placeholder="Ex.: Programa de estruturação em marketplace. Ticket a partir de R$3.000…"></textarea>
         </div>
 
         <div class="card">
-          <label for="bObjecoes">⚠️ Objeções comuns <span style="font-weight:400;color:var(--muted)">— o que trava e como contornar</span></label>
+          <label for="bObjecoes"><i data-ic="alert"></i> Objeções comuns <span style="font-weight:400;color:var(--muted)">— o que trava e como contornar</span></label>
           <textarea id="bObjecoes" style="min-height:130px" placeholder="Ex.: &quot;Preciso falar com meu sócio&quot; → …&#10;&quot;Achei caro&quot; → …"></textarea>
         </div>
 
         <div class="card">
-          <label for="bPerfil">👤 Perfil de cliente ideal <span style="font-weight:400;color:var(--muted)">— quem é bom lead e quem não é</span></label>
+          <label for="bPerfil"><i data-ic="user"></i> Perfil de cliente ideal <span style="font-weight:400;color:var(--muted)">— quem é bom lead e quem não é</span></label>
           <textarea id="bPerfil" style="min-height:130px" placeholder="Ex.: Ideal: já vende e quer escalar, fatura acima de…&#10;Fora do perfil: quem ainda não tem produto…"></textarea>
         </div>
 
@@ -422,13 +435,13 @@
     <!-- ================= ABA: EXTENSÃO ================= -->
     <section id="aba-extensao" class="hidden">
       <div class="card">
-        <div class="head"><div class="t">⬇ Arquivo da extensão</div><div class="sub">— mande este link para o SDR</div></div>
-        <a class="dl" href="/PRONIX-extensao.zip" download>⬇ Baixar PRONIX-extensao.zip</a>
+        <div class="head"><div class="t"><i data-ic="download"></i>Arquivo da extensão</div><div class="sub">— mande este link para o SDR</div></div>
+        <a class="dl" href="/PRONIX-extensao.zip" download><i data-ic="download"></i>Baixar PRONIX-extensao.zip</a>
         <div class="hint">Link direto para o time: <span class="chave" id="urlZip"></span></div>
       </div>
 
       <div class="card">
-        <div class="head"><div class="t">🧩 Como cada pessoa da equipe usa</div></div>
+        <div class="head"><div class="t"><i data-ic="package"></i>Como cada pessoa da equipe usa</div></div>
         <ol style="padding-left:20px;margin:0">
           <li>Você cria o acesso na aba <b>Acessos</b> e copia a chave.</li>
           <li>O SDR instala a extensão: <code>chrome://extensions</code> → <b>Modo do desenvolvedor</b> → <b>Carregar sem compactação</b> → pasta <code>extension</code>.</li>
@@ -438,7 +451,7 @@
         <div class="hint">Servidor que a equipe deve usar: <span class="chave" id="urlServidor"></span></div>
       </div>
       <div class="card">
-        <div class="head"><div class="t">📊 Report do dia</div><div class="sub">— texto do fechamento diário</div></div>
+        <div class="head"><div class="t"><i data-ic="chart"></i>Report do dia</div><div class="sub">— texto do fechamento diário</div></div>
         <a href="/dia" class="btn sec" style="display:inline-block;text-decoration:none">Abrir report do dia</a>
       </div>
     </section>
@@ -449,6 +462,49 @@
   <script>
     const $ = (id) => document.getElementById(id);
     const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+    // ---------- Ícones ----------
+    // Desenhos de traço embutidos: a página tem de ser autocontida (a Vercel e a
+    // extensão não carregam script/fonte de fora).
+    const ICONES = {
+      'file-text': '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/>',
+      key: '<circle cx="7.5" cy="15.5" r="4.5"/><path d="m10.7 12.3 8.7-8.7"/><path d="m17 6 2.5 2.5"/><path d="m14.5 8.5 2.5 2.5"/>',
+      chart: '<path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/>',
+      clipboard: '<rect width="8" height="4" x="8" y="2" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/>',
+      package: '<path d="m7.5 4.3 9 5.2"/><path d="M21 8a2 2 0 0 0-1-1.7l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.7l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/>',
+      message: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
+      headphones: '<path d="M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a9 9 0 0 1 18 0v7a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3"/>',
+      check: '<path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="m9 11 3 3L22 4"/>',
+      download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/>',
+      lock: '<rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+      plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
+      users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.9"/><path d="M16 3.1a4 4 0 0 1 0 7.8"/>',
+      user: '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+      filter: '<path d="M21 4H3l7 8v6l4 2v-8z"/>',
+      calendar: '<rect width="18" height="18" x="3" y="4" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/>',
+      clock: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
+      target: '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>',
+      dollar: '<path d="M12 2v20"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>',
+      alert: '<path d="m21.7 18-8-14a2 2 0 0 0-3.4 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+      quote: '<path d="M10 11H6a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v6c0 2.5-1.5 4-3.5 4"/><path d="M19 11h-4a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v6c0 2.5-1.5 4-3.5 4"/>',
+      zap: '<path d="M13 2 3 14h9l-1 8 10-12h-9z"/>',
+      refresh: '<path d="M3 12a9 9 0 0 1 9-9 9.8 9.8 0 0 1 6.7 2.7L21 8"/><path d="M21 3v5h-5"/><path d="M3 21v-5h5"/><path d="M21 12a9 9 0 0 1-9 9 9.8 9.8 0 0 1-6.7-2.7L3 16"/>',
+      trash: '<path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
+      copy: '<rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
+      settings: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1"/>',
+    };
+
+    /** Troca os marcadores <i data-ic="nome"> pelo desenho correspondente. */
+    function aplicarIcones(raiz) {
+      (raiz || document).querySelectorAll('[data-ic]').forEach((el) => {
+        if (el.dataset.icPronto) return;
+        const d = ICONES[el.getAttribute('data-ic')];
+        if (!d) return;
+        el.classList.add('ic');
+        el.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true">' + d + '</svg>';
+        el.dataset.icPronto = '1';
+      });
+    }
 
     function toast(msg) {
       const t = $('toast'); t.textContent = msg; t.classList.add('show');
@@ -529,7 +585,7 @@
         sessionStorage.removeItem('adminPass');
         mostrarAdmin(false);
         aplicarPapel();
-        document.querySelectorAll('.status-admin').forEach((s) => setStatus(s, '❌ ' + e.message, { erro: true }));
+        document.querySelectorAll('.status-admin').forEach((s) => setStatus(s, e.message, { erro: true }));
         return false;
       }
     }
@@ -571,7 +627,7 @@
             </div></td>
           </tr>`).join('');
       } catch (e) {
-        setStatus('statusCriar', '❌ ' + e.message, { erro: true });
+        setStatus('statusCriar', e.message, { erro: true });
       }
     }
 
@@ -584,7 +640,7 @@
       } else if (d) {
         if (!confirm(`Remover o acesso de ${d.dataset.nome}? A chave dele para de funcionar na hora.`)) return;
         try { await api('DELETE', '/api/admin/usuarios/' + d.dataset.remover); carregarUsuarios(); toast('Acesso removido.'); }
-        catch (e) { setStatus('statusCriar', '❌ ' + e.message, { erro: true }); }
+        catch (e) { setStatus('statusCriar', e.message, { erro: true }); }
       }
     });
 
@@ -597,10 +653,10 @@
         const { usuario } = await api('POST', '/api/admin/usuarios', { nome, papel });
         $('nome').value = '';
         const tipo = usuario.papel === 'admin' ? 'admin' : 'usuário';
-        setStatus('statusCriar', `✅ Acesso de ${esc(usuario.nome)} (${tipo}) criado — copie a chave e envie para ele.`, { ok: true });
+        setStatus('statusCriar', `Acesso de ${esc(usuario.nome)} (${tipo}) criado — copie a chave e envie para ele.`, { ok: true });
         carregarUsuarios();
       } catch (e) {
-        setStatus('statusCriar', '❌ ' + e.message, { erro: true });
+        setStatus('statusCriar', e.message, { erro: true });
       }
     }
     $('criar').addEventListener('click', criar);
@@ -618,7 +674,7 @@
           ? 'Última atualização: ' + quando(b.atualizadoEm) + '.'
           : 'Nada cadastrado ainda — o report sai normalmente sem isto.', {});
       } catch (e) {
-        setStatus('statusBase', '❌ ' + e.message, { erro: true });
+        setStatus('statusBase', e.message, { erro: true });
       }
     }
 
@@ -629,9 +685,9 @@
       setStatus('statusBase', 'Salvando…', { loading: true });
       try {
         await api('POST', '/api/admin/base', corpo);
-        setStatus('statusBase', '✅ Salvo — já vale para os próximos reports de toda a equipe.', { ok: true });
+        setStatus('statusBase', 'Salvo — já vale para os próximos reports de toda a equipe.', { ok: true });
       } catch (e) {
-        setStatus('statusBase', '❌ ' + e.message, { erro: true });
+        setStatus('statusBase', e.message, { erro: true });
       } finally {
         $('salvarBase').disabled = false;
       }
@@ -682,7 +738,7 @@
         carregarStats();
       } catch (e) {
         b.disabled = false;
-        setStatus('statusFiltro', '❌ ' + e.message, { erro: true });
+        setStatus('statusFiltro', e.message, { erro: true });
       }
     });
 
@@ -740,7 +796,7 @@
 
         setStatus('statusFiltro', `${s.total} report(s) · ${usd(s.custo)} no período.`, { ok: true });
       } catch (e) {
-        setStatus('statusFiltro', '❌ ' + e.message, { erro: true });
+        setStatus('statusFiltro', e.message, { erro: true });
       }
     }
 
@@ -785,11 +841,13 @@
           if (!r.ok) throw new Error(data.erro || 'falhou');
           appendConversa(`(áudio): ${(data.texto || '').trim() || '[áudio sem fala reconhecida]'}`);
           row.className = 'file-row ok';
-          row.innerHTML = `<span>✅</span><span class="nm">${esc(f.name)}</span><span class="st">adicionado</span>`;
+          row.innerHTML = `<i class="ic" data-ic="check" style="color:var(--ouro-tinta)"></i><span class="nm">${esc(f.name)}</span><span class="st">adicionado</span>`;
+          aplicarIcones(row);
           ok++;
         } catch (err) {
           row.className = 'file-row err';
-          row.innerHTML = `<span>⚠️</span><span class="nm">${esc(f.name)}</span><span class="st">${esc(err.message)}</span>`;
+          row.innerHTML = `<i class="ic" data-ic="alert" style="color:var(--danger)"></i><span class="nm">${esc(f.name)}</span><span class="st">${esc(err.message)}</span>`;
+          aplicarIcones(row);
         }
       }
       setStatus('statusAudio', `${ok} de ${lista.length} áudio(s) na conversa.`, { ok: ok > 0, erro: ok === 0 });
@@ -810,9 +868,9 @@
       const tabela = linhas.length ? `<table>${linhas.join('')}</table>` : '';
       const secoes = (d.secoes || []).map((s) => `<h2>${esc(s.titulo)}</h2>${listaHtml(s.itens, s.numerada)}`).join('');
       const cit = (d.citacoes && d.citacoes.length)
-        ? '<h2>💬 Nas palavras do lead</h2>' + d.citacoes.map((c) => `<p class="frase">"${esc(c)}"</p>`).join('')
+        ? '<h2><i data-ic="quote"></i>Nas palavras do lead</h2>' + d.citacoes.map((c) => `<p class="frase">"${esc(c)}"</p>`).join('')
         : '';
-      const frase = d.frase_impacto ? `<h2>🎯 Frase de Impacto</h2><p class="frase">"${esc(d.frase_impacto)}"</p>` : '';
+      const frase = d.frase_impacto ? `<h2><i data-ic="zap"></i>Frase de Impacto</h2><p class="frase">"${esc(d.frase_impacto)}"</p>` : '';
       return tabela + secoes + cit + frase;
     }
     async function gerar() {
@@ -828,6 +886,7 @@
         const data = await r.json();
         if (!r.ok) throw new Error(data.erro || 'Erro ao gerar o report.');
         $('report').innerHTML = renderReport(data.dados);
+        aplicarIcones($('report'));
         $('dl').href = 'data:application/pdf;base64,' + data.arquivoBase64;
         $('dl').setAttribute('download', data.arquivo || 'report.pdf');
         $('resultado').classList.remove('hidden');
@@ -835,7 +894,7 @@
         $('resultado').scrollIntoView({ behavior: 'smooth', block: 'start' });
         carregarStats();
       } catch (err) {
-        setStatus('status', '❌ ' + err.message, { erro: true });
+        setStatus('status', err.message, { erro: true });
       } finally { $('gerar').disabled = false; }
     }
     $('gerar').addEventListener('click', gerar);
@@ -860,7 +919,7 @@
       } catch (e) {
         souAdmin = false;
         aplicarPapel();
-        setStatus('statusChave', '❌ ' + e.message, { erro: true });
+        setStatus('statusChave', e.message, { erro: true });
         $('quem').textContent = '';
         return false;
       }
@@ -871,6 +930,7 @@
     if (getChave()) validarChave(); else setStatus('statusChave', 'Cole a sua chave para usar.', {});
 
     // ---------- Início ----------
+    aplicarIcones(); // ícones da estrutura fixa
     $('urlServidor').textContent = location.origin;
     $('urlZip').textContent = location.origin + '/PRONIX-extensao.zip';
     usarPreset(0); // abre em "Hoje"

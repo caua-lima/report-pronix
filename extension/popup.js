@@ -33,10 +33,10 @@ function renderReport(d) {
     .map((s) => `<h2>${escapeHtml(s.titulo)}</h2>${lista(s.itens, s.numerada)}`)
     .join('');
   const cit = (d.citacoes && d.citacoes.length)
-    ? `<h2>💬 Nas palavras do lead</h2>` + d.citacoes.map((c) => `<p class="frase">"${escapeHtml(c)}"</p>`).join('')
+    ? `<h2><svg viewBox="0 0 24 24" width="12" height="12" style="vertical-align:-2px;flex:none" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M10 11H6a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v6c0 2.5-1.5 4-3.5 4"/><path d="M19 11h-4a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v6c0 2.5-1.5 4-3.5 4"/></svg> Nas palavras do lead</h2>` + d.citacoes.map((c) => `<p class="frase">"${escapeHtml(c)}"</p>`).join('')
     : '';
   const frase = d.frase_impacto
-    ? `<h2>🎯 Frase de Impacto</h2><p class="frase">"${escapeHtml(d.frase_impacto)}"</p>`
+    ? `<h2><svg viewBox="0 0 24 24" width="12" height="12" style="vertical-align:-2px;flex:none" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9z"/></svg> Frase de Impacto</h2><p class="frase">"${escapeHtml(d.frase_impacto)}"</p>`
     : '';
   return tabela + secoes + cit + frase;
 }
@@ -92,9 +92,9 @@ async function testarConexao() {
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.erro || 'Chave inválida.');
     $('sdrNome').textContent = j.nome;
-    setStatus(`✅ Conectado como <b>${escapeHtml(j.nome)}</b>.`);
+    setStatus(`Conectado como <b>${escapeHtml(j.nome)}</b>.`);
   } catch (err) {
-    setStatus('❌ ' + (err.message === 'Failed to fetch' ? 'Servidor não respondeu — confira a URL.' : err.message), { erro: true });
+    setStatus('' + (err.message === 'Failed to fetch' ? 'Servidor não respondeu — confira a URL.' : err.message), { erro: true });
   }
 }
 
@@ -109,7 +109,7 @@ async function gerar() {
     setStatus('Iniciando…', { loading: true });
     await enviarStart(tab.id, server);
     setStatus(
-      '🚀 <b>Report iniciado!</b> Acompanhe o aviso no canto inferior direito do WhatsApp. ' +
+      '<b>Report iniciado!</b> Acompanhe o aviso no canto inferior direito do WhatsApp. ' +
         'Você pode fechar este popup e continuar respondendo.'
     );
   } catch (err) {
