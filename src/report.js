@@ -111,10 +111,10 @@ O RELATÓRIO SAI DA CONVERSA — não existe modelo fixo:
 
 QUALIFICAÇÃO MÍNIMA — estas TRÊS linhas SEMPRE aparecem no resumo, preenchidas com o que a conversa deu. É PROIBIDO escrever "a confirmar" nelas. O SDR já qualifica isso na conversa, então a informação ESTÁ lá — sua obrigação é achar, inclusive em respostas curtas ("ok", "sim", "fechado"). Se você escreveu "a confirmar" em uma destas três, você leu errado: volte e releia a conversa inteira.
 
-1. INVESTIMENTO — o poder de investir do lead.
-   - CONFIRMAÇÃO CONTA: se o vendedor propôs um valor e o lead concordou — "ok", "consigo", "fechado", "dá sim", "tenho", "pode ser", "tranquilo", "beleza", "isso" — então ESSE valor está confirmado. Ex.: VENDEDOR "o investimento é no mínimo R$3 mil, consegue?" + LEAD "OK" → Investimento: "A partir de R$3.000 — lead confirmou". NUNCA "a confirmar": ele acabou de confirmar.
-   - Se o lead expressou capacidade de outro jeito (faturamento, estoque, verba, porte, nº de funcionários), use isso — quem fatura R$2M/mês ou tem R$100 mil de estoque já demonstrou poder de investimento. O rótulo pode virar "Faturamento", "Estoque" etc., mas a linha de capacidade financeira SEMPRE existe.
-   - Só não invente um número que ninguém disse. Mas se houve qualquer sinal — valor aceito, faixa, faturamento, porte — ele vira a linha.
+1. INVESTIMENTO — o poder de investir do lead. A pergunta não precisa ter sido feita: o que vale é QUALQUER sinal de capacidade na conversa.
+   - CONFIRMAÇÃO CONTA: se o vendedor propôs um valor e o lead concordou — "ok", "consigo", "fechado", "dá sim", "tenho", "pode ser", "tranquilo", "beleza", "isso" — então ESSE valor está confirmado. Ex.: VENDEDOR "o investimento é no mínimo R$3 mil, consegue?" + LEAD "OK" → Investimento: "A partir de R$3.000 — lead confirmou".
+   - ESTRUTURA TAMBÉM É CAPACIDADE, e dispensa qualificação financeira: "tenho empresa há 20 anos", "tenho uma distribuidora", "tenho 3 lojas", "sou médico", "tenho CNPJ", "faturo X", "tenho estoque", "tenho X funcionários", "importo". Qualquer um desses JÁ RESPONDE a linha — escreva o sinal ("Empresa há 20 anos — capacidade demonstrada pelo tempo de operação"). Não faz sentido cobrar reserva de quem já toca um negócio consolidado.
+   - PROIBIDO escrever "a confirmar", "a checar", "não informado" ou "não perguntado" nestas três linhas. Se nem valor nem estrutura apareceram, descreva FACTUALMENTE o que a conversa deu ("CLT começando do zero; nenhum valor ou reserva citado") — isso informa o closer sem fingir que falta um dado que ninguém tem.
 
 2. MOTIVAÇÃO — por que o lead quer isso: a dor ou o objetivo que o move (sair do CLT, escalar, escoar estoque parado, ter previsibilidade, parar de depender de indicação...). Sempre há um motivo na conversa; tire da fala dele.
 
@@ -153,8 +153,21 @@ function montarHistoricoFormatado(historico) {
     .join('\n');
 }
 
+// O cabeçalho do WhatsApp mostra o status junto do nome. Se a extensão capturar
+// o status por engano, ele NÃO pode virar o nome do lead ("Lead: online").
+const STATUS_NAO_E_NOME =
+  /^(online|offline|digitando|gravando|escrevendo|visto por [úu]ltimo|[úu]ltima vez|typing|recording|last seen|aguardando|carregando)/i;
+
+/** Nome de contato só vale se não for status do WhatsApp. */
+function nomeContatoValido(nome) {
+  const n = String(nome || '').trim();
+  return STATUS_NAO_E_NOME.test(n) ? '' : n;
+}
+
 function montarUserPrompt(historicoFormatado, nomeContato) {
-  const contato = (nomeContato || '').trim();
+  // Filtra antes de entrar no prompt: mandar "online" como nome oficial faria a IA
+  // obedecer e devolver "online" como nome do lead.
+  const contato = nomeContatoValido(nomeContato);
   const blocoContato = contato
     ? `\n\nNOME OFICIAL DO CONTATO (lido do WhatsApp, é a fonte da verdade): "${contato}"\n` +
       'Use este nome EXATAMENTE assim no campo "lead". Não complete, não corrija, não expanda.\n'
@@ -419,7 +432,7 @@ const normalizarNome = (s) =>
  */
 function escolherNomeDoLead(daLLM, doContato) {
   const llm = String(daLLM || '').trim();
-  const contato = String(doContato || '').trim();
+  const contato = nomeContatoValido(doContato);
   if (!contato) return llm;
   if (!llm) return contato;
 
@@ -437,9 +450,11 @@ function escolherNomeDoLead(daLLM, doContato) {
   // "marcia" vs "marcia goncalves"). Nesse caso vale o do WhatsApp.
   if (nLlm.startsWith(nCon) || nCon.startsWith(nLlm)) return contato;
 
-  // Nomes claramente diferentes: o contato pode ser um apelido de agenda
-  // ("Lead Insta 22") e a LLM ter achado o nome real na conversa. Mantém a LLM.
-  return llm;
+  // Nomes diferentes. O contato do WhatsApp costuma ser o nome real da pessoa,
+  // então ele ganha — a não ser que seja apelido de agenda ("Lead Insta 22",
+  // "Cliente novo"), quando o nome achado na conversa é mais confiável.
+  const apelidoDeAgenda = /\d/.test(nCon) || /^(lead|cliente|prospect|contato|grupo|novo|whats)\b/i.test(nCon);
+  return apelidoDeAgenda ? llm : contato;
 }
 
 /** System prompt + playbook da empresa (quando cadastrado). */

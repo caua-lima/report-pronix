@@ -427,13 +427,33 @@
     return { from: fromMe ? 'eu' : 'eles', type: 'texto', content: texto, timestamp, ts };
   }
 
+  // O cabeçalho traz o nome E o status ("online", "digitando…", "visto por último…").
+  // Sem filtrar, o status vira o nome do lead — foi assim que um report saiu com
+  // "Lead: online".
+  const STATUS_CONTATO =
+    /^(online|digitando|gravando|escrevendo|visto por [úu]ltimo|[úu]ltima vez|typing|recording|last seen|click here|clique aqui|toque aqui)/i;
+
   function nomeDoContato() {
     const header = document.querySelector('#main header');
     if (!header) return '';
-    const comTitulo = header.querySelector('span[title]');
-    if (comTitulo) return (comTitulo.getAttribute('title') || comTitulo.innerText || '').trim();
-    const dir = header.querySelector('span[dir="auto"]');
-    return dir ? (dir.innerText || '').trim() : '';
+
+    const candidatos = [];
+    // O title costuma trazer o nome completo (o texto visível pode vir cortado).
+    header.querySelectorAll('span[title]').forEach((s) => {
+      const t = (s.getAttribute('title') || '').trim();
+      if (t) candidatos.push(t);
+    });
+    header.querySelectorAll('span[dir="auto"], h1, h2').forEach((s) => {
+      const t = (s.innerText || '').trim();
+      if (t) candidatos.push(t);
+    });
+
+    for (const c of candidatos) {
+      if (!c || c.length > 80) continue;
+      if (STATUS_CONTATO.test(c)) continue; // é status, não nome
+      return c;
+    }
+    return '';
   }
 
   function diagnostico() {
