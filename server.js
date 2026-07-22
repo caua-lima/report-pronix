@@ -84,6 +84,11 @@ app.get('/manual', dashboard);
 app.get('/admin', dashboard);
 app.get('/dia', (_req, res) => res.sendFile(path.join(__dirname, 'public', 'dia.html')));
 
+// Política de privacidade — exigida pela Chrome Web Store; URL fixa e pública.
+app.get('/privacidade', (_req, res) =>
+  res.sendFile(path.join(__dirname, 'public', 'privacidade.html'))
+);
+
 // Status é público (serve para o botão "Testar" da extensão).
 app.get('/api/status', (_req, res) => {
   res.json({ ok: true, provider: process.env.LLM_PROVIDER || 'anthropic' });
