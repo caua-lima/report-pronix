@@ -214,7 +214,7 @@ async function responderReport(req, res, dados, nome, origem) {
 app.post('/api/report-direto', auth, async (req, res) => {
   try {
     const { mensagens, nome } = req.body || {};
-    const dados = await dadosDireto({ mensagens, nome });
+    const dados = await dadosDireto({ mensagens, nome, sdr: req.usuario.nome });
     await responderReport(req, res, dados, nome, 'extensao');
   } catch (err) {
     res.status(/Nenhuma mensagem/i.test(err.message) ? 400 : 500).json({ erro: err.message });
@@ -224,7 +224,7 @@ app.post('/api/report-direto', auth, async (req, res) => {
 app.post('/api/report-texto', auth, async (req, res) => {
   try {
     const { texto, nome } = req.body || {};
-    const dados = await dadosDeTexto({ texto, nome });
+    const dados = await dadosDeTexto({ texto, nome, sdr: req.usuario.nome });
     await responderReport(req, res, dados, nome, 'manual');
   } catch (err) {
     res.status(/Cole a conversa/i.test(err.message) ? 400 : 500).json({ erro: err.message });

@@ -140,6 +140,7 @@ Preencha pela ferramenta "gerar_relatorio":
 - "resumo": linhas rótulo/valor tiradas da conversa, SEMPRE com Investimento, Motivação e Decisor(es) preenchidos (nunca "a confirmar"), mais o que fizer sentido (status/nicho, urgência quando houver).
 - "secoes": título curto e direto (SEM emoji, SEM símbolo) + bullets densos. As seções que fizerem sentido para ESTA conversa (perfil/momento, dor/objetivo, objeções/riscos, o que o closer deve bater...). "numerada": true só na de ação.
 - "citacoes": 1 a 3 FALAS EXATAS/verbatim do LEAD (copiadas literalmente das linhas do LEAD, inclusive áudios): dor, sinal de compra, objeção, objetivo. Sem paráfrase, sem falas do vendedor; [] se não houver.
+- "abertura": a fala com que o CLOSER começa a reunião, para ele ler quase como está. Estilo do handoff: cumprimenta o lead pelo nome, diz que o pré-vendedor repassou o contexto, resume a situação real (se está começando do zero ou já vende, o que vende/quer, a motivação) e TERMINA confirmando com o lead ("é isso mesmo?" / "é isso que você me contou, certo?"). 2 a 4 frases, primeira pessoa, tom cordial e profissional. Use SOMENTE o que apareceu na conversa — não invente produto, número ou motivo. Não fale de preço nem de proposta (isso é depois). Se souber o nome do pré-vendedor, cite-o; senão, diga "meu time".
 - "frase_impacto": uma frase única e afiada de fechamento (pode parafrasear).`;
 
 function montarHistoricoFormatado(historico) {
@@ -164,15 +165,19 @@ function nomeContatoValido(nome) {
   return STATUS_NAO_E_NOME.test(n) ? '' : n;
 }
 
-function montarUserPrompt(historicoFormatado, nomeContato) {
+function montarUserPrompt(historicoFormatado, nomeContato, nomeSdr) {
   // Filtra antes de entrar no prompt: mandar "online" como nome oficial faria a IA
   // obedecer e devolver "online" como nome do lead.
   const contato = nomeContatoValido(nomeContato);
-  const blocoContato = contato
+  let bloco = contato
     ? `\n\nNOME OFICIAL DO CONTATO (lido do WhatsApp, é a fonte da verdade): "${contato}"\n` +
       'Use este nome EXATAMENTE assim no campo "lead". Não complete, não corrija, não expanda.\n'
     : '';
-  return montarUserPromptBase(historicoFormatado, blocoContato);
+  const sdr = String(nomeSdr || '').trim();
+  if (sdr) {
+    bloco += `\nNOME DO PRÉ-VENDEDOR (quem atendeu antes): "${sdr}". Use no campo "abertura" ("o ${sdr} me passou aqui...").\n`;
+  }
+  return montarUserPromptBase(historicoFormatado, bloco);
 }
 
 function montarUserPromptBase(historicoFormatado, blocoContato) {
@@ -217,6 +222,7 @@ function extrairJson(texto) {
 function normalizarDados(dados) {
   const out = {};
   out.lead = typeof dados.lead === 'string' ? dados.lead.trim() : '';
+  out.abertura = typeof dados.abertura === 'string' ? dados.abertura.trim() : '';
   out.frase_impacto = typeof dados.frase_impacto === 'string' ? dados.frase_impacto.trim() : '';
 
   out.resumo = Array.isArray(dados.resumo)
@@ -292,9 +298,14 @@ const REPORT_TOOL = {
         description: 'Falas EXATAS (verbatim) do LEAD, fortes/úteis para o closer. Sem paráfrase.',
         items: { type: 'string' },
       },
+      abertura: {
+        type: 'string',
+        description:
+          'Fala pronta para o closer INICIAR a reunião, no estilo do handoff: cumprimenta o lead pelo nome, cita que o pré-vendedor repassou o contexto, resume a situação real dele (nível, o que vende/quer, motivação) e termina confirmando ("é isso mesmo?"). 2 a 4 frases, na primeira pessoa, só com o que apareceu na conversa.',
+      },
       frase_impacto: { type: 'string' },
     },
-    required: ['lead', 'resumo', 'secoes'],
+    required: ['lead', 'resumo', 'secoes', 'abertura'],
   },
 };
 
@@ -393,7 +404,7 @@ function normalizarMensagem(m) {
  * @param {{mensagens: Array, nome?: string}} payload
  * @returns {Promise<{dados: object, arquivo: string}>}
  */
-async function dadosDireto({ mensagens, nome } = {}) {
+async function dadosDireto({ mensagens, nome, sdr } = {}) {
   const historico = (Array.isArray(mensagens) ? mensagens : [])
     .map(normalizarMensagem)
     .filter((m) => m.content);
@@ -404,7 +415,7 @@ async function dadosDireto({ mensagens, nome } = {}) {
     );
   }
 
-  const userPrompt = montarUserPrompt(montarHistoricoFormatado(historico), nome);
+  const userPrompt = montarUserPrompt(montarHistoricoFormatado(historico), nome, sdr);
   return processarComLLM(userPrompt, nome);
 }
 
@@ -497,12 +508,12 @@ async function processarComLLM(userPrompt, nome) {
  * @param {{texto: string, nome?: string}} payload
  * @returns {Promise<{dados: object, arquivo: string}>}
  */
-async function dadosDeTexto({ texto, nome } = {}) {
+async function dadosDeTexto({ texto, nome, sdr } = {}) {
   const conteudo = typeof texto === 'string' ? texto.trim() : '';
   if (!conteudo) {
     throw new Error('Cole a conversa antes de gerar o report.');
   }
-  const userPrompt = montarUserPrompt(conteudo, nome);
+  const userPrompt = montarUserPrompt(conteudo, nome, sdr);
   return processarComLLM(userPrompt, nome);
 }
 

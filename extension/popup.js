@@ -29,6 +29,9 @@ function renderReport(d) {
     linhas.push(`<tr><td class="rot">${escapeHtml(r.rotulo)}</td><td>${escapeHtml(r.valor)}</td></tr>`)
   );
   const tabela = linhas.length ? `<table>${linhas.join('')}</table>` : '';
+  const abertura = d.abertura
+    ? `<h2><svg viewBox="0 0 24 24" width="12" height="12" style="vertical-align:-2px;flex:none" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> Como iniciar a reunião</h2><p class="frase">"${escapeHtml(d.abertura)}"</p>`
+    : '';
   const secoes = (d.secoes || [])
     .map((s) => `<h2>${escapeHtml(s.titulo)}</h2>${lista(s.itens, s.numerada)}`)
     .join('');
@@ -38,7 +41,7 @@ function renderReport(d) {
   const frase = d.frase_impacto
     ? `<h2><svg viewBox="0 0 24 24" width="12" height="12" style="vertical-align:-2px;flex:none" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9z"/></svg> Frase de Impacto</h2><p class="frase">"${escapeHtml(d.frase_impacto)}"</p>`
     : '';
-  return tabela + secoes + cit + frase;
+  return tabela + abertura + secoes + cit + frase;
 }
 
 function getServer() {

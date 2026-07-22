@@ -866,12 +866,13 @@
       if (d.lead) linhas.push(`<tr><td class="rot">Lead</td><td>${esc(d.lead)}</td></tr>`);
       (d.resumo || []).forEach((r) => linhas.push(`<tr><td class="rot">${esc(r.rotulo)}</td><td>${esc(r.valor)}</td></tr>`));
       const tabela = linhas.length ? `<table>${linhas.join('')}</table>` : '';
+      const abertura = d.abertura ? `<h2><i data-ic="message"></i>Como iniciar a reunião</h2><p class="frase">"${esc(d.abertura)}"</p>` : '';
       const secoes = (d.secoes || []).map((s) => `<h2>${esc(s.titulo)}</h2>${listaHtml(s.itens, s.numerada)}`).join('');
       const cit = (d.citacoes && d.citacoes.length)
         ? '<h2><i data-ic="quote"></i>Nas palavras do lead</h2>' + d.citacoes.map((c) => `<p class="frase">"${esc(c)}"</p>`).join('')
         : '';
       const frase = d.frase_impacto ? `<h2><i data-ic="zap"></i>Frase de Impacto</h2><p class="frase">"${esc(d.frase_impacto)}"</p>` : '';
-      return tabela + secoes + cit + frase;
+      return tabela + abertura + secoes + cit + frase;
     }
     async function gerar() {
       const texto = $('texto').value.trim();
