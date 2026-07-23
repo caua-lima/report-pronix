@@ -872,7 +872,7 @@
         ? '<h2><i data-ic="quote"></i>Nas palavras do lead</h2>' + d.citacoes.map((c) => `<p class="frase">"${esc(c)}"</p>`).join('')
         : '';
       const frase = d.frase_impacto ? `<h2><i data-ic="zap"></i>Frase de Impacto</h2><p class="frase">"${esc(d.frase_impacto)}"</p>` : '';
-      return tabela + abertura + secoes + cit + frase;
+      return tabela + secoes + cit + frase + abertura;
     }
     async function gerar() {
       const texto = $('texto').value.trim();

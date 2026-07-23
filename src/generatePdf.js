@@ -115,26 +115,6 @@ function render(doc, dados) {
     doc.x = MARGIN;
   }
 
-  // ---- Abertura sugerida (fala pronta para o closer iniciar) ----
-  if (dados.abertura) {
-    const pad = 12;
-    const wTxt = larg - pad * 2 - 4;
-    doc.font('Helvetica-Bold').fontSize(8.5);
-    const hRot = doc.heightOfString('COMO INICIAR A REUNIÃO', { width: wTxt });
-    doc.font('Helvetica-Oblique').fontSize(10.5);
-    const hTxt = doc.heightOfString(`“${dados.abertura}”`, { width: wTxt, lineGap: 1.5 });
-    const alturaCartao = pad * 2 + hRot + 6 + hTxt;
-    novaPaginaSePreciso(doc, alturaCartao + 12);
-    const y0 = doc.y;
-    doc.save().roundedRect(MARGIN, y0, larg, alturaCartao, 9).fillAndStroke(CLARO, BORDA).restore();
-    doc.save().rect(MARGIN + 1, y0 + 1, 4, alturaCartao - 2).fill(OURO).restore();
-    doc.font('Helvetica-Bold').fontSize(8.5).fillColor(OURO_ESC)
-      .text('COMO INICIAR A REUNIÃO', MARGIN + pad + 4, y0 + pad, { width: wTxt, characterSpacing: 0.5 });
-    doc.font('Helvetica-Oblique').fontSize(10.5).fillColor('#1f2937')
-      .text(`“${dados.abertura}”`, MARGIN + pad + 4, doc.y + 6, { width: wTxt, lineGap: 1.5 });
-    doc.y = y0 + alturaCartao + 16;
-    doc.x = MARGIN;
-  }
 
   // ---- Seções ----
   (dados.secoes || []).forEach((secao) => {
@@ -182,6 +162,28 @@ function render(doc, dados) {
     doc.font('Helvetica-Oblique').fontSize(11.5).fillColor(OURO)
       .text(`“${dados.frase_impacto}”`, MARGIN + 15, y0 + 12, { width: wTxt });
     doc.y = y0 + h + 24;
+  }
+
+  // ---- Abertura sugerida (fala pronta) — POR ÚLTIMO: é o que o closer usa ao vivo ----
+  if (dados.abertura) {
+    doc.moveDown(0.5);
+    const pad = 12;
+    const wTxt = larg - pad * 2 - 4;
+    doc.font('Helvetica-Bold').fontSize(8.5);
+    const hRot = doc.heightOfString('COMO INICIAR A REUNIÃO', { width: wTxt });
+    doc.font('Helvetica-Oblique').fontSize(10.5);
+    const hTxt = doc.heightOfString(`“${dados.abertura}”`, { width: wTxt, lineGap: 1.5 });
+    const alturaCartao = pad * 2 + hRot + 6 + hTxt;
+    novaPaginaSePreciso(doc, alturaCartao + 12);
+    const y0 = doc.y;
+    doc.save().roundedRect(MARGIN, y0, larg, alturaCartao, 9).fillAndStroke(CLARO, BORDA).restore();
+    doc.save().rect(MARGIN + 1, y0 + 1, 4, alturaCartao - 2).fill(OURO).restore();
+    doc.font('Helvetica-Bold').fontSize(8.5).fillColor(OURO_ESC)
+      .text('COMO INICIAR A REUNIÃO', MARGIN + pad + 4, y0 + pad, { width: wTxt, characterSpacing: 0.5 });
+    doc.font('Helvetica-Oblique').fontSize(10.5).fillColor('#1f2937')
+      .text(`“${dados.abertura}”`, MARGIN + pad + 4, doc.y + 6, { width: wTxt, lineGap: 1.5 });
+    doc.y = y0 + alturaCartao + 16;
+    doc.x = MARGIN;
   }
 }
 

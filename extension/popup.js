@@ -41,7 +41,7 @@ function renderReport(d) {
   const frase = d.frase_impacto
     ? `<h2><svg viewBox="0 0 24 24" width="12" height="12" style="vertical-align:-2px;flex:none" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9z"/></svg> Frase de Impacto</h2><p class="frase">"${escapeHtml(d.frase_impacto)}"</p>`
     : '';
-  return tabela + abertura + secoes + cit + frase;
+  return tabela + secoes + cit + frase + abertura;
 }
 
 function getServer() {

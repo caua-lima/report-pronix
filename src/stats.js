@@ -27,9 +27,18 @@ async function registrar({ usuarioId, usuarioNome, lead, origem, uso }) {
       modelo: u.modelo || '',
       entrada: u.entrada || 0,
       saida: u.saida || 0,
+      cacheLeitura: u.cacheLeitura || 0,
+      cacheEscrita: u.cacheEscrita || 0,
       // Guardado junto porque o preço do modelo muda com o tempo (promoção, troca de
       // modelo): recalcular depois daria um número diferente do que foi cobrado.
-      custo: custoUSD({ modelo: u.modelo, entrada: u.entrada, saida: u.saida, quando }),
+      custo: custoUSD({
+        modelo: u.modelo,
+        entrada: u.entrada,
+        saida: u.saida,
+        cacheLeitura: u.cacheLeitura,
+        cacheEscrita: u.cacheEscrita,
+        quando,
+      }),
     },
     LIMITE
   );

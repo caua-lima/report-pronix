@@ -29,13 +29,19 @@ function precoDe(modelo, quando) {
 }
 
 /**
- * Custo de uma chamada, em dólares.
+ * Custo de uma chamada, em dólares. Considera o cache de prompt:
+ * leitura de cache custa 0,1x o preço de entrada; escrita, 1,25x.
  * Modelo desconhecido (ou Ollama, que roda local) custa zero.
  */
-function custoUSD({ modelo, entrada, saida, quando } = {}) {
+function custoUSD({ modelo, entrada, saida, cacheLeitura, cacheEscrita, quando } = {}) {
   const p = precoDe(modelo, quando);
   if (!p) return 0;
-  return ((entrada || 0) / 1e6) * p.entrada + ((saida || 0) / 1e6) * p.saida;
+  return (
+    ((entrada || 0) / 1e6) * p.entrada +
+    ((cacheLeitura || 0) / 1e6) * p.entrada * 0.1 +
+    ((cacheEscrita || 0) / 1e6) * p.entrada * 1.25 +
+    ((saida || 0) / 1e6) * p.saida
+  );
 }
 
 module.exports = { custoUSD, precoDe, TABELA };

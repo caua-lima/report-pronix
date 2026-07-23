@@ -182,18 +182,22 @@ function montarUserPrompt(historicoFormatado, nomeContato, nomeSdr) {
   return montarUserPromptBase(historicoFormatado, bloco);
 }
 
+// Os exemplos são fixos em toda geração. Ficam no system (junto do prompt e do
+// playbook) para serem cacheados — o cache lê esse prefixo a ~0,1x do preço.
+const BLOCO_EXEMPLOS =
+  '\n\n---\n\nDois relatórios bem feitos, de conversas diferentes. Servem para calibrar tom e ' +
+  'densidade — NÃO copie os dados nem a estrutura. Repare que os rótulos do resumo e ' +
+  'as seções MUDAM de um para o outro, porque cada conversa pediu uma coisa: o formato ' +
+  'do relatório tem que sair da conversa recebida.\n\n' +
+  'EXEMPLO A (lead pequeno, começando, falou em investir):\n' +
+  JSON.stringify(EXEMPLO_PEQUENO, null, 2) +
+  '\n\nEXEMPLO B (operação grande, capacidade aparece como faturamento/estoque, ' +
+  'urgência veio da fala dele, decisor não participa):\n' +
+  JSON.stringify(EXEMPLO_GRANDE, null, 2);
+
 function montarUserPromptBase(historicoFormatado, blocoContato) {
   return (
-    'Dois relatórios bem feitos, de conversas diferentes. Servem para calibrar tom e ' +
-    'densidade — NÃO copie os dados nem a estrutura. Repare que os rótulos do resumo e ' +
-    'as seções MUDAM de um para o outro, porque cada conversa pediu uma coisa: o formato ' +
-    'do seu relatório tem que sair da conversa que você recebeu.\n\n' +
-    'EXEMPLO A (lead pequeno, começando, falou em investir):\n' +
-    JSON.stringify(EXEMPLO_PEQUENO, null, 2) +
-    '\n\nEXEMPLO B (operação grande, capacidade aparece como faturamento/estoque, ' +
-    'urgência veio da fala dele, decisor não participa):\n' +
-    JSON.stringify(EXEMPLO_GRANDE, null, 2) +
-    '\n\n---\n\nConversa real a ser analisada (ordem cronológica):\n\n' +
+    'Conversa real a ser analisada (ordem cronológica):\n\n' +
     historicoFormatado +
     blocoContato +
     '\n\n---\n\nGere agora o relatório desta conversa, com os rótulos e as seções que ELA pede. ' +
@@ -328,7 +332,9 @@ async function chamarAnthropic(userPrompt, system) {
     body: JSON.stringify({
       model,
       max_tokens: 4000,
-      system,
+      // system como bloco cacheado: prompt + exemplos + playbook são iguais em todo
+      // report, então o cache relê esse prefixo a ~0,1x do preço (economia grande).
+      system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }],
       tools: [REPORT_TOOL],
       tool_choice: { type: 'tool', name: 'gerar_relatorio' },
       messages: [{ role: 'user', content: userPrompt }],
@@ -341,11 +347,15 @@ async function chamarAnthropic(userPrompt, system) {
   }
 
   const json = await resp.json();
-  // usage é o que a Anthropic cobra: é daqui que sai o custo do report.
+  // usage é o que a Anthropic cobra. entrada = tokens a preço cheio;
+  // cache_read = o prefixo cacheado, cobrado a ~0,1x.
+  const u = json.usage || {};
   const uso = {
     modelo: json.model || model,
-    entrada: (json.usage && json.usage.input_tokens) || 0,
-    saida: (json.usage && json.usage.output_tokens) || 0,
+    entrada: u.input_tokens || 0,
+    saida: u.output_tokens || 0,
+    cacheLeitura: u.cache_read_input_tokens || 0,
+    cacheEscrita: u.cache_creation_input_tokens || 0,
   };
   // A saída estruturada vem num bloco tool_use, com o objeto já pronto em .input.
   const toolUse = (json.content || []).find((b) => b.type === 'tool_use');
@@ -470,7 +480,10 @@ function escolherNomeDoLead(daLLM, doContato) {
   return apelidoDeAgenda ? llm : contato;
 }
 
-/** System prompt + playbook da empresa (quando cadastrado). */
+/**
+ * System completo (prompt + exemplos + playbook). Tudo aqui é FIXO entre reports,
+ * então vira o prefixo cacheado: a conversa (que muda) fica no user prompt.
+ */
 async function montarSystem() {
   let playbook = '';
   try {
@@ -479,7 +492,8 @@ async function montarSystem() {
     // Base indisponível não pode impedir a geração do report.
     console.error('[report] não consegui ler a base de conhecimento:', err.message);
   }
-  return playbook ? `${SYSTEM_PROMPT}\n\n---\n\n${playbook}` : SYSTEM_PROMPT;
+  const comPlaybook = playbook ? `${SYSTEM_PROMPT}\n\n---\n\n${playbook}` : SYSTEM_PROMPT;
+  return comPlaybook + BLOCO_EXEMPLOS;
 }
 
 async function processarComLLM(userPrompt, nome) {
