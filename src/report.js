@@ -333,8 +333,10 @@ async function chamarAnthropic(userPrompt, system) {
       model,
       max_tokens: 4000,
       // system como bloco cacheado: prompt + exemplos + playbook são iguais em todo
-      // report, então o cache relê esse prefixo a ~0,1x do preço (economia grande).
-      system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }],
+      // report, então o cache relê esse prefixo a ~0,1x do preço. TTL de 1h (em vez
+      // dos 5min padrão): num dia de trabalho o prefixo é reescrito ~1x/hora, não a
+      // cada report espaçado — menos reescrita = menos gasto.
+      system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral', ttl: '1h' } }],
       tools: [REPORT_TOOL],
       tool_choice: { type: 'tool', name: 'gerar_relatorio' },
       messages: [{ role: 'user', content: userPrompt }],

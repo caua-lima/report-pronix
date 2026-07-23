@@ -39,7 +39,8 @@ function custoUSD({ modelo, entrada, saida, cacheLeitura, cacheEscrita, quando }
   return (
     ((entrada || 0) / 1e6) * p.entrada +
     ((cacheLeitura || 0) / 1e6) * p.entrada * 0.1 +
-    ((cacheEscrita || 0) / 1e6) * p.entrada * 1.25 +
+    // escrita de cache com TTL de 1h custa 2x a entrada (5min seria 1,25x).
+    ((cacheEscrita || 0) / 1e6) * p.entrada * 2 +
     ((saida || 0) / 1e6) * p.saida
   );
 }

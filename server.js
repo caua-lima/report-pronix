@@ -196,19 +196,22 @@ async function responderReport(req, res, dados, nome, origem) {
       uso,
     })
     .catch((err) => console.error('Falha ao registrar o report:', err.message));
-  // Report_Nome_Data.pdf — "Nome" é o lead, que é de quem o report fala.
-  const limpo = String(dados.lead || nome || 'Lead')
+  res.json({
+    dados,
+    arquivo: nomeArquivoPdf(dados.lead || nome),
+    arquivoBase64: buffer.toString('base64'),
+  });
+}
+
+// Report_Nome_Data.pdf — "Nome" é o lead, que é de quem o report fala.
+function nomeArquivoPdf(lead) {
+  const limpo = String(lead || 'Lead')
     .normalize('NFD').replace(/[̀-ͯ]/g, '')
     .replace(/[^A-Za-z0-9 ]+/g, ' ')
     .trim().split(/\s+/).slice(0, 3).join('-').slice(0, 40) || 'Lead';
   const d = new Date();
   const p = (n) => String(n).padStart(2, '0');
-  const data = `${p(d.getDate())}-${p(d.getMonth() + 1)}-${d.getFullYear()}`;
-  res.json({
-    dados,
-    arquivo: `Report_${limpo}_${data}.pdf`,
-    arquivoBase64: buffer.toString('base64'),
-  });
+  return `Report_${limpo}_${p(d.getDate())}-${p(d.getMonth() + 1)}-${d.getFullYear()}.pdf`;
 }
 
 app.post('/api/report-direto', auth, async (req, res) => {
@@ -230,6 +233,43 @@ app.post('/api/report-texto', auth, async (req, res) => {
     res.status(/Cole a conversa/i.test(err.message) ? 400 : 500).json({ erro: err.message });
   }
 });
+
+// Regera o PDF a partir de um report já EDITADO no dashboard. Não chama a IA
+// (é só desenhar), então não custa nem entra nos números — é o mesmo report.
+app.post('/api/pdf', auth, async (req, res) => {
+  try {
+    const dados = saneadorDeReport(req.body && req.body.dados);
+    if (!dados) return res.status(400).json({ erro: 'Report inválido para gerar o PDF.' });
+    dados.sdr = req.usuario.nome; // a assinatura é sempre de quem está logado
+    const buffer = await gerarPdfBuffer(dados);
+    res.json({ arquivo: nomeArquivoPdf(dados.lead), arquivoBase64: buffer.toString('base64') });
+  } catch (err) {
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// Aceita só os campos esperados do report editado (blinda o gerador de PDF).
+function saneadorDeReport(d) {
+  if (!d || typeof d !== 'object') return null;
+  const txt = (v) => (typeof v === 'string' ? v : '');
+  const arr = (v) => (Array.isArray(v) ? v : []);
+  return {
+    lead: txt(d.lead).trim(),
+    resumo: arr(d.resumo)
+      .map((r) => ({ rotulo: txt(r && r.rotulo).trim(), valor: txt(r && r.valor).trim() }))
+      .filter((r) => r.rotulo || r.valor),
+    secoes: arr(d.secoes)
+      .map((s) => ({
+        titulo: txt(s && s.titulo).trim(),
+        numerada: !!(s && s.numerada),
+        itens: arr(s && s.itens).map(txt).map((t) => t.trim()).filter(Boolean),
+      }))
+      .filter((s) => s.titulo || s.itens.length),
+    citacoes: arr(d.citacoes).map(txt).map((t) => t.trim()).filter(Boolean),
+    abertura: txt(d.abertura).trim(),
+    frase_impacto: txt(d.frase_impacto).trim(),
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Transcrição de áudio (Whisper local)

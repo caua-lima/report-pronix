@@ -196,6 +196,10 @@
     .report ul, .report ol { margin: 4px 0 12px; padding-left: 20px; }
     .report li { margin: 5px 0; font-size: .9rem; }
     .frase { font-style: italic; color: var(--text-2); background: var(--card-2); border-left: 2px solid var(--ouro); padding: 11px 15px; border-radius: 0 var(--r-sm) var(--r-sm) 0; margin: 8px 0; }
+    /* Campos editáveis do report gerado */
+    .editavel [data-edit] { border-radius: 4px; transition: background .12s, box-shadow .12s; outline: none; }
+    .editavel [data-edit]:hover { background: color-mix(in srgb, var(--ouro) 12%, transparent); }
+    .editavel [data-edit]:focus { background: color-mix(in srgb, var(--ouro) 16%, transparent); box-shadow: 0 0 0 2px var(--ring); }
 
     .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(8px); background: var(--preto); color: var(--ouro); padding: 11px 20px; border-radius: 20px; font-weight: 600; font-size: .85rem; opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s; box-shadow: var(--shadow-2); z-index: 50; }
     .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
@@ -262,9 +266,10 @@
       <div id="resultado" class="card hidden" style="margin-top:18px">
         <div class="result-head">
           <div style="font-weight:700;font-size:1.05rem"><i data-ic="check"></i>Report gerado</div>
-          <a id="dl" class="dl" target="_blank"><i data-ic="download"></i>Baixar PDF</a>
+          <button id="dl" class="dl"><i data-ic="download"></i>Baixar PDF</button>
         </div>
-        <div id="report" class="report"></div>
+        <div class="hint" style="margin:0 0 10px">Clique em qualquer trecho para editar. O PDF é gerado com as suas alterações.</div>
+        <div id="report" class="report editavel"></div>
       </div>
     </section>
 
@@ -860,20 +865,74 @@
     $('audio').addEventListener('change', () => { transcreverFiles($('audio').files); $('audio').value = ''; });
     ['dragover', 'drop'].forEach((ev) => window.addEventListener(ev, (e) => { if (e.target !== dz && !dz.contains(e.target)) e.preventDefault(); }));
 
-    function listaHtml(arr, ord) { const t = ord ? 'ol' : 'ul'; return `<${t}>${(arr || []).map((i) => `<li>${esc(i)}</li>`).join('')}</${t}>`; }
+    // Report gerado, mantido em memória para poder ser editado e regerar o PDF.
+    let reportAtual = null;
+
+    // Trecho editável: contenteditable ligado a um caminho no objeto (ex.: "secoes.0.itens.1").
+    const ed = (caminho, texto) => `<span data-edit="${caminho}" contenteditable="true">${esc(texto || '')}</span>`;
+
+    function listaEditavel(itens, ord, base) {
+      const t = ord ? 'ol' : 'ul';
+      return `<${t}>${(itens || []).map((i, k) => `<li>${ed(base + '.' + k, i)}</li>`).join('')}</${t}>`;
+    }
     function renderReport(d) {
       const linhas = [];
-      if (d.lead) linhas.push(`<tr><td class="rot">Lead</td><td>${esc(d.lead)}</td></tr>`);
-      (d.resumo || []).forEach((r) => linhas.push(`<tr><td class="rot">${esc(r.rotulo)}</td><td>${esc(r.valor)}</td></tr>`));
+      if (d.lead) linhas.push(`<tr><td class="rot">Lead</td><td>${ed('lead', d.lead)}</td></tr>`);
+      (d.resumo || []).forEach((r, i) =>
+        linhas.push(`<tr><td class="rot">${ed('resumo.' + i + '.rotulo', r.rotulo)}</td><td>${ed('resumo.' + i + '.valor', r.valor)}</td></tr>`)
+      );
       const tabela = linhas.length ? `<table>${linhas.join('')}</table>` : '';
-      const abertura = d.abertura ? `<h2><i data-ic="message"></i>Como iniciar a reunião</h2><p class="frase">"${esc(d.abertura)}"</p>` : '';
-      const secoes = (d.secoes || []).map((s) => `<h2>${esc(s.titulo)}</h2>${listaHtml(s.itens, s.numerada)}`).join('');
+      const secoes = (d.secoes || []).map((s, i) =>
+        `<h2>${ed('secoes.' + i + '.titulo', s.titulo)}</h2>${listaEditavel(s.itens, s.numerada, 'secoes.' + i + '.itens')}`
+      ).join('');
       const cit = (d.citacoes && d.citacoes.length)
-        ? '<h2><i data-ic="quote"></i>Nas palavras do lead</h2>' + d.citacoes.map((c) => `<p class="frase">"${esc(c)}"</p>`).join('')
+        ? '<h2><i data-ic="quote"></i>Nas palavras do lead</h2>' + d.citacoes.map((c, i) => `<p class="frase">"${ed('citacoes.' + i, c)}"</p>`).join('')
         : '';
-      const frase = d.frase_impacto ? `<h2><i data-ic="zap"></i>Frase de Impacto</h2><p class="frase">"${esc(d.frase_impacto)}"</p>` : '';
+      const frase = d.frase_impacto ? `<h2><i data-ic="zap"></i>Frase de Impacto</h2><p class="frase">"${ed('frase_impacto', d.frase_impacto)}"</p>` : '';
+      const abertura = d.abertura ? `<h2><i data-ic="message"></i>Como iniciar a reunião</h2><p class="frase">"${ed('abertura', d.abertura)}"</p>` : '';
       return tabela + secoes + cit + frase + abertura;
     }
+
+    // Grava um valor no objeto seguindo o caminho "a.0.b" (números viram índice).
+    function gravarNoCaminho(obj, caminho, valor) {
+      const partes = caminho.split('.');
+      let ref = obj;
+      for (let i = 0; i < partes.length - 1; i++) ref = ref[partes[i]];
+      ref[partes[partes.length - 1]] = valor;
+    }
+    // Ao editar qualquer campo, atualiza o objeto em memória (fonte da verdade do PDF).
+    $('report').addEventListener('input', (ev) => {
+      const el = ev.target.closest('[data-edit]');
+      if (!el || !reportAtual) return;
+      gravarNoCaminho(reportAtual, el.dataset.edit, el.innerText.trim());
+    });
+
+    // Baixar PDF: regera a partir do objeto editado (não chama a IA, é só desenho).
+    async function baixarPdf() {
+      if (!reportAtual) return;
+      const btn = $('dl');
+      const antes = btn.innerHTML;
+      btn.innerHTML = '<span class="spinner"></span> Gerando…';
+      btn.style.pointerEvents = 'none';
+      try {
+        const r = await fetch('/api/pdf', {
+          method: 'POST', headers: hdr({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ dados: reportAtual }),
+        });
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.erro || 'Erro ao gerar o PDF.');
+        const a = document.createElement('a');
+        a.href = 'data:application/pdf;base64,' + data.arquivoBase64;
+        a.download = data.arquivo || 'report.pdf';
+        a.click();
+      } catch (e) {
+        setStatus('status', e.message, { erro: true });
+      } finally {
+        btn.innerHTML = antes;
+        btn.style.pointerEvents = '';
+      }
+    }
+    $('dl').addEventListener('click', baixarPdf);
     async function gerar() {
       const texto = $('texto').value.trim();
       if (!texto) { setStatus('status', 'Cole a conversa (ou jogue os áudios) antes de gerar.', { erro: true }); return; }
@@ -886,12 +945,11 @@
         });
         const data = await r.json();
         if (!r.ok) throw new Error(data.erro || 'Erro ao gerar o report.');
-        $('report').innerHTML = renderReport(data.dados);
+        reportAtual = data.dados; // fonte da verdade; edições atualizam este objeto
+        $('report').innerHTML = renderReport(reportAtual);
         aplicarIcones($('report'));
-        $('dl').href = 'data:application/pdf;base64,' + data.arquivoBase64;
-        $('dl').setAttribute('download', data.arquivo || 'report.pdf');
         $('resultado').classList.remove('hidden');
-        setStatus('status', 'Report gerado com sucesso.', { ok: true });
+        setStatus('status', 'Report gerado. Edite se quiser e baixe o PDF.', { ok: true });
         $('resultado').scrollIntoView({ behavior: 'smooth', block: 'start' });
         carregarStats();
       } catch (err) {
