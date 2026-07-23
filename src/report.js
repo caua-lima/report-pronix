@@ -133,14 +133,16 @@ NOMES DE PESSOAS — a regra mais rígida do relatório. Nome inventado faz o cl
 - TERCEIROS (sócio, esposa, marido, irmão, gerente): só escreva o nome se o lead DISSE o nome. Se ele falou "decido com minha esposa" sem citar, escreva "Decide com a esposa (nome não mencionado)". NUNCA batize a pessoa — é proibido escolher um nome plausível.
 - Na dúvida sobre qualquer nome: descreva o papel ("o sócio", "a esposa") em vez de arriscar um nome.
 
-TAMANHO (é um handoff, não um dossiê): resumo com 4 a 7 linhas; no máximo 4 seções; no máximo 4 bullets por seção, cada um de 1 a 2 linhas. Conversa curta gera relatório curto — 2 seções bastam. Não encha para parecer completo.
+O CORPO É OBRIGATÓRIO — este é o coração do handoff, o que o closer realmente lê para conduzir a call. O relatório NUNCA pode ser só o resumo + a abertura + as citações: TEM que ter no MÍNIMO 2 seções de análise, e uma delas é SEMPRE "O que o closer deve bater" (ações concretas para a reunião, lista numerada). As outras saem da conversa: "Perfil e momento", "Dor e objetivo", "Objeções e riscos". A abertura NÃO substitui as seções — ela é só a fala de início; o corpo analítico continua obrigatório mesmo quando a conversa é curta (aí as seções ficam curtas, mas existem).
+
+TAMANHO (é um handoff, não um dossiê): resumo com 4 a 7 linhas; de 2 a 4 seções; no máximo 4 bullets por seção, cada um de 1 a 2 linhas. Não encha para parecer completo, mas também não colapse o corpo: as seções sempre existem.
 
 Preencha pela ferramenta "gerar_relatorio":
 - "lead": SÓ o nome do lead, como ele aparece na conversa (ou ""). Sem parênteses, sem comentário, sem "a confirmar" — este campo vira o título e o nome do arquivo.
 - "resumo": linhas rótulo/valor tiradas da conversa, SEMPRE com Investimento, Motivação e Decisor(es) preenchidos (nunca "a confirmar"), mais o que fizer sentido (status/nicho, urgência quando houver).
-- "secoes": título curto e direto (SEM emoji, SEM símbolo) + bullets densos. As seções que fizerem sentido para ESTA conversa (perfil/momento, dor/objetivo, objeções/riscos, o que o closer deve bater...). "numerada": true só na de ação.
+- "secoes": OBRIGATÓRIO ter de 2 a 4 seções, SEMPRE incluindo "O que o closer deve bater" (numerada:true, ações concretas). Título curto e direto (SEM emoji, SEM símbolo) + bullets densos. As demais saem da conversa: "Perfil e momento", "Dor e objetivo", "Objeções e riscos". Nunca devolva secoes vazio nem só uma seção.
 - "citacoes": 1 a 3 FALAS EXATAS/verbatim do LEAD (copiadas literalmente das linhas do LEAD, inclusive áudios): dor, sinal de compra, objeção, objetivo. Sem paráfrase, sem falas do vendedor; [] se não houver.
-- "abertura": a fala com que o CLOSER começa a reunião, para ele ler quase como está. Estilo do handoff: cumprimenta o lead pelo nome, diz que o pré-vendedor repassou o contexto, resume a situação real (se está começando do zero ou já vende, o que vende/quer, a motivação) e TERMINA confirmando com o lead ("é isso mesmo?" / "é isso que você me contou, certo?"). 2 a 4 frases, primeira pessoa, tom cordial e profissional. Use SOMENTE o que apareceu na conversa — não invente produto, número ou motivo. Não fale de preço nem de proposta (isso é depois). Se souber o nome do pré-vendedor, cite-o; senão, diga "meu time".
+- "abertura": um EXTRA além do relatório completo — a fala com que o CLOSER começa a reunião, para ler quase como está. NÃO é o relatório; o corpo (as seções) continua obrigatório do mesmo jeito. Estilo do handoff: cumprimenta o lead pelo nome, diz que o pré-vendedor repassou o contexto, resume a situação real (se está começando do zero ou já vende, o que vende/quer, a motivação) e TERMINA confirmando com o lead ("é isso mesmo?"). 2 a 4 frases, primeira pessoa, tom cordial. Use SOMENTE o que apareceu na conversa. Não fale de preço nem de proposta. Se souber o nome do pré-vendedor, cite-o; senão, diga "meu time".
 - "frase_impacto": uma frase única e afiada de fechamento (pode parafrasear).`;
 
 function montarHistoricoFormatado(historico) {
@@ -481,21 +483,35 @@ async function montarSystem() {
 }
 
 async function processarComLLM(userPrompt, nome) {
-  const { texto: respostaBruta, uso } = await chamarLLM(userPrompt, await montarSystem());
-
+  const system = await montarSystem();
   let dados;
-  try {
-    dados = extrairJson(respostaBruta);
-  } catch (err) {
-    const trecho = String(respostaBruta).replace(/\s+/g, ' ').slice(0, 180);
-    console.error('[report] resposta não-JSON da LLM:', respostaBruta);
-    throw new Error(
-      `Não foi possível interpretar a resposta da LLM como JSON: ${err.message} — a IA respondeu: "${trecho}…"`
-    );
+
+  // O corpo (seções) é o coração do handoff. Se a IA colapsar tudo no resumo +
+  // abertura e devolver menos de 2 seções, tenta de novo com um empurrão — em vez
+  // de entregar um report oco.
+  for (let tentativa = 0; tentativa < 2; tentativa++) {
+    const reforco =
+      tentativa === 0
+        ? ''
+        : '\n\nATENÇÃO: o corpo do relatório veio incompleto. Gere DE NOVO com no MÍNIMO 2 seções de análise, incluindo obrigatoriamente "O que o closer deve bater" (numerada). A abertura não substitui as seções.';
+    const { texto: respostaBruta, uso } = await chamarLLM(userPrompt + reforco, system);
+
+    try {
+      dados = normalizarDados(extrairJson(respostaBruta));
+    } catch (err) {
+      const trecho = String(respostaBruta).replace(/\s+/g, ' ').slice(0, 180);
+      console.error('[report] resposta não-JSON da LLM:', respostaBruta);
+      throw new Error(
+        `Não foi possível interpretar a resposta da LLM como JSON: ${err.message} — a IA respondeu: "${trecho}…"`
+      );
+    }
+    dados.uso = uso;
+    if ((dados.secoes || []).length >= 2) break;
+    console.warn(`[report] corpo com ${(dados.secoes || []).length} seção(ões); tentando de novo.`);
   }
 
-  dados = normalizarDados(dados);
-
+  const uso = dados.uso;
+  delete dados.uso;
   dados.lead = escolherNomeDoLead(dados.lead, nome);
   // O servidor registra o consumo e tira este campo antes de devolver o report.
   dados.uso = uso;
