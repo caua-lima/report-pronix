@@ -83,8 +83,12 @@
     summary:hover { color: var(--text-2); }
     details[open] summary { margin-bottom: 8px; }
 
-    #dl { display: block; margin-top: 12px; text-decoration: none; }
-    #dl button { width: 100%; }
+    #dl { display: block; width: 100%; margin-top: 12px; }
+    /* Campos editáveis do report */
+    #report [data-edit] { border-radius: 4px; outline: none; transition: background .12s, box-shadow .12s; }
+    #report [data-edit]:hover { background: color-mix(in srgb, var(--ouro) 14%, transparent); }
+    #report [data-edit]:focus { background: color-mix(in srgb, var(--ouro) 18%, transparent); box-shadow: 0 0 0 2px var(--ring); }
+    .edit-dica { font-size: 10.5px; color: var(--muted); margin-top: 10px; }
 
     /* ---------- Report ---------- */
     .report {
@@ -126,8 +130,9 @@
 
     <div id="status" class="status"></div>
 
-    <a id="dl" class="hidden" target="_blank"><button><svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:-2px;flex:none" fill="none" stroke="#121214" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg> Baixar PDF</button></a>
     <div id="report" class="report hidden"></div>
+    <div class="edit-dica hidden" id="editDica">Clique em qualquer trecho do report para editar. O PDF sai com as suas alterações.</div>
+    <button id="dl" class="hidden"><svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:-2px;flex:none" fill="none" stroke="#121214" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg> Baixar PDF</button>
 
     <details>
       <summary><svg viewBox="0 0 24 24" width="12" height="12" style="vertical-align:-2px;flex:none" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9 2 2 0 1 1-2.8 2.8 1.7 1.7 0 0 0-2.9 1.2 2 2 0 1 1-4 0 1.7 1.7 0 0 0-2.9-1.2 2 2 0 1 1-2.8-2.8A1.7 1.7 0 0 0 3 13a2 2 0 1 1 0-4 1.7 1.7 0 0 0 1.2-2.9 2 2 0 1 1 2.8-2.8A1.7 1.7 0 0 0 10 3a2 2 0 1 1 4 0 1.7 1.7 0 0 0 2.9 1.2 2 2 0 1 1 2.8 2.8A1.7 1.7 0 0 0 21 10a2 2 0 1 1 0 4 1.7 1.7 0 0 0-1.6 1"/></svg> Servidor</summary>
