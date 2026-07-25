@@ -159,8 +159,17 @@
     .kpi .l { font-size: .68rem; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: .07em; margin-bottom: 6px; }
     .kpi .n { font-size: 1.75rem; font-weight: 750; line-height: 1.15; letter-spacing: -.02em; font-variant-numeric: tabular-nums; color: var(--text); }
     .kpi .n.peq { font-size: 1.15rem; color: var(--text-2); font-weight: 700; }
-    /* O primeiro cartão é o número que importa: só ele leva o dourado. */
+    /* O primeiro cartão é o número que importa: só ele leva o dourado + acento. */
     .kpis .kpi:first-child .n { color: var(--ouro-tinta); }
+    .kpis:first-of-type .kpi:first-child {
+      border-color: color-mix(in srgb, var(--ouro) 45%, var(--border));
+      box-shadow: var(--shadow), inset 3px 0 0 var(--ouro);
+    }
+
+    /* Mini-barra proporcional dentro das tabelas de números (feel de analytics). */
+    .barra { height: 5px; border-radius: 3px; background: var(--card-2); overflow: hidden; margin-top: 7px; max-width: 180px; }
+    .barra > i { display: block; height: 100%; border-radius: 3px; background: linear-gradient(90deg, var(--ouro-tinta), var(--ouro)); min-width: 3px; }
+    td .rank { display: inline-block; min-width: 18px; color: var(--muted); font-variant-numeric: tabular-nums; font-weight: 700; font-size: .78rem; margin-right: 7px; }
 
     /* ---------- Filtro ---------- */
     .periodos { display: flex; gap: 6px; flex-wrap: wrap; }
@@ -773,17 +782,26 @@
         sel.value = atual;
 
         $('vazioUsuarios').style.display = s.porUsuario.length ? 'none' : '';
-        $('porUsuario').innerHTML = s.porUsuario.map((u) => `
+        const maxCustoU = Math.max(1e-9, ...s.porUsuario.map((u) => u.custo));
+        $('porUsuario').innerHTML = s.porUsuario.map((u, i) => `
           <tr>
-            <td><b>${esc(u.nome)}</b></td>
+            <td>
+              <b><span class="rank">${i + 1}</span>${esc(u.nome)}</b>
+              <div class="barra"><i style="width:${Math.max(3, (u.custo / maxCustoU) * 100)}%"></i></div>
+            </td>
             <td class="num">${u.total}</td>
             <td class="num">${usd(u.custo)}</td>
             <td class="num" style="color:var(--muted)">${usd(u.total ? u.custo / u.total : 0)}</td>
             <td class="num" style="color:var(--muted);font-size:.8rem">${nTok(u.entrada)} in · ${nTok(u.saida)} out</td>
           </tr>`).join('');
 
+        const maxCustoD = Math.max(1e-9, ...s.porDia.map((d) => d.custo));
         $('porDia').innerHTML = s.porDia.map((d) => `
-          <tr><td>${diaBR(d.dia)}</td><td class="num">${d.total}</td><td class="num">${usd(d.custo)}</td></tr>`).join('')
+          <tr>
+            <td>${diaBR(d.dia)}<div class="barra"><i style="width:${Math.max(3, (d.custo / maxCustoD) * 100)}%"></i></div></td>
+            <td class="num">${d.total}</td>
+            <td class="num">${usd(d.custo)}</td>
+          </tr>`).join('')
           || '<tr><td colspan="3" style="color:var(--muted)">Nenhum report neste período.</td></tr>';
 
         $('ultimos').innerHTML = s.ultimos.map((r) => `
