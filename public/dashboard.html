@@ -368,6 +368,8 @@
           <div class="kpi"><div class="l">Gasto no mês</div><div class="n peq" id="gCustoMes">$0</div></div>
           <div class="kpi"><div class="l">Total desde sempre</div><div class="n peq" id="gTotal">0</div></div>
           <div class="kpi"><div class="l">Gasto total</div><div class="n peq" id="gCusto">$0</div></div>
+          <div class="kpi"><div class="l">Média diária</div><div class="n peq" id="gMediaDia">$0</div></div>
+          <div class="kpi"><div class="l">Média mensal</div><div class="n peq" id="gMediaMes">$0</div></div>
         </div>
 
         <div class="card">
@@ -380,10 +382,18 @@
         </div>
 
         <div class="card">
-          <div class="head"><div class="t"><i data-ic="calendar"></i>Por dia</div><div class="sub">— quanto saiu em cada dia</div></div>
+          <div class="head"><div class="t"><i data-ic="calendar"></i>Por dia</div><div class="sub">— quanto saiu em cada dia, do primeiro ao último</div></div>
           <table>
             <thead><tr><th>Dia</th><th>Reports</th><th>Gasto</th></tr></thead>
             <tbody id="porDia"></tbody>
+          </table>
+        </div>
+
+        <div class="card">
+          <div class="head"><div class="t"><i data-ic="calendar"></i>Por mês</div><div class="sub">— histórico completo, para ver a tendência de gasto mensal</div></div>
+          <table>
+            <thead><tr><th>Mês</th><th>Reports</th><th>Gasto</th></tr></thead>
+            <tbody id="porMes"></tbody>
           </table>
         </div>
 
@@ -710,6 +720,10 @@
     // ---------- Aba: Números ----------
     const quando = (iso) => new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
     const diaBR = (d) => d.split('-').reverse().slice(0, 2).join('/');
+    const DIAS_SEMANA = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
+    const diaSemana = (d) => DIAS_SEMANA[new Date(d + 'T00:00:00').getDay()];
+    const MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+    const mesBR = (m) => { const [y, mm] = m.split('-'); return `${MESES[Number(mm) - 1]}/${y}`; };
     const nTok = (n) => (n >= 1000 ? (n / 1000).toFixed(1).replace('.', ',') + 'k' : String(n || 0));
 
     /** Custos por report são centavos de dólar: 2 casas viram $0,00 e escondem o número. */
@@ -773,6 +787,8 @@
         $('gCustoMes').textContent = usd(s.geral.custoMes);
         $('gTotal').textContent = s.geral.total;
         $('gCusto').textContent = usd(s.geral.custo);
+        $('gMediaDia').textContent = usd(s.geral.mediaDiaria);
+        $('gMediaMes').textContent = usd(s.geral.mediaMensal);
 
         // Mantém a escolha atual do filtro ao repovoar a lista de SDRs.
         const sel = $('filtroSdr');
@@ -798,11 +814,20 @@
         const maxCustoD = Math.max(1e-9, ...s.porDia.map((d) => d.custo));
         $('porDia').innerHTML = s.porDia.map((d) => `
           <tr>
-            <td>${diaBR(d.dia)}<div class="barra"><i style="width:${Math.max(3, (d.custo / maxCustoD) * 100)}%"></i></div></td>
+            <td>${diaBR(d.dia)} <span style="color:var(--muted);font-weight:400">· ${diaSemana(d.dia)}</span><div class="barra"><i style="width:${Math.max(3, (d.custo / maxCustoD) * 100)}%"></i></div></td>
             <td class="num">${d.total}</td>
             <td class="num">${usd(d.custo)}</td>
           </tr>`).join('')
           || '<tr><td colspan="3" style="color:var(--muted)">Nenhum report neste período.</td></tr>';
+
+        const maxCustoM = Math.max(1e-9, ...(s.geral.porMes || []).map((m) => m.custo));
+        $('porMes').innerHTML = (s.geral.porMes || []).map((m) => `
+          <tr>
+            <td>${mesBR(m.mes)}<div class="barra"><i style="width:${Math.max(3, (m.custo / maxCustoM) * 100)}%"></i></div></td>
+            <td class="num">${m.total}</td>
+            <td class="num">${usd(m.custo)}</td>
+          </tr>`).join('')
+          || '<tr><td colspan="3" style="color:var(--muted)">Sem histórico ainda.</td></tr>';
 
         $('ultimos').innerHTML = s.ultimos.map((r) => `
           <tr>

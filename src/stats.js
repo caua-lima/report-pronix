@@ -95,17 +95,35 @@ async function resumo({ de, ate, sdr } = {}) {
     porDia.set(d, x);
   });
 
+  // Por dia e por mês, sobre TODO o histórico — a pergunta "quanto gasta por mês"
+  // só faz sentido olhando pra tudo, não só pro período filtrado no topo.
+  const porDiaGeral = new Map();
+  const porMesGeral = new Map();
+  todos.forEach((r) => {
+    const d = dia(r);
+    const m = d.slice(0, 7); // YYYY-MM
+    const custo = r.custo || 0;
+    const xd = porDiaGeral.get(d) || { dia: d, total: 0, custo: 0 };
+    xd.total++;
+    xd.custo += custo;
+    porDiaGeral.set(d, xd);
+    const xm = porMesGeral.get(m) || { mes: m, total: 0, custo: 0 };
+    xm.total++;
+    xm.custo += custo;
+    porMesGeral.set(m, xm);
+  });
+
   const hoje = hojeStr();
   return {
-    // Do período filtrado
+    // Do período filtrado — sempre em ordem cronológica: da primeira pra última.
     total: dentro.length,
     custo: soma(dentro),
     custoMedio: dentro.length ? soma(dentro) / dentro.length : 0,
     tokensEntrada: dentro.reduce((t, r) => t + (r.entrada || 0), 0),
     tokensSaida: dentro.reduce((t, r) => t + (r.saida || 0), 0),
     porUsuario: [...porUsuario.values()].sort((a, b) => b.total - a.total),
-    porDia: [...porDia.values()].sort((a, b) => (a.dia < b.dia ? 1 : -1)),
-    ultimos: dentro.slice(-60).reverse(),
+    porDia: [...porDia.values()].sort((a, b) => (a.dia < b.dia ? -1 : 1)),
+    ultimos: dentro.slice(-60),
     // Sempre sobre tudo, para o filtro não esconder o retrato geral
     geral: {
       total: todos.length,
@@ -113,6 +131,9 @@ async function resumo({ de, ate, sdr } = {}) {
       hoje: todos.filter((r) => dia(r) === hoje).length,
       custoHoje: soma(todos.filter((r) => dia(r) === hoje)),
       custoMes: soma(todos.filter((r) => dia(r) >= hoje.slice(0, 8) + '01')),
+      mediaDiaria: porDiaGeral.size ? soma(todos) / porDiaGeral.size : 0,
+      mediaMensal: porMesGeral.size ? soma(todos) / porMesGeral.size : 0,
+      porMes: [...porMesGeral.values()].sort((a, b) => (a.mes < b.mes ? -1 : 1)),
       sdrs: [...new Set(todos.map((r) => r.usuarioNome).filter(Boolean))].sort(),
     },
   };
