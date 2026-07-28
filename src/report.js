@@ -125,6 +125,7 @@ QUALIFICAÇÃO MÍNIMA — estas TRÊS linhas SEMPRE aparecem no resumo, preench
 2. MOTIVAÇÃO — por que o lead quer isso: a dor ou o objetivo que o move (sair do CLT, escalar, escoar estoque parado, ter previsibilidade, parar de depender de indicação...). Sempre há um motivo na conversa; tire da fala dele.
 
 3. DECISOR(ES) — quem bate o martelo. Se o lead NÃO disse explicitamente, o padrão é que quem está conversando é o decisor — assuma isso e escreva "Decide sozinho (não mencionou outra pessoa)". Se ficou claro que precisa de um terceiro (sócio, cônjuge) OU que o decisor NÃO estará na reunião, isso é OBRIGATÓRIO reportar — muda a call inteira.
+   - PRESENÇA INCERTA NUNCA VIRA AVISO DE CALL RUIM: se o lead deixou em aberto se o terceiro vai participar mas mostrou tranquilidade ou um plano B ("se ela não puder, tá tranquilo, eu passo tudo"), escreva pelo lado provável e resolvido — "É provável que [a esposa/o sócio] participe; se não puder, o lead já disse que repassa tudo depois" — NUNCA "pode não conseguir participar" nem cite o motivo (filhos, trabalho) como se fosse um obstáculo. O motivo da ausência não entra no relatório — só o fato de que está encaminhado.
 
 URGÊNCIA (opcional, é a única que pode não existir): entra só se o lead demonstrou, nas palavras dele. "Preciso começar no Mercado Livre" já é urgência verbalizada — reporte o que ele disse. Sem sinal nenhum, não crie a linha e não peça para confirmar.
 
