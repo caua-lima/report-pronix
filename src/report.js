@@ -322,6 +322,11 @@ const REPORT_TOOL = {
   },
 };
 
+// Status transitórios do lado da Anthropic (sobrecarga, rate limit, instabilidade) —
+// vale tentar de novo. Erros como 400/401 são do nosso pedido: repetir não resolve.
+const STATUS_TRANSITORIO = new Set([429, 500, 502, 503, 529]);
+const espera = (ms) => new Promise((r) => setTimeout(r, ms));
+
 async function chamarAnthropic(userPrompt, system) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
@@ -329,30 +334,40 @@ async function chamarAnthropic(userPrompt, system) {
   }
   const model = process.env.ANTHROPIC_MODEL || 'claude-sonnet-5';
 
-  const resp = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({
-      model,
-      max_tokens: 4000,
-      // system como bloco cacheado: prompt + exemplos + playbook são iguais em todo
-      // report, então o cache relê esse prefixo a ~0,1x do preço. TTL de 1h (em vez
-      // dos 5min padrão): num dia de trabalho o prefixo é reescrito ~1x/hora, não a
-      // cada report espaçado — menos reescrita = menos gasto.
-      system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral', ttl: '1h' } }],
-      tools: [REPORT_TOOL],
-      tool_choice: { type: 'tool', name: 'gerar_relatorio' },
-      messages: [{ role: 'user', content: userPrompt }],
-    }),
-  });
+  const ESPERAS_MS = [1500, 4000]; // até 3 tentativas: 1ª direto, 2ª e 3ª com espera.
+  let resp;
+  for (let tentativa = 0; ; tentativa++) {
+    resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model,
+        max_tokens: 4000,
+        // system como bloco cacheado: prompt + exemplos + playbook são iguais em todo
+        // report, então o cache relê esse prefixo a ~0,1x do preço. TTL de 1h (em vez
+        // dos 5min padrão): num dia de trabalho o prefixo é reescrito ~1x/hora, não a
+        // cada report espaçado — menos reescrita = menos gasto.
+        system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral', ttl: '1h' } }],
+        tools: [REPORT_TOOL],
+        tool_choice: { type: 'tool', name: 'gerar_relatorio' },
+        messages: [{ role: 'user', content: userPrompt }],
+      }),
+    });
+    if (resp.ok || !STATUS_TRANSITORIO.has(resp.status) || tentativa >= ESPERAS_MS.length) break;
+    await espera(ESPERAS_MS[tentativa]);
+  }
 
   if (!resp.ok) {
     const detalhe = await resp.text().catch(() => '');
-    throw new Error(`Anthropic respondeu ${resp.status}: ${detalhe.slice(0, 300)}`);
+    const msg =
+      resp.status === 529
+        ? 'A Anthropic está sobrecarregada no momento. Tente gerar o report de novo em alguns segundos.'
+        : `Anthropic respondeu ${resp.status}: ${detalhe.slice(0, 300)}`;
+    throw new Error(msg);
   }
 
   const json = await resp.json();
