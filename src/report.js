@@ -451,8 +451,12 @@ async function dadosDireto({ mensagens, nome, sdr } = {}) {
     );
   }
 
-  const userPrompt = montarUserPrompt(montarHistoricoFormatado(historico), nome, sdr);
-  return processarComLLM(userPrompt, nome);
+  const historicoFormatado = montarHistoricoFormatado(historico);
+  const userPrompt = montarUserPrompt(historicoFormatado, nome, sdr);
+  const dados = await processarComLLM(userPrompt, nome);
+  // Vai pro PDF como apêndice, depois de tudo — o closer confere o desenrolar da conversa.
+  dados.transcricao = historicoFormatado;
+  return dados;
 }
 
 async function gerarReportDireto(payload = {}) {
@@ -568,7 +572,9 @@ async function dadosDeTexto({ texto, nome, sdr } = {}) {
     throw new Error('Cole a conversa antes de gerar o report.');
   }
   const userPrompt = montarUserPrompt(conteudo, nome, sdr);
-  return processarComLLM(userPrompt, nome);
+  const dados = await processarComLLM(userPrompt, nome);
+  dados.transcricao = conteudo;
+  return dados;
 }
 
 async function gerarReportDeTexto(payload = {}) {

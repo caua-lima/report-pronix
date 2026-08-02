@@ -268,6 +268,7 @@ function saneadorDeReport(d) {
     citacoes: arr(d.citacoes).map(txt).map((t) => t.trim()).filter(Boolean),
     abertura: txt(d.abertura).trim(),
     frase_impacto: txt(d.frase_impacto).trim(),
+    transcricao: txt(d.transcricao).trim(),
   };
 }
 
