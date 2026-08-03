@@ -164,7 +164,7 @@ function render(doc, dados) {
     doc.y = y0 + h + 24;
   }
 
-  // ---- Abertura sugerida (fala pronta) — a última coisa que o closer lê antes da call ----
+  // ---- Abertura sugerida (fala pronta) — POR ÚLTIMO: é o que o closer usa ao vivo ----
   if (dados.abertura) {
     doc.moveDown(0.5);
     const pad = 12;
@@ -185,41 +185,6 @@ function render(doc, dados) {
     doc.y = y0 + alturaCartao + 16;
     doc.x = MARGIN;
   }
-
-  // ---- Transcrição da conversa — apêndice, depois de tudo, em página(s) própria(s) ----
-  if (dados.transcricao) renderTranscricao(doc, dados.transcricao, larg);
-}
-
-// A transcrição é referência crua: fica fora do limite de páginas do handoff (que é
-// só o corpo analítico) e sempre começa numa página nova, pra não brigar layout com
-// o resto do relatório.
-function renderTranscricao(doc, transcricao, larg) {
-  doc.addPage();
-  doc.font('Helvetica-Bold').fontSize(12.5).fillColor('#0f172a').text('Transcrição da conversa', MARGIN, MARGIN);
-  const ly = doc.y + 1.5;
-  doc.save().moveTo(MARGIN, ly).lineTo(MARGIN + 44, ly).lineWidth(2).strokeColor(OURO).stroke().restore();
-  doc.moveDown(0.6);
-
-  const PADRAO_FALA = /^(\[[^\]]+\]\s*)?(VENDEDOR|LEAD)([^:]*)?:\s*(.*)$/i;
-  String(transcricao)
-    .split('\n')
-    .map((l) => l.trim())
-    .filter(Boolean)
-    .forEach((linha) => {
-      novaPaginaSePreciso(doc, 20);
-      const m = linha.match(PADRAO_FALA);
-      if (m) {
-        const [, marcaTempo, quem, extra, resto] = m;
-        const cor = /LEAD/i.test(quem) ? OURO_ESC : '#475569';
-        const rotulo = `${marcaTempo || ''}${quem.toUpperCase()}${extra || ''}: `;
-        doc.font('Helvetica-Bold').fontSize(9.5).fillColor(cor)
-          .text(rotulo, MARGIN, doc.y, { continued: true, width: larg });
-        doc.font('Helvetica').fontSize(9.5).fillColor(TEXTO).text(resto, { width: larg });
-      } else {
-        doc.font('Helvetica').fontSize(9.5).fillColor(TEXTO).text(linha, MARGIN, doc.y, { width: larg });
-      }
-      doc.moveDown(0.35);
-    });
 }
 
 const MAX_PAGINAS = 2;
@@ -248,18 +213,11 @@ function enxugar(dados, ate) {
  * enxuga o conteúdo menos essencial e tenta de novo (render em memória é barato).
  */
 async function gerarPdfBuffer(dados) {
-  // O teto de 2 páginas é do handoff (o corpo analítico) — a transcrição é apêndice à
-  // parte, então mede e corta sem ela, e só no fim volta a incluir no render final.
-  const { transcricao, ...core } = dados;
-  let dadosCore = core;
-  let ultimo = await renderizarPdf(dadosCore);
+  let ultimo = await renderizarPdf(dados);
   for (let n = 0; ultimo.paginas > MAX_PAGINAS && n < CORTES.length; n++) {
-    dadosCore = enxugar(core, n);
-    ultimo = await renderizarPdf(dadosCore);
+    ultimo = await renderizarPdf(enxugar(dados, n));
   }
-  if (!transcricao) return ultimo.buffer;
-  const final = await renderizarPdf({ ...dadosCore, transcricao });
-  return final.buffer;
+  return ultimo.buffer;
 }
 
 function renderizarPdf(dados) {
