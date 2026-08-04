@@ -169,11 +169,32 @@ function render(doc, dados) {
     doc.moveDown(0.5);
     const pad = 12;
     const wTxt = larg - pad * 2 - 4;
+
+    // Pontos-chave (Investimento/Motivação/Decisor) logo abaixo da fala: entre uma
+    // call e outra o closer bate o olho só neste card e já tem o essencial, sem
+    // rolar até a tabela do topo. São os mesmos 3 campos que o resumo já garante
+    // preenchidos — não chama a IA de novo, é só reaproveitar o que já veio.
+    const normalizado = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+    const rotulosChave = ['investimento', 'motiva', 'decisor'];
+    const pontosChave = rotulosChave
+      .map((alvo) => (dados.resumo || []).find((r) => normalizado(r.rotulo).includes(alvo)))
+      .filter(Boolean);
+
     doc.font('Helvetica-Bold').fontSize(8.5);
     const hRot = doc.heightOfString('COMO INICIAR A REUNIÃO', { width: wTxt });
     doc.font('Helvetica-Oblique').fontSize(10.5);
     const hTxt = doc.heightOfString(`“${dados.abertura}”`, { width: wTxt, lineGap: 1.5 });
-    const alturaCartao = pad * 2 + hRot + 6 + hTxt;
+
+    doc.font('Helvetica').fontSize(8.5);
+    let hChave = 0;
+    if (pontosChave.length) {
+      hChave = 14; // divisor + respiro
+      pontosChave.forEach((p) => {
+        hChave += doc.heightOfString(`${p.rotulo}: ${p.valor}`, { width: wTxt, lineGap: 1 }) + 4;
+      });
+    }
+
+    const alturaCartao = pad * 2 + hRot + 6 + hTxt + hChave;
     novaPaginaSePreciso(doc, alturaCartao + 12);
     const y0 = doc.y;
     doc.save().roundedRect(MARGIN, y0, larg, alturaCartao, 9).fillAndStroke(CLARO, BORDA).restore();
@@ -182,6 +203,21 @@ function render(doc, dados) {
       .text('COMO INICIAR A REUNIÃO', MARGIN + pad + 4, y0 + pad, { width: wTxt, characterSpacing: 0.5 });
     doc.font('Helvetica-Oblique').fontSize(10.5).fillColor('#1f2937')
       .text(`“${dados.abertura}”`, MARGIN + pad + 4, doc.y + 6, { width: wTxt, lineGap: 1.5 });
+
+    if (pontosChave.length) {
+      doc.moveDown(0.35);
+      const lyChave = doc.y;
+      doc.save().moveTo(MARGIN + pad + 4, lyChave).lineTo(MARGIN + pad + 44, lyChave)
+        .lineWidth(1).strokeColor(BORDA).stroke().restore();
+      doc.moveDown(0.3);
+      pontosChave.forEach((p) => {
+        doc.font('Helvetica-Bold').fontSize(8.5).fillColor(OURO_ESC)
+          .text(`${p.rotulo}: `, MARGIN + pad + 4, doc.y, { continued: true, width: wTxt });
+        doc.font('Helvetica').fontSize(8.5).fillColor('#44403c').text(p.valor, { width: wTxt, lineGap: 1 });
+        doc.moveDown(0.15);
+      });
+    }
+
     doc.y = y0 + alturaCartao + 16;
     doc.x = MARGIN;
   }
