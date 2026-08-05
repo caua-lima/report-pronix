@@ -28,12 +28,18 @@
     return btoa(bin);
   }
 
-  // Blobs de áudio capturados pelo inject.js (hook do URL.createObjectURL).
+  // Blobs de áudio capturados pelo inject.js (hook do URL.createObjectURL). O hook
+  // é permissivo (pega tipo vazio também, porque a voz do WhatsApp às vezes vem
+  // assim) — então a fila recebe bastante coisa que NÃO é áudio (fotos, figurinhas,
+  // thumbnails também usam createObjectURL). Numa conversa longa com muitos áudios,
+  // um buffer pequeno é atropelado antes do código alcançar os áudios mais adiante
+  // na lista — por isso o teto é alto: cabe uma conversa cheia sem perder nada.
   const blobsAudio = [];
+  const MAX_BLOBS_FILA = 500;
   window.addEventListener('message', (ev) => {
     if (ev.source === window && ev.data && ev.data.__crAudio && ev.data.url) {
       blobsAudio.push({ url: ev.data.url, ts: ev.data.ts || Date.now() });
-      if (blobsAudio.length > 40) blobsAudio.shift();
+      if (blobsAudio.length > MAX_BLOBS_FILA) blobsAudio.shift();
     }
   });
 
@@ -130,12 +136,23 @@
       }
     }
 
-    // 3) Consome o próximo blob que SEJA áudio (valida magic bytes; descarta
-    //    imagem/pdf/etc.). Áudios processados de cima p/ baixo = ordem cronológica.
-    //    iteracoes controla a paciência (cada iteração ~150ms): a repescagem
-    //    aumenta isso para os áudios que demoram a carregar.
+    // 3) Busca os bytes do áudio, em duas fontes por iteração:
+    //    a) o <audio> DESTA mensagem (el.querySelector, nunca document.querySelector
+    //       — pegar o <audio> global seria o de OUTRA linha). É o sinal mais confiável
+    //       porque está amarrado à própria mensagem, não a uma fila compartilhada.
+    //    b) a fila global de blobs do hook, como repescagem (valida magic bytes;
+    //       descarta imagem/pdf/etc.). iteracoes controla a paciência (~150ms cada);
+    //       a repescagem aumenta isso para os áudios que demoram a carregar.
     let descartados = 0;
     for (let i = 0; i < iteracoes; i++) {
+      const a = el.querySelector('audio');
+      if (a && (a.currentSrc || a.src || '').startsWith('blob:')) {
+        a.muted = true;
+        a.volume = 0;
+        try { a.pause(); } catch (_) {}
+        const buf = await fetchArrayBuffer(a.currentSrc || a.src);
+        if (ehAudioBuffer(buf)) { logA(`áudio ${dbg || ''}: via <audio> OK ${buf.byteLength}`); return arrayBufferToBase64(buf); }
+      }
       for (const b of blobsAudio) {
         if (b.usado) continue;
         b.usado = true;
@@ -145,15 +162,6 @@
           return arrayBufferToBase64(buf);
         }
         descartados++;
-      }
-      // elemento <audio>, se esta versão usar
-      const a = el.querySelector('audio') || document.querySelector('audio');
-      if (a && (a.currentSrc || a.src || '').startsWith('blob:')) {
-        a.muted = true;
-        a.volume = 0;
-        try { a.pause(); } catch (_) {}
-        const buf = await fetchArrayBuffer(a.currentSrc || a.src);
-        if (ehAudioBuffer(buf)) { logA(`áudio ${dbg || ''}: via <audio> OK ${buf.byteLength}`); return arrayBufferToBase64(buf); }
       }
       await sleep(150);
     }
