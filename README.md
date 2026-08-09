@@ -1,146 +1,185 @@
-# WhatsApp Closer Report
+# PRONIX · Closer Report
 
-Extensão do Chrome + servidor local que lê a **conversa aberta no WhatsApp Web**
-(incluindo o histórico retroativo) e gera, com um clique, um relatório de handoff de
-pré-vendas em Word (`.docx`).
+Extensão do Chrome + servidor (Node/Express) que lê a **conversa aberta no WhatsApp
+Web** — incluindo o histórico retroativo e os áudios — e gera, com um clique, um
+**relatório de handoff de pré-vendas em PDF** para o closer.
 
-Sem configurar lead por lead, sem QR code, sem bot: você abre a conversa no WhatsApp
-Web, clica na extensão e baixa o relatório.
+Sem bot, sem QR code, sem biblioteca não-oficial do WhatsApp: a extensão só lê a página
+que o SDR já tem aberta e logada.
+
+## O que o report faz
+
+- Lê a conversa inteira (texto + áudio, transcrito automaticamente) e monta um PDF de
+  no máximo 2 páginas com resumo, seções de análise, citações do lead e uma fala pronta
+  para o closer abrir a call.
+- **Investimento, Motivação e Decisor(es) nunca ficam em branco** — o prompt é
+  instruído a extrair o sinal de qualificação que já está na conversa (inclusive
+  estrutura implícita: "tenho uma distribuidora há 12 anos" já responde investimento,
+  sem precisar de número).
+- **Tom só positivo** — o relatório é pensado para "vender" o lead pro closer: nenhum
+  ponto de atenção real (objeção, decisor ausente, orçamento apertado) é omitido, mas
+  tudo é escrito como próximo passo estratégico, nunca como alerta ou veredito ruim.
+- O card final ("Como iniciar a reunião") traz a fala pronta **e** os 3 pontos-chave
+  do resumo juntos — o closer não precisa reler o handoff inteiro entre uma call e
+  outra.
+- É editável: dá pra corrigir qualquer campo (no popup da extensão ou no dashboard) e
+  rebaixar o PDF sem chamar a IA de novo — de graça.
 
 ## Como funciona
 
 ```
-WhatsApp Web  ──(extensão lê a conversa)──▶  servidor local (Node)
-                                                   │
-                                          LLM (Anthropic/Ollama)
-                                                   │
-                                             relatório .docx  ◀── você baixa
+WhatsApp Web
+   │  extensão (content.js) lê o DOM, rola o histórico, captura áudio
+   ▼
+servidor (Express) ── autentica por chave (x-cr-key) ──▶ usuarios.js
+   │
+   ├─ transcreve os áudios (Groq API, ou faster-whisper local)
+   ├─ chama a Anthropic (prompt cacheado + saída estruturada) ──▶ src/report.js
+   ├─ monta o PDF (pdfkit, marca PRONIX)                       ──▶ src/generatePdf.js
+   └─ registra custo/uso                                        ──▶ src/stats.js
+   ▼
+PDF em base64 ──▶ extensão baixa direto (sem passar por disco)
 ```
 
-1. A **extensão** roda em cima do `web.whatsapp.com`. Ao clicar em *Gerar Report*, ela
-   rola a conversa aberta para carregar o histórico e lê todas as mensagens.
-2. Manda a conversa para o **servidor local**, que chama a LLM e monta o `.docx`.
-3. A extensão mostra a prévia e o botão de download.
+- **Local** (`npm start`): dados em `data/*.json`; transcrição via `faster-whisper`
+  (Python) a menos que `GROQ_API_KEY` esteja definida.
+- **Produção** (Vercel): mesmo `server.js`, exposto por `api/index.js`; dados no
+  Vercel KV/Upstash Redis (sem isso, a Vercel nem sobe — disco não persiste lá);
+  transcrição sempre via Groq (não há Python na Vercel).
 
-**Áudios:** a extensão lê a *transcrição nativa do WhatsApp* (quando disponível). Se a
-sua conta tiver a opção **WhatsApp → Configurações → Conversas → Transcrever áudios**,
-ative-a e o texto dos áudios entra no relatório. Se essa opção **não existir** na sua
-conta (varia por versão/idioma/região), não há transcrição para ler e os áudios entram
-no relatório apenas como `[áudio]` — o WhatsApp Web não expõe o arquivo de áudio para
-transcrição automática sem tocá-lo.
+`src/db.js` decide sozinho entre os dois modos, olhando se `KV_REST_API_URL` +
+`KV_REST_API_TOKEN` estão preenchidas.
 
-## Modo manual (colar conversa + transcrever áudio)
+## Estrutura do projeto
 
-Com o servidor rodando, abra **http://localhost:3000/manual** para gerar o report a
-partir de uma conversa colada — útil quando a extensão não pega os áudios:
+```
+server.js                  Express: rotas de página, admin, report e transcrição
+api/index.js                Entrada da Vercel (reexporta server.js)
+vercel.json                 Config da Vercel (rewrite tudo pra api/index.js)
 
-- **Transcrever áudio**: baixe/salve o áudio do WhatsApp, selecione o arquivo e clique
-  em *Transcrever e adicionar*. Ele é transcrito **localmente** com `faster-whisper` e o
-  texto vai direto para a caixa da conversa. Nada de áudio sai da máquina.
-- **Colar a conversa**: cole o texto (identificando `EU:`/`LEAD:` ajuda) e clique em
-  *Gerar Report* para baixar o `.docx`.
+src/
+  report.js                 Prompt do relatório, chamada à Anthropic/Ollama, validação
+  generatePdf.js             Monta o PDF (pdfkit) com a marca PRONIX, teto de 2 páginas
+  generateDoc.js             Legado (só o helper slugify ainda é usado)
+  transcribe.js               Escolhe Groq (nuvem) ou faster-whisper (local)
+  groq.js                     Cliente da API do Groq (Whisper)
+  usuarios.js                  Acessos da equipe (chave pnx_..., sem e-mail real)
+  base.js                      Base de conhecimento (playbook) que entra em todo report
+  stats.js                     Histórico de reports gerados + custo em dólar
+  precos.js                    Tabela de preço por modelo (calcula o custo de cada report)
+  db.js                        Redis (Vercel KV) em produção, data/*.json localmente
 
-Requer `faster-whisper` (Python) para a transcrição:
-`pip install faster-whisper --break-system-packages`.
+extension/                  Extensão MV3 (publicada na Chrome Web Store)
+  manifest.json
+  content.js                  Lê o DOM do WhatsApp, rola o histórico, captura áudio
+  inject.js                   Roda no contexto da página (world: MAIN): hook de áudio
+  background.js                Service worker: chama o servidor por trás da CSP do WhatsApp
+  popup.html / popup.js        UI: gerar, editar e baixar o report
 
-## Requisitos
+public/                     Servido como estático pelo Express
+  dashboard.html               Painel (gerar report manual, acessos, números, base, extensão)
+  dia.html                      Resumo do dia (reports gerados)
+  privacidade.html              Política de privacidade (exigida pela Chrome Web Store)
+  icons/                        Favicon (mesma marca da extensão)
+  PRONIX-extensao.zip           Gerado por `npm run empacotar`, servido pra equipe baixar
 
-- Node.js 18+ (usa `fetch` nativo).
-- Google Chrome (ou Edge/Brave — qualquer navegador Chromium).
-- Uma chave da Anthropic **ou** Ollama rodando local (custo zero).
-- Python + `faster-whisper` **apenas** se for usar a transcrição de áudio no modo manual.
+scripts/
+  transcribe.py                faster-whisper local (só usado sem GROQ_API_KEY)
 
-## Instalação
+data/                        (git-ignorado) usuarios.json, reports.json, base.json locais
+output/                      (git-ignorado) PDFs gerados localmente fora do fluxo da API
+```
 
-### 1. Servidor
+## Rodando localmente
 
 ```bash
 npm install
-cp .env.example .env      # e preencha
+cp .env.example .env      # preencha pelo menos ANTHROPIC_API_KEY e ADMIN_PASSWORD
+npm start                  # http://localhost:3000
 ```
 
-No `.env`, o essencial:
+Sem `KV_REST_API_URL`/`KV_REST_API_TOKEN`, os dados (acessos, base, histórico de
+reports) gravam em `data/*.json` — ótimo para testar, mas não sobrevive num deploy
+sem disco persistente (é exatamente por isso que a Vercel exige o KV).
 
-| Variável | Descrição |
-| --- | --- |
-| `COMPANY_NAME` | Nome da empresa (título do relatório). |
-| `PORT` | Porta do servidor (padrão 3000). |
-| `LLM_PROVIDER` | `anthropic` (padrão) ou `ollama`. |
-| `ANTHROPIC_API_KEY` / `ANTHROPIC_MODEL` | Credenciais da Anthropic. |
-| `OLLAMA_MODEL` / `OLLAMA_URL` | Config do Ollama local (custo zero). |
+### Extensão no Chrome
 
-### 2. Extensão no Chrome
+1. `npm run empacotar` (gera `public/PRONIX-extensao.zip`) — ou use a pasta `extension/`
+   direto, sem zipar.
+2. `chrome://extensions` → ative o **Modo do desenvolvedor** → **Carregar sem
+   compactação** → selecione a pasta `extension/`.
+3. Abra o popup, cole a URL do servidor (`http://localhost:3000` local, ou a URL da
+   Vercel em produção) e uma chave válida (crie uma em `/` → aba **Acessos**, como
+   admin).
 
-1. Abra `chrome://extensions`.
-2. Ative o **Modo do desenvolvedor** (canto superior direito).
-3. Clique em **Carregar sem compactação** e selecione a pasta `extension/`.
-4. Fixe a extensão na barra (ícone de quebra-cabeça → alfinete).
+Em produção o time usa a versão publicada na **Chrome Web Store** (atualiza sozinha) —
+ver o passo a passo de instalação para o SDR em [`GUIA-SDR.md`](GUIA-SDR.md).
 
-## Uso
+## Deploy (Vercel)
 
-```bash
-npm start        # deixe o servidor rodando
-```
+1. Conecte o repositório na Vercel.
+2. Adicione um **Vercel KV** (ou Upstash Redis) ao projeto — sem isso o servidor recusa
+   gravar dados em produção (ver `src/db.js`).
+3. Preencha as variáveis de ambiente do projeto na Vercel (mesmas do `.env.example`,
+   sem `PYTHON_BIN`/`WHISPER_MODEL_SIZE` — não há Python lá, então `GROQ_API_KEY` é
+   obrigatória para transcrever áudio em produção).
+4. `git push origin main` — a Vercel builda e publica sozinha (`vercel.json` redireciona
+   tudo para `api/index.js`).
 
-1. Abra o **WhatsApp Web** e entre na conversa com o lead.
-2. Clique no ícone da extensão → **Testar** (confere o servidor) → **Gerar Report**.
-3. Um aviso aparece no **canto inferior direito da tela do WhatsApp** com o progresso:
-   - **Lendo a conversa…** — não troque de conversa nesse momento (ela está lendo o histórico).
-   - **Gerando report…** — a partir daqui você já pode **fechar o popup e responder outros
-     leads**; o trabalho continua em segundo plano.
-   - **✅ Report pronto** — clique em **⬇ Baixar .docx** no próprio aviso.
-4. O popup também guarda o último report gerado (com botão de download) ao ser reaberto.
+O painel admin fica em `SUA_URL/` (aba **Acessos**), e é lá que se cria a chave de cada
+SDR — nada de e-mail real, é só nome + chave gerada.
 
-> A leitura é retroativa: ela sobe pela conversa para carregar o histórico. Em conversas
-> muito longas isso pode levar alguns segundos. Só a fase de leitura exige ficar na
-> conversa; a geração roda em background.
+## Variáveis de ambiente
 
-## Colocar online para a equipe (Cloudflare Tunnel)
+| Variável | Obrigatória | Descrição |
+| --- | --- | --- |
+| `COMPANY_NAME` | não (padrão `PRONIX`) | Nome exibido no cabeçalho do PDF. |
+| `ADMIN_PASSWORD` | sim, pra usar o painel admin | Senha reserva do painel — cria o primeiro acesso admin. |
+| `PORT` | não (padrão `3000`) | Porta do servidor local. |
+| `LLM_PROVIDER` | não (padrão `anthropic`) | `anthropic` ou `ollama`. |
+| `ANTHROPIC_API_KEY` | sim, se `LLM_PROVIDER=anthropic` | Chave da API da Anthropic. |
+| `ANTHROPIC_MODEL` | não (padrão `claude-sonnet-5`) | Modelo usado; precisa ter entrada em `src/precos.js` pra calcular custo. |
+| `OLLAMA_MODEL` / `OLLAMA_URL` | só se `LLM_PROVIDER=ollama` | Modelo e endpoint do Ollama local (custo zero). |
+| `GROQ_API_KEY` | sim, em produção (Vercel) | Transcrição de áudio via API do Groq (Whisper). Sem ela, cai no faster-whisper local. |
+| `GROQ_MODEL` | não (padrão `whisper-large-v3-turbo`) | Modelo de transcrição do Groq. |
+| `PYTHON_BIN` / `WHISPER_MODEL_SIZE` | só localmente, sem `GROQ_API_KEY` | Transcrição local via `faster-whisper` (`pip install faster-whisper`). |
+| `KV_REST_API_URL` / `KV_REST_API_TOKEN` | sim, na Vercel | Credenciais do Vercel KV/Upstash Redis. Vazias = grava em `data/*.json`. |
+| `TZ_RELATORIO` | não (padrão `America/Sao_Paulo`) | Fuso usado pra decidir o "dia" de cada report nos números do dashboard. |
 
-O servidor roda no seu PC e o túnel dá uma **URL pública gratuita** para o time — mantendo
-todas as funcionalidades (Whisper local + reconhecimento de voz).
+`SDR_NAME` no `.env.example` é só um nome de exibição de reserva para quando o PDF é
+gerado sem usuário autenticado (uso local avulso) — em uso normal, quem assina o
+report é sempre o dono da chave (`x-cr-key`).
 
-```bash
-# terminal 1 — servidor
-npm start
+## Custo por report
 
-# terminal 2 — túnel (URL pública)
-npm run tunel
-```
+A Anthropic é o único custo por report (Groq e o dashboard/stats são gratuitos). O
+prompt usa **cache** (system + exemplos + base de conhecimento ficam num prefixo
+cacheado, TTL de 1h): a partir do segundo report do dia, a maior parte do prompt é lida
+a ~0,1x do preço normal. `src/precos.js` calcula o custo real de cada report (já
+considerando cache) e `src/stats.js` guarda esse número — dá pra ver o total, a média
+diária/mensal e o gasto por SDR na aba **Reports gerados** do dashboard.
 
-O `cloudflared` imprime uma URL tipo `https://algo-aleatorio.trycloudflare.com`.
+Reeditar um report e baixar o PDF de novo (`/api/pdf`) **não** chama a IA — não conta
+como um novo report nem soma custo.
 
-**Onboarding do time:**
-1. Abra `SUA_URL/admin`, entre com a `ADMIN_PASSWORD` do `.env`.
-2. Crie um acesso por SDR → copie a **chave** (`pnx_...`) de cada um.
-3. Cada SDR instala a extensão, cola a **URL do servidor** e a **chave** no popup e clica
-   em **Validar** (mostra "Conectado como Fulano").
-4. Cada um cadastra a **própria voz** em `SUA_URL/manual` (voz e contadores do dia ficam
-   separados por pessoa).
+## Base de conhecimento (playbook)
 
-> ⚠️ A URL do `trycloudflare` **muda a cada reinício** do túnel. Para uma URL fixa
-> (ex.: `report.pronix.com.br`), crie um túnel nomeado com uma conta Cloudflare + domínio.
-> E o PC precisa ficar ligado enquanto a equipe usa.
+Na aba **Base** do dashboard (admin), dá pra colar o script de qualificação, a oferta,
+objeções comuns e o perfil de cliente ideal. Esse conteúdo entra no prompt de todo
+report gerado — não é fato sobre o lead específico, é contexto para a IA calibrar o
+relatório (ex.: não fazer qualificação financeira de quem já tem uma distribuidora
+consolidada).
 
-## Riscos e custos
+## Riscos
 
-- **Risco de ban:** baixo. A extensão apenas **lê** a página que você já tem aberta e
-  logada — não cria nenhuma conexão não oficial (ao contrário de bots com biblioteca
-  não oficial). É um uso passivo.
-- **Fragilidade de layout:** a leitura depende do HTML do WhatsApp Web; se o WhatsApp
-  mudar a estrutura, os seletores em `extension/content.js` podem precisar de ajuste.
-- **Custo:** tudo gratuito, exceto a chamada à API da Anthropic por relatório (poucos
-  centavos). Com `LLM_PROVIDER=ollama` o custo é zero.
+- **Risco de ban do WhatsApp:** baixo — a extensão só **lê** a página que o SDR já tem
+  aberta e logada; não abre conexão própria com o WhatsApp (diferente de bots com
+  biblioteca não-oficial).
+- **Fragilidade de layout:** a leitura depende do HTML do WhatsApp Web. Se o WhatsApp
+  mudar a estrutura da página, os seletores em `extension/content.js` podem precisar
+  de ajuste (é o arquivo mais sensível do projeto).
 
-## Estrutura
+## Documentação relacionada
 
-```
-server.js              # servidor Express (endpoint /api/report-direto + download)
-src/report.js          # monta o prompt, chama a LLM, valida o JSON
-src/generateDoc.js     # gera o .docx no layout de handoff
-extension/
-  manifest.json        # extensão MV3
-  content.js           # lê a conversa (DOM + scroll) + aviso de progresso na tela
-  background.js        # service worker: chama o servidor (roda em background)
-  popup.html/.js       # botão "Gerar Report" + prévia + download
-```
+- [`GUIA-SDR.md`](GUIA-SDR.md) — passo a passo de instalação e uso para quem só vai
+  gerar reports (sem acesso admin).
