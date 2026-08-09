@@ -41,8 +41,14 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       const r = await chamar(msg.server + '/api/report-direto', {
         mensagens: msg.mensagens,
         nome: msg.nome,
+        forcarNovo: !!msg.forcarNovo,
       });
       if (!r.ok) return sendResponse({ ok: false, erro: r.erro });
+      // Idempotência: mesma conversa já gerada antes — o content script decide
+      // se pergunta ao SDR e reenvia com forcarNovo:true.
+      if (r.data && r.data.duplicado) {
+        return sendResponse({ ok: true, duplicado: true, existente: r.data.existente });
+      }
       sendResponse({
         ok: true,
         dados: r.data.dados,

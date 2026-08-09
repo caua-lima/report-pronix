@@ -59,6 +59,8 @@ vercel.json                 Config da Vercel (rewrite tudo pra api/index.js)
 
 src/
   report.js                 Prompt do relatório, chamada à Anthropic/Ollama, validação
+  conversation-normalizer.js Limpa/agrupa/corta a conversa antes do prompt (menos custo)
+  idempotencia.js             Hash da conversa (reportKey) — evita cobrar 2x a mesma
   generatePdf.js             Monta o PDF (pdfkit) com a marca PRONIX, teto de 2 páginas
   generateDoc.js             Legado (só o helper slugify ainda é usado)
   transcribe.js               Escolhe Groq (nuvem) ou faster-whisper (local)
@@ -67,7 +69,7 @@ src/
   base.js                      Base de conhecimento (playbook) que entra em todo report
   stats.js                     Histórico de reports gerados + custo em dólar
   precos.js                    Tabela de preço por modelo (calcula o custo de cada report)
-  db.js                        Redis (Vercel KV) em produção, data/*.json localmente
+  db.js                        Redis (Vercel KV) em produção, data/*.json localmente; trava de concorrência
 
 extension/                  Extensão MV3 (publicada na Chrome Web Store)
   manifest.json
@@ -145,6 +147,11 @@ SDR — nada de e-mail real, é só nome + chave gerada.
 | `PYTHON_BIN` / `WHISPER_MODEL_SIZE` | só localmente, sem `GROQ_API_KEY` | Transcrição local via `faster-whisper` (`pip install faster-whisper`). |
 | `KV_REST_API_URL` / `KV_REST_API_TOKEN` | sim, na Vercel | Credenciais do Vercel KV/Upstash Redis. Vazias = grava em `data/*.json`. |
 | `TZ_RELATORIO` | não (padrão `America/Sao_Paulo`) | Fuso usado pra decidir o "dia" de cada report nos números do dashboard. |
+| `ANTHROPIC_MODEL_ECO` / `ANTHROPIC_MODEL_PREMIUM` | não | Modelos usados só quando o pedido manda `qualidade: "eco"` ou `"premium"` explicitamente — nunca automático. `ANTHROPIC_MODEL` continua o padrão (`"standard"`). |
+| `MAX_CONVERSATION_CHARS` | não (padrão `24000`) | Teto de caracteres da conversa antes do prompt (ver [normalização](#normalização-e-custo) abaixo). |
+| `MAX_AUDIO_TRANSCRIPTION_CHARS` | não (padrão `6000`) | Teto de caracteres de uma transcrição de áudio (aplicado em `/api/transcrever`). |
+| `MAX_REPORT_OUTPUT_TOKENS` | não (padrão `4000`) | Teto de tokens de saída pedido à Anthropic. |
+| `USD_BRL_RATE` | não (padrão `5.3`) | Taxa fixa usada só para exibir a estimativa de custo em BRL — nunca busca câmbio numa API externa. |
 
 `SDR_NAME` no `.env.example` é só um nome de exibição de reserva para quando o PDF é
 gerado sem usuário autenticado (uso local avulso) — em uso normal, quem assina o
@@ -161,6 +168,35 @@ diária/mensal e o gasto por SDR na aba **Reports gerados** do dashboard.
 
 Reeditar um report e baixar o PDF de novo (`/api/pdf`) **não** chama a IA — não conta
 como um novo report nem soma custo.
+
+### Normalização e custo
+
+Antes de montar o prompt, `src/conversation-normalizer.js` limpa a conversa: remove
+mensagens vazias/duplicadas consecutivas, agrupa mensagens de texto seguidas do mesmo
+remetente (menos prefixo repetido) e, só se a conversa passar de `MAX_CONVERSATION_CHARS`,
+corta preservando as mensagens mais recentes **e** qualquer trecho com sinal comercial
+(dor, orçamento, prazo, decisor, objeção, concorrência, próximos passos, compromissos —
+essas nunca somem por causa do limite). Quando isso acontece, o report volta com
+`resumida: true` e a tela mostra um aviso.
+
+### Idempotência (não pagar duas vezes pela mesma conversa)
+
+`/api/report-direto` e `/api/report-texto` calculam uma `reportKey` (hash da conversa
+normalizada + versão do prompt + modo de qualidade, em `src/idempotencia.js`). Se já
+existe um report com a mesma chave, o servidor **não chama a IA de novo** — devolve
+`{ duplicado: true, existente: {...} }` e a extensão/dashboard perguntam ao SDR se quer
+gerar mesmo assim (`forcarNovo: true` no corpo do pedido pula a checagem). Uma trava
+por `reportKey` (`db.travar`/`db.destravar`) também impede que duas chamadas
+simultâneas da mesma conversa (ex.: um retry de rede) gerem e cobrem em paralelo.
+
+### Modo de qualidade e estimativa
+
+O pedido pode mandar `qualidade: "eco" | "standard" | "premium"` — troca só o modelo da
+Anthropic (`ANTHROPIC_MODEL_ECO`/`ANTHROPIC_MODEL`/`ANTHROPIC_MODEL_PREMIUM`); sem esse
+campo, o comportamento é o de sempre (`standard`). `POST /api/estimar-custo` calcula uma
+estimativa (entrada real da conversa normalizada + uma saída média por modo) sem chamar
+a IA nem nenhuma API de câmbio — o dashboard usa isso pra mostrar "Custo estimado" ao
+digitar a conversa no modo manual.
 
 ## Base de conhecimento (playbook)
 

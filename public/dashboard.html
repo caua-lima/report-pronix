@@ -271,6 +271,7 @@
 
         <label for="texto" style="margin-top:14px">Cole a conversa aqui (o texto dos áudios entra sozinho)</label>
         <textarea id="texto" placeholder="Cole a conversa inteira aqui…"></textarea>
+        <div id="estimativaCusto" class="hint" style="margin-top:6px"></div>
       </div>
 
       <button id="gerar" class="btn btn-block">Gerar Report</button>
@@ -980,7 +981,7 @@
       }
     }
     $('dl').addEventListener('click', baixarPdf);
-    async function gerar() {
+    async function gerar(forcarNovo) {
       const texto = $('texto').value.trim();
       if (!texto) { setStatus('status', 'Cole a conversa (ou jogue os áudios) antes de gerar.', { erro: true }); return; }
       $('gerar').disabled = true; $('resultado').classList.add('hidden');
@@ -988,22 +989,62 @@
       try {
         const r = await fetch('/api/report-texto', {
           method: 'POST', headers: hdr({ 'Content-Type': 'application/json' }),
-          body: JSON.stringify({ texto, nome: $('nomeLead').value.trim() }),
+          body: JSON.stringify({ texto, nome: $('nomeLead').value.trim(), forcarNovo: !!forcarNovo }),
         });
         const data = await r.json();
         if (!r.ok) throw new Error(data.erro || 'Erro ao gerar o report.');
+        // Idempotência: mesma conversa já gerada antes — não chama a IA de novo
+        // sem confirmação (evita cobrar duas vezes pelo mesmo report).
+        if (data.duplicado) {
+          setStatus('status', '');
+          const quando = new Date(data.existente.quando).toLocaleString('pt-BR');
+          const confirmar = confirm(
+            `Já existe um report igual pra ${data.existente.lead || 'este lead'}, gerado em ${quando}.\n\n` +
+            'Gerar de novo chama a IA outra vez (custo extra) — o PDF anterior não fica guardado aqui pra reabrir. Gerar mesmo assim?'
+          );
+          if (confirmar) return gerar(true);
+          return;
+        }
         reportAtual = data.dados; // fonte da verdade; edições atualizam este objeto
         $('report').innerHTML = renderReport(reportAtual);
         aplicarIcones($('report'));
         $('resultado').classList.remove('hidden');
-        setStatus('status', 'Report gerado. Edite se quiser e baixe o PDF.', { ok: true });
+        const avisoResumo = reportAtual.resumida
+          ? ' A conversa foi resumida para reduzir custo, preservando os pontos comerciais mais relevantes.'
+          : '';
+        setStatus('status', 'Report gerado. Edite se quiser e baixe o PDF.' + avisoResumo, { ok: true });
         $('resultado').scrollIntoView({ behavior: 'smooth', block: 'start' });
         carregarStats();
       } catch (err) {
         setStatus('status', err.message, { erro: true });
       } finally { $('gerar').disabled = false; }
     }
-    $('gerar').addEventListener('click', gerar);
+    $('gerar').addEventListener('click', () => gerar(false));
+
+    // Estimativa de custo (determinística, sem IA) — atualiza com debounce ao digitar.
+    let estimativaTimer = null;
+    async function atualizarEstimativaCusto() {
+      const texto = $('texto').value.trim();
+      const el = $('estimativaCusto');
+      if (!texto) { el.textContent = ''; return; }
+      try {
+        const r = await fetch('/api/estimar-custo', {
+          method: 'POST', headers: hdr({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ texto }),
+        });
+        const data = await r.json();
+        if (!r.ok) return;
+        el.textContent =
+          `Custo estimado: ~$${data.custoUsdEstimado.toFixed(4)} (~R$${data.custoBrlEstimado.toFixed(2)})` +
+          (data.resumida ? ' · conversa longa: será resumida ao gerar' : '');
+      } catch (_) {
+        // estimativa é só um auxílio — falha nela não pode travar o resto da tela
+      }
+    }
+    $('texto').addEventListener('input', () => {
+      clearTimeout(estimativaTimer);
+      estimativaTimer = setTimeout(atualizarEstimativaCusto, 700);
+    });
 
     async function validarChave() {
       const c = getChave();

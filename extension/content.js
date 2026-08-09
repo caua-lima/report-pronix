@@ -684,7 +684,7 @@
         loading: true,
       });
 
-      const resp = await new Promise((resolve) =>
+      let resp = await new Promise((resolve) =>
         chrome.runtime.sendMessage({ action: 'reportFetch', server, mensagens, nome }, resolve)
       );
 
@@ -692,6 +692,29 @@
         mostrarBadge({ texto: '' + ((resp && resp.erro) || 'Falha ao gerar o report.'), cor: '#ff6b6b' });
         jobEmAndamento = false;
         return;
+      }
+
+      // Idempotência: já existe um report idêntico pra esta conversa — não chama
+      // a IA de novo (nem cobra de novo) sem o SDR confirmar que quer mesmo.
+      if (resp.duplicado) {
+        const quando = new Date(resp.existente.quando).toLocaleString('pt-BR');
+        const confirmar = confirm(
+          `Já existe um report igual pra ${resp.existente.lead || 'este lead'}, gerado em ${quando}.\n\n` +
+            'Gerar de novo chama a IA outra vez (custo extra) — o PDF anterior não fica guardado aqui pra reabrir. Gerar mesmo assim?'
+        );
+        if (!confirmar) {
+          mostrarBadge({ texto: 'Geração cancelada — já existe um report igual pra esta conversa.', cor: '#f0ad4e' });
+          jobEmAndamento = false;
+          return;
+        }
+        resp = await new Promise((resolve) =>
+          chrome.runtime.sendMessage({ action: 'reportFetch', server, mensagens, nome, forcarNovo: true }, resolve)
+        );
+        if (!resp || !resp.ok) {
+          mostrarBadge({ texto: '' + ((resp && resp.erro) || 'Falha ao gerar o report.'), cor: '#ff6b6b' });
+          jobEmAndamento = false;
+          return;
+        }
       }
 
       chrome.storage.local.set({

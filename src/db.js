@@ -135,4 +135,36 @@ async function removerDaLista(chave, predicado) {
   return Number(await redis(['LREM', chave, 1, alvo])) > 0;
 }
 
-module.exports = { getJson, setJson, push, range, removerDaLista, usandoRedis };
+// --- Trava simples de concorrência (evita gerar o mesmo report 2x em paralelo,
+// ex.: um retry de rede duplicando a chamada enquanto a primeira ainda roda) ---
+const travasLocais = new Map(); // chave -> timestamp de expiração (só o processo local)
+
+/**
+ * Tenta travar `chave` por `ttlSeg` segundos. Devolve true se conseguiu
+ * (ninguém travou antes, ou a trava anterior já expirou), false se já está
+ * travada por outra geração em andamento. No Redis usa SET...NX EX (atômico,
+ * vale entre instâncias da Vercel); localmente um Map em memória basta,
+ * porque o modo local é sempre um processo só.
+ */
+async function travar(chave, ttlSeg = 120) {
+  if (usandoRedis) {
+    const ok = await redis(['SET', `lock:${chave}`, '1', 'NX', 'EX', String(ttlSeg)]);
+    return ok === 'OK';
+  }
+  const agora = Date.now();
+  const expiraEm = travasLocais.get(chave);
+  if (expiraEm && expiraEm > agora) return false;
+  travasLocais.set(chave, agora + ttlSeg * 1000);
+  return true;
+}
+
+/** Libera a trava antes do TTL — chamar sempre no finally de quem travou. */
+async function destravar(chave) {
+  if (usandoRedis) {
+    await redis(['DEL', `lock:${chave}`]).catch(() => {});
+    return;
+  }
+  travasLocais.delete(chave);
+}
+
+module.exports = { getJson, setJson, push, range, removerDaLista, travar, destravar, usandoRedis };

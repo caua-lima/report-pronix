@@ -6,13 +6,19 @@ const path = require('path');
 const fs = require('fs');
 const express = require('express');
 
-const { dadosDireto, dadosDeTexto } = require('./src/report');
+const { dadosDireto, dadosDeTexto, PROMPT_VERSAO } = require('./src/report');
 const { gerarPdfBuffer } = require('./src/generatePdf');
 const { transcribeBuffer } = require('./src/transcribe');
+const { normalizarConversa, normalizarTextoLivre } = require('./src/conversation-normalizer');
+const { calcularReportKey } = require('./src/idempotencia');
+const { custoUSD } = require('./src/precos');
 const usuarios = require('./src/usuarios');
 const stats = require('./src/stats');
 const db = require('./src/db');
 const base = require('./src/base');
+
+const QUALIDADES_VALIDAS = new Set(['eco', 'standard', 'premium']);
+const qualidadeValida = (q) => (QUALIDADES_VALIDAS.has(q) ? q : 'standard');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -180,12 +186,13 @@ app.get('/api/admin/stats', admin, async (req, res) => {
 // ---------------------------------------------------------------------------
 // Report (extensão e modo manual) — devolve o PDF em base64 (sem disco).
 // ---------------------------------------------------------------------------
-async function responderReport(req, res, dados, nome, origem) {
+async function responderReport(req, res, dados, nome, origem, reportKey) {
   // Quem assina o report é o dono da chave, não uma variável do servidor.
   dados.sdr = req.usuario.nome;
   const uso = dados.uso;
   delete dados.uso; // consumo é assunto do admin: não vai junto do report.
   const buffer = await gerarPdfBuffer(dados);
+  const arquivo = nomeArquivoPdf(dados.lead || nome);
   // O report é o que importa: se o registro falhar, não derruba a entrega do PDF.
   await stats
     .registrar({
@@ -194,13 +201,12 @@ async function responderReport(req, res, dados, nome, origem) {
       lead: dados.lead || nome || '',
       origem,
       uso,
+      reportKey,
+      arquivo,
+      qualidade: (uso && uso.qualidade) || 'standard',
     })
     .catch((err) => console.error('Falha ao registrar o report:', err.message));
-  res.json({
-    dados,
-    arquivo: nomeArquivoPdf(dados.lead || nome),
-    arquivoBase64: buffer.toString('base64'),
-  });
+  res.json({ dados, arquivo, arquivoBase64: buffer.toString('base64') });
 }
 
 // Report_Nome_Data.pdf — "Nome" é o lead, que é de quem o report fala.
@@ -214,23 +220,66 @@ function nomeArquivoPdf(lead) {
   return `Report_${limpo}_${p(d.getDate())}-${p(d.getMonth() + 1)}-${d.getFullYear()}.pdf`;
 }
 
+/**
+ * Idempotência + trava de concorrência: calcula a reportKey da conversa (já
+ * normalizada), confere se já existe um report idêntico (a não ser que o
+ * pedido mande forcarNovo) e trava a chave enquanto gera — assim um retry de
+ * rede não paga duas vezes pela mesma conversa. Devolve null se já respondeu
+ * (duplicata encontrada) ou a reportKey para o chamador usar/destravar.
+ */
+async function checarDuplicataETravar(req, res, reportKey) {
+  if (!req.body || !req.body.forcarNovo) {
+    const existente = await stats.buscarPorChave(reportKey);
+    if (existente) {
+      res.json({
+        duplicado: true,
+        existente: { id: existente.id, quando: existente.quando, lead: existente.lead, arquivo: existente.arquivo },
+      });
+      return false;
+    }
+  }
+  if (!(await db.travar(reportKey))) {
+    res.status(409).json({ erro: 'Já existe uma geração em andamento para esta conversa.' });
+    return false;
+  }
+  return true;
+}
+
 app.post('/api/report-direto', auth, async (req, res) => {
+  let reportKey = null;
   try {
-    const { mensagens, nome } = req.body || {};
-    const dados = await dadosDireto({ mensagens, nome, sdr: req.usuario.nome });
-    await responderReport(req, res, dados, nome, 'extensao');
+    const { mensagens, nome, qualidade } = req.body || {};
+    const qualidadeFinal = qualidadeValida(qualidade);
+    const { historico: normalizadas } = normalizarConversa(Array.isArray(mensagens) ? mensagens : []);
+    reportKey = calcularReportKey({ historicoNormalizado: normalizadas, promptVersao: PROMPT_VERSAO, qualidade: qualidadeFinal });
+
+    if (!(await checarDuplicataETravar(req, res, reportKey))) return;
+
+    const dados = await dadosDireto({ mensagens, nome, sdr: req.usuario.nome, qualidade: qualidadeFinal });
+    await responderReport(req, res, dados, nome, 'extensao', reportKey);
   } catch (err) {
     res.status(/Nenhuma mensagem/i.test(err.message) ? 400 : 500).json({ erro: err.message });
+  } finally {
+    if (reportKey) await db.destravar(reportKey).catch(() => {});
   }
 });
 
 app.post('/api/report-texto', auth, async (req, res) => {
+  let reportKey = null;
   try {
-    const { texto, nome } = req.body || {};
-    const dados = await dadosDeTexto({ texto, nome, sdr: req.usuario.nome });
-    await responderReport(req, res, dados, nome, 'manual');
+    const { texto, nome, qualidade } = req.body || {};
+    const qualidadeFinal = qualidadeValida(qualidade);
+    const { texto: textoNormalizado } = normalizarTextoLivre(String(texto || ''));
+    reportKey = calcularReportKey({ historicoNormalizado: textoNormalizado, promptVersao: PROMPT_VERSAO, qualidade: qualidadeFinal });
+
+    if (!(await checarDuplicataETravar(req, res, reportKey))) return;
+
+    const dados = await dadosDeTexto({ texto, nome, sdr: req.usuario.nome, qualidade: qualidadeFinal });
+    await responderReport(req, res, dados, nome, 'manual', reportKey);
   } catch (err) {
     res.status(/Cole a conversa/i.test(err.message) ? 400 : 500).json({ erro: err.message });
+  } finally {
+    if (reportKey) await db.destravar(reportKey).catch(() => {});
   }
 });
 
@@ -280,9 +329,55 @@ app.post('/api/transcrever', auth, async (req, res) => {
     if (!audioBase64) return res.status(400).json({ erro: 'Nenhum áudio recebido.' });
     const buffer = Buffer.from(audioBase64, 'base64');
     const ext = path.extname((nome || '').toString()) || '.ogg';
-    const texto = await transcribeBuffer(buffer, ext);
+    let texto = await transcribeBuffer(buffer, ext);
+    // Ponto único onde áudio vira texto (extensão e modo manual passam por aqui):
+    // corta transcrição excepcionalmente longa antes dela virar tokens de prompt.
+    const limite = Number(process.env.MAX_AUDIO_TRANSCRIPTION_CHARS) || 6000;
+    if (texto.length > limite) texto = texto.slice(0, limite) + '…';
 
     res.json({ texto });
+  } catch (err) {
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Estimativa de custo (antes de gerar) — determinística, sem chamar a LLM nem
+// nenhuma API de câmbio: usa o mesmo normalizador do report + src/precos.js.
+// ---------------------------------------------------------------------------
+const SAIDA_ESTIMADA_TOKENS = { eco: 800, standard: 1400, premium: 1800 };
+
+app.post('/api/estimar-custo', auth, async (req, res) => {
+  try {
+    const { mensagens, texto, qualidade } = req.body || {};
+    const qualidadeFinal = qualidadeValida(qualidade);
+    const { stats: normStats, resumida } = Array.isArray(mensagens)
+      ? normalizarConversa(mensagens)
+      : normalizarTextoLivre(String(texto || ''));
+
+    const modelo =
+      qualidadeFinal === 'eco'
+        ? process.env.ANTHROPIC_MODEL_ECO || 'claude-haiku-4-5'
+        : qualidadeFinal === 'premium'
+          ? process.env.ANTHROPIC_MODEL_PREMIUM || 'claude-opus-4-8'
+          : process.env.ANTHROPIC_MODEL || 'claude-sonnet-5';
+
+    const entrada = normStats.tokensEstimadosDepois;
+    const saida = SAIDA_ESTIMADA_TOKENS[qualidadeFinal];
+    const custoUsd = custoUSD({ modelo, entrada, saida });
+    // Taxa fixa/configurável — nunca busca câmbio externo a cada estimativa.
+    const taxa = Number(process.env.USD_BRL_RATE) || 5.3;
+
+    res.json({
+      qualidade: qualidadeFinal,
+      modelo,
+      resumida,
+      tokensEntradaEstimados: entrada,
+      tokensSaidaEstimados: saida,
+      custoUsdEstimado: custoUsd,
+      custoBrlEstimado: custoUsd * taxa,
+      aviso: 'Estimativa aproximada — o custo final pode variar com o cache de prompt e o tamanho real da resposta.',
+    });
   } catch (err) {
     res.status(500).json({ erro: err.message });
   }

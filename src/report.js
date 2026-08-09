@@ -4,8 +4,28 @@ require('dotenv').config();
 
 const { gerarPdf } = require('./generatePdf');
 const base = require('./base');
+const { normalizarConversa, normalizarTextoLivre } = require('./conversation-normalizer');
 
 const LLM_PROVIDER = (process.env.LLM_PROVIDER || 'anthropic').toLowerCase();
+
+// Sobe quando o SYSTEM_PROMPT mudar de um jeito que deveria invalidar reports
+// idênticos já gerados (ex.: mudança de tom, de campos obrigatórios). Compõe
+// a reportKey em src/idempotencia.js — sem isso, um prompt novo poderia ser
+// confundido com o antigo e nunca rodar de novo pra mesma conversa.
+const PROMPT_VERSAO = 'v1';
+
+// Modo de qualidade só troca o MODELO da Anthropic — nunca inferido sozinho:
+// "standard" é o comportamento de sempre (ANTHROPIC_MODEL), então nenhum
+// cliente existente muda sem mandar "qualidade" explicitamente no pedido.
+const QUALIDADES_VALIDAS = new Set(['eco', 'standard', 'premium']);
+function normalizarQualidade(q) {
+  return QUALIDADES_VALIDAS.has(q) ? q : 'standard';
+}
+function modeloPorQualidade(qualidade) {
+  if (qualidade === 'eco') return process.env.ANTHROPIC_MODEL_ECO || 'claude-haiku-4-5';
+  if (qualidade === 'premium') return process.env.ANTHROPIC_MODEL_PREMIUM || 'claude-opus-4-8';
+  return process.env.ANTHROPIC_MODEL || 'claude-sonnet-5';
+}
 
 // DOIS exemplos, de propósito com formatos diferentes: um exemplo só ensinaria a IA
 // a copiar aquele formato. Lado a lado, eles ensinam que o relatório se molda à conversa
@@ -327,12 +347,13 @@ const REPORT_TOOL = {
 const STATUS_TRANSITORIO = new Set([429, 500, 502, 503, 529]);
 const espera = (ms) => new Promise((r) => setTimeout(r, ms));
 
-async function chamarAnthropic(userPrompt, system) {
+async function chamarAnthropic(userPrompt, system, qualidade) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     throw new Error('ANTHROPIC_API_KEY não configurada no .env.');
   }
-  const model = process.env.ANTHROPIC_MODEL || 'claude-sonnet-5';
+  const model = modeloPorQualidade(normalizarQualidade(qualidade));
+  const maxTokens = Number(process.env.MAX_REPORT_OUTPUT_TOKENS) || 4000;
 
   const ESPERAS_MS = [1500, 4000]; // até 3 tentativas: 1ª direto, 2ª e 3ª com espera.
   let resp;
@@ -346,7 +367,7 @@ async function chamarAnthropic(userPrompt, system) {
       },
       body: JSON.stringify({
         model,
-        max_tokens: 4000,
+        max_tokens: maxTokens,
         // system como bloco cacheado: prompt + exemplos + playbook são iguais em todo
         // report, então o cache relê esse prefixo a ~0,1x do preço. TTL de 1h (em vez
         // dos 5min padrão): num dia de trabalho o prefixo é reescrito ~1x/hora, não a
@@ -420,9 +441,11 @@ async function chamarOllama(userPrompt, system) {
   return { texto, uso: { modelo: `ollama/${model}`, entrada: 0, saida: 0 } };
 }
 
-async function chamarLLM(userPrompt, system) {
+async function chamarLLM(userPrompt, system, qualidade) {
+  // Ollama roda um único modelo local (já configurado em OLLAMA_MODEL); o modo de
+  // qualidade só existe pra escolher entre modelos pagos da Anthropic.
   if (LLM_PROVIDER === 'ollama') return chamarOllama(userPrompt, system);
-  if (LLM_PROVIDER === 'anthropic') return chamarAnthropic(userPrompt, system);
+  if (LLM_PROVIDER === 'anthropic') return chamarAnthropic(userPrompt, system, qualidade);
   throw new Error(`LLM_PROVIDER inválido: "${LLM_PROVIDER}" (use "anthropic" ou "ollama").`);
 }
 
@@ -440,19 +463,25 @@ function normalizarMensagem(m) {
  * @param {{mensagens: Array, nome?: string}} payload
  * @returns {Promise<{dados: object, arquivo: string}>}
  */
-async function dadosDireto({ mensagens, nome, sdr } = {}) {
-  const historico = (Array.isArray(mensagens) ? mensagens : [])
+async function dadosDireto({ mensagens, nome, sdr, qualidade } = {}) {
+  const bruto = (Array.isArray(mensagens) ? mensagens : [])
     .map(normalizarMensagem)
     .filter((m) => m.content);
 
-  if (historico.length === 0) {
+  if (bruto.length === 0) {
     throw new Error(
       'Nenhuma mensagem foi lida. Abra uma conversa no WhatsApp Web e tente novamente.'
     );
   }
 
+  // Limpa/agrupa/corta a conversa ANTES de montar o prompt: menos tokens, mesmo
+  // sinal comercial (nunca remove dor/orçamento/decisor/objeção — só repetição).
+  const { historico, resumida } = normalizarConversa(bruto);
+
   const userPrompt = montarUserPrompt(montarHistoricoFormatado(historico), nome, sdr);
-  return processarComLLM(userPrompt, nome);
+  const dados = await processarComLLM(userPrompt, nome, qualidade);
+  dados.resumida = resumida;
+  return dados;
 }
 
 async function gerarReportDireto(payload = {}) {
@@ -520,8 +549,9 @@ async function montarSystem() {
   return comPlaybook + BLOCO_EXEMPLOS;
 }
 
-async function processarComLLM(userPrompt, nome) {
+async function processarComLLM(userPrompt, nome, qualidade) {
   const system = await montarSystem();
+  const qualidadeFinal = normalizarQualidade(qualidade);
   let dados;
 
   // O corpo (seções) é o coração do handoff. Se a IA colapsar tudo no resumo +
@@ -532,7 +562,7 @@ async function processarComLLM(userPrompt, nome) {
       tentativa === 0
         ? ''
         : '\n\nATENÇÃO: o corpo do relatório veio incompleto. Gere DE NOVO com no MÍNIMO 2 seções de análise, incluindo obrigatoriamente "O que o closer deve bater" (numerada). A abertura não substitui as seções.';
-    const { texto: respostaBruta, uso } = await chamarLLM(userPrompt + reforco, system);
+    const { texto: respostaBruta, uso } = await chamarLLM(userPrompt + reforco, system, qualidadeFinal);
 
     try {
       dados = normalizarDados(extrairJson(respostaBruta));
@@ -552,7 +582,7 @@ async function processarComLLM(userPrompt, nome) {
   delete dados.uso;
   dados.lead = escolherNomeDoLead(dados.lead, nome);
   // O servidor registra o consumo e tira este campo antes de devolver o report.
-  dados.uso = uso;
+  dados.uso = { ...uso, qualidade: qualidadeFinal };
   return dados;
 }
 
@@ -562,13 +592,16 @@ async function processarComLLM(userPrompt, nome) {
  * @param {{texto: string, nome?: string}} payload
  * @returns {Promise<{dados: object, arquivo: string}>}
  */
-async function dadosDeTexto({ texto, nome, sdr } = {}) {
+async function dadosDeTexto({ texto, nome, sdr, qualidade } = {}) {
   const conteudo = typeof texto === 'string' ? texto.trim() : '';
   if (!conteudo) {
     throw new Error('Cole a conversa antes de gerar o report.');
   }
-  const userPrompt = montarUserPrompt(conteudo, nome, sdr);
-  return processarComLLM(userPrompt, nome);
+  const { texto: textoNormalizado, resumida } = normalizarTextoLivre(conteudo);
+  const userPrompt = montarUserPrompt(textoNormalizado, nome, sdr);
+  const dados = await processarComLLM(userPrompt, nome, qualidade);
+  dados.resumida = resumida;
+  return dados;
 }
 
 async function gerarReportDeTexto(payload = {}) {
@@ -577,4 +610,10 @@ async function gerarReportDeTexto(payload = {}) {
   return { dados, arquivo };
 }
 
-module.exports = { gerarReportDireto, gerarReportDeTexto, dadosDireto, dadosDeTexto };
+module.exports = {
+  gerarReportDireto,
+  gerarReportDeTexto,
+  dadosDireto,
+  dadosDeTexto,
+  PROMPT_VERSAO,
+};

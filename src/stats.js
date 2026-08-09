@@ -11,7 +11,7 @@ const CHAVE_DB = 'reports';
 const LIMITE = 5000;
 
 /** Registra um report gerado, com o consumo de tokens e o custo em dólares. */
-async function registrar({ usuarioId, usuarioNome, lead, origem, uso }) {
+async function registrar({ usuarioId, usuarioNome, lead, origem, uso, reportKey, arquivo, qualidade }) {
   const quando = new Date().toISOString();
   const u = uso || {};
   await db.push(
@@ -24,6 +24,11 @@ async function registrar({ usuarioId, usuarioNome, lead, origem, uso }) {
       origem: origem || 'extensao', // extensao | manual
       quando,
       dia: emDiaLocal(quando), // dia no fuso do time, para o filtro do dashboard
+      // Identifica a geração (idempotência/duplicidade) e o arquivo/modo usados —
+      // reportKey e arquivo não guardam a conversa, só metadados.
+      reportKey: reportKey || '',
+      arquivo: arquivo || '',
+      qualidade: qualidade || 'standard',
       modelo: u.modelo || '',
       entrada: u.entrada || 0,
       saida: u.saida || 0,
@@ -148,4 +153,20 @@ async function remover(id) {
   return db.removerDaLista(CHAVE_DB, (r) => r.id === id);
 }
 
-module.exports = { registrar, resumo, remover, hojeStr };
+/**
+ * Acha o report mais recente com a mesma reportKey (idempotência — evita
+ * gerar/cobrar de novo a mesma conversa sem intenção explícita).
+ * Varredura linear: a base já é limitada a LIMITE registros, não precisa de
+ * índice — mesmo padrão simples usado em removerDaLista.
+ * @returns {Promise<object|null>}
+ */
+async function buscarPorChave(reportKey) {
+  if (!reportKey) return null;
+  const todos = await db.range(CHAVE_DB);
+  for (let i = todos.length - 1; i >= 0; i--) {
+    if (todos[i].reportKey === reportKey) return todos[i];
+  }
+  return null;
+}
+
+module.exports = { registrar, resumo, remover, buscarPorChave, hojeStr };
