@@ -237,6 +237,7 @@
       <button class="tab on" data-aba="report"><i data-ic="file-text"></i>Gerar report</button>
       <button class="tab so-admin hidden" data-aba="acessos"><i data-ic="key"></i>Acessos</button>
       <button class="tab so-admin hidden" data-aba="numeros"><i data-ic="chart"></i>Reports gerados</button>
+      <button class="tab so-admin hidden" data-aba="arquivos"><i data-ic="download"></i>Arquivos</button>
       <button class="tab so-admin hidden" data-aba="base"><i data-ic="clipboard"></i>Base</button>
       <button class="tab so-admin hidden" data-aba="extensao"><i data-ic="package"></i>Extensão</button>
     </nav>
@@ -358,7 +359,6 @@
               </select>
             </div>
             <button id="aplicar" class="btn">Ver</button>
-            <button id="baixarZip" class="btn sec"><i data-ic="download"></i>Baixar tudo (.zip)</button>
           </div>
           <div id="statusFiltro" class="status"></div>
         </div>
@@ -412,6 +412,63 @@
         </div>
 
         <div class="hint">Valores em dólar, cobrados pela Anthropic conforme os tokens de cada report. A transcrição dos áudios (Groq) está no plano gratuito.</div>
+      </div>
+    </section>
+
+    <!-- ================= ABA: ARQUIVOS (PDFs salvos) ================= -->
+    <section id="aba-arquivos" class="hidden">
+      <div class="card admin-login hidden">
+        <div class="head"><div class="t"><i data-ic="lock"></i>Área do admin</div><div class="sub">— entre com a sua chave de admin na aba "Gerar report"</div></div>
+        <div class="hint" style="margin:0 0 12px">Chave reserva: se você ainda não tem um acesso de admin (ou perdeu o seu), entre com a senha do servidor.</div>
+        <div class="row">
+          <input class="grow senha-admin" type="password" placeholder="Senha de admin (ADMIN_PASSWORD)" />
+          <button class="btn sec entrar-admin">Entrar com a senha</button>
+        </div>
+        <div class="status status-admin"></div>
+      </div>
+
+      <div class="admin-area hidden">
+        <div class="card">
+          <div class="head"><div class="t"><i data-ic="download"></i>Arquivos</div><div class="sub">— baixe os PDFs já gerados, por SDR ou tudo de uma vez. Só o admin vê esta aba.</div></div>
+          <div class="periodos">
+            <button class="chip on" data-dias-arq="-1">Tudo</button>
+            <button class="chip" data-dias-arq="29">Últimos 30 dias</button>
+            <button class="chip" data-dias-arq="6">Últimos 7 dias</button>
+            <button class="chip" data-dias-arq="0">Hoje</button>
+          </div>
+          <div class="row" style="margin-top:12px">
+            <div style="flex:1;min-width:140px"><label for="deArq">De</label><input id="deArq" type="date" /></div>
+            <div style="flex:1;min-width:140px"><label for="ateArq">Até</label><input id="ateArq" type="date" /></div>
+            <div style="flex:1;min-width:160px">
+              <label for="filtroSdrArq">SDR</label>
+              <select id="filtroSdrArq">
+                <option value="">Todos</option>
+              </select>
+            </div>
+            <button id="verArquivos" class="btn">Ver</button>
+            <button id="baixarZipTudo" class="btn sec"><i data-ic="download"></i>Baixar tudo (.zip)</button>
+          </div>
+          <div id="statusArquivos" class="status"></div>
+        </div>
+
+        <div class="card">
+          <div class="head"><div class="t"><i data-ic="user"></i>Por SDR</div><div class="sub">— baixe só os reports de uma pessoa</div></div>
+          <table>
+            <thead><tr><th>SDR</th><th>Reports</th><th></th></tr></thead>
+            <tbody id="porSdrArquivos"></tbody>
+          </table>
+          <div id="vazioSdrArquivos" class="hint">Nenhum report neste período.</div>
+        </div>
+
+        <div class="card">
+          <div class="head"><div class="t"><i data-ic="clock"></i>Reports do período</div><div class="sub">— baixe um por um</div></div>
+          <table>
+            <thead><tr><th>Lead</th><th>SDR</th><th>Quando</th><th></th></tr></thead>
+            <tbody id="ultimosArquivos"></tbody>
+          </table>
+        </div>
+
+        <div class="hint">Reports gerados antes desta atualização não têm PDF salvo — só os gerados a partir de agora aparecem aqui pra download.</div>
       </div>
     </section>
 
@@ -549,8 +606,8 @@
     }
 
     // ---------- Menu ----------
-    const ABAS = ['report', 'acessos', 'numeros', 'base', 'extensao'];
-    const SO_ADMIN = ['acessos', 'numeros', 'base', 'extensao'];
+    const ABAS = ['report', 'acessos', 'numeros', 'arquivos', 'base', 'extensao'];
+    const SO_ADMIN = ['acessos', 'numeros', 'arquivos', 'base', 'extensao'];
     let souAdmin = false;
     // Guardado porque a chave é validada de forma assíncrona: quem abre direto
     // em #acessos ainda não é admin nesse instante e seria mandado para #report.
@@ -608,6 +665,7 @@
         aplicarPapel();
         carregarUsuarios();
         carregarStats();
+        carregarArquivos();
         carregarBase();
         return true;
       } catch (e) {
@@ -626,6 +684,7 @@
         mostrarAdmin(true);
         carregarUsuarios();
         carregarStats();
+        carregarArquivos();
         carregarBase();
       } else if (senhaAdmin) {
         entrarAdmin(senhaAdmin);
@@ -781,26 +840,11 @@
       setTimeout(() => URL.revokeObjectURL(a.href), 4000);
     }
 
-    // Remover report do histórico / baixar o PDF de um report específico.
+    // Remover report do histórico.
     $('ultimos').addEventListener('click', async (ev) => {
-      const bPdf = ev.target.closest('[data-baixar-pdf-report]');
-      if (bPdf) {
-        bPdf.disabled = true;
-        try {
-          await baixarArquivoAdmin(
-            '/api/admin/reports/' + bPdf.dataset.baixarPdfReport + '/pdf',
-            bPdf.dataset.nomeArquivo
-          );
-        } catch (e) {
-          setStatus('statusFiltro', e.message, { erro: true });
-        } finally {
-          bPdf.disabled = false;
-        }
-        return;
-      }
       const b = ev.target.closest('[data-remover-report]');
       if (!b) return;
-      if (!confirm(`Tirar este report do histórico?\n\n${b.dataset.desc}\n\nOs números do dashboard mudam. O PDF que já foi baixado não é afetado. Não dá para desfazer.`)) return;
+      if (!confirm(`Tirar este report do histórico?\n\n${b.dataset.desc}\n\nOs números do dashboard mudam. O PDF salvo dele também é removido. Não dá para desfazer.`)) return;
       b.disabled = true;
       try {
         await api('DELETE', '/api/admin/reports/' + b.dataset.removerReport);
@@ -809,25 +853,6 @@
       } catch (e) {
         b.disabled = false;
         setStatus('statusFiltro', e.message, { erro: true });
-      }
-    });
-
-    // Baixa tudo (ou o recorte filtrado) num .zip organizado por SDR.
-    $('baixarZip').addEventListener('click', async () => {
-      const q = new URLSearchParams();
-      if ($('de').value) q.set('de', $('de').value);
-      if ($('ate').value) q.set('ate', $('ate').value);
-      if ($('filtroSdr').value) q.set('sdr', $('filtroSdr').value);
-      const btn = $('baixarZip');
-      btn.disabled = true;
-      setStatus('statusFiltro', 'Preparando o .zip…', { loading: true });
-      try {
-        await baixarArquivoAdmin('/api/admin/reports/pdf-zip?' + q.toString(), 'reports.zip');
-        setStatus('statusFiltro', 'Download iniciado.', { ok: true });
-      } catch (e) {
-        setStatus('statusFiltro', e.message, { erro: true });
-      } finally {
-        btn.disabled = false;
       }
     });
 
@@ -898,7 +923,6 @@
             <td style="color:var(--muted);font-size:.82rem">${quando(r.quando)}</td>
             <td class="num">${usd(r.custo)}</td>
             <td><div class="acoes">
-              <button class="mini" data-baixar-pdf-report="${r.id}" data-nome-arquivo="${esc(r.arquivo || 'report.pdf')}" title="Baixar o PDF deste report">PDF</button>
               <button class="mini del" data-remover-report="${r.id}"
               data-desc="${esc((r.lead || 'sem lead') + ' · ' + (r.usuarioNome || '—') + ' · ' + quando(r.quando))}"
               title="Tirar do histórico">Remover</button>
@@ -911,6 +935,114 @@
         setStatus('statusFiltro', e.message, { erro: true });
       }
     }
+
+    // ---------- Aba: Arquivos (PDFs salvos, só admin) ----------
+    function usarPresetArq(dias) {
+      document.querySelectorAll('#aba-arquivos .chip').forEach((c) => c.classList.toggle('on', Number(c.dataset.diasArq) === dias));
+      if (dias < 0) { $('deArq').value = ''; $('ateArq').value = ''; }
+      else { $('deArq').value = menosDias(dias); $('ateArq').value = hojeISO(); }
+    }
+    document.querySelectorAll('#aba-arquivos .chip').forEach((c) =>
+      c.addEventListener('click', () => { usarPresetArq(Number(c.dataset.diasArq)); carregarArquivos(); })
+    );
+    ['deArq', 'ateArq'].forEach((id) =>
+      $(id).addEventListener('change', () => {
+        document.querySelectorAll('#aba-arquivos .chip').forEach((c) => c.classList.remove('on'));
+        carregarArquivos();
+      })
+    );
+    $('filtroSdrArq').addEventListener('change', carregarArquivos);
+    $('verArquivos').addEventListener('click', carregarArquivos);
+
+    function filtroArqQuery(extra) {
+      const q = new URLSearchParams();
+      if ($('deArq').value) q.set('de', $('deArq').value);
+      if ($('ateArq').value) q.set('ate', $('ateArq').value);
+      if ($('filtroSdrArq').value) q.set('sdr', $('filtroSdrArq').value);
+      if (extra && extra.sdr) q.set('sdr', extra.sdr); // sobrepõe: baixar .zip de UM SDR específico
+      return q;
+    }
+
+    async function carregarArquivos() {
+      if (!souAdmin && !senhaAdmin) return;
+      setStatus('statusArquivos', 'Carregando…', { loading: true });
+      try {
+        const s = await api('GET', '/api/admin/stats?' + filtroArqQuery().toString());
+
+        const sel = $('filtroSdrArq');
+        const atual = sel.value;
+        sel.innerHTML = '<option value="">Todos</option>' +
+          s.geral.sdrs.map((n) => `<option value="${esc(n)}">${esc(n)}</option>`).join('');
+        sel.value = atual;
+
+        $('vazioSdrArquivos').style.display = s.porUsuario.length ? 'none' : '';
+        $('porSdrArquivos').innerHTML = s.porUsuario.map((u) => `
+          <tr>
+            <td><b>${esc(u.nome)}</b></td>
+            <td class="num">${u.total}</td>
+            <td><div class="acoes"><button class="mini" data-baixar-zip-sdr="${esc(u.nome)}"><i data-ic="download"></i>Baixar .zip</button></div></td>
+          </tr>`).join('');
+        aplicarIcones($('porSdrArquivos'));
+
+        $('ultimosArquivos').innerHTML = s.ultimos.map((r) => `
+          <tr>
+            <td>${esc(r.lead || '—')}</td>
+            <td>${esc(r.usuarioNome || '—')}</td>
+            <td style="color:var(--muted);font-size:.82rem">${quando(r.quando)}</td>
+            <td><div class="acoes"><button class="mini" data-baixar-pdf-report="${r.id}" data-nome-arquivo="${esc(r.arquivo || 'report.pdf')}">PDF</button></div></td>
+          </tr>`).join('')
+          || '<tr><td colspan="4" style="color:var(--muted)">Nenhum report neste período.</td></tr>';
+
+        setStatus('statusArquivos', `${s.total} report(s) neste período.`, { ok: true });
+      } catch (e) {
+        setStatus('statusArquivos', e.message, { erro: true });
+      }
+    }
+
+    $('baixarZipTudo').addEventListener('click', async () => {
+      const btn = $('baixarZipTudo');
+      btn.disabled = true;
+      setStatus('statusArquivos', 'Preparando o .zip…', { loading: true });
+      try {
+        await baixarArquivoAdmin('/api/admin/reports/pdf-zip?' + filtroArqQuery().toString(), 'reports.zip');
+        setStatus('statusArquivos', 'Download iniciado.', { ok: true });
+      } catch (e) {
+        setStatus('statusArquivos', e.message, { erro: true });
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    // Baixar .zip de um SDR específico (linha da tabela "Por SDR") ou o PDF de um report específico.
+    $('aba-arquivos').addEventListener('click', async (ev) => {
+      const bZipSdr = ev.target.closest('[data-baixar-zip-sdr]');
+      if (bZipSdr) {
+        bZipSdr.disabled = true;
+        const nomeSdr = bZipSdr.dataset.baixarZipSdr;
+        try {
+          await baixarArquivoAdmin(
+            '/api/admin/reports/pdf-zip?' + filtroArqQuery({ sdr: nomeSdr }).toString(),
+            nomeSdr + '.zip'
+          );
+        } catch (e) {
+          setStatus('statusArquivos', e.message, { erro: true });
+        } finally {
+          bZipSdr.disabled = false;
+        }
+        return;
+      }
+      const bPdf = ev.target.closest('[data-baixar-pdf-report]');
+      if (bPdf) {
+        bPdf.disabled = true;
+        try {
+          await baixarArquivoAdmin('/api/admin/reports/' + bPdf.dataset.baixarPdfReport + '/pdf', bPdf.dataset.nomeArquivo);
+        } catch (e) {
+          setStatus('statusArquivos', e.message, { erro: true });
+        } finally {
+          bPdf.disabled = false;
+        }
+      }
+    });
 
     // ---------- Aba: Gerar report ----------
     const getChave = () => ($('chave').value || '').trim();

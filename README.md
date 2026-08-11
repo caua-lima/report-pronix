@@ -203,19 +203,23 @@ digitar a conversa no modo manual.
 
 Todo PDF gerado fica guardado (`src/pdfStorage.js`, chave própria `pdf_<id>` no
 mesmo banco de `src/db.js` — Redis/KV em produção, `data/*.json` local; os
-arquivos são pequenos, poucos KB cada, então isso é barato). Na aba **Reports
-gerados** (admin) dá pra:
-- baixar o PDF de um report específico (botão **PDF** na linha da tabela);
-- baixar **todos** de uma vez num `.zip` (botão **Baixar tudo**), sempre
-  organizado em pastas por SDR — pra baixar só de uma pessoa, filtra por SDR
-  (mesmo filtro já usado nos números) antes de clicar.
+arquivos são pequenos, poucos KB cada, então isso é barato). A aba **Arquivos**
+do dashboard é só para isso — **só aparece pra admin** (mesmo gate das abas
+Acessos/Números/Base: escondida na tela pra quem não é admin, e as rotas abaixo
+exigem a mesma autenticação de admin no servidor, então não dá para contornar
+só escondendo o botão) — e deixa:
+- baixar o PDF de um report específico (botão **PDF** na tabela "Reports do período");
+- baixar de **um SDR só** (botão **Baixar .zip** na tabela "Por SDR");
+- baixar **tudo** de uma vez num `.zip` (botão **Baixar tudo**), sempre
+  organizado em pastas por SDR, respeitando o filtro de período/SDR da própria aba.
 
 `GET /api/admin/reports/:id/pdf` e `GET /api/admin/reports/pdf-zip?de=&ate=&sdr=`
-(admin). O zip usa `archiver` (única dependência nova — **pin em `^7.0.1`**: a
-partir da v8 o pacote virou ESM puro e quebra o `require()` deste projeto).
-Removeu um report pela aba? O PDF salvo dele some junto. Não há expurgo
-automático por tempo — como os arquivos são pequenos isso não é urgente, mas
-fica registrado como próximo passo caso vire necessidade.
+(ambas atrás do middleware `admin`). O zip usa `archiver` (única dependência
+nova — **pin em `^7.0.1`**: a partir da v8 o pacote virou ESM puro e quebra o
+`require()` deste projeto). Removeu um report na aba Números? O PDF salvo dele
+some junto. Não há expurgo automático por tempo — como os arquivos são
+pequenos isso não é urgente, mas fica registrado como próximo passo caso vire
+necessidade.
 
 ## Base de conhecimento (playbook)
 
