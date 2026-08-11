@@ -1,6 +1,6 @@
 # PRONIX · Closer Report — guia do SDR
 
-Como instalar e usar a extensão que lê a conversa do WhatsApp e gera o report de handoff em PDF.
+Como instalar e usar a extensão que lê a conversa do WhatsApp (ou do Instagram Direct) e gera o report de handoff em PDF.
 
 Você recebe duas coisas do admin: o arquivo **PRONIX-extensao.zip** e a **sua chave** (`pnx_...`).
 
@@ -17,7 +17,7 @@ Você recebe duas coisas do admin: o arquivo **PRONIX-extensao.zip** e a **sua c
 
 ## 2. Entrar (uma vez só)
 
-1. Abra o [WhatsApp Web](https://web.whatsapp.com) e **atualize a página** (F5).
+1. Abra o [WhatsApp Web](https://web.whatsapp.com) (ou o [Instagram Direct](https://www.instagram.com/direct/inbox/), se você for social seller) e **atualize a página** (F5).
 2. Clique no ícone da PRONIX (o raio dourado).
 3. O **servidor já vem preenchido** — não mexa nele.
 4. Cole a **sua chave** no campo de chave e clique em **Validar**.
@@ -27,15 +27,17 @@ A chave é sua e individual: é ela que assina o seu nome no report. Não passe 
 
 ## 3. Gerar um report
 
-1. Abra a conversa do lead no WhatsApp Web.
+1. Abra a conversa do lead no WhatsApp Web (ou no Instagram Direct).
 2. Clique no ícone da PRONIX → **Gerar Report da conversa aberta**.
-3. Vai aparecer um aviso na tela mostrando o andamento. **Pode continuar usando o WhatsApp normalmente**, inclusive falar com outros leads — ele trabalha em segundo plano.
+3. Vai aparecer um aviso na tela mostrando o andamento. **Pode continuar usando o WhatsApp/Instagram normalmente**, inclusive falar com outros leads — ele trabalha em segundo plano.
 4. No fim aparece **✅ Report pronto!** com o botão de **baixar o PDF**.
 
-No aviso final também vem quantos áudios ele transcreveu:
+No aviso final também vem quantos áudios ele transcreveu (só no WhatsApp — o Instagram Direct ainda não lê áudio, é a primeira versão):
 
 - `🎤 3 áudio(s) transcrito(s)` — pegou todos.
 - `⚠️ 1 de 3 áudio(s) transcrito(s)` — os outros entraram no report como `[áudio]`. Avise o admin.
+
+> **Instagram Direct é recente (primeira versão):** lê só texto por enquanto. Se o report sair estranho (mensagem trocada de remetente, faltando alguma) me avisa com um print — o Instagram muda o layout com frequência e pode precisar de ajuste.
 
 ## O que ele faz
 
@@ -47,7 +49,7 @@ Lê a conversa inteira (inclusive as mensagens antigas), transcreve os áudios e
 | --- | --- |
 | "Chave inválida ou ausente" | A chave foi colada errada ou tem espaço sobrando. Copie de novo e valide. Se insistir, peça outra ao admin. |
 | "Nenhuma mensagem encontrada" | Abra a conversa do lead (a janela com as mensagens na tela) e atualize a página (F5). |
-| O ícone não faz nada | Atualize a aba do WhatsApp Web (F5). Ele só age em `web.whatsapp.com`. |
+| O ícone não faz nada | Atualize a aba (F5). Ele só age em `web.whatsapp.com` e `instagram.com/direct`. |
 | ⚠️ nos áudios | Chame o admin com um print.  |
 
-> Abrir várias abas do WhatsApp Web não atrapalha: gere o report na aba onde a conversa está aberta.
+> Abrir várias abas não atrapalha: gere o report na aba onde a conversa está aberta.

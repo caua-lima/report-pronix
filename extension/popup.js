@@ -71,8 +71,15 @@ async function abaAtiva() {
   return tab;
 }
 
+// Qual site está aberto: cada um tem seu content script e sua leitura de DOM.
+const PLATAFORMAS = [
+  { regex: /^https:\/\/web\.whatsapp\.com\//, arquivo: 'content.js', nome: 'WhatsApp Web' },
+  { regex: /^https:\/\/www\.instagram\.com\/direct\//, arquivo: 'content-instagram.js', nome: 'Instagram Direct' },
+];
+const plataformaDaAba = (url) => PLATAFORMAS.find((p) => p.regex.test(url || ''));
+
 // Envia "start" ao content script; injeta-o se ainda não estiver presente.
-async function enviarStart(tabId, server) {
+async function enviarStart(tabId, server, arquivoContentScript) {
   const enviar = () =>
     new Promise((resolve) => {
       chrome.tabs.sendMessage(tabId, { action: 'start', server }, (resp) => {
@@ -84,14 +91,14 @@ async function enviarStart(tabId, server) {
   let resp = await enviar();
   if (resp && resp.__semScript) {
     try {
-      await chrome.scripting.executeScript({ target: { tabId }, files: ['content.js'] });
+      await chrome.scripting.executeScript({ target: { tabId }, files: [arquivoContentScript] });
     } catch (_) {
-      throw new Error('Não consegui acessar a página. Recarregue o WhatsApp Web (F5) e tente de novo.');
+      throw new Error('Não consegui acessar a página. Recarregue-a (F5) e tente de novo.');
     }
     resp = await enviar();
   }
   if (!resp || (!resp.ok && !resp.__semScript)) {
-    throw new Error('Recarregue o WhatsApp Web (F5) e tente de novo.');
+    throw new Error('Recarregue a página (F5) e tente de novo.');
   }
 }
 
@@ -123,12 +130,13 @@ async function gerar() {
   $('gerar').disabled = true;
   try {
     const tab = await abaAtiva();
-    if (!tab || !/^https:\/\/web\.whatsapp\.com\//.test(tab.url || '')) {
-      throw new Error('Abra o WhatsApp Web (web.whatsapp.com) nesta aba primeiro.');
+    const plataforma = tab && plataformaDaAba(tab.url);
+    if (!plataforma) {
+      throw new Error('Abra o WhatsApp Web ou uma conversa no Instagram Direct nesta aba primeiro.');
     }
     const server = getServer();
     setStatus('Iniciando…', { loading: true });
-    await enviarStart(tab.id, server);
+    await enviarStart(tab.id, server, plataforma.arquivo);
     setStatus(
       '<b>Report iniciado!</b> Acompanhe o aviso no canto inferior direito do WhatsApp. ' +
         'Você pode fechar este popup e continuar respondendo.'

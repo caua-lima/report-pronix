@@ -1,11 +1,12 @@
 # PRONIX · Closer Report
 
 Extensão do Chrome + servidor (Node/Express) que lê a **conversa aberta no WhatsApp
-Web** — incluindo o histórico retroativo e os áudios — e gera, com um clique, um
-**relatório de handoff de pré-vendas em PDF** para o closer.
+Web ou no Instagram Direct** — incluindo o histórico retroativo e os áudios (só no
+WhatsApp por enquanto) — e gera, com um clique, um **relatório de handoff de
+pré-vendas em PDF** para o closer.
 
-Sem bot, sem QR code, sem biblioteca não-oficial do WhatsApp: a extensão só lê a página
-que o SDR já tem aberta e logada.
+Sem bot, sem QR code, sem biblioteca não-oficial: a extensão só lê a página que o
+SDR já tem aberta e logada — em qualquer uma das duas plataformas.
 
 ## O que o report faz
 
@@ -76,8 +77,9 @@ extension/                  Extensão MV3 (publicada na Chrome Web Store)
   manifest.json
   content.js                  Lê o DOM do WhatsApp, rola o histórico, captura áudio
   inject.js                   Roda no contexto da página (world: MAIN): hook de áudio
-  background.js                Service worker: chama o servidor por trás da CSP do WhatsApp
-  popup.html / popup.js        UI: gerar, editar e baixar o report
+  content-instagram.js         Lê o DOM do Instagram Direct (texto só, Fase 1)
+  background.js                Service worker: chama o servidor por trás da CSP da página
+  popup.html / popup.js        UI: detecta a plataforma da aba, gera, edita e baixa o report
 
 public/                     Servido como estático pelo Express
   dashboard.html               Painel (gerar report manual, acessos, números, base, extensão)
@@ -231,12 +233,18 @@ consolidada).
 
 ## Riscos
 
-- **Risco de ban do WhatsApp:** baixo — a extensão só **lê** a página que o SDR já tem
-  aberta e logada; não abre conexão própria com o WhatsApp (diferente de bots com
-  biblioteca não-oficial).
-- **Fragilidade de layout:** a leitura depende do HTML do WhatsApp Web. Se o WhatsApp
-  mudar a estrutura da página, os seletores em `extension/content.js` podem precisar
-  de ajuste (é o arquivo mais sensível do projeto).
+- **Risco de ban:** baixo — a extensão só **lê** a página que o SDR já tem aberta e
+  logada (WhatsApp ou Instagram); não abre conexão própria com nenhum dos dois
+  (diferente de bots com biblioteca não-oficial).
+- **Fragilidade de layout:** a leitura depende do HTML de cada site. Se o WhatsApp ou
+  o Instagram mudarem a estrutura da página, os seletores em `extension/content.js`
+  (WhatsApp) ou `extension/content-instagram.js` (Instagram) podem precisar de ajuste
+  — são os arquivos mais sensíveis do projeto. O **Instagram Direct usa CSS atômico
+  com classes trocadas a cada build** (ex.: `xexx8yu`, sem nome com sentido) — por
+  isso `content-instagram.js` evita depender de classes e usa sinais estruturais
+  (posição do texto na tela, `flex-direction` do container) pra saber quem enviou
+  cada mensagem. É uma primeira versão (só texto, sem áudio ainda) — validada contra
+  uma conversa real, mas ainda não testada em produção pela equipe.
 
 ## Documentação relacionada
 
