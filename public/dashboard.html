@@ -358,6 +358,7 @@
               </select>
             </div>
             <button id="aplicar" class="btn">Ver</button>
+            <button id="baixarZip" class="btn sec"><i data-ic="download"></i>Baixar tudo (.zip)</button>
           </div>
           <div id="statusFiltro" class="status"></div>
         </div>
@@ -759,8 +760,44 @@
     $('aplicar').addEventListener('click', carregarStats);
     $('filtroSdr').addEventListener('change', carregarStats);
 
-    // Remover report do histórico — não dá para desfazer, então confirma mostrando qual é.
+    // Baixa um PDF/zip pelo admin — não usa api() porque a resposta é binária,
+    // não JSON. A chave vai no header (não na URL), igual ao resto do app.
+    async function baixarArquivoAdmin(url, nomeArquivoPadrao) {
+      const headers = {};
+      if (getChave()) headers['x-cr-key'] = getChave();
+      if (senhaAdmin) headers['x-admin-pass'] = senhaAdmin;
+      const r = await fetch(url, { headers });
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        throw new Error(j.erro || 'Falha ao baixar o arquivo.');
+      }
+      const blob = await r.blob();
+      const cd = r.headers.get('Content-Disposition') || '';
+      const m = cd.match(/filename="([^"]+)"/);
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = (m && m[1]) || nomeArquivoPadrao;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    }
+
+    // Remover report do histórico / baixar o PDF de um report específico.
     $('ultimos').addEventListener('click', async (ev) => {
+      const bPdf = ev.target.closest('[data-baixar-pdf-report]');
+      if (bPdf) {
+        bPdf.disabled = true;
+        try {
+          await baixarArquivoAdmin(
+            '/api/admin/reports/' + bPdf.dataset.baixarPdfReport + '/pdf',
+            bPdf.dataset.nomeArquivo
+          );
+        } catch (e) {
+          setStatus('statusFiltro', e.message, { erro: true });
+        } finally {
+          bPdf.disabled = false;
+        }
+        return;
+      }
       const b = ev.target.closest('[data-remover-report]');
       if (!b) return;
       if (!confirm(`Tirar este report do histórico?\n\n${b.dataset.desc}\n\nOs números do dashboard mudam. O PDF que já foi baixado não é afetado. Não dá para desfazer.`)) return;
@@ -772,6 +809,25 @@
       } catch (e) {
         b.disabled = false;
         setStatus('statusFiltro', e.message, { erro: true });
+      }
+    });
+
+    // Baixa tudo (ou o recorte filtrado) num .zip organizado por SDR.
+    $('baixarZip').addEventListener('click', async () => {
+      const q = new URLSearchParams();
+      if ($('de').value) q.set('de', $('de').value);
+      if ($('ate').value) q.set('ate', $('ate').value);
+      if ($('filtroSdr').value) q.set('sdr', $('filtroSdr').value);
+      const btn = $('baixarZip');
+      btn.disabled = true;
+      setStatus('statusFiltro', 'Preparando o .zip…', { loading: true });
+      try {
+        await baixarArquivoAdmin('/api/admin/reports/pdf-zip?' + q.toString(), 'reports.zip');
+        setStatus('statusFiltro', 'Download iniciado.', { ok: true });
+      } catch (e) {
+        setStatus('statusFiltro', e.message, { erro: true });
+      } finally {
+        btn.disabled = false;
       }
     });
 
@@ -841,9 +897,12 @@
             <td><span class="tag">${r.origem === 'manual' ? 'manual' : 'extensão'}</span></td>
             <td style="color:var(--muted);font-size:.82rem">${quando(r.quando)}</td>
             <td class="num">${usd(r.custo)}</td>
-            <td><div class="acoes"><button class="mini del" data-remover-report="${r.id}"
+            <td><div class="acoes">
+              <button class="mini" data-baixar-pdf-report="${r.id}" data-nome-arquivo="${esc(r.arquivo || 'report.pdf')}" title="Baixar o PDF deste report">PDF</button>
+              <button class="mini del" data-remover-report="${r.id}"
               data-desc="${esc((r.lead || 'sem lead') + ' · ' + (r.usuarioNome || '—') + ' · ' + quando(r.quando))}"
-              title="Tirar do histórico">Remover</button></div></td>
+              title="Tirar do histórico">Remover</button>
+            </div></td>
           </tr>`).join('')
           || '<tr><td colspan="6" style="color:var(--muted)">Nenhum report neste período.</td></tr>';
 

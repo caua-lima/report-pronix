@@ -68,6 +68,7 @@ src/
   usuarios.js                  Acessos da equipe (chave pnx_..., sem e-mail real)
   base.js                      Base de conhecimento (playbook) que entra em todo report
   stats.js                     Histórico de reports gerados + custo em dólar
+  pdfStorage.js                 Guarda/lê/remove o PDF de cada report (download individual/zip)
   precos.js                    Tabela de preço por modelo (calcula o custo de cada report)
   db.js                        Redis (Vercel KV) em produção, data/*.json localmente; trava de concorrência
 
@@ -197,6 +198,24 @@ campo, o comportamento é o de sempre (`standard`). `POST /api/estimar-custo` ca
 estimativa (entrada real da conversa normalizada + uma saída média por modo) sem chamar
 a IA nem nenhuma API de câmbio — o dashboard usa isso pra mostrar "Custo estimado" ao
 digitar a conversa no modo manual.
+
+## Armazenamento dos PDFs e download em massa
+
+Todo PDF gerado fica guardado (`src/pdfStorage.js`, chave própria `pdf_<id>` no
+mesmo banco de `src/db.js` — Redis/KV em produção, `data/*.json` local; os
+arquivos são pequenos, poucos KB cada, então isso é barato). Na aba **Reports
+gerados** (admin) dá pra:
+- baixar o PDF de um report específico (botão **PDF** na linha da tabela);
+- baixar **todos** de uma vez num `.zip` (botão **Baixar tudo**), sempre
+  organizado em pastas por SDR — pra baixar só de uma pessoa, filtra por SDR
+  (mesmo filtro já usado nos números) antes de clicar.
+
+`GET /api/admin/reports/:id/pdf` e `GET /api/admin/reports/pdf-zip?de=&ate=&sdr=`
+(admin). O zip usa `archiver` (única dependência nova — **pin em `^7.0.1`**: a
+partir da v8 o pacote virou ESM puro e quebra o `require()` deste projeto).
+Removeu um report pela aba? O PDF salvo dele some junto. Não há expurgo
+automático por tempo — como os arquivos são pequenos isso não é urgente, mas
+fica registrado como próximo passo caso vire necessidade.
 
 ## Base de conhecimento (playbook)
 

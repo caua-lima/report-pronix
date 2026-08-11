@@ -4,7 +4,9 @@ require('dotenv').config();
 
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const express = require('express');
+const archiver = require('archiver');
 
 const { dadosDireto, dadosDeTexto, PROMPT_VERSAO } = require('./src/report');
 const { gerarPdfBuffer } = require('./src/generatePdf');
@@ -14,6 +16,7 @@ const { calcularReportKey } = require('./src/idempotencia');
 const { custoUSD } = require('./src/precos');
 const usuarios = require('./src/usuarios');
 const stats = require('./src/stats');
+const pdfStorage = require('./src/pdfStorage');
 const db = require('./src/db');
 const base = require('./src/base');
 
@@ -164,22 +167,88 @@ app.delete('/api/admin/reports/:id', admin, async (req, res) => {
   }
 });
 
+// Filtro de data/SDR compartilhado por /api/admin/stats e as rotas de PDF abaixo.
+const dataOk = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(String(v || '')) ? String(v) : undefined);
+const filtroDaQuery = (q) => ({
+  de: dataOk(q.de),
+  ate: dataOk(q.ate),
+  sdr: q.sdr ? String(q.sdr) : undefined,
+});
+
 /**
  * Números do dashboard: quantos reports, por quem, quanto custou.
  * Filtros: ?de=YYYY-MM-DD&ate=YYYY-MM-DD&sdr=Nome (todos opcionais).
  */
 app.get('/api/admin/stats', admin, async (req, res) => {
   try {
-    const dataOk = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(String(v || '')) ? String(v) : undefined);
-    res.json(
-      await stats.resumo({
-        de: dataOk(req.query.de),
-        ate: dataOk(req.query.ate),
-        sdr: req.query.sdr ? String(req.query.sdr) : undefined,
-      })
-    );
+    res.json(await stats.resumo(filtroDaQuery(req.query)));
   } catch (err) {
     res.status(500).json({ erro: err.message });
+  }
+});
+
+/** Baixa o PDF de um report já gerado (guardado em src/pdfStorage.js). */
+app.get('/api/admin/reports/:id/pdf', admin, async (req, res) => {
+  try {
+    const salvo = await pdfStorage.ler(req.params.id);
+    if (!salvo || !salvo.base64) {
+      return res.status(404).json({
+        erro: 'PDF não encontrado — reports gerados antes desta atualização não têm PDF salvo, ou ele já foi removido.',
+      });
+    }
+    res.set('Content-Type', 'application/pdf');
+    res.set('Content-Disposition', `attachment; filename="${salvo.arquivo || 'report.pdf'}"`);
+    res.send(Buffer.from(salvo.base64, 'base64'));
+  } catch (err) {
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// Nome de pasta seguro dentro do zip (sem barra, sem ".." no início).
+const pastaSegura = (nome) =>
+  String(nome || 'Sem SDR').replace(/[\\/]+/g, '-').replace(/^\.+/, '').trim() || 'Sem SDR';
+
+const TETO_ZIP = 500; // protege contra timeout/memória num filtro largo demais na Vercel.
+
+/**
+ * Baixa em massa os PDFs de um período/SDR num .zip, organizado em pastas por
+ * SDR — pra baixar só de uma pessoa é só filtrar (?sdr=Nome) igual à aba Números.
+ */
+app.get('/api/admin/reports/pdf-zip', admin, async (req, res) => {
+  try {
+    const registros = await stats.listar(filtroDaQuery(req.query));
+    if (registros.length > TETO_ZIP) {
+      return res.status(400).json({
+        erro: `Filtro largo demais (${registros.length} reports). Estreite o período ou escolha um SDR — o limite por download é ${TETO_ZIP}.`,
+      });
+    }
+
+    const comPdf = (
+      await Promise.all(
+        registros.map(async (r) => ({ r, salvo: await pdfStorage.ler(r.id).catch(() => null) }))
+      )
+    ).filter((x) => x.salvo && x.salvo.base64);
+
+    if (comPdf.length === 0) {
+      return res.status(404).json({ erro: 'Nenhum PDF encontrado para esse filtro.' });
+    }
+
+    const nomeZip = `Reports_PRONIX_${new Date().toISOString().slice(0, 10)}.zip`;
+    res.set('Content-Type', 'application/zip');
+    res.set('Content-Disposition', `attachment; filename="${nomeZip}"`);
+
+    const zip = archiver('zip', { zlib: { level: 9 } });
+    zip.on('error', (err) => res.status(500).end(err.message));
+    zip.pipe(res);
+    comPdf.forEach(({ r, salvo }) => {
+      const pasta = pastaSegura(r.usuarioNome);
+      zip.append(Buffer.from(salvo.base64, 'base64'), {
+        name: `${pasta}/${salvo.arquivo || r.id + '.pdf'}`,
+      });
+    });
+    await zip.finalize();
+  } catch (err) {
+    if (!res.headersSent) res.status(500).json({ erro: err.message });
   }
 });
 
@@ -193,9 +262,15 @@ async function responderReport(req, res, dados, nome, origem, reportKey) {
   delete dados.uso; // consumo é assunto do admin: não vai junto do report.
   const buffer = await gerarPdfBuffer(dados);
   const arquivo = nomeArquivoPdf(dados.lead || nome);
-  // O report é o que importa: se o registro falhar, não derruba a entrega do PDF.
+  // Gera o id aqui (não dentro de stats.registrar) pra poder salvar o PDF sob
+  // a mesma chave — ver src/pdfStorage.js.
+  const id = crypto.randomBytes(5).toString('hex');
+  const base64 = buffer.toString('base64');
+  // O report é o que importa: se o registro ou o salvamento do PDF falharem,
+  // não derruba a entrega — o SDR já recebe o PDF de qualquer jeito.
   await stats
     .registrar({
+      id,
       usuarioId: req.usuario.id,
       usuarioNome: req.usuario.nome,
       lead: dados.lead || nome || '',
@@ -206,7 +281,10 @@ async function responderReport(req, res, dados, nome, origem, reportKey) {
       qualidade: (uso && uso.qualidade) || 'standard',
     })
     .catch((err) => console.error('Falha ao registrar o report:', err.message));
-  res.json({ dados, arquivo, arquivoBase64: buffer.toString('base64') });
+  await pdfStorage
+    .salvar(id, base64, arquivo)
+    .catch((err) => console.error('Falha ao salvar o PDF do report:', err.message));
+  res.json({ dados, arquivo, arquivoBase64: base64 });
 }
 
 // Report_Nome_Data.pdf — "Nome" é o lead, que é de quem o report fala.

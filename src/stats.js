@@ -5,19 +5,24 @@
 
 const crypto = require('crypto');
 const db = require('./db');
+const pdfStorage = require('./pdfStorage');
 const { custoUSD } = require('./precos');
 
 const CHAVE_DB = 'reports';
 const LIMITE = 5000;
 
-/** Registra um report gerado, com o consumo de tokens e o custo em dólares. */
-async function registrar({ usuarioId, usuarioNome, lead, origem, uso, reportKey, arquivo, qualidade }) {
+/**
+ * Registra um report gerado, com o consumo de tokens e o custo em dólares.
+ * @param {{id?: string}} params.id — se o chamador já gerou o id (pra salvar o
+ *   PDF sob a mesma chave em src/pdfStorage.js), passa aqui; senão gera um novo.
+ */
+async function registrar({ id, usuarioId, usuarioNome, lead, origem, uso, reportKey, arquivo, qualidade }) {
   const quando = new Date().toISOString();
   const u = uso || {};
   await db.push(
     CHAVE_DB,
     {
-      id: crypto.randomBytes(5).toString('hex'),
+      id: id || crypto.randomBytes(5).toString('hex'),
       usuarioId: usuarioId || '',
       usuarioNome: usuarioNome || '',
       lead: lead || '',
@@ -61,20 +66,35 @@ const emDiaLocal = (iso) => {
 const dia = (r) => r.dia || emDiaLocal(r.quando); // dia: gravado a partir de agora; quando: histórico
 const hojeStr = () => emDiaLocal(new Date());
 
-/**
- * Resumo para o dashboard, já filtrado.
- * @param {{de?: string, ate?: string, sdr?: string}} filtro datas em YYYY-MM-DD; sdr é o nome.
- */
-async function resumo({ de, ate, sdr } = {}) {
-  const todos = await db.range(CHAVE_DB);
-
-  const dentro = todos.filter((r) => {
+/** Mesmo filtro usado por resumo() e listar() — de/ate em YYYY-MM-DD, sdr é o nome. */
+function filtrar(todos, { de, ate, sdr } = {}) {
+  return todos.filter((r) => {
     const d = dia(r);
     if (de && d < de) return false;
     if (ate && d > ate) return false;
     if (sdr && (r.usuarioNome || '') !== sdr) return false;
     return true;
   });
+}
+
+/**
+ * Lista os registros crus (sem agregação) que batem com o filtro — usado pelo
+ * download em massa (GET /api/admin/reports/pdf-zip), que precisa do id e do
+ * usuarioNome de cada report pra buscar o PDF e organizar por SDR no zip.
+ * @param {{de?: string, ate?: string, sdr?: string}} filtro
+ */
+async function listar({ de, ate, sdr } = {}) {
+  const todos = await db.range(CHAVE_DB);
+  return filtrar(todos, { de, ate, sdr });
+}
+
+/**
+ * Resumo para o dashboard, já filtrado.
+ * @param {{de?: string, ate?: string, sdr?: string}} filtro datas em YYYY-MM-DD; sdr é o nome.
+ */
+async function resumo({ de, ate, sdr } = {}) {
+  const todos = await db.range(CHAVE_DB);
+  const dentro = filtrar(todos, { de, ate, sdr });
 
   const soma = (lista) => lista.reduce((t, r) => t + (r.custo || 0), 0);
 
@@ -150,7 +170,9 @@ async function resumo({ de, ate, sdr } = {}) {
  */
 async function remover(id) {
   if (!id) return false;
-  return db.removerDaLista(CHAVE_DB, (r) => r.id === id);
+  const removeu = await db.removerDaLista(CHAVE_DB, (r) => r.id === id);
+  if (removeu) await pdfStorage.remover(id).catch(() => {});
+  return removeu;
 }
 
 /**
@@ -169,4 +191,4 @@ async function buscarPorChave(reportKey) {
   return null;
 }
 
-module.exports = { registrar, resumo, remover, buscarPorChave, hojeStr };
+module.exports = { registrar, resumo, listar, remover, buscarPorChave, hojeStr };
