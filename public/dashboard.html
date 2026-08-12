@@ -156,6 +156,10 @@
     .mini.del { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 25%, var(--border)); }
     .mini.del:hover { background: color-mix(in srgb, var(--danger) 8%, transparent); border-color: var(--danger); }
     .tag { display: inline-block; font-size: .66rem; font-weight: 700; padding: 3px 8px; border-radius: 20px; border: 1px solid var(--border-forte); color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+    /* Controles compactos direto na tabela (closer/resultado/datas) */
+    .mini-select, .mini-date { font: inherit; font-size: .78rem; padding: 4px 6px; border-radius: 6px; border: 1px solid var(--border-forte); background: var(--card); color: var(--text); }
+    .mini-select { max-width: 130px; }
+    .mini-date { max-width: 128px; }
 
     /* ---------- KPIs ---------- */
     .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 16px; }
@@ -363,6 +367,22 @@
           <div id="statusFiltro" class="status"></div>
         </div>
 
+        <!-- Closers: roster pra marcar quem fez cada call (sem login, só nome+e-mail) -->
+        <div class="card">
+          <div class="head"><div class="t"><i data-ic="users"></i>Closers</div><div class="sub">— cadastre uma vez, depois é só escolher na tabela de reports</div></div>
+          <div class="row">
+            <input id="closerNome" type="text" placeholder="Nome do closer" style="flex:1;min-width:160px" />
+            <input id="closerEmail" type="email" placeholder="e-mail (pra puxar depois)" style="flex:1;min-width:200px" />
+            <button id="addCloser" class="btn"><i data-ic="plus"></i>Adicionar</button>
+          </div>
+          <div id="statusCloser" class="status"></div>
+          <table style="margin-top:10px">
+            <thead><tr><th>Nome</th><th>E-mail</th><th></th></tr></thead>
+            <tbody id="listaClosers"></tbody>
+          </table>
+          <div id="vazioClosers" class="hint">Nenhum closer cadastrado ainda.</div>
+        </div>
+
         <!-- Números do período filtrado -->
         <div class="kpis">
           <div class="kpi"><div class="l">Reports no período</div><div class="n" id="kTotal">0</div></div>
@@ -404,11 +424,16 @@
         </div>
 
         <div class="card">
-          <div class="head"><div class="t"><i data-ic="clock"></i>Reports do período</div><div class="sub">— o custo de cada um</div></div>
+          <div class="head"><div class="t"><i data-ic="clock"></i>Reports do período</div><div class="sub">— custo, closer que fez a call e o resultado (preenchido à mão)</div></div>
+          <div style="overflow-x:auto">
           <table>
-            <thead><tr><th>Lead</th><th>SDR</th><th>Origem</th><th>Quando</th><th>Custo</th><th></th></tr></thead>
+            <thead><tr>
+              <th>Lead</th><th>SDR</th><th>Origem</th><th>Quando</th><th>Custo</th>
+              <th>Closer</th><th>Resultado</th><th>Reunião</th><th>Fechou</th><th>Dias</th><th></th>
+            </tr></thead>
             <tbody id="ultimos"></tbody>
           </table>
+          </div>
         </div>
 
         <div class="hint">Valores em dólar, cobrados pela Anthropic conforme os tokens de cada report. A transcrição dos áudios (Groq) está no plano gratuito.</div>
@@ -664,6 +689,7 @@
         mostrarAdmin(true);
         aplicarPapel();
         carregarUsuarios();
+        await carregarClosers();
         carregarStats();
         carregarArquivos();
         carregarBase();
@@ -678,11 +704,12 @@
       }
     }
 
-    function pedirAdmin() {
+    async function pedirAdmin() {
       // Chave de admin já basta; a senha é só o caminho reserva.
       if (souAdmin) {
         mostrarAdmin(true);
         carregarUsuarios();
+        await carregarClosers();
         carregarStats();
         carregarArquivos();
         carregarBase();
@@ -801,6 +828,97 @@
     const hojeISO = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
     const menosDias = (n) => new Date(Date.now() - new Date().getTimezoneOffset() * 60000 - n * 864e5).toISOString().slice(0, 10);
 
+    // ---------- Closers (roster + marcação de resultado por report) ----------
+    let closersCache = [];
+    const RESULTADOS_OPCOES = [
+      { v: '', t: '—' },
+      { v: 'venda_call', t: 'Venda em call' },
+      { v: 'venda_fup', t: 'Venda em FUP' },
+      { v: 'pix_compromisso', t: 'Pix compromisso' },
+    ];
+
+    async function carregarClosers() {
+      if (!souAdmin && !senhaAdmin) return;
+      try {
+        const r = await api('GET', '/api/admin/closers');
+        closersCache = r.closers || [];
+        $('vazioClosers').style.display = closersCache.length ? 'none' : '';
+        $('listaClosers').innerHTML = closersCache.map((c) => `
+          <tr>
+            <td><b>${esc(c.nome)}</b></td>
+            <td style="color:var(--muted)">${esc(c.email || '—')}</td>
+            <td><div class="acoes"><button class="mini del" data-remover-closer="${c.id}" data-desc="${esc(c.nome)}">Remover</button></div></td>
+          </tr>`).join('');
+      } catch (e) {
+        setStatus('statusCloser', e.message, { erro: true });
+      }
+    }
+
+    $('addCloser').addEventListener('click', async () => {
+      const nome = $('closerNome').value.trim();
+      const email = $('closerEmail').value.trim();
+      if (!nome) { setStatus('statusCloser', 'Digite o nome do closer.', { erro: true }); return; }
+      $('addCloser').disabled = true;
+      try {
+        await api('POST', '/api/admin/closers', { nome, email });
+        $('closerNome').value = '';
+        $('closerEmail').value = '';
+        setStatus('statusCloser', 'Closer adicionado.', { ok: true });
+        await carregarClosers();
+        carregarStats(); // refaz as linhas da tabela pra oferecer o closer novo no select
+      } catch (e) {
+        setStatus('statusCloser', e.message, { erro: true });
+      } finally {
+        $('addCloser').disabled = false;
+      }
+    });
+
+    $('listaClosers').addEventListener('click', async (ev) => {
+      const b = ev.target.closest('[data-remover-closer]');
+      if (!b) return;
+      if (!confirm(`Remover o closer "${b.dataset.desc}"? Reports já marcados com ele mantêm o nome salvo, só não aparece mais na lista pra escolher.`)) return;
+      b.disabled = true;
+      try {
+        await api('DELETE', '/api/admin/closers/' + b.dataset.removerCloser);
+        toast('Closer removido.');
+        carregarClosers();
+      } catch (e) {
+        b.disabled = false;
+        setStatus('statusCloser', e.message, { erro: true });
+      }
+    });
+
+    const selectCloser = (r) => `<select class="mini-select" data-campo="closerId" data-report="${r.id}">
+      <option value="">—</option>
+      ${closersCache.map((c) => `<option value="${c.id}" ${c.id === r.closerId ? 'selected' : ''}>${esc(c.nome)}</option>`).join('')}
+    </select>`;
+    const selectResultado = (r) => `<select class="mini-select" data-campo="resultado" data-report="${r.id}">
+      ${RESULTADOS_OPCOES.map((o) => `<option value="${o.v}" ${o.v === (r.resultado || '') ? 'selected' : ''}>${o.t}</option>`).join('')}
+    </select>`;
+
+    /** Lê os 4 campos da linha (closer/resultado/datas) e salva juntos — o PATCH substitui tudo de uma vez. */
+    async function salvarResultadoLinha(id) {
+      const linha = document.querySelector(`tr[data-linha-report="${id}"]`);
+      if (!linha) return;
+      const val = (nome) => linha.querySelector(`[data-campo="${nome}"]`).value;
+      try {
+        await api('PATCH', '/api/admin/reports/' + id + '/resultado', {
+          closerId: val('closerId'),
+          resultado: val('resultado'),
+          dataReuniao: val('dataReuniao'),
+          dataFechamento: val('dataFechamento'),
+        });
+        toast('Salvo.');
+        carregarStats(); // atualiza "Dias" calculado no servidor
+      } catch (e) {
+        setStatus('statusFiltro', e.message, { erro: true });
+      }
+    }
+    $('ultimos').addEventListener('change', (ev) => {
+      const campo = ev.target.closest('[data-campo]');
+      if (campo) salvarResultadoLinha(campo.dataset.report);
+    });
+
     /** Botões de período preenchem as datas; mexer nas datas na mão desliga os botões. */
     function usarPreset(dias) {
       document.querySelectorAll('.chip').forEach((c) => c.classList.toggle('on', Number(c.dataset.dias) === dias));
@@ -916,19 +1034,24 @@
           || '<tr><td colspan="3" style="color:var(--muted)">Sem histórico ainda.</td></tr>';
 
         $('ultimos').innerHTML = s.ultimos.map((r) => `
-          <tr>
+          <tr data-linha-report="${r.id}">
             <td>${esc(r.lead || '—')}</td>
             <td>${esc(r.usuarioNome || '—')}</td>
             <td><span class="tag">${r.origem === 'manual' ? 'manual' : 'extensão'}</span></td>
             <td style="color:var(--muted);font-size:.82rem">${quando(r.quando)}</td>
             <td class="num">${usd(r.custo)}</td>
+            <td>${selectCloser(r)}</td>
+            <td>${selectResultado(r)}</td>
+            <td><input type="date" class="mini-date" data-campo="dataReuniao" data-report="${r.id}" value="${r.dataReuniao || ''}" /></td>
+            <td><input type="date" class="mini-date" data-campo="dataFechamento" data-report="${r.id}" value="${r.dataFechamento || ''}" /></td>
+            <td class="num" style="color:var(--muted)">${r.diasParaFechar != null ? r.diasParaFechar : '—'}</td>
             <td><div class="acoes">
               <button class="mini del" data-remover-report="${r.id}"
               data-desc="${esc((r.lead || 'sem lead') + ' · ' + (r.usuarioNome || '—') + ' · ' + quando(r.quando))}"
               title="Tirar do histórico">Remover</button>
             </div></td>
           </tr>`).join('')
-          || '<tr><td colspan="6" style="color:var(--muted)">Nenhum report neste período.</td></tr>';
+          || '<tr><td colspan="11" style="color:var(--muted)">Nenhum report neste período.</td></tr>';
 
         setStatus('statusFiltro', `${s.total} report(s) · ${usd(s.custo)} no período.`, { ok: true });
       } catch (e) {

@@ -34,6 +34,17 @@ async function registrar({ id, usuarioId, usuarioNome, lead, origem, uso, report
       reportKey: reportKey || '',
       arquivo: arquivo || '',
       qualidade: qualidade || 'standard',
+      // Preenchido manualmente pelo admin depois (closer que fez a call e o
+      // resultado) — ver atualizarResultado(). Vazio = "não marcado ainda",
+      // não confundir com "não teve venda": o admin decide o que significa
+      // deixar em branco.
+      closerId: '',
+      closerNome: '',
+      closerEmail: '',
+      resultado: '', // '' | 'venda_call' | 'venda_fup' | 'pix_compromisso'
+      dataReuniao: '',
+      dataFechamento: '',
+      diasParaFechar: null,
       modelo: u.modelo || '',
       entrada: u.entrada || 0,
       saida: u.saida || 0,
@@ -191,4 +202,43 @@ async function buscarPorChave(reportKey) {
   return null;
 }
 
-module.exports = { registrar, resumo, listar, remover, buscarPorChave, hojeStr };
+const RESULTADOS_VALIDOS = new Set(['', 'venda_call', 'venda_fup', 'pix_compromisso']);
+const DATA_OK = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Diferença em dias corridos entre duas datas YYYY-MM-DD (b - a). null se alguma faltar/for inválida. */
+function diasEntre(a, b) {
+  if (!DATA_OK.test(a || '') || !DATA_OK.test(b || '')) return null;
+  const ms = new Date(b + 'T00:00:00') - new Date(a + 'T00:00:00');
+  return Math.round(ms / 864e5);
+}
+
+/**
+ * Marca manualmente quem fez a call de um report e o resultado — é o admin
+ * quem alimenta isso aos poucos, reeditando quando quiser (não é preenchido
+ * pela IA nem no momento da geração).
+ * @param {{closerId?: string, closerNome?: string, closerEmail?: string,
+ *   resultado?: string, dataReuniao?: string, dataFechamento?: string}} campos
+ * @returns {Promise<boolean>} true se achou o report e atualizou.
+ */
+async function atualizarResultado(id, campos = {}) {
+  if (!id) return false;
+  const resultado = RESULTADOS_VALIDOS.has(campos.resultado) ? campos.resultado : '';
+  const dataReuniao = DATA_OK.test(campos.dataReuniao || '') ? campos.dataReuniao : '';
+  const dataFechamento = DATA_OK.test(campos.dataFechamento || '') ? campos.dataFechamento : '';
+  return db.atualizarNaLista(
+    CHAVE_DB,
+    (r) => r.id === id,
+    (r) => ({
+      ...r,
+      closerId: campos.closerId || '',
+      closerNome: campos.closerNome || '',
+      closerEmail: campos.closerEmail || '',
+      resultado,
+      dataReuniao,
+      dataFechamento,
+      diasParaFechar: diasEntre(dataReuniao, dataFechamento),
+    })
+  );
+}
+
+module.exports = { registrar, resumo, listar, remover, buscarPorChave, atualizarResultado, hojeStr };

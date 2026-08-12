@@ -15,6 +15,7 @@ const { normalizarConversa, normalizarTextoLivre } = require('./src/conversation
 const { calcularReportKey } = require('./src/idempotencia');
 const { custoUSD } = require('./src/precos');
 const usuarios = require('./src/usuarios');
+const closers = require('./src/closers');
 const stats = require('./src/stats');
 const pdfStorage = require('./src/pdfStorage');
 const db = require('./src/db');
@@ -33,7 +34,7 @@ app.use(express.json({ limit: '25mb' }));
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Headers', 'Content-Type, x-cr-key, x-admin-pass');
-  res.header('Access-Control-Allow-Methods', 'GET,POST,DELETE,OPTIONS');
+  res.header('Access-Control-Allow-Methods', 'GET,POST,PATCH,DELETE,OPTIONS');
   if (req.method === 'OPTIONS') return res.sendStatus(204);
   next();
 });
@@ -139,6 +140,35 @@ app.delete('/api/admin/usuarios/:id', admin, async (req, res) => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// Admin: closers (roster pra marcar quem fez cada call — sem login, só nome+e-mail)
+// ---------------------------------------------------------------------------
+app.get('/api/admin/closers', admin, async (_req, res) => {
+  try {
+    res.json({ closers: await closers.listar() });
+  } catch (err) {
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+app.post('/api/admin/closers', admin, async (req, res) => {
+  try {
+    const c = await closers.criar(req.body && req.body.nome, req.body && req.body.email);
+    res.json({ ok: true, closer: c });
+  } catch (err) {
+    res.status(400).json({ erro: err.message });
+  }
+});
+
+app.delete('/api/admin/closers/:id', admin, async (req, res) => {
+  try {
+    await closers.remover(req.params.id);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ erro: err.message });
+  }
+});
+
 // Base de conhecimento (playbook) que entra em todo report.
 app.get('/api/admin/base', admin, async (_req, res) => {
   try {
@@ -161,6 +191,33 @@ app.delete('/api/admin/reports/:id', admin, async (req, res) => {
   try {
     const ok = await stats.remover(req.params.id);
     if (!ok) return res.status(404).json({ erro: 'Report não encontrado (já foi removido?).' });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+/**
+ * Marca manualmente o closer e o resultado de um report (preenchido aos
+ * poucos pelo admin, nada disso vem da IA). closerId vazio limpa a marcação.
+ */
+app.patch('/api/admin/reports/:id/resultado', admin, async (req, res) => {
+  try {
+    const { closerId, resultado, dataReuniao, dataFechamento } = req.body || {};
+    let closer = null;
+    if (closerId) {
+      closer = await closers.porId(closerId);
+      if (!closer) return res.status(400).json({ erro: 'Closer não encontrado.' });
+    }
+    const ok = await stats.atualizarResultado(req.params.id, {
+      closerId: closer ? closer.id : '',
+      closerNome: closer ? closer.nome : '',
+      closerEmail: closer ? closer.email : '',
+      resultado,
+      dataReuniao,
+      dataFechamento,
+    });
+    if (!ok) return res.status(404).json({ erro: 'Report não encontrado.' });
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ erro: err.message });

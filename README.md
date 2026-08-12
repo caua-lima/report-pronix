@@ -67,6 +67,7 @@ src/
   transcribe.js               Escolhe Groq (nuvem) ou faster-whisper (local)
   groq.js                     Cliente da API do Groq (Whisper)
   usuarios.js                  Acessos da equipe (chave pnx_..., sem e-mail real)
+  closers.js                    Roster de closers (nome+e-mail, sem login) pra marcar quem fez cada call
   base.js                      Base de conhecimento (playbook) que entra em todo report
   stats.js                     Histórico de reports gerados + custo em dólar
   pdfStorage.js                 Guarda/lê/remove o PDF de cada report (download individual/zip)
@@ -222,6 +223,24 @@ nova — **pin em `^7.0.1`**: a partir da v8 o pacote virou ESM puro e quebra o
 some junto. Não há expurgo automático por tempo — como os arquivos são
 pequenos isso não é urgente, mas fica registrado como próximo passo caso vire
 necessidade.
+
+## Closer e resultado da call
+
+Cada report pode ser marcado manualmente (pelo admin, na aba **Reports gerados**)
+com **quem foi o closer** e **o que aconteceu com aquela call** — nada disso vem da
+IA nem é preenchido sozinho, é o admin alimentando aos poucos:
+
+- **Closers**: um roster simples (nome + e-mail, sem login) em `src/closers.js` —
+  cadastra uma vez, depois só escolhe num select na tabela de reports.
+- **Resultado**: `venda_call` (fechou na própria reunião), `venda_fup` (fechou
+  depois, num follow-up), `pix_compromisso` (entrou com PIX de compromisso), ou
+  em branco (nada marcado ainda — não confundir com "não vendeu").
+- **Data da reunião** e **data do fechamento**: dois campos de data; o servidor
+  calcula sozinho quantos dias levou entre uma e outra (`diasParaFechar`).
+
+Tudo isso é `PATCH /api/admin/reports/:id/resultado` (admin), guardado direto no
+registro do report em `src/stats.js` (mesmo armazenamento do custo/tokens — nada
+de tabela nova). Editar de novo é só marcar de novo; não tem histórico de mudanças.
 
 ## Base de conhecimento (playbook)
 

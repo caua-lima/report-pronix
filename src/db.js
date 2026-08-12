@@ -135,6 +135,45 @@ async function removerDaLista(chave, predicado) {
   return Number(await redis(['LREM', chave, 1, alvo])) > 0;
 }
 
+/**
+ * Atualiza o primeiro item da lista que casar com o predicado, aplicando
+ * `transformar(itemAtual)` → item novo. No Redis usa LSET por índice (troca
+ * atômica de uma posição só — diferente de remover, aqui dá pra usar índice
+ * porque não precisamos casar pelo valor exato, só achar e substituir).
+ * @returns {Promise<boolean>} true se achou e atualizou.
+ */
+async function atualizarNaLista(chave, predicado, transformar) {
+  exigirBanco();
+  if (!usandoRedis) {
+    const bruto = lerArquivo(chave, []);
+    const lista = Array.isArray(bruto) ? bruto : [];
+    const i = lista.findIndex(predicado);
+    if (i === -1) return false;
+    lista[i] = transformar({ ...lista[i] });
+    salvarArquivo(chave, lista);
+    return true;
+  }
+  const brutos = (await redis(['LRANGE', chave, 0, -1])) || [];
+  let indice = -1;
+  let item = null;
+  for (let i = 0; i < brutos.length; i++) {
+    try {
+      const obj = JSON.parse(brutos[i]);
+      if (predicado(obj)) {
+        indice = i;
+        item = obj;
+        break;
+      }
+    } catch (_) {
+      /* ignora entrada corrompida */
+    }
+  }
+  if (indice === -1) return false;
+  const novo = transformar({ ...item });
+  await redis(['LSET', chave, indice, JSON.stringify(novo)]);
+  return true;
+}
+
 // --- Trava simples de concorrência (evita gerar o mesmo report 2x em paralelo,
 // ex.: um retry de rede duplicando a chamada enquanto a primeira ainda roda) ---
 const travasLocais = new Map(); // chave -> timestamp de expiração (só o processo local)
@@ -167,4 +206,4 @@ async function destravar(chave) {
   travasLocais.delete(chave);
 }
 
-module.exports = { getJson, setJson, push, range, removerDaLista, travar, destravar, usandoRedis };
+module.exports = { getJson, setJson, push, range, removerDaLista, atualizarNaLista, travar, destravar, usandoRedis };
