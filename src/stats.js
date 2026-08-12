@@ -122,6 +122,29 @@ async function resumo({ de, ate, sdr } = {}) {
     porUsuario.set(nome, u);
   });
 
+  // Por closer (quem foi marcado manualmente) — base pra entender depois quem
+  // fecha mais e com que tipo de lead. resultado vazio = sem venda (é o admin
+  // quem decide isso deixando em branco, não é "não preenchido ainda").
+  const porCloser = new Map();
+  dentro.forEach((r) => {
+    if (!r.closerId) return;
+    const c = porCloser.get(r.closerId) || {
+      closerId: r.closerId,
+      nome: r.closerNome || '—',
+      total: 0,
+      vendas: 0,
+      vendaCall: 0,
+      vendaFup: 0,
+      pixCompromisso: 0,
+    };
+    c.total++;
+    if (r.resultado) c.vendas++;
+    if (r.resultado === 'venda_call') c.vendaCall++;
+    if (r.resultado === 'venda_fup') c.vendaFup++;
+    if (r.resultado === 'pix_compromisso') c.pixCompromisso++;
+    porCloser.set(r.closerId, c);
+  });
+
   // Por dia (para ver o gasto diário)
   const porDia = new Map();
   dentro.forEach((r) => {
@@ -159,6 +182,9 @@ async function resumo({ de, ate, sdr } = {}) {
     tokensEntrada: dentro.reduce((t, r) => t + (r.entrada || 0), 0),
     tokensSaida: dentro.reduce((t, r) => t + (r.saida || 0), 0),
     porUsuario: [...porUsuario.values()].sort((a, b) => b.total - a.total),
+    porCloser: [...porCloser.values()]
+      .map((c) => ({ ...c, taxa: c.total ? c.vendas / c.total : 0 }))
+      .sort((a, b) => b.taxa - a.taxa || b.total - a.total),
     porDia: [...porDia.values()].sort((a, b) => (a.dia < b.dia ? -1 : 1)),
     ultimos: dentro.slice(-60),
     // Sempre sobre tudo, para o filtro não esconder o retrato geral

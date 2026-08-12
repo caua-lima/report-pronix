@@ -408,6 +408,15 @@
         </div>
 
         <div class="card">
+          <div class="head"><div class="t"><i data-ic="users"></i>Desempenho por closer</div><div class="sub">— reports marcados, quantos fecharam e a taxa (em branco = sem venda)</div></div>
+          <table>
+            <thead><tr><th>Closer</th><th>Reports</th><th>Venda em call</th><th>Venda em FUP</th><th>Pix compromisso</th><th>Total vendas</th><th>Taxa</th></tr></thead>
+            <tbody id="porCloser"></tbody>
+          </table>
+          <div id="vazioCloser" class="hint">Nenhum report com closer marcado neste período.</div>
+        </div>
+
+        <div class="card">
           <div class="head"><div class="t"><i data-ic="calendar"></i>Por dia</div><div class="sub">— quanto saiu em cada dia, do primeiro ao último</div></div>
           <table>
             <thead><tr><th>Dia</th><th>Reports</th><th>Gasto</th></tr></thead>
@@ -1014,6 +1023,18 @@
             <td class="num">${usd(u.custo)}</td>
             <td class="num" style="color:var(--muted)">${usd(u.total ? u.custo / u.total : 0)}</td>
             <td class="num" style="color:var(--muted);font-size:.8rem">${nTok(u.entrada)} in · ${nTok(u.saida)} out</td>
+          </tr>`).join('');
+
+        $('vazioCloser').style.display = (s.porCloser || []).length ? 'none' : '';
+        $('porCloser').innerHTML = (s.porCloser || []).map((c) => `
+          <tr>
+            <td><b>${esc(c.nome)}</b></td>
+            <td class="num">${c.total}</td>
+            <td class="num">${c.vendaCall}</td>
+            <td class="num">${c.vendaFup}</td>
+            <td class="num">${c.pixCompromisso}</td>
+            <td class="num">${c.vendas}</td>
+            <td class="num" style="color:var(--ouro-tinta);font-weight:700">${Math.round(c.taxa * 100)}%</td>
           </tr>`).join('');
 
         const maxCustoD = Math.max(1e-9, ...s.porDia.map((d) => d.custo));

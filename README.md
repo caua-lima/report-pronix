@@ -245,6 +245,13 @@ Tudo isso é `PATCH /api/admin/reports/:id/resultado` (admin), guardado direto n
 registro do report em `src/stats.js` (mesmo armazenamento do custo/tokens — nada
 de tabela nova). Editar de novo é só marcar de novo; não tem histórico de mudanças.
 
+**Desempenho por closer** (card na mesma aba): total de reports que cada closer
+pegou, quantos fecharam (por tipo de resultado) e a taxa de conversão — calculado
+puro em `stats.resumo()`, sem IA. É a base de dados que uma futura análise de
+"qual closer se dá bem com qual perfil de lead" vai precisar ter acumulado antes
+de fazer sentido — não tem volume suficiente pra isso ainda, então essa parte
+fica para quando os resultados estiverem sendo marcados na rotina.
+
 ## Base de conhecimento (playbook)
 
 Na aba **Base** do dashboard (admin), dá pra colar o script de qualificação, a oferta,
