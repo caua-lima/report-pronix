@@ -428,7 +428,7 @@
           <div style="overflow-x:auto">
           <table>
             <thead><tr>
-              <th>Lead</th><th>SDR</th><th>Origem</th><th>Quando</th><th>Custo</th>
+              <th>Lead</th><th>E-mail do lead</th><th>SDR</th><th>Origem</th><th>Quando</th><th>Custo</th>
               <th>Closer</th><th>Resultado</th><th>Reunião</th><th>Fechou</th><th>Dias</th><th></th>
             </tr></thead>
             <tbody id="ultimos"></tbody>
@@ -896,13 +896,14 @@
       ${RESULTADOS_OPCOES.map((o) => `<option value="${o.v}" ${o.v === (r.resultado || '') ? 'selected' : ''}>${o.t}</option>`).join('')}
     </select>`;
 
-    /** Lê os 4 campos da linha (closer/resultado/datas) e salva juntos — o PATCH substitui tudo de uma vez. */
+    /** Lê os campos da linha (e-mail do lead/closer/resultado/datas) e salva juntos — o PATCH substitui tudo de uma vez. */
     async function salvarResultadoLinha(id) {
       const linha = document.querySelector(`tr[data-linha-report="${id}"]`);
       if (!linha) return;
       const val = (nome) => linha.querySelector(`[data-campo="${nome}"]`).value;
       try {
         await api('PATCH', '/api/admin/reports/' + id + '/resultado', {
+          leadEmail: val('leadEmail'),
           closerId: val('closerId'),
           resultado: val('resultado'),
           dataReuniao: val('dataReuniao'),
@@ -1036,6 +1037,7 @@
         $('ultimos').innerHTML = s.ultimos.map((r) => `
           <tr data-linha-report="${r.id}">
             <td>${esc(r.lead || '—')}</td>
+            <td><input type="email" class="mini-date" data-campo="leadEmail" data-report="${r.id}" placeholder="e-mail do lead" value="${esc(r.leadEmail || '')}" style="max-width:170px" /></td>
             <td>${esc(r.usuarioNome || '—')}</td>
             <td><span class="tag">${r.origem === 'manual' ? 'manual' : 'extensão'}</span></td>
             <td style="color:var(--muted);font-size:.82rem">${quando(r.quando)}</td>
@@ -1051,7 +1053,7 @@
               title="Tirar do histórico">Remover</button>
             </div></td>
           </tr>`).join('')
-          || '<tr><td colspan="11" style="color:var(--muted)">Nenhum report neste período.</td></tr>';
+          || '<tr><td colspan="12" style="color:var(--muted)">Nenhum report neste período.</td></tr>';
 
         setStatus('statusFiltro', `${s.total} report(s) · ${usd(s.custo)} no período.`, { ok: true });
       } catch (e) {

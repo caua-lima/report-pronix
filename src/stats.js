@@ -41,6 +41,7 @@ async function registrar({ id, usuarioId, usuarioNome, lead, origem, uso, report
       closerId: '',
       closerNome: '',
       closerEmail: '',
+      leadEmail: '', // e-mail do LEAD (não do closer) — pra puxar o report por e-mail depois
       resultado: '', // '' | 'venda_call' | 'venda_fup' | 'pix_compromisso'
       dataReuniao: '',
       dataFechamento: '',
@@ -217,7 +218,8 @@ function diasEntre(a, b) {
  * quem alimenta isso aos poucos, reeditando quando quiser (não é preenchido
  * pela IA nem no momento da geração).
  * @param {{closerId?: string, closerNome?: string, closerEmail?: string,
- *   resultado?: string, dataReuniao?: string, dataFechamento?: string}} campos
+ *   leadEmail?: string, resultado?: string, dataReuniao?: string,
+ *   dataFechamento?: string}} campos
  * @returns {Promise<boolean>} true se achou o report e atualizou.
  */
 async function atualizarResultado(id, campos = {}) {
@@ -233,6 +235,7 @@ async function atualizarResultado(id, campos = {}) {
       closerId: campos.closerId || '',
       closerNome: campos.closerNome || '',
       closerEmail: campos.closerEmail || '',
+      leadEmail: String(campos.leadEmail || '').trim(),
       resultado,
       dataReuniao,
       dataFechamento,

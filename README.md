@@ -232,6 +232,9 @@ IA nem é preenchido sozinho, é o admin alimentando aos poucos:
 
 - **Closers**: um roster simples (nome + e-mail, sem login) em `src/closers.js` —
   cadastra uma vez, depois só escolhe num select na tabela de reports.
+- **E-mail do lead** (`leadEmail`): campo de texto por report — é o e-mail de
+  quem comprou/negociou, não do closer, pra dar pra puxar o report depois por
+  e-mail (ex.: cruzar com um sistema de pagamento).
 - **Resultado**: `venda_call` (fechou na própria reunião), `venda_fup` (fechou
   depois, num follow-up), `pix_compromisso` (entrou com PIX de compromisso), ou
   em branco (nada marcado ainda — não confundir com "não vendeu").

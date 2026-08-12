@@ -203,7 +203,7 @@ app.delete('/api/admin/reports/:id', admin, async (req, res) => {
  */
 app.patch('/api/admin/reports/:id/resultado', admin, async (req, res) => {
   try {
-    const { closerId, resultado, dataReuniao, dataFechamento } = req.body || {};
+    const { closerId, leadEmail, resultado, dataReuniao, dataFechamento } = req.body || {};
     let closer = null;
     if (closerId) {
       closer = await closers.porId(closerId);
@@ -213,6 +213,7 @@ app.patch('/api/admin/reports/:id/resultado', admin, async (req, res) => {
       closerId: closer ? closer.id : '',
       closerNome: closer ? closer.nome : '',
       closerEmail: closer ? closer.email : '',
+      leadEmail,
       resultado,
       dataReuniao,
       dataFechamento,
