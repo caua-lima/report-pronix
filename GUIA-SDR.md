@@ -32,12 +32,14 @@ A chave é sua e individual: é ela que assina o seu nome no report. Não passe 
 3. Vai aparecer um aviso na tela mostrando o andamento. **Pode continuar usando o WhatsApp/Instagram normalmente**, inclusive falar com outros leads — ele trabalha em segundo plano.
 4. No fim aparece **✅ Report pronto!** com o botão de **baixar o PDF**.
 
-No aviso final também vem quantos áudios ele transcreveu (só no WhatsApp — o Instagram Direct ainda não lê áudio, é a primeira versão):
+No aviso final também vem quantos áudios ele transcreveu:
 
-- `🎤 3 áudio(s) transcrito(s)` — pegou todos.
-- `⚠️ 1 de 3 áudio(s) transcrito(s)` — os outros entraram no report como `[áudio]`. Avise o admin.
+- `3 áudio(s) transcrito(s)` — pegou todos.
+- `1 de 3 áudio(s) transcrito(s)` — os outros entraram no report como `[áudio]`. Avise o admin.
 
-> **Instagram Direct é recente (primeira versão):** lê só texto por enquanto. Se o report sair estranho (mensagem trocada de remetente, faltando alguma) me avisa com um print — o Instagram muda o layout com frequência e pode precisar de ajuste.
+> **Áudio:** pra transcrever, ele precisa **tocar** cada áudio no mudo. Você não escuta nada, mas no Instagram isso pode marcar o áudio como "ouvido" pra quem mandou — se isso for um problema numa conversa específica, gere o report só depois de já ter ouvido os áudios normalmente.
+
+> **Instagram Direct é recente:** se o report sair estranho (mensagem trocada de remetente, áudio faltando) me avisa com um print — o Instagram muda o layout com frequência e pode precisar de ajuste.
 
 ## O que ele faz
 

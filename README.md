@@ -1,9 +1,9 @@
 # PRONIX · Closer Report
 
 Extensão do Chrome + servidor (Node/Express) que lê a **conversa aberta no WhatsApp
-Web ou no Instagram Direct** — incluindo o histórico retroativo e os áudios (só no
-WhatsApp por enquanto) — e gera, com um clique, um **relatório de handoff de
-pré-vendas em PDF** para o closer.
+Web ou no Instagram Direct** — incluindo o histórico retroativo e os áudios,
+transcritos automaticamente nas duas plataformas — e gera, com um clique, um
+**relatório de handoff de pré-vendas em PDF** para o closer.
 
 Sem bot, sem QR code, sem biblioteca não-oficial: a extensão só lê a página que o
 SDR já tem aberta e logada — em qualquer uma das duas plataformas.
@@ -78,7 +78,7 @@ extension/                  Extensão MV3 (publicada na Chrome Web Store)
   manifest.json
   content.js                  Lê o DOM do WhatsApp, rola o histórico, captura áudio
   inject.js                   Roda no contexto da página (world: MAIN): hook de áudio
-  content-instagram.js         Lê o DOM do Instagram Direct (texto só, Fase 1)
+  content-instagram.js         Lê o DOM do Instagram Direct (texto + voz)
   background.js                Service worker: chama o servidor por trás da CSP da página
   popup.html / popup.js        UI: detecta a plataforma da aba, gera, edita e baixa o report
 
@@ -272,8 +272,17 @@ consolidada).
   com classes trocadas a cada build** (ex.: `xexx8yu`, sem nome com sentido) — por
   isso `content-instagram.js` evita depender de classes e usa sinais estruturais
   (posição do texto na tela, `flex-direction` do container) pra saber quem enviou
-  cada mensagem. É uma primeira versão (só texto, sem áudio ainda) — validada contra
-  uma conversa real, mas ainda não testada em produção pela equipe.
+  cada mensagem, e faixa vertical pra agrupar as marcações de uma bolha de voz.
+- **Áudio no Instagram:** como não se sabia de antemão como o Direct entrega o
+  arquivo de voz, `capturarAudio()` tenta em ordem — `<audio>` da bolha, clicar
+  no play e olhar de novo, e o gancho `URL.createObjectURL` (o mesmo do WhatsApp)
+  — validando tudo por magic bytes. Se o `src` apontar pro CDN da Meta e o CORS
+  bloquear, o log `[CR-ig-audio]` diz exatamente isso, e o áudio entra no report
+  como `[áudio]` sem quebrar o resto. O caminho seguinte nesse caso seria buscar
+  pelo service worker, que exigiria `host_permissions` do CDN — não pedimos
+  enquanto não houver necessidade comprovada.
+- Transcrever exige **tocar** o áudio (no mudo). No Instagram isso pode marcar a
+  mensagem como ouvida pra quem enviou — está avisado no `GUIA-SDR.md`.
 
 ## Documentação relacionada
 

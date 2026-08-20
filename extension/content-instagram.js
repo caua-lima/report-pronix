@@ -1,18 +1,112 @@
 // Content script — lê a conversa aberta no Instagram Direct.
 // Roda no contexto da página www.instagram.com/direct/*.
 //
-// FASE 1 (texto só): sem captura de áudio ainda — mensagens de voz do Direct
-// não são lidas nesta versão (decisão explícita, ver conversa que mapeou o
-// DOM). O sinal de quem enviou cada mensagem foi descoberto testando ao vivo
-// numa conversa real (ver git log) — pode precisar de ajuste se o Instagram
-// mudar a estrutura (o CSS deles é atômico/hasheado e muda com frequência,
-// mesmo risco já documentado no README para o WhatsApp).
+// O sinal de quem enviou cada mensagem foi descoberto testando ao vivo numa
+// conversa real (ver git log) — pode precisar de ajuste se o Instagram mudar a
+// estrutura (o CSS deles é atômico/hasheado e muda com frequência, mesmo risco
+// já documentado no README para o WhatsApp).
+//
+// ÁUDIO (fase 2): ao contrário do WhatsApp, aqui não sabíamos de antemão COMO o
+// Instagram entrega o arquivo de voz. Em vez de chutar um seletor, a captura
+// tenta as formas reais que um navegador tem de expor áudio, em ordem, e valida
+// o resultado pelos magic bytes — o que não for áudio de verdade é descartado:
+//   1) <audio> da própria bolha com src (blob: ou https:)
+//   2) clicar no play e olhar de novo (o src às vezes só existe depois do play)
+//   3) fila do gancho URL.createObjectURL (inject.js), igual ao WhatsApp
+// Se a 1 e a 2 falharem por CORS (src apontando pro CDN da Meta), o log diz
+// exatamente isso — nesse caso o próximo passo é buscar pelo service worker,
+// que precisaria de host_permissions do CDN (não pedimos sem necessidade).
 
 (function () {
   'use strict';
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const logI = (...a) => console.log('[CR-instagram]', ...a);
+  const logA = (...a) => console.log('[CR-ig-audio]', ...a);
+
+  // Silencia qualquer <audio> da página: a captura precisa dar play pra
+  // materializar o arquivo, e sem isso o áudio tocaria alto pro SDR.
+  try {
+    const mutar = () =>
+      document.querySelectorAll('audio').forEach((a) => {
+        a.muted = true;
+        a.volume = 0;
+      });
+    new MutationObserver(mutar).observe(document.documentElement, { childList: true, subtree: true });
+  } catch (_) {
+    /* ignora */
+  }
+
+  // --- Helpers de áudio -----------------------------------------------------
+  // Cópia consciente do que existe em content.js (WhatsApp): são funções puras e
+  // já validadas em produção lá. Ficam duplicadas de propósito nesta fase pra não
+  // mexer no caminho do WhatsApp, que está estável e não dá pra testar aqui —
+  // quando alguém for mexer em áudio do WhatsApp de novo, vale unificar as duas.
+  function arrayBufferToBase64(buf) {
+    const bytes = new Uint8Array(buf);
+    let bin = '';
+    const chunk = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunk) {
+      bin += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+    }
+    return btoa(bin);
+  }
+
+  async function fetchArrayBuffer(url) {
+    try {
+      return await fetch(url).then((r) => r.arrayBuffer());
+    } catch (_) {
+      return null; // CORS/rede — quem chama trata como "não consegui por aqui"
+    }
+  }
+
+  /** Confere pelos magic bytes se o buffer é mesmo áudio (descarta imagem/pdf/etc.). */
+  function ehAudioBuffer(buf) {
+    if (!buf || buf.byteLength < 800) return false;
+    const b = new Uint8Array(buf.slice(0, 12));
+    const eq = (i, s) => s.split('').every((c, k) => b[i + k] === c.charCodeAt(0));
+    if (b[0] === 0xff && b[1] === 0xd8) return false; // JPEG
+    if (b[0] === 0x89 && eq(1, 'PNG')) return false; // PNG
+    if (eq(0, 'GIF8')) return false;
+    if (eq(0, '%PDF')) return false;
+    if (eq(0, 'RIFF') && eq(8, 'WEBP')) return false; // WebP
+    if (eq(0, 'OggS')) return true; // ogg/opus
+    if (eq(0, 'ID3')) return true; // mp3 com tag
+    if (b[0] === 0xff && (b[1] & 0xe0) === 0xe0) return true; // frame mp3
+    if (eq(0, 'fLaC')) return true;
+    if (eq(0, 'RIFF')) return true; // wav
+    if (eq(4, 'ftyp')) return true; // mp4/m4a/aac (formato provável no Instagram)
+    return buf.byteLength >= 1500 && buf.byteLength < 8000000;
+  }
+
+  // Fila de blobs vistos pelo gancho do inject.js (estratégia 3).
+  const blobsAudio = [];
+  const MAX_BLOBS_FILA = 500;
+  window.addEventListener('message', (ev) => {
+    if (ev.source === window && ev.data && ev.data.__crAudio && ev.data.url) {
+      blobsAudio.push({ url: ev.data.url, ts: ev.data.ts || Date.now() });
+      if (blobsAudio.length > MAX_BLOBS_FILA) blobsAudio.shift();
+    }
+  });
+
+  const ganchoInstalado = () => document.documentElement.getAttribute('data-cr-audio-hook') === '1';
+
+  async function garantirGanchoAudio() {
+    if (ganchoInstalado()) return true;
+    try {
+      const s = document.createElement('script');
+      s.src = chrome.runtime.getURL('inject.js');
+      s.async = false;
+      s.onload = () => s.remove();
+      (document.head || document.documentElement).appendChild(s);
+    } catch (e) {
+      logA('falha ao injetar o gancho:', e.message);
+    }
+    for (let i = 0; i < 20 && !ganchoInstalado(); i++) await sleep(50);
+    logA(ganchoInstalado() ? 'gancho de áudio ativo' : 'gancho de áudio NÃO instalou (estratégia 3 indisponível)');
+    return ganchoInstalado();
+  }
+  garantirGanchoAudio();
 
   // Texto de mensagem: candidato bruto. Também casa com nome do contato no
   // cabeçalho e outros textos da tela — por isso NUNCA usamos isto direto no
@@ -93,6 +187,109 @@
     return { from: ehDeMim(el, root) ? 'eu' : 'eles', type: 'texto', content: texto, timestamp: null };
   }
 
+  // --- Áudio: achar, capturar ----------------------------------------------
+
+  // Sinais de que um pedaço da tela é uma mensagem de voz. Amplo de propósito
+  // (não sabemos a marcação exata do Instagram): o que não for áudio de verdade
+  // morre depois, na validação por magic bytes.
+  const SINAIS_AUDIO =
+    'audio, [aria-label*="udio" i], [aria-label*="voice" i], [aria-label*="voz" i], [aria-label*="mensagem de v" i]';
+
+  /** "0:12", "1:05" — duração/relógio, não é conteúdo de mensagem. */
+  const ehDuracaoOuHora = (t) => /^\d{1,2}:\d{2}(:\d{2})?\s*$/.test((t || '').trim());
+
+  /**
+   * Sobe do sinal encontrado até um ancestral que contenha o <audio> — é essa
+   * "bolha" que a captura usa pra procurar o player e o botão de play. Para no
+   * primeiro que serve, pra não subir demais e pegar DUAS mensagens de voz
+   * juntas (aí o áudio capturado seria o da mensagem errada).
+   */
+  function acharBolhaAudio(hit) {
+    if (hit.tagName === 'AUDIO') return hit.parentElement || hit;
+    let n = hit;
+    for (let i = 0; i < 8 && n; i++) {
+      if (n.querySelector && n.querySelector('audio')) return n;
+      n = n.parentElement;
+    }
+    // Sem <audio> ainda (só aparece depois do play): usa um ancestral próximo.
+    let sobe = hit;
+    for (let i = 0; i < 4 && sobe.parentElement; i++) sobe = sobe.parentElement;
+    return sobe;
+  }
+
+  /** Acha o controle de play dentro da bolha (pra materializar o arquivo). */
+  function acharPlay(bolha) {
+    return (
+      bolha.querySelector('[aria-label*="reproduzir" i], [aria-label*="play" i], [aria-label*="tocar" i]') ||
+      bolha.querySelector('div[role="button"], button, [role="button"]')
+    );
+  }
+
+  /**
+   * Tenta pegar os bytes do áudio desta bolha. Devolve base64 ou null.
+   * Estratégias em ordem (ver comentário do topo do arquivo).
+   */
+  async function capturarAudio(bolha, dbg, iteracoes = 30) {
+    // Lê o <audio> DESTA bolha (nunca document.querySelector: pegaria o de outra
+    // mensagem). Serve tanto pra blob: quanto pra https:// do CDN.
+    const tentarElementoAudio = async () => {
+      const a = bolha.querySelector('audio');
+      const src = a && (a.currentSrc || a.src || '');
+      if (!src) return null;
+      a.muted = true;
+      a.volume = 0;
+      const buf = await fetchArrayBuffer(src);
+      if (!buf) {
+        logA(`${dbg}: <audio> tem src (${src.slice(0, 12)}…) mas o fetch falhou — provável CORS do CDN`);
+        return null;
+      }
+      if (!ehAudioBuffer(buf)) return null;
+      logA(`${dbg}: OK via <audio> (${buf.byteLength} bytes, ${src.startsWith('blob:') ? 'blob' : 'url'})`);
+      return arrayBufferToBase64(buf);
+    };
+
+    // 1) já tem player carregado?
+    let b64 = await tentarElementoAudio();
+    if (b64) return b64;
+
+    // 2) dá play (no mudo) pra forçar o Instagram a materializar o arquivo
+    const play = acharPlay(bolha);
+    if (play) {
+      try {
+        play.click();
+      } catch (_) {
+        /* ok */
+      }
+    }
+
+    // 3) espera o arquivo aparecer — no <audio> ou na fila do gancho
+    let descartados = 0;
+    for (let i = 0; i < iteracoes; i++) {
+      b64 = await tentarElementoAudio();
+      if (b64) return b64;
+      for (const b of blobsAudio) {
+        if (b.usado) continue;
+        b.usado = true;
+        const buf = await fetchArrayBuffer(b.url);
+        if (ehAudioBuffer(buf)) {
+          logA(`${dbg}: OK via gancho (${buf.byteLength} bytes, descartados ${descartados} não-áudio)`);
+          return arrayBufferToBase64(buf);
+        }
+        descartados++;
+      }
+      await sleep(150);
+    }
+
+    // Pausa o que ficou tocando, pra não deixar áudio rodando na tela do SDR.
+    try {
+      bolha.querySelectorAll('audio').forEach((a) => a.pause());
+    } catch (_) {
+      /* ok */
+    }
+    logA(`${dbg}: não consegui os bytes (blobs vistos=${blobsAudio.length}, gancho=${ganchoInstalado()})`);
+    return null;
+  }
+
   // O cabeçalho mostra o nome do contato, às vezes junto com status
   // ("Ativo(a) agora", "Ativo(a) há 5 min") — filtra pra não virar o nome.
   const STATUS_CONTATO_IG =
@@ -132,13 +329,12 @@
   }
 
   /**
-   * Lê a conversa. Simplificação da Fase 1: uma leitura só depois de rolar
-   * até o topo (sem o esquema de múltiplas passadas com Map por id que o
-   * WhatsApp usa, porque o Instagram não expõe nenhum id estável na mensagem
-   * — se isso perder mensagens em conversas muito longas por causa de
-   * virtualização, é o próximo ajuste a fazer, testando ao vivo).
+   * Lê a conversa (texto + voz) numa passada só, depois de rolar até o topo.
+   * Sem o esquema de múltiplas passadas do WhatsApp porque o Instagram não expõe
+   * id estável na mensagem — se isso perder mensagens em conversas muito longas
+   * por virtualização, é o próximo ajuste, testando ao vivo.
    */
-  async function coletarConversa() {
+  async function coletarConversa(server, comAudio) {
     let root = acharRoot();
     if (!root) {
       // Conversa pode não ter renderizado nada ainda — dá uma chance.
@@ -151,25 +347,72 @@
 
     await carregarHistorico(root);
     await sleep(300);
+    if (comAudio) await garantirGanchoAudio();
 
-    const vistos = new Set(); // evita duplicar o mesmo texto+remetente lado a lado (re-render)
+    // querySelectorAll com vários seletores devolve em ORDEM DO DOCUMENTO — é o
+    // que mantém texto e áudio intercalados na ordem certa da conversa, sem
+    // precisar de timestamp (que o Instagram não dá por mensagem).
+    const nos = [...root.querySelectorAll(SELETOR_TEXTO + ', ' + SINAIS_AUDIO)];
+    const bandasAudio = new Set(); // dedup por faixa vertical: 1 mensagem por linha da tela
     const mensagens = [];
-    [...root.querySelectorAll(SELETOR_TEXTO)].forEach((el) => {
-      const reg = extrairMensagem(el, root);
-      if (!reg) return;
-      const chave = reg.from + '|' + reg.content;
-      const anterior = mensagens[mensagens.length - 1];
-      if (anterior && anterior.from === reg.from && anterior.content === reg.content) return; // duplicata consecutiva
-      mensagens.push(reg);
-      vistos.add(chave);
-    });
+    const bolhasPorIndice = new Map(); // índice na lista -> bolha do áudio, pra capturar depois
+
+    for (const el of nos) {
+      if (el.matches(SELETOR_TEXTO)) {
+        const t = (el.textContent || '').trim();
+        if (!t || ehDuracaoOuHora(t)) continue; // "0:12" da bolha de voz não é mensagem
+        const reg = extrairMensagem(el, root);
+        if (!reg) continue;
+        const anterior = mensagens[mensagens.length - 1];
+        if (anterior && anterior.from === reg.from && anterior.content === reg.content) continue;
+        mensagens.push(reg);
+        continue;
+      }
+      // Sinal de áudio: várias marcações da mesma bolha (o <audio>, o botão, o
+      // aria-label) caem aqui — a faixa vertical junta todas numa mensagem só.
+      const r = el.getBoundingClientRect();
+      if (!r.height) continue;
+      const banda = Math.round(r.top / 8);
+      if (bandasAudio.has(banda)) continue;
+      bandasAudio.add(banda);
+      bolhasPorIndice.set(mensagens.length, acharBolhaAudio(el));
+      mensagens.push({ from: ehDeMim(el, root) ? 'eu' : 'eles', type: 'audio', content: '[áudio]', timestamp: null });
+    }
 
     if (mensagens.length === 0) {
       throw new Error('Nenhuma mensagem lida. Role a conversa manualmente uma vez e tente de novo.');
     }
 
-    logI(`${mensagens.length} mensagens lidas (Instagram Direct, texto só).`);
-    return { mensagens, nome: nomeDoContato() };
+    const totalAudios = bolhasPorIndice.size;
+    let transcritos = 0;
+
+    if (comAudio && totalAudios && server) {
+      let n = 0;
+      for (const [indice, bolha] of bolhasPorIndice) {
+        n++;
+        mostrarBadge({ texto: `<b>Lendo áudios…</b> (${n}/${totalAudios})`, loading: true });
+        const b64 = await capturarAudio(bolha, `áudio ${n}`).catch(() => null);
+        if (!b64) continue;
+        mostrarBadge({ texto: `<b>Transcrevendo áudios…</b> (${n}/${totalAudios})`, loading: true });
+        try {
+          const resp = await new Promise((r) =>
+            chrome.runtime.sendMessage({ action: 'transcreverAudio', server, base64: b64 }, r)
+          );
+          if (resp && resp.ok && resp.texto && resp.texto.trim()) {
+            mensagens[indice].content = resp.texto.trim(); // quem enviou já veio do DOM
+            transcritos++;
+          } else if (resp && resp.erro) {
+            logA('transcrição falhou:', resp.erro);
+          }
+        } catch (e) {
+          logA('transcrição erro:', e.message);
+        }
+      }
+    }
+
+    const stats = { total: mensagens.length, audios: totalAudios, audiosTranscritos: transcritos };
+    logI(`${stats.total} mensagens lidas — ${stats.audios} áudio(s) (${stats.audiosTranscritos} com transcrição).`);
+    return { mensagens, nome: nomeDoContato(), stats };
   }
 
   // ---------------------------------------------------------------------------
@@ -229,11 +472,22 @@
     }
     jobEmAndamento = true;
     try {
-      mostrarBadge({ texto: '<b>Lendo a conversa…</b><br><u>Não troque de conversa agora</u>.', loading: true });
-      const { mensagens, nome } = await coletarConversa();
+      mostrarBadge({
+        texto:
+          '<b>Lendo a conversa…</b><br>Os áudios são tocados no mudo pra transcrever. ' +
+          '<u>Não troque de conversa agora</u>.',
+        loading: true,
+      });
+      const { mensagens, nome, stats } = await coletarConversa(server, true);
+
+      const linhaAudio =
+        stats.audios > 0
+          ? `${stats.audios} áudio(s), ${stats.audiosTranscritos} com transcrição` +
+            (stats.audiosTranscritos < stats.audios ? ' <span style="color:#8b98a5">(o resto entra como [áudio])</span>' : '')
+          : 'Sem áudios nesta conversa';
 
       mostrarBadge({
-        texto: `<b>Gerando report…</b> (${mensagens.length} mensagens)<br>` +
+        texto: `<b>Gerando report…</b> (${mensagens.length} mensagens)<br>${linhaAudio}<br>` +
           '<svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:-2px;flex:none" fill="none" stroke="#25d366" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="m9 11 3 3L22 4"/></svg> Já pode responder outras conversas.',
         loading: true,
       });
@@ -267,10 +521,10 @@
           jobEmAndamento = false;
           return;
         }
-        return finalizar(resp2, nome, server);
+        return finalizar(resp2, nome, server, stats);
       }
 
-      finalizar(resp, nome, server);
+      finalizar(resp, nome, server, stats);
     } catch (e) {
       mostrarBadge({ texto: '' + e.message, cor: '#ff6b6b' });
     } finally {
@@ -278,12 +532,22 @@
     }
   }
 
-  function finalizar(resp, nome, server) {
+  function finalizar(resp, nome, server, stats) {
     chrome.storage.local.set({
       ultimoReport: { arquivo: resp.arquivo, dados: resp.dados, arquivoBase64: resp.arquivoBase64, nome, server, quando: Date.now() },
     });
+    // O resumo dos áudios fica no aviso final: é a dúvida de sempre (transcreveu
+    // ou não?) e o "Gerando report…" some rápido demais pra dar tempo de ler.
+    const s = stats || { audios: 0, audiosTranscritos: 0 };
+    const resumoAudio =
+      s.audios === 0
+        ? '<span style="color:#8b98a5">Sem áudios nesta conversa</span>'
+        : s.audiosTranscritos === s.audios
+          ? `${s.audios} áudio(s) transcrito(s)`
+          : `<span style="color:#f0ad4e">${s.audiosTranscritos} de ${s.audios} áudio(s) transcrito(s)</span>` +
+            ' <span style="color:#8b98a5">— o resto entrou como [áudio]</span>';
     mostrarBadge({
-      texto: `<svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:-2px;flex:none" fill="none" stroke="#25d366" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="m9 11 3 3L22 4"/></svg> <b>Report pronto!</b> (${nome || 'contato'})`,
+      texto: `<svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:-2px;flex:none" fill="none" stroke="#25d366" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="m9 11 3 3L22 4"/></svg> <b>Report pronto!</b> (${nome || 'contato'})<br>${resumoAudio}`,
       arquivo: resp.arquivo,
       arquivoBase64: resp.arquivoBase64,
     });
