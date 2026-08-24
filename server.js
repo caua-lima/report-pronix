@@ -11,6 +11,7 @@ const archiver = require('archiver');
 const { dadosDireto, dadosDeTexto, PROMPT_VERSAO } = require('./src/report');
 const { gerarPdfBuffer } = require('./src/generatePdf');
 const { transcribeBuffer } = require('./src/transcribe');
+const { lerImagemGroq } = require('./src/groq');
 const { normalizarConversa, normalizarTextoLivre } = require('./src/conversation-normalizer');
 const { calcularReportKey } = require('./src/idempotencia');
 const { custoUSD } = require('./src/precos');
@@ -473,6 +474,45 @@ app.post('/api/transcrever', auth, async (req, res) => {
 
     res.json({ texto });
   } catch (err) {
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Print de conversa -> texto (Groq com visão, mesmo plano gratuito do áudio).
+// Não gera report: devolve a conversa transcrita pra cair na caixa do modo
+// manual, e daí segue o fluxo de sempre.
+// ---------------------------------------------------------------------------
+
+/** Tipo REAL da imagem pelos magic bytes — não confia na extensão nem no que o cliente diz. */
+function tipoDeImagem(buf) {
+  if (!buf || buf.length < 12) return null;
+  const eq = (i, s) => s.split('').every((c, k) => buf[i + k] === c.charCodeAt(0));
+  if (buf[0] === 0xff && buf[1] === 0xd8) return 'image/jpeg';
+  if (buf[0] === 0x89 && eq(1, 'PNG')) return 'image/png';
+  if (eq(0, 'RIFF') && eq(8, 'WEBP')) return 'image/webp';
+  if (eq(0, 'GIF8')) return 'image/gif';
+  return null;
+}
+
+const MAX_IMAGEM_BYTES = Number(process.env.MAX_IMAGEM_BYTES) || 4 * 1024 * 1024;
+
+app.post('/api/ler-imagem', auth, async (req, res) => {
+  try {
+    const { imagemBase64 } = req.body || {};
+    if (!imagemBase64) return res.status(400).json({ erro: 'Nenhuma imagem recebida.' });
+    const buffer = Buffer.from(String(imagemBase64), 'base64');
+    if (buffer.length > MAX_IMAGEM_BYTES) {
+      return res.status(400).json({
+        erro: `Imagem grande demais (${Math.round(buffer.length / 1024)}KB). O limite é ${Math.round(MAX_IMAGEM_BYTES / 1024)}KB.`,
+      });
+    }
+    const mime = tipoDeImagem(buffer);
+    if (!mime) return res.status(400).json({ erro: 'Isso não é uma imagem válida (aceita PNG, JPG, WebP ou GIF).' });
+    const texto = await lerImagemGroq(buffer, mime);
+    res.json({ texto });
+  } catch (err) {
+    // Não loga a imagem nem o texto lido — é conversa de lead.
     res.status(500).json({ erro: err.message });
   }
 });

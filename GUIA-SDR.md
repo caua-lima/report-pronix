@@ -41,6 +41,17 @@ No aviso final também vem quantos áudios ele transcreveu:
 
 > **Instagram Direct é recente:** se o report sair estranho (mensagem trocada de remetente, áudio faltando) me avisa com um print — o Instagram muda o layout com frequência e pode precisar de ajuste.
 
+## No celular (WhatsApp Business do telefone)
+
+A extensão só funciona no computador. Pra gerar report do que você atende pelo celular:
+
+1. Tire **print** da conversa (pode ser mais de um, se for longa).
+2. Abra o site da PRONIX no navegador do celular e cole a sua chave.
+3. Toque em **"Ou cole um print da conversa"** e escolha os prints da galeria.
+4. O texto da conversa aparece sozinho na caixa. Confira, ajuste se precisar, e toque em **Gerar Report**.
+
+> Outra opção sem print: no WhatsApp, abra a conversa → menu (⋮) → **Exportar conversa** → **Sem mídia**. Aí é só colar o texto na caixa.
+
 ## O que ele faz
 
 Lê a conversa inteira (inclusive as mensagens antigas), transcreve os áudios e monta o report em PDF, sempre com **investimento, decisores e prioridade**, mais as falas do lead entre aspas. O arquivo sai como `Report_NomeDoLead_Data.pdf`.

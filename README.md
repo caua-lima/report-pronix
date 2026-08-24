@@ -148,6 +148,8 @@ SDR — nada de e-mail real, é só nome + chave gerada.
 | `OLLAMA_MODEL` / `OLLAMA_URL` | só se `LLM_PROVIDER=ollama` | Modelo e endpoint do Ollama local (custo zero). |
 | `GROQ_API_KEY` | sim, em produção (Vercel) | Transcrição de áudio via API do Groq (Whisper). Sem ela, cai no faster-whisper local. |
 | `GROQ_MODEL` | não (padrão `whisper-large-v3-turbo`) | Modelo de transcrição do Groq. |
+| `GROQ_VISION_MODEL` | não (padrão `qwen/qwen3.6-27b`) | Modelo com visão que lê o print da conversa no modo manual. |
+| `MAX_IMAGEM_BYTES` | não (padrão `4194304`) | Teto do print enviado para leitura (o dashboard já reduz antes). |
 | `PYTHON_BIN` / `WHISPER_MODEL_SIZE` | só localmente, sem `GROQ_API_KEY` | Transcrição local via `faster-whisper` (`pip install faster-whisper`). |
 | `KV_REST_API_URL` / `KV_REST_API_TOKEN` | sim, na Vercel | Credenciais do Vercel KV/Upstash Redis. Vazias = grava em `data/*.json`. |
 | `TZ_RELATORIO` | não (padrão `America/Sao_Paulo`) | Fuso usado pra decidir o "dia" de cada report nos números do dashboard. |
@@ -223,6 +225,34 @@ nova — **pin em `^7.0.1`**: a partir da v8 o pacote virou ESM puro e quebra o
 some junto. Não há expurgo automático por tempo — como os arquivos são
 pequenos isso não é urgente, mas fica registrado como próximo passo caso vire
 necessidade.
+
+## Print de conversa (e uso no celular)
+
+No modo manual dá pra **colar um print** da conversa (Ctrl+V), arrastar ou
+escolher o arquivo. O servidor lê a imagem com o modelo de visão do Groq
+(`POST /api/ler-imagem`) e devolve a conversa transcrita no formato
+`VENDEDOR:`/`LEAD:`, que cai direto na caixa de texto — daí segue o fluxo normal
+de geração. Vários prints podem ser colados em sequência; cada um vai
+acrescentando à conversa.
+
+**Custo: zero.** A leitura da imagem usa o mesmo plano gratuito do Groq que já
+transcreve os áudios. O que continua custando é só a geração do relatório em si
+(Anthropic), igual a qualquer outro report.
+
+Cuidados que já estão no código:
+- O tipo do arquivo é conferido pelos **magic bytes** no servidor, não pela
+  extensão nem pelo que o navegador declara (`tipoDeImagem()` em `server.js`).
+- O dashboard **reduz a imagem** antes de enviar (máx. 1600px, JPEG 0.92): um
+  print de celular sai de vários MB para algumas centenas de KB, sem perder a
+  legibilidade do texto.
+- O erro nunca loga a imagem nem o texto lido — é conversa de lead.
+
+**No celular:** a extensão do Chrome não roda em Android/iOS, então o caminho
+para quem atende pelo WhatsApp Business do telefone é este: tira o print da
+conversa, abre o dashboard no navegador do celular e toca no campo de print (o
+`accept="image/*"` abre a galeria direto). Alternativa sem print: o próprio
+WhatsApp tem **Exportar conversa**, que gera um `.txt` para colar na caixa de
+texto.
 
 ## Closer e resultado da call
 
