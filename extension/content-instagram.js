@@ -328,11 +328,92 @@
     }
   }
 
+  /** Identidade de uma mensagem, pra costurar as janelas de leitura sem duplicar. */
+  const chaveMsg = (m) => `${m.from}|${m.type}|${m._dur || ''}|${m.content}`;
+
   /**
-   * Lê a conversa (texto + voz) numa passada só, depois de rolar até o topo.
-   * Sem o esquema de múltiplas passadas do WhatsApp porque o Instagram não expõe
-   * id estável na mensagem — se isso perder mensagens em conversas muito longas
-   * por virtualização, é o próximo ajuste, testando ao vivo.
+   * Lê o que está no DOM AGORA, em ordem do documento. É uma "janela" da
+   * conversa: o Instagram virtualiza a lista, então isso nunca é a conversa
+   * inteira — é só o pedaço que existe neste instante.
+   */
+  function lerJanela(root) {
+    const janela = [];
+    const bandas = new Set(); // dedup: as várias marcações de uma bolha de voz viram 1 mensagem
+    for (const el of root.querySelectorAll(SELETOR_TEXTO + ', ' + SINAIS_AUDIO)) {
+      if (el.matches(SELETOR_TEXTO)) {
+        const t = (el.textContent || '').trim();
+        if (!t) continue;
+        if (ehDuracaoOuHora(t)) {
+          // "0:12" não é mensagem, mas gruda no áudio anterior: é o que diferencia
+          // um áudio do outro na hora de costurar as janelas.
+          const ult = janela[janela.length - 1];
+          if (ult && ult.type === 'audio' && !ult._dur) ult._dur = t;
+          continue;
+        }
+        const reg = extrairMensagem(el, root);
+        if (!reg) continue;
+        const ant = janela[janela.length - 1];
+        if (ant && ant.from === reg.from && ant.content === reg.content) continue;
+        janela.push(reg);
+        continue;
+      }
+      const r = el.getBoundingClientRect();
+      if (!r.height) continue;
+      const banda = Math.round(r.top / 8);
+      if (bandas.has(banda)) continue;
+      bandas.add(banda);
+      janela.push({
+        from: ehDeMim(el, root) ? 'eu' : 'eles',
+        type: 'audio',
+        content: '[áudio]',
+        timestamp: null,
+        _bolha: acharBolhaAudio(el),
+      });
+    }
+    return janela;
+  }
+
+  /**
+   * Costura a janela recém-lida no que já temos: acha a maior sobreposição entre
+   * o FIM do acumulado e o COMEÇO da janela e só acrescenta o que é novo. Compara
+   * sequência (não conjunto), então mensagem repetida na conversa ("kkk" duas
+   * vezes) continua aparecendo duas vezes.
+   * @returns {Array} só os itens novos (os que acabaram de entrar)
+   */
+  function mesclarJanela(acumulado, janela) {
+    if (!janela.length) return [];
+    if (!acumulado.length) {
+      acumulado.push(...janela);
+      return janela;
+    }
+    const max = Math.min(acumulado.length, janela.length);
+    for (let k = max; k > 0; k--) {
+      let bate = true;
+      for (let j = 0; j < k; j++) {
+        if (chaveMsg(acumulado[acumulado.length - k + j]) !== chaveMsg(janela[j])) {
+          bate = false;
+          break;
+        }
+      }
+      if (bate) {
+        const novos = janela.slice(k);
+        acumulado.push(...novos);
+        return novos;
+      }
+    }
+    // Nenhuma sobreposição: a rolagem pulou um pedaço. Acrescenta tudo — é melhor
+    // ter a conversa com um buraco do que perder mensagem.
+    acumulado.push(...janela);
+    return janela;
+  }
+
+  /**
+   * Lê a conversa (texto + voz) rolando do topo até o fim e costurando o que
+   * aparece em cada passo. A leitura tem que ser progressiva porque o Instagram
+   * virtualiza a lista: ao rolar, ele DESTRÓI do DOM as mensagens que saíram da
+   * tela — ler tudo de uma vez no final pegaria só o último pedaço.
+   * O áudio também é capturado aqui dentro, no passo em que a bolha aparece,
+   * pelo mesmo motivo (depois ela não existe mais pra clicar no play).
    */
   async function coletarConversa(server, comAudio) {
     let root = acharRoot();
@@ -345,61 +426,63 @@
       throw new Error('Não achei a conversa na tela. Abra uma conversa no Instagram Direct e tente de novo.');
     }
 
-    await carregarHistorico(root);
+    await carregarHistorico(root); // sobe até o topo carregando o histórico
     await sleep(300);
     if (comAudio) await garantirGanchoAudio();
 
-    // querySelectorAll com vários seletores devolve em ORDEM DO DOCUMENTO — é o
-    // que mantém texto e áudio intercalados na ordem certa da conversa, sem
-    // precisar de timestamp (que o Instagram não dá por mensagem).
-    const nos = [...root.querySelectorAll(SELETOR_TEXTO + ', ' + SINAIS_AUDIO)];
-    const bandasAudio = new Set(); // dedup por faixa vertical: 1 mensagem por linha da tela
+    // Desce do topo até o fim lendo e costurando. Passo menor que a altura da
+    // tela de propósito: as janelas precisam se sobrepor pra dar pra costurar
+    // uma na outra sem buraco.
     const mensagens = [];
-    const bolhasPorIndice = new Map(); // índice na lista -> bolha do áudio, pra capturar depois
+    const passo = Math.max(200, Math.floor(root.clientHeight * 0.6));
+    root.scrollTop = 0;
+    await sleep(400);
 
-    for (const el of nos) {
-      if (el.matches(SELETOR_TEXTO)) {
-        const t = (el.textContent || '').trim();
-        if (!t || ehDuracaoOuHora(t)) continue; // "0:12" da bolha de voz não é mensagem
-        const reg = extrairMensagem(el, root);
-        if (!reg) continue;
-        const anterior = mensagens[mensagens.length - 1];
-        if (anterior && anterior.from === reg.from && anterior.content === reg.content) continue;
-        mensagens.push(reg);
-        continue;
+    const capturarNovos = async (novos) => {
+      if (!comAudio) return;
+      for (const m of novos) {
+        if (m.type !== 'audio' || !m._bolha) continue;
+        // Captura AGORA, enquanto a bolha ainda está no DOM: depois de rolar,
+        // o Instagram descarta o elemento e não dá mais pra clicar no play.
+        m._b64 = await capturarAudio(m._bolha, `áudio ${mensagens.filter((x) => x.type === 'audio').length}`, 15).catch(() => null);
       }
-      // Sinal de áudio: várias marcações da mesma bolha (o <audio>, o botão, o
-      // aria-label) caem aqui — a faixa vertical junta todas numa mensagem só.
-      const r = el.getBoundingClientRect();
-      if (!r.height) continue;
-      const banda = Math.round(r.top / 8);
-      if (bandasAudio.has(banda)) continue;
-      bandasAudio.add(banda);
-      bolhasPorIndice.set(mensagens.length, acharBolhaAudio(el));
-      mensagens.push({ from: ehDeMim(el, root) ? 'eu' : 'eles', type: 'audio', content: '[áudio]', timestamp: null });
+    };
+
+    for (let i = 0; i < 400; i++) {
+      const novos = mesclarJanela(mensagens, lerJanela(root));
+      await capturarNovos(novos);
+      mostrarBadge({ texto: `<b>Lendo a conversa…</b> (${mensagens.length} mensagens até aqui)`, loading: true });
+
+      const antes = root.scrollTop;
+      root.scrollTop = Math.min(antes + passo, root.scrollHeight);
+      await sleep(320);
+      const chegouAoFim = root.scrollTop + root.clientHeight >= root.scrollHeight - 5;
+      if (root.scrollTop === antes || chegouAoFim) {
+        // Última leitura já no fundo: pega o que entrou depois do último passo.
+        const ultimos = mesclarJanela(mensagens, lerJanela(root));
+        await capturarNovos(ultimos);
+        break;
+      }
     }
 
     if (mensagens.length === 0) {
       throw new Error('Nenhuma mensagem lida. Role a conversa manualmente uma vez e tente de novo.');
     }
 
-    const totalAudios = bolhasPorIndice.size;
+    // Transcrição só depois de rolar tudo: não depende mais do DOM, e assim a
+    // leitura da conversa não fica parada esperando a rede.
+    const audios = mensagens.filter((m) => m.type === 'audio');
     let transcritos = 0;
-
-    if (comAudio && totalAudios && server) {
-      let n = 0;
-      for (const [indice, bolha] of bolhasPorIndice) {
-        n++;
-        mostrarBadge({ texto: `<b>Lendo áudios…</b> (${n}/${totalAudios})`, loading: true });
-        const b64 = await capturarAudio(bolha, `áudio ${n}`).catch(() => null);
-        if (!b64) continue;
-        mostrarBadge({ texto: `<b>Transcrevendo áudios…</b> (${n}/${totalAudios})`, loading: true });
+    if (comAudio && server) {
+      const comBytes = audios.filter((m) => m._b64);
+      for (let n = 0; n < comBytes.length; n++) {
+        mostrarBadge({ texto: `<b>Transcrevendo áudios…</b> (${n + 1}/${comBytes.length})`, loading: true });
         try {
           const resp = await new Promise((r) =>
-            chrome.runtime.sendMessage({ action: 'transcreverAudio', server, base64: b64 }, r)
+            chrome.runtime.sendMessage({ action: 'transcreverAudio', server, base64: comBytes[n]._b64 }, r)
           );
           if (resp && resp.ok && resp.texto && resp.texto.trim()) {
-            mensagens[indice].content = resp.texto.trim(); // quem enviou já veio do DOM
+            comBytes[n].content = resp.texto.trim(); // quem enviou já veio do DOM
             transcritos++;
           } else if (resp && resp.erro) {
             logA('transcrição falhou:', resp.erro);
@@ -410,9 +493,11 @@
       }
     }
 
-    const stats = { total: mensagens.length, audios: totalAudios, audiosTranscritos: transcritos };
+    // Tira o que era só andaime interno antes de mandar pro servidor.
+    const limpas = mensagens.map(({ from, type, content, timestamp }) => ({ from, type, content, timestamp }));
+    const stats = { total: limpas.length, audios: audios.length, audiosTranscritos: transcritos };
     logI(`${stats.total} mensagens lidas — ${stats.audios} áudio(s) (${stats.audiosTranscritos} com transcrição).`);
-    return { mensagens, nome: nomeDoContato(), stats };
+    return { mensagens: limpas, nome: nomeDoContato(), stats };
   }
 
   // ---------------------------------------------------------------------------

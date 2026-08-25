@@ -303,6 +303,14 @@ consolidada).
   isso `content-instagram.js` evita depender de classes e usa sinais estruturais
   (posição do texto na tela, `flex-direction` do container) pra saber quem enviou
   cada mensagem, e faixa vertical pra agrupar as marcações de uma bolha de voz.
+- **Virtualização do Direct:** o Instagram DESTRÓI do DOM as mensagens que saem
+  da tela, então não dá pra rolar até o topo e ler tudo no fim (era isso que
+  fazia o report sair com só as primeiras mensagens). `coletarConversa()` lê
+  progressivamente enquanto desce, costurando cada janela na anterior pela maior
+  sobreposição de sequência — repetição real na conversa ("kkk" duas vezes)
+  continua aparecendo duas vezes, porque a comparação é de sequência e não de
+  conjunto. O áudio é capturado no passo em que a bolha aparece, pelo mesmo
+  motivo (depois ela não existe mais pra clicar no play).
 - **Áudio no Instagram:** como não se sabia de antemão como o Direct entrega o
   arquivo de voz, `capturarAudio()` tenta em ordem — `<audio>` da bolha, clicar
   no play e olhar de novo, e o gancho `URL.createObjectURL` (o mesmo do WhatsApp)
