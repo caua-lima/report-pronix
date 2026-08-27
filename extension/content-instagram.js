@@ -21,8 +21,17 @@
   'use strict';
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-  const logI = (...a) => console.log('[CR-instagram]', ...a);
-  const logA = (...a) => console.log('[CR-ig-audio]', ...a);
+  // A versão vai em todo log: sem isso não dá pra saber, olhando um print do
+  // console, se o SDR está rodando o build novo ou um antigo em cache.
+  const VERSAO = (() => {
+    try {
+      return chrome.runtime.getManifest().version;
+    } catch (_) {
+      return '?';
+    }
+  })();
+  const logI = (...a) => console.log(`[CR-instagram v${VERSAO}]`, ...a);
+  const logA = (...a) => console.log(`[CR-ig-audio v${VERSAO}]`, ...a);
 
   // Silencia qualquer <audio> da página: a captura precisa dar play pra
   // materializar o arquivo, e sem isso o áudio tocaria alto pro SDR.
@@ -313,12 +322,44 @@
    * Rola até o topo pra carregar o histórico (mesma lógica de espera do
    * WhatsApp: repete até a altura da lista parar de crescer).
    */
+  /**
+   * Rola o container. Alguns layouts virtualizados ignoram a escrita direta em
+   * scrollTop, então tenta também scrollBy e, por último, roda um evento de
+   * wheel — se nada funcionar, quem chama descobre pelo retorno e não fica
+   * preso achando que rolou.
+   * @returns {Promise<boolean>} true se a posição realmente mudou
+   */
+  async function rolarPara(el, alvo, espera = 320) {
+    const antes = el.scrollTop;
+    el.scrollTop = alvo;
+    await sleep(espera);
+    if (el.scrollTop !== antes) return true;
+
+    if (typeof el.scrollBy === 'function') {
+      try {
+        el.scrollBy(0, alvo - antes);
+      } catch (_) {
+        /* ok */
+      }
+      await sleep(espera);
+      if (el.scrollTop !== antes) return true;
+    }
+
+    try {
+      el.dispatchEvent(new WheelEvent('wheel', { deltaY: alvo - antes, bubbles: true, cancelable: true }));
+    } catch (_) {
+      /* ok */
+    }
+    await sleep(espera);
+    return el.scrollTop !== antes;
+  }
+
   async function carregarHistorico(scroller) {
     let alturaAnterior = -1;
     let estavel = 0;
-    for (let i = 0; i < 150 && estavel < 3; i++) {
-      scroller.scrollTop = 0;
-      await sleep(450);
+    let i = 0;
+    for (; i < 150 && estavel < 4; i++) {
+      await rolarPara(scroller, 0, 500);
       const h = scroller.scrollHeight;
       if (h === alturaAnterior) estavel++;
       else {
@@ -326,6 +367,7 @@
         alturaAnterior = h;
       }
     }
+    logI(`histórico carregado em ${i} passo(s) — altura final ${scroller.scrollHeight}px, topo em ${scroller.scrollTop}`);
   }
 
   /** Identidade de uma mensagem, pra costurar as janelas de leitura sem duplicar. */
@@ -448,19 +490,25 @@
       }
     };
 
+    logI(`começando a ler: altura ${root.scrollHeight}px, janela ${root.clientHeight}px, passo ${passo}px`);
     for (let i = 0; i < 400; i++) {
-      const novos = mesclarJanela(mensagens, lerJanela(root));
+      const janela = lerJanela(root);
+      const novos = mesclarJanela(mensagens, janela);
       await capturarNovos(novos);
       mostrarBadge({ texto: `<b>Lendo a conversa…</b> (${mensagens.length} mensagens até aqui)`, loading: true });
 
       const antes = root.scrollTop;
-      root.scrollTop = Math.min(antes + passo, root.scrollHeight);
-      await sleep(320);
+      const rolou = await rolarPara(root, Math.min(antes + passo, root.scrollHeight));
       const chegouAoFim = root.scrollTop + root.clientHeight >= root.scrollHeight - 5;
-      if (root.scrollTop === antes || chegouAoFim) {
+      logI(`passo ${i}: scroll ${antes}->${root.scrollTop} | janela ${janela.length} msg | +${novos.length} nova(s) | total ${mensagens.length}`);
+
+      if (!rolou || chegouAoFim) {
         // Última leitura já no fundo: pega o que entrou depois do último passo.
         const ultimos = mesclarJanela(mensagens, lerJanela(root));
         await capturarNovos(ultimos);
+        if (!rolou && !chegouAoFim) {
+          logI('a rolagem não saiu do lugar — provavelmente o container escolhido não é o que rola. Chame o admin com este log.');
+        }
         break;
       }
     }
