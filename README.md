@@ -303,11 +303,14 @@ consolidada).
   isso `content-instagram.js` evita depender de classes e usa sinais estruturais
   (posição do texto na tela, `flex-direction` do container) pra saber quem enviou
   cada mensagem, e faixa vertical pra agrupar as marcações de uma bolha de voz.
-- **Virtualização do Direct:** o Instagram DESTRÓI do DOM as mensagens que saem
-  da tela, então não dá pra rolar até o topo e ler tudo no fim (era isso que
-  fazia o report sair com só as primeiras mensagens). `coletarConversa()` lê
-  progressivamente enquanto desce, costurando cada janela na anterior pela maior
-  sobreposição de sequência — repetição real na conversa ("kkk" duas vezes)
+- **Virtualização do Direct + rolagem:** o Instagram DESTRÓI do DOM as mensagens
+  que saem da tela (medido ao vivo: 5 nós no DOM numa conversa de 2959px), então
+  não dá pra rolar até o topo e ler tudo no fim. Pior: **a lista ignora escrita
+  em `scrollTop`** (pedir `scrollTop = 2959` deixava em `1`), então dirigir a
+  rolagem por número não funciona — `coletarConversa()` navega com
+  `scrollIntoView()` na própria mensagem, deixando o navegador resolver como
+  rolar. Lê progressivamente enquanto desce, costurando cada janela na anterior
+  pela maior sobreposição de sequência — repetição real na conversa ("kkk" duas vezes)
   continua aparecendo duas vezes, porque a comparação é de sequência e não de
   conjunto. O áudio é capturado no passo em que a bolha aparece, pelo mesmo
   motivo (depois ela não existe mais pra clicar no play).

@@ -318,58 +318,6 @@
     return '';
   }
 
-  /**
-   * Rola até o topo pra carregar o histórico (mesma lógica de espera do
-   * WhatsApp: repete até a altura da lista parar de crescer).
-   */
-  /**
-   * Rola o container. Alguns layouts virtualizados ignoram a escrita direta em
-   * scrollTop, então tenta também scrollBy e, por último, roda um evento de
-   * wheel — se nada funcionar, quem chama descobre pelo retorno e não fica
-   * preso achando que rolou.
-   * @returns {Promise<boolean>} true se a posição realmente mudou
-   */
-  async function rolarPara(el, alvo, espera = 320) {
-    const antes = el.scrollTop;
-    el.scrollTop = alvo;
-    await sleep(espera);
-    if (el.scrollTop !== antes) return true;
-
-    if (typeof el.scrollBy === 'function') {
-      try {
-        el.scrollBy(0, alvo - antes);
-      } catch (_) {
-        /* ok */
-      }
-      await sleep(espera);
-      if (el.scrollTop !== antes) return true;
-    }
-
-    try {
-      el.dispatchEvent(new WheelEvent('wheel', { deltaY: alvo - antes, bubbles: true, cancelable: true }));
-    } catch (_) {
-      /* ok */
-    }
-    await sleep(espera);
-    return el.scrollTop !== antes;
-  }
-
-  async function carregarHistorico(scroller) {
-    let alturaAnterior = -1;
-    let estavel = 0;
-    let i = 0;
-    for (; i < 150 && estavel < 4; i++) {
-      await rolarPara(scroller, 0, 500);
-      const h = scroller.scrollHeight;
-      if (h === alturaAnterior) estavel++;
-      else {
-        estavel = 0;
-        alturaAnterior = h;
-      }
-    }
-    logI(`histórico carregado em ${i} passo(s) — altura final ${scroller.scrollHeight}px, topo em ${scroller.scrollTop}`);
-  }
-
   /** Identidade de uma mensagem, pra costurar as janelas de leitura sem duplicar. */
   const chaveMsg = (m) => `${m.from}|${m.type}|${m._dur || ''}|${m.content}`;
 
@@ -468,17 +416,40 @@
       throw new Error('Não achei a conversa na tela. Abra uma conversa no Instagram Direct e tente de novo.');
     }
 
-    await carregarHistorico(root); // sobe até o topo carregando o histórico
-    await sleep(300);
     if (comAudio) await garantirGanchoAudio();
 
-    // Desce do topo até o fim lendo e costurando. Passo menor que a altura da
-    // tela de propósito: as janelas precisam se sobrepor pra dar pra costurar
-    // uma na outra sem buraco.
+    // A lista do Direct IGNORA escrita em scrollTop (medido ao vivo: pedir
+    // scrollTop=2959 deixava em 1). Então a navegação é feita com
+    // scrollIntoView na própria mensagem — é o navegador que resolve como
+    // rolar, funcione a lista como funcionar.
+    const nosBrutos = () => [...root.querySelectorAll(SELETOR_TEXTO + ', ' + SINAIS_AUDIO)];
+    const irPara = async (el, bloco, espera = 380) => {
+      try {
+        el.scrollIntoView({ block: bloco });
+      } catch (_) {
+        try {
+          el.scrollIntoView();
+        } catch (__) {
+          /* ok */
+        }
+      }
+      await sleep(espera);
+    };
+
+    // 1) Sobe até o topo, ancorando na primeira mensagem renderizada. Cada
+    //    subida faz o Instagram carregar mais histórico acima.
+    let ancora = null;
+    let subidas = 0;
+    for (let i = 0; i < 300; i++) {
+      const nos = nosBrutos();
+      if (!nos.length || nos[0] === ancora) break; // não mexeu = topo da conversa
+      ancora = nos[0];
+      await irPara(ancora, 'center', 420);
+      subidas++;
+    }
+    logI(`subiu ao topo em ${subidas} passo(s) — altura ${root.scrollHeight}px, janela ${root.clientHeight}px`);
+
     const mensagens = [];
-    const passo = Math.max(200, Math.floor(root.clientHeight * 0.6));
-    root.scrollTop = 0;
-    await sleep(400);
 
     const capturarNovos = async (novos) => {
       if (!comAudio) return;
@@ -490,28 +461,39 @@
       }
     };
 
-    logI(`começando a ler: altura ${root.scrollHeight}px, janela ${root.clientHeight}px, passo ${passo}px`);
+    // 2) Desce lendo. A cada passo, ancora numa mensagem a ~60% da janela atual
+    //    e a leva pro topo: avança pouco menos de uma tela, deixando ~40% de
+    //    sobreposição — que é o que a costura precisa pra encaixar sem buraco.
+    let semNovas = 0;
+    let paradas = 0;
     for (let i = 0; i < 400; i++) {
+      const nos = nosBrutos();
       const janela = lerJanela(root);
       const novos = mesclarJanela(mensagens, janela);
       await capturarNovos(novos);
       mostrarBadge({ texto: `<b>Lendo a conversa…</b> (${mensagens.length} mensagens até aqui)`, loading: true });
+      logI(`passo ${i}: janela ${janela.length} msg | +${novos.length} nova(s) | total ${mensagens.length}`);
 
-      const antes = root.scrollTop;
-      const rolou = await rolarPara(root, Math.min(antes + passo, root.scrollHeight));
-      const chegouAoFim = root.scrollTop + root.clientHeight >= root.scrollHeight - 5;
-      logI(`passo ${i}: scroll ${antes}->${root.scrollTop} | janela ${janela.length} msg | +${novos.length} nova(s) | total ${mensagens.length}`);
+      if (!nos.length) break;
+      semNovas = novos.length ? 0 : semNovas + 1;
+      if (semNovas >= 3) break; // 3 passos sem nada novo: acabou a conversa
 
-      if (!rolou || chegouAoFim) {
-        // Última leitura já no fundo: pega o que entrou depois do último passo.
-        const ultimos = mesclarJanela(mensagens, lerJanela(root));
-        await capturarNovos(ultimos);
-        if (!rolou && !chegouAoFim) {
-          logI('a rolagem não saiu do lugar — provavelmente o container escolhido não é o que rola. Chame o admin com este log.');
-        }
+      const primeiroAntes = nos[0];
+      const ultimoAntes = nos[nos.length - 1];
+      const alvo = nos[Math.max(0, Math.min(nos.length - 1, Math.floor(nos.length * 0.6)))];
+      await irPara(alvo, 'start');
+
+      // Se nem o primeiro nem o último nó renderizado mudaram, a tela não andou.
+      const depois = nosBrutos();
+      const travou = depois.length && depois[0] === primeiroAntes && depois[depois.length - 1] === ultimoAntes;
+      paradas = travou ? paradas + 1 : 0;
+      if (paradas >= 3) {
+        logI('a lista parou de andar — provavelmente chegou ao fim da conversa.');
         break;
       }
     }
+    // Leitura final já no fundo, pra pegar o que entrou depois do último passo.
+    await capturarNovos(mesclarJanela(mensagens, lerJanela(root)));
 
     if (mensagens.length === 0) {
       throw new Error('Nenhuma mensagem lida. Role a conversa manualmente uma vez e tente de novo.');
