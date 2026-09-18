@@ -30,6 +30,8 @@
       return '?';
     }
   })();
+  const MSG_CONVERSA_MUDOU =
+    'A conversa mudou durante a leitura, então nenhum report foi gerado. Abra a conversa do lead, espere o aviso "Gerando report…" e tente de novo.';
   const logI = (...a) => console.log(`[CR-instagram v${VERSAO}]`, ...a);
   const logA = (...a) => console.log(`[CR-ig-audio v${VERSAO}]`, ...a);
 
@@ -109,6 +111,11 @@
     if (eq(0, 'fLaC')) return true;
     if (eq(0, 'RIFF')) return true; // wav
     if (eq(4, 'ftyp')) return true; // mp4/m4a/aac (formato provável no Instagram)
+    if (b[0] === 0x1a && b[1] === 0x45 && b[2] === 0xdf && b[3] === 0xa3) return true; // webm/matroska
+    if (eq(0, '#!AMR')) return true; // amr
+    // Desconhecido: só serve se NÃO for texto (HTML/JSON de erro do CDN) e tiver tamanho plausível de voz.
+    const texto = [...new Uint8Array(buf.slice(0, 32))].every((c) => c === 9 || c === 10 || c === 13 || (c >= 32 && c < 127));
+    if (texto) return false;
     return buf.byteLength >= 1500 && buf.byteLength < 8000000;
   }
 
@@ -381,8 +388,21 @@
         }
         const reg = extrairMensagem(el, root);
         if (!reg) continue;
+        const topo = el.getBoundingClientRect().top;
         const ant = janela[janela.length - 1];
-        if (ant && ant.from === reg.from && ant.content === reg.content) continue;
+        // Só descarta se for a MESMA mensagem lida duas vezes (nó dentro do outro, ou na mesma posição da tela).
+        // Duas falas iguais em posições diferentes ("ok", "ok") são duas mensagens de verdade.
+        if (
+          ant &&
+          ant.type === 'texto' &&
+          ant.from === reg.from &&
+          ant.content === reg.content &&
+          (ant._el.contains(el) || el.contains(ant._el) || Math.abs(ant._topo - topo) < 6)
+        ) {
+          continue;
+        }
+        reg._el = el;
+        reg._topo = topo;
         janela.push(reg);
         continue;
       }
@@ -397,6 +417,7 @@
         content: '[áudio]',
         timestamp: null,
         _bolha: acharBolhaAudio(el),
+        _el: el,
       });
     }
     return janela;
@@ -416,18 +437,23 @@
       return janela;
     }
     const max = Math.min(acumulado.length, janela.length);
-    for (let k = max; k > 0; k--) {
-      let bate = true;
+    const sobrepoe = (k, igual) => {
       for (let j = 0; j < k; j++) {
-        if (chaveMsg(acumulado[acumulado.length - k + j]) !== chaveMsg(janela[j])) {
-          bate = false;
-          break;
-        }
+        if (!igual(acumulado[acumulado.length - k + j], janela[j])) return false;
       }
-      if (bate) {
-        const novos = janela.slice(k);
-        acumulado.push(...novos);
-        return novos;
+      return true;
+    };
+    // 1º pelo ELEMENTO: se é o mesmo nó da tela, é a mesma mensagem — resolve falas repetidas
+    // ("ok", "ok", "ok") que só pelo texto seriam impossíveis de alinhar.
+    // 2º pelo conteúdo: quando o Instagram recriou os elementos.
+    const criterios = [(a, b) => a._el && b._el && a._el === b._el, (a, b) => chaveMsg(a) === chaveMsg(b)];
+    for (const igual of criterios) {
+      for (let k = max; k > 0; k--) {
+        if (sobrepoe(k, igual)) {
+          const novos = janela.slice(k);
+          acumulado.push(...novos);
+          return novos;
+        }
       }
     }
     // Nenhuma sobreposição: a rolagem pulou um pedaço. Acrescenta tudo — é melhor
@@ -457,6 +483,14 @@
 
     if (comAudio) await garantirGanchoAudio();
 
+    // A conversa aberta AGORA é a alvo (o endereço /direct/t/<id>/ muda ao abrir outra). Se mudar
+    // durante a leitura, aborta: o report sairia com mensagens de duas pessoas misturadas.
+    const alvoCaminho = location.pathname;
+    const alvoNome = nomeDoContato();
+    const garantirMesmaConversa = () => {
+      if (location.pathname !== alvoCaminho) throw new Error(MSG_CONVERSA_MUDOU);
+    };
+
     // A lista do Direct IGNORA escrita em scrollTop (medido ao vivo: pedir
     // scrollTop=2959 deixava em 1). Então a navegação é feita com
     // scrollIntoView na própria mensagem — é o navegador que resolve como
@@ -473,6 +507,7 @@
         }
       }
       await sleep(espera);
+      garantirMesmaConversa();
     };
 
     // 1) Sobe até o topo, ancorando na primeira mensagem renderizada. Cada
@@ -566,7 +601,8 @@
     const limpas = mensagens.map(({ from, type, content, timestamp }) => ({ from, type, content, timestamp }));
     const stats = { total: limpas.length, audios: audios.length, audiosTranscritos: transcritos };
     logI(`${stats.total} mensagens lidas — ${stats.audios} áudio(s) (${stats.audiosTranscritos} com transcrição).`);
-    return { mensagens: limpas, nome: nomeDoContato(), stats };
+    // O nome vem do INÍCIO da leitura: lido no fim, podia ser o de outra conversa aberta enquanto os áudios transcreviam.
+    return { mensagens: limpas, nome: alvoNome || nomeDoContato(), stats };
   }
 
   // ---------------------------------------------------------------------------
@@ -591,7 +627,7 @@
     return el;
   }
 
-  function mostrarBadge({ texto, cor = '#ffc400', loading = false, arquivo = null, arquivoBase64 = null }) {
+  function mostrarBadge({ texto, cor = '#ffc400', loading = false, arquivo = null, arquivoBase64 = null, botoes = [], aoEscolher = null, aoFechar = null }) {
     const el = badgeEl();
     el.style.borderLeftColor = cor;
     const spinner = loading
@@ -604,19 +640,92 @@
         `<a href="${escHtml(url)}" download="${escHtml(arquivo || 'report.pdf')}" style="display:inline-block;margin-top:8px;background:#ffc400;color:#121214;` +
         `font-weight:700;text-decoration:none;padding:6px 10px;border-radius:7px"><svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:-2px;flex:none" fill="none" stroke="#121214" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg> Baixar PDF</a>`;
     }
+    const htmlBotoes = botoes.length
+      ? '<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">' +
+        botoes
+          .map(
+            (b) =>
+              `<button type="button" data-cr-acao="${escHtml(b.acao)}" style="cursor:pointer;border:0;border-radius:7px;padding:6px 10px;font-weight:700;font-size:12px;background:${b.primario ? '#ffc400' : '#26333f'};color:${b.primario ? '#121214' : '#e6edf3'}">${escHtml(b.rotulo)}</button>`
+          )
+          .join('') +
+        '</div>'
+      : '';
     el.innerHTML =
       (document.getElementById('crspin-style') ? '' : '<style id="crspin-style">@keyframes crspin{to{transform:rotate(360deg)}}</style>') +
       spinner +
-      `<div style="flex:1"><div>${texto}</div>${acao}</div>` +
+      `<div style="flex:1"><div>${texto}</div>${acao}${htmlBotoes}</div>` +
       `<span id="cr-x" style="flex:none;cursor:pointer;color:#8b98a5;font-size:15px;line-height:1">×</span>`;
+    el.querySelectorAll('[data-cr-acao]').forEach((b) => {
+      b.onclick = () => {
+        if (aoEscolher) aoEscolher(b.dataset.crAcao);
+      };
+    });
     const x = el.querySelector('#cr-x');
-    if (x) x.onclick = () => el.remove();
+    if (x) {
+      x.onclick = () => {
+        el.remove();
+        if (aoFechar) aoFechar();
+      };
+    }
   }
 
   // ---------------------------------------------------------------------------
   // Orquestração (mesmo contrato de mensagens do content.js do WhatsApp — o
   // popup e o background.js não precisam saber qual plataforma está aberta)
   // ---------------------------------------------------------------------------
+
+  // Quem é o dono do "último report" guardado (impressão digital da chave — a chave em si nunca é gravada aqui).
+  async function impressaoDaChave() {
+    try {
+      const { chave } = await new Promise((r) => chrome.storage.local.get({ chave: '' }, r));
+      const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode((chave || '').trim()));
+      return [...new Uint8Array(buf)].slice(0, 8).map((b) => b.toString(16).padStart(2, '0')).join('');
+    } catch (_) {
+      return '';
+    }
+  }
+
+  // Guarda o último report para o popup (sem o PDF: ele é regerado a partir dos dados, de graça).
+  async function guardarUltimoReport(resp, nome, server) {
+    const dono = await impressaoDaChave();
+    chrome.storage.local.set({
+      ultimoReport: { arquivo: resp.arquivo, dados: resp.dados, nome, server, dono, versao: 0, quando: Date.now() },
+    });
+  }
+
+  /** Já existe um report igual: pergunta o que fazer. Resolve 'abrir' | 'gerar' | 'cancelar'. */
+  function perguntarDuplicado(existente) {
+    return new Promise((resolve) => {
+      const quando = new Date(existente.quando).toLocaleString('pt-BR');
+      const botoes = [];
+      if (existente.podeAbrir && existente.id) botoes.push({ acao: 'abrir', rotulo: 'Abrir o existente', primario: true });
+      botoes.push({ acao: 'gerar', rotulo: 'Gerar de novo (custo extra)', primario: !botoes.length });
+      mostrarBadge({
+        texto: `<b>Já existe um report igual</b> pra ${escHtml(existente.lead || 'este contato')}, gerado em ${escHtml(quando)}.`,
+        cor: '#f0ad4e',
+        botoes,
+        aoEscolher: resolve,
+        aoFechar: () => resolve('cancelar'),
+      });
+    });
+  }
+
+  /** Baixa o PDF do report existente (o servidor só entrega ao dono ou ao admin) — sem chamar a IA. */
+  async function abrirExistente(existente) {
+    mostrarBadge({ texto: 'Buscando o report existente…', loading: true });
+    const r = await new Promise((res) => chrome.runtime.sendMessage({ action: 'baixarExistente', id: existente.id }, res));
+    if (!r || !r.ok) {
+      mostrarBadge({ texto: escHtml((r && r.erro) || 'Não consegui abrir o report existente.'), cor: '#ff6b6b' });
+      return;
+    }
+    mostrarBadge({
+      texto: '<b>Report existente</b> — nenhuma IA foi usada.',
+      cor: '#ffc400',
+      arquivo: r.arquivo,
+      arquivoBase64: r.arquivoBase64,
+    });
+  }
+
   let jobEmAndamento = false;
 
   async function gerarReportEmBackground(server) {
@@ -647,8 +756,16 @@
         loading: true,
       });
 
+      // Como foi a leitura (áudios achados x transcritos): o servidor guarda para o admin ver reports com captura parcial.
+      const captureQuality = {
+        plataforma: 'instagram',
+        versao: VERSAO,
+        mensagens: stats.total,
+        audios: stats.audios,
+        audiosTranscritos: stats.audiosTranscritos,
+      };
       const resp = await new Promise((resolve) =>
-        chrome.runtime.sendMessage({ action: 'reportFetch', server, mensagens, nome }, resolve)
+        chrome.runtime.sendMessage({ action: 'reportFetch', server, mensagens, nome, captureQuality }, resolve)
       );
 
       if (!resp || !resp.ok) {
@@ -658,18 +775,21 @@
       }
 
       if (resp.duplicado) {
-        const quando = new Date(resp.existente.quando).toLocaleString('pt-BR');
-        const confirmar = confirm(
-          `Já existe um report igual pra ${resp.existente.lead || 'este contato'}, gerado em ${quando}.\n\n` +
-            'Gerar de novo chama a IA outra vez (custo extra). Gerar mesmo assim?'
-        );
-        if (!confirmar) {
-          mostrarBadge({ texto: 'Geração cancelada — já existe um report igual.', cor: '#f0ad4e' });
-          jobEmAndamento = false;
+        // A leitura acabou: devolve o som dos áudios enquanto o SDR decide.
+        capturaAtiva = false;
+        restaurarAudios();
+        const escolha = await perguntarDuplicado(resp.existente);
+        if (escolha === 'abrir') {
+          await abrirExistente(resp.existente);
           return;
         }
+        if (escolha !== 'gerar') {
+          mostrarBadge({ texto: 'Geração cancelada — já existe um report igual.', cor: '#f0ad4e' });
+          return;
+        }
+        mostrarBadge({ texto: '<b>Gerando de novo…</b>', loading: true });
         const resp2 = await new Promise((resolve) =>
-          chrome.runtime.sendMessage({ action: 'reportFetch', server, mensagens, nome, forcarNovo: true }, resolve)
+          chrome.runtime.sendMessage({ action: 'reportFetch', server, mensagens, nome, captureQuality, forcarNovo: true }, resolve)
         );
         if (!resp2 || !resp2.ok) {
           mostrarBadge({ texto: escHtml((resp2 && resp2.erro) || 'Falha ao gerar o report.'), cor: '#ff6b6b' });
@@ -690,9 +810,7 @@
   }
 
   function finalizar(resp, nome, server, stats) {
-    chrome.storage.local.set({
-      ultimoReport: { arquivo: resp.arquivo, dados: resp.dados, arquivoBase64: resp.arquivoBase64, nome, server, quando: Date.now() },
-    });
+    guardarUltimoReport(resp, nome, server);
     // O resumo dos áudios fica no aviso final: é a dúvida de sempre (transcreveu
     // ou não?) e o "Gerando report…" some rápido demais pra dar tempo de ler.
     const s = stats || { audios: 0, audiosTranscritos: 0 };

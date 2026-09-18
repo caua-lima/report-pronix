@@ -129,6 +129,13 @@ async function testarConexao() {
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.erro || 'Chave inválida.');
     $('sdrNome').textContent = j.nome;
+    const dono = await impressaoDaChave(chave);
+    chrome.storage.local.get({ ultimoReport: null }, ({ ultimoReport }) => {
+      if (ultimoReport && ultimoReport.dono !== dono) {
+        chrome.storage.local.remove('ultimoReport');
+        esconderReport();
+      }
+    });
     setStatus(`Conectado como <b>${escapeHtml(j.nome)}</b>.`, { html: true });
   } catch (err) {
     setStatus('' + (err.message === 'Failed to fetch' ? 'Servidor não respondeu — confira a URL.' : err.message), { erro: true });
@@ -158,11 +165,27 @@ async function gerar() {
   }
 }
 
-// Atualiza o objeto em memória a cada edição do report na tela.
+// Atualiza o objeto em memória a cada edição do report na tela — e guarda a edição, para não
+// se perder se o popup fechar (é comum: o SDR clica fora e o popup some).
+let salvarTimer = null;
+let reportQuando = 0; // qual report (pelo carimbo) está na tela: edição de um não pode sobrescrever outro
+function persistirEdicao() {
+  clearTimeout(salvarTimer);
+  salvarTimer = setTimeout(() => {
+    chrome.storage.local.get({ ultimoReport: null }, ({ ultimoReport }) => {
+      if (!ultimoReport || !reportAtual || ultimoReport.quando !== reportQuando) return;
+      ultimoReport.dados = reportAtual;
+      ultimoReport.versao = (ultimoReport.versao || 0) + 1;
+      ultimoReport.editadoEm = Date.now();
+      chrome.storage.local.set({ ultimoReport });
+    });
+  }, 400);
+}
 $('report').addEventListener('input', (ev) => {
   const el = ev.target.closest('[data-edit]');
   if (!el || !reportAtual) return;
   gravarNoCaminho(reportAtual, el.dataset.edit, el.innerText.trim());
+  persistirEdicao();
 });
 
 // Baixar PDF: regera a partir do report (editado ou não) via /api/pdf.
@@ -193,17 +216,42 @@ async function baixarPdf() {
   }
 }
 
-// Mostra o último report gerado (se houver) ao abrir o popup — já editável.
+// Impressão digital da chave (a chave em si nunca é gravada junto do report).
+async function impressaoDaChave(chave) {
+  try {
+    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode((chave || '').trim()));
+    return [...new Uint8Array(buf)].slice(0, 8).map((b) => b.toString(16).padStart(2, '0')).join('');
+  } catch (_) {
+    return '';
+  }
+}
+const mesmoServidor = (a, b) => String(a || '').replace(/\/$/, '') === String(b || '').replace(/\/$/, '');
+
+// Esconde o report da tela (troca de chave, por exemplo).
+function esconderReport() {
+  reportAtual = null;
+  reportQuando = 0;
+  $('report').classList.add('hidden');
+  $('editDica').classList.add('hidden');
+  $('dl').classList.add('hidden');
+}
+
+// Mostra o último report gerado ao abrir o popup — já editável. Só o de QUEM está logado nesta
+// chave e neste servidor: report é conversa de lead, não pode aparecer para outra pessoa que usa o mesmo navegador.
 function carregarUltimo() {
-  chrome.storage.local.get({ ultimoReport: null }, ({ ultimoReport }) => {
+  chrome.storage.local.get({ ultimoReport: null, chave: '', server: DEFAULT_SERVER }, async (cfg) => {
+    const ultimoReport = cfg.ultimoReport;
     if (!ultimoReport || !ultimoReport.dados) return;
+    const dono = await impressaoDaChave(cfg.chave);
+    if (!dono || ultimoReport.dono !== dono || !mesmoServidor(ultimoReport.server, cfg.server)) return;
     reportAtual = ultimoReport.dados;
+    reportQuando = ultimoReport.quando;
     $('report').innerHTML = renderReport(reportAtual);
     $('report').classList.remove('hidden');
     $('editDica').classList.remove('hidden');
     $('dl').classList.remove('hidden');
     const quando = new Date(ultimoReport.quando).toLocaleString('pt-BR');
-    setStatus(`Último report: ${ultimoReport.nome || 'lead'} · ${quando} · edite se quiser`);
+    setStatus(`Último report: ${ultimoReport.nome || 'lead'} · ${quando} · ${ultimoReport.versao ? 'editado · ' : ''}edite se quiser`);
   });
 }
 

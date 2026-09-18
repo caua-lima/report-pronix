@@ -5,6 +5,15 @@
   'use strict';
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const VERSAO = (() => {
+    try {
+      return chrome.runtime.getManifest().version;
+    } catch (_) {
+      return '?';
+    }
+  })();
+  const MSG_CONVERSA_MUDOU =
+    'A conversa mudou durante a leitura, então nenhum report foi gerado. Abra a conversa do lead, espere o aviso "Gerando report…" e tente de novo.';
 
   // Silencia qualquer <audio> que o WhatsApp criar (a captura "toca" no mudo).
   // Só vale enquanto um report está sendo gerado: fora disso o SDR ouve os áudios
@@ -122,7 +131,11 @@
     if (eq(0, 'fLaC')) return true; // flac
     if (eq(0, 'RIFF')) return true; // wav
     if (eq(4, 'ftyp')) return true; // mp4/m4a/aac
-    // Desconhecido, mas tamanho plausível de voz -> aceita
+    if (b[0] === 0x1a && b[1] === 0x45 && b[2] === 0xdf && b[3] === 0xa3) return true; // webm/matroska
+    if (eq(0, '#!AMR')) return true; // amr
+    // Desconhecido: só serve se NÃO for texto (HTML/JSON de erro do CDN) e tiver tamanho plausível de voz.
+    const texto = [...new Uint8Array(buf.slice(0, 32))].every((c) => c === 9 || c === 10 || c === 13 || (c >= 32 && c < 127));
+    if (texto) return false;
     return buf.byteLength >= 1500 && buf.byteLength < 8000000;
   }
 
@@ -501,8 +514,45 @@
     };
   }
 
+  // Id da conversa aberta: o trecho "…@c.us" / "…@g.us" que vem no data-id de toda mensagem
+  // (true_<conversa>_<id>). O que aparecer MAIS vezes na tela é a conversa que está aberta.
+  const JID_RE = /^(?:true|false)_([^_]+@[a-z.]+)_/i;
+  function jidPredominante(root) {
+    const contagem = new Map();
+    root.querySelectorAll('[data-id]').forEach((el) => {
+      const m = JID_RE.exec(el.getAttribute('data-id') || '');
+      if (m) contagem.set(m[1], (contagem.get(m[1]) || 0) + 1);
+    });
+    let melhor = '';
+    let max = 0;
+    contagem.forEach((n, jid) => {
+      if (n > max) {
+        max = n;
+        melhor = jid;
+      }
+    });
+    return melhor;
+  }
+
   async function coletarConversa(server, capturarAudio) {
     const root = document.querySelector('#main') || document;
+
+    // A conversa aberta AGORA é a alvo. Se o SDR abrir outra durante a leitura, o report sairia
+    // misturado — então aborta na hora. O id da conversa é definitivo; sem ele (WhatsApp mudou
+    // o formato), cai para o nome do cabeçalho, exigindo 3 leituras seguidas diferentes.
+    const alvoJid = jidPredominante(root);
+    const alvoNome = nomeDoContato();
+    let divergenciasDeNome = 0;
+    const garantirMesmaConversa = () => {
+      const jid = jidPredominante(root);
+      if (alvoJid && jid) {
+        if (jid !== alvoJid) throw new Error(MSG_CONVERSA_MUDOU);
+        return;
+      }
+      const nome = alvoNome ? nomeDoContato() : '';
+      divergenciasDeNome = nome && nome !== alvoNome ? divergenciasDeNome + 1 : 0;
+      if (divergenciasDeNome >= 3) throw new Error(MSG_CONVERSA_MUDOU);
+    };
 
     const scroller = acharScroller(acharMensagens(root)[0]);
     const mapa = new Map(); // chave -> registro (ordem = primeira aparição top→bottom)
@@ -510,13 +560,15 @@
     let seq = 0;
 
     const capturar = () => {
+      garantirMesmaConversa();
       acharMensagens(root).forEach((el) => {
         const reg = extrairMensagem(el);
         if (!reg) return;
         const idEl = el.matches('[data-id]') ? el : el.closest('[data-id]') || el.querySelector('[data-id]');
+        // Sem data-id, a chave inclui o remetente: "ok" meu e "ok" do lead no mesmo minuto são mensagens diferentes.
         const chave = idEl
           ? idEl.getAttribute('data-id')
-          : (reg.timestamp || '') + '|' + reg.content.slice(0, 80);
+          : reg.from + '|' + (reg.timestamp || '') + '|' + reg.content.slice(0, 80);
         if (!mapa.has(chave)) mapa.set(chave, { ...reg, _ord: seq++ });
       });
     };
@@ -530,6 +582,7 @@
       for (let i = 0; i < 150 && estavel < 3; i++) {
         scroller.scrollTop = 0;
         await sleep(450);
+        garantirMesmaConversa();
         const h = scroller.scrollHeight;
         if (h === alturaAnterior) estavel++;
         else {
@@ -565,6 +618,8 @@
       if (faltam >= faltaramAntes) break;
       faltaramAntes = faltam;
     }
+
+    garantirMesmaConversa(); // a última passada ainda foi na conversa certa?
 
     // Transcreve os áudios capturados (via service worker, evitando a CSP da página).
     if (capturarAudio && server) {
@@ -618,7 +673,8 @@
       `[Closer Report] ${stats.total} mensagens lidas — ` +
         `${stats.audios} áudios (${stats.audiosTranscritos} com transcrição).`
     );
-    return { mensagens, nome: nomeDoContato(), stats };
+    // O nome vem do INÍCIO da leitura: lido no fim, podia ser o de outra conversa aberta enquanto os áudios transcreviam.
+    return { mensagens, nome: alvoNome || nomeDoContato(), stats };
   }
 
   // ---------------------------------------------------------------------------
@@ -643,7 +699,7 @@
     return el;
   }
 
-  function mostrarBadge({ texto, cor = '#25d366', loading = false, arquivo = null, server = null, arquivoBase64 = null }) {
+  function mostrarBadge({ texto, cor = '#25d366', loading = false, arquivo = null, server = null, arquivoBase64 = null, botoes = [], aoEscolher = null, aoFechar = null }) {
     const el = badgeEl();
     el.style.borderLeftColor = cor;
     const spinner = loading
@@ -661,18 +717,91 @@
         `<a href="${escHtml(url)}" target="_blank" rel="noopener noreferrer" style="display:inline-block;margin-top:8px;background:#25d366;color:#05130c;` +
         `font-weight:700;text-decoration:none;padding:6px 10px;border-radius:7px"><svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:-2px;flex:none" fill="none" stroke="#121214" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg> Baixar PDF</a>`;
     }
+    const htmlBotoes = botoes.length
+      ? '<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">' +
+        botoes
+          .map(
+            (b) =>
+              `<button type="button" data-cr-acao="${escHtml(b.acao)}" style="cursor:pointer;border:0;border-radius:7px;padding:6px 10px;font-weight:700;font-size:12px;background:${b.primario ? '#25d366' : '#26333f'};color:${b.primario ? '#05130c' : '#e6edf3'}">${escHtml(b.rotulo)}</button>`
+          )
+          .join('') +
+        '</div>'
+      : '';
     el.innerHTML =
       (document.getElementById('crspin-style') ? '' : '<style id="crspin-style">@keyframes crspin{to{transform:rotate(360deg)}}</style>') +
       spinner +
-      `<div style="flex:1"><div>${texto}</div>${acao}</div>` +
+      `<div style="flex:1"><div>${texto}</div>${acao}${htmlBotoes}</div>` +
       `<span id="cr-x" style="flex:none;cursor:pointer;color:#8b98a5;font-size:15px;line-height:1">×</span>`;
+    el.querySelectorAll('[data-cr-acao]').forEach((b) => {
+      b.onclick = () => {
+        if (aoEscolher) aoEscolher(b.dataset.crAcao);
+      };
+    });
     const x = el.querySelector('#cr-x');
-    if (x) x.onclick = () => el.remove();
+    if (x) {
+      x.onclick = () => {
+        el.remove();
+        if (aoFechar) aoFechar();
+      };
+    }
   }
 
   // ---------------------------------------------------------------------------
   // Orquestração do report (roda em segundo plano, sobrevive ao fechar o popup)
   // ---------------------------------------------------------------------------
+
+  // Quem é o dono do "último report" guardado (impressão digital da chave — a chave em si nunca é gravada aqui).
+  async function impressaoDaChave() {
+    try {
+      const { chave } = await new Promise((r) => chrome.storage.local.get({ chave: '' }, r));
+      const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode((chave || '').trim()));
+      return [...new Uint8Array(buf)].slice(0, 8).map((b) => b.toString(16).padStart(2, '0')).join('');
+    } catch (_) {
+      return '';
+    }
+  }
+
+  // Guarda o último report para o popup (sem o PDF: ele é regerado a partir dos dados, de graça).
+  async function guardarUltimoReport(resp, nome, server) {
+    const dono = await impressaoDaChave();
+    chrome.storage.local.set({
+      ultimoReport: { arquivo: resp.arquivo, dados: resp.dados, nome, server, dono, versao: 0, quando: Date.now() },
+    });
+  }
+
+  /** Já existe um report igual: pergunta o que fazer. Resolve 'abrir' | 'gerar' | 'cancelar'. */
+  function perguntarDuplicado(existente) {
+    return new Promise((resolve) => {
+      const quando = new Date(existente.quando).toLocaleString('pt-BR');
+      const botoes = [];
+      if (existente.podeAbrir && existente.id) botoes.push({ acao: 'abrir', rotulo: 'Abrir o existente', primario: true });
+      botoes.push({ acao: 'gerar', rotulo: 'Gerar de novo (custo extra)', primario: !botoes.length });
+      mostrarBadge({
+        texto: `<b>Já existe um report igual</b> pra ${escHtml(existente.lead || 'este contato')}, gerado em ${escHtml(quando)}.`,
+        cor: '#f0ad4e',
+        botoes,
+        aoEscolher: resolve,
+        aoFechar: () => resolve('cancelar'),
+      });
+    });
+  }
+
+  /** Baixa o PDF do report existente (o servidor só entrega ao dono ou ao admin) — sem chamar a IA. */
+  async function abrirExistente(existente) {
+    mostrarBadge({ texto: 'Buscando o report existente…', loading: true });
+    const r = await new Promise((res) => chrome.runtime.sendMessage({ action: 'baixarExistente', id: existente.id }, res));
+    if (!r || !r.ok) {
+      mostrarBadge({ texto: escHtml((r && r.erro) || 'Não consegui abrir o report existente.'), cor: '#ff6b6b' });
+      return;
+    }
+    mostrarBadge({
+      texto: '<b>Report existente</b> — nenhuma IA foi usada.',
+      cor: '#25d366',
+      arquivo: r.arquivo,
+      arquivoBase64: r.arquivoBase64,
+    });
+  }
+
   let jobEmAndamento = false;
 
   async function gerarReportEmBackground(server) {
@@ -711,8 +840,16 @@
         loading: true,
       });
 
+      // Como foi a leitura (áudios achados x transcritos): o servidor guarda para o admin ver reports com captura parcial.
+      const captureQuality = {
+        plataforma: 'whatsapp',
+        versao: VERSAO,
+        mensagens: stats.total,
+        audios: stats.audios,
+        audiosTranscritos: stats.audiosTranscritos,
+      };
       let resp = await new Promise((resolve) =>
-        chrome.runtime.sendMessage({ action: 'reportFetch', server, mensagens, nome }, resolve)
+        chrome.runtime.sendMessage({ action: 'reportFetch', server, mensagens, nome, captureQuality }, resolve)
       );
 
       if (!resp || !resp.ok) {
@@ -724,18 +861,21 @@
       // Idempotência: já existe um report idêntico pra esta conversa — não chama
       // a IA de novo (nem cobra de novo) sem o SDR confirmar que quer mesmo.
       if (resp.duplicado) {
-        const quando = new Date(resp.existente.quando).toLocaleString('pt-BR');
-        const confirmar = confirm(
-          `Já existe um report igual pra ${resp.existente.lead || 'este lead'}, gerado em ${quando}.\n\n` +
-            'Gerar de novo chama a IA outra vez (custo extra). O PDF anterior continua arquivado com o admin. Gerar mesmo assim?'
-        );
-        if (!confirmar) {
-          mostrarBadge({ texto: 'Geração cancelada — já existe um report igual pra esta conversa.', cor: '#f0ad4e' });
-          jobEmAndamento = false;
+        // A leitura acabou: devolve o som dos áudios enquanto o SDR decide.
+        capturaAtiva = false;
+        restaurarAudios();
+        const escolha = await perguntarDuplicado(resp.existente);
+        if (escolha === 'abrir') {
+          await abrirExistente(resp.existente);
           return;
         }
+        if (escolha !== 'gerar') {
+          mostrarBadge({ texto: 'Geração cancelada — já existe um report igual pra esta conversa.', cor: '#f0ad4e' });
+          return;
+        }
+        mostrarBadge({ texto: '<b>Gerando de novo…</b>', loading: true });
         resp = await new Promise((resolve) =>
-          chrome.runtime.sendMessage({ action: 'reportFetch', server, mensagens, nome, forcarNovo: true }, resolve)
+          chrome.runtime.sendMessage({ action: 'reportFetch', server, mensagens, nome, captureQuality, forcarNovo: true }, resolve)
         );
         if (!resp || !resp.ok) {
           mostrarBadge({ texto: escHtml((resp && resp.erro) || 'Falha ao gerar o report.'), cor: '#ff6b6b' });
@@ -744,9 +884,7 @@
         }
       }
 
-      chrome.storage.local.set({
-        ultimoReport: { arquivo: resp.arquivo, dados: resp.dados, arquivoBase64: resp.arquivoBase64, nome, server, quando: Date.now() },
-      });
+      guardarUltimoReport(resp, nome, server);
       // O resumo dos áudios fica no aviso final: o "Gerando report…" some rápido
       // demais para dar tempo de ler, e é a dúvida de sempre — transcreveu ou não?
       const resumoAudio =

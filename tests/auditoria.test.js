@@ -174,7 +174,7 @@ function carregarBackground(store, respostas = {}) {
     chamadas.push({ url, opts });
     return { ok: true, status: 200, json: async () => respostas.corpo || { texto: 'ola' } };
   };
-  vm.runInNewContext(ler('extension/background.js'), { chrome, fetch, URL, JSON, Promise, console });
+  vm.runInNewContext(ler('extension/background.js'), { chrome, fetch, URL, JSON, Promise, console, AbortSignal });
   const enviar = (msg) => new Promise((resolve) => { listener(msg, {}, resolve); });
   return { chamadas, enviar };
 }

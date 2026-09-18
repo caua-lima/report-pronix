@@ -22,7 +22,8 @@ async function getServer() {
   return null;
 }
 
-async function chamar(caminho, corpo) {
+// timeoutMs: o servidor da Vercel corta em 60s; melhor uma mensagem clara do que ficar esperando para sempre.
+async function chamar(caminho, corpo, { metodo = 'POST', timeoutMs = 65000 } = {}) {
   const chave = await getChave();
   if (!chave) {
     return { ok: false, erro: 'Sem chave de acesso. Cole a sua chave no popup da extensão.' };
@@ -33,27 +34,47 @@ async function chamar(caminho, corpo) {
   }
   try {
     const r = await fetch(server + caminho, {
-      method: 'POST',
+      method: metodo,
       headers: { 'Content-Type': 'application/json', 'x-cr-key': chave },
-      body: JSON.stringify(corpo),
+      body: metodo === 'GET' ? undefined : JSON.stringify(corpo),
+      signal: AbortSignal.timeout(timeoutMs),
     });
     const data = await r.json().catch(() => ({}));
     if (!r.ok) return { ok: false, erro: data.erro || `Erro ${r.status}` };
     return { ok: true, data };
-  } catch (_) {
+  } catch (e) {
+    if (e && (e.name === 'TimeoutError' || e.name === 'AbortError')) {
+      return { ok: false, erro: 'O servidor demorou demais para responder. Tente de novo.' };
+    }
     return { ok: false, erro: 'Servidor não respondeu. Confira a URL do servidor no popup.' };
   }
 }
 
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  // Só aceita pedidos da própria extensão (os content scripts).
+  if (sender && sender.id && chrome.runtime.id && sender.id !== chrome.runtime.id) return;
+
   if (msg && msg.action === 'transcreverAudio') {
     (async () => {
+      // O servidor descobre o formato real pelos bytes; o nome é só um palpite.
       const r = await chamar('/api/transcrever', {
         audioBase64: msg.base64,
         nome: 'audio.ogg',
-      });
+      }, { timeoutMs: 60000 });
       if (!r.ok) return sendResponse({ ok: false, erro: r.erro });
       sendResponse({ ok: true, texto: r.data.texto });
+    })();
+    return true;
+  }
+
+  // Reabre o PDF de um report que já existe (o servidor só entrega ao dono ou ao admin) — sem IA.
+  if (msg && msg.action === 'baixarExistente') {
+    (async () => {
+      const id = String(msg.id || '');
+      if (!/^[a-f0-9]{6,32}$/i.test(id)) return sendResponse({ ok: false, erro: 'Report inválido.' });
+      const r = await chamar('/api/reports/' + id + '/pdf', null, { metodo: 'GET', timeoutMs: 30000 });
+      if (!r.ok) return sendResponse({ ok: false, erro: r.erro });
+      sendResponse({ ok: true, arquivo: r.data.arquivo, arquivoBase64: r.data.arquivoBase64 });
     })();
     return true;
   }
@@ -64,6 +85,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         mensagens: msg.mensagens,
         nome: msg.nome,
         forcarNovo: !!msg.forcarNovo,
+        captureQuality: msg.captureQuality,
       });
       if (!r.ok) return sendResponse({ ok: false, erro: r.erro });
       // Idempotência: mesma conversa já gerada antes — o content script decide
