@@ -39,12 +39,24 @@ function removerVazias(historico) {
   return historico.filter((m) => m && String(m.content || '').trim());
 }
 
-/** Remove duplicata exata quando aparece IMEDIATAMENTE em seguida (reenvio, eco de captura). */
+// Texto igual em seguida só é tratado como eco de leitura quando é longo: "ok", "sim" ou
+// "[áudio]" repetidos são falas reais (dois áudios seguidos, duas confirmações), e
+// apagá-los muda o que o report conta.
+const TAMANHO_MINIMO_ECO = 30;
+
+/** Remove duplicata exata de TEXTO LONGO que aparece IMEDIATAMENTE em seguida (eco de captura). */
 function removerDuplicadasConsecutivas(historico) {
   const out = [];
   for (const m of historico) {
     const anterior = out[out.length - 1];
-    if (anterior && anterior.from === m.from && anterior.type === m.type && anterior.content === m.content) {
+    if (
+      anterior &&
+      anterior.from === m.from &&
+      anterior.type === m.type &&
+      anterior.content === m.content &&
+      m.type !== 'audio' &&
+      String(m.content).trim().length >= TAMANHO_MINIMO_ECO
+    ) {
       continue;
     }
     out.push(m);

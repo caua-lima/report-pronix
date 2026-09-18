@@ -11,18 +11,35 @@ const { custoUSD } = require('./precos');
 const CHAVE_DB = 'reports';
 const LIMITE = 5000;
 
+// Registro de consumo, separado dos reports: excluir um report tira ele do histórico
+// mas o gasto com a IA já aconteceu. Guarda só o necessário para somar o gasto —
+// nada de conteúdo de conversa.
+const CHAVE_CONSUMO = 'consumo';
+const LIMITE_CONSUMO = 20000;
+
 /**
  * Registra um report gerado, com o consumo de tokens e o custo em dólares.
  * @param {{id?: string}} params.id — se o chamador já gerou o id (pra salvar o
  *   PDF sob a mesma chave em src/pdfStorage.js), passa aqui; senão gera um novo.
  */
-async function registrar({ id, usuarioId, usuarioNome, lead, origem, uso, reportKey, arquivo, qualidade }) {
+async function registrar({
+  id, usuarioId, usuarioNome, lead, origem, uso, reportKey, arquivo, qualidade, captura, citacoesRemovidas,
+}) {
   const quando = new Date().toISOString();
   const u = uso || {};
+  const idFinal = id || crypto.randomBytes(5).toString('hex');
+  const custo = custoUSD({
+    modelo: u.modelo,
+    entrada: u.entrada,
+    saida: u.saida,
+    cacheLeitura: u.cacheLeitura,
+    cacheEscrita: u.cacheEscrita,
+    quando,
+  });
   await db.push(
     CHAVE_DB,
     {
-      id: id || crypto.randomBytes(5).toString('hex'),
+      id: idFinal,
       usuarioId: usuarioId || '',
       usuarioNome: usuarioNome || '',
       lead: lead || '',
@@ -46,6 +63,11 @@ async function registrar({ id, usuarioId, usuarioNome, lead, origem, uso, report
       dataReuniao: '',
       dataFechamento: '',
       diasParaFechar: null,
+      versao: 0, // sobe a cada edição do resultado — detecta dois admins editando o mesmo report
+      // Como foi a leitura da conversa (áudios achados/transcritos etc.), enviado pela
+      // extensão. null = veio do modo manual ou de uma extensão antiga.
+      captura: captura || null,
+      citacoesRemovidas: citacoesRemovidas || 0,
       modelo: u.modelo || '',
       entrada: u.entrada || 0,
       saida: u.saida || 0,
@@ -53,17 +75,27 @@ async function registrar({ id, usuarioId, usuarioNome, lead, origem, uso, report
       cacheEscrita: u.cacheEscrita || 0,
       // Guardado junto porque o preço do modelo muda com o tempo (promoção, troca de
       // modelo): recalcular depois daria um número diferente do que foi cobrado.
-      custo: custoUSD({
-        modelo: u.modelo,
-        entrada: u.entrada,
-        saida: u.saida,
-        cacheLeitura: u.cacheLeitura,
-        cacheEscrita: u.cacheEscrita,
-        quando,
-      }),
+      custo,
     },
     LIMITE
   );
+  // Falha no registro de consumo não pode derrubar a entrega do report.
+  await db
+    .push(
+      CHAVE_CONSUMO,
+      {
+        id: idFinal,
+        quando,
+        dia: emDiaLocal(quando),
+        usuarioNome: usuarioNome || '',
+        origem: origem || 'extensao',
+        qualidade: qualidade || 'standard',
+        modelo: u.modelo || '',
+        custo,
+      },
+      LIMITE_CONSUMO
+    )
+    .catch((err) => console.error('Falha ao registrar o consumo:', err.message));
 }
 
 // O carimbo é gravado em UTC, mas o dashboard filtra por dia do Brasil. Sem converter,
@@ -109,6 +141,19 @@ async function resumo({ de, ate, sdr } = {}) {
   const dentro = filtrar(todos, { de, ate, sdr });
 
   const soma = (lista) => lista.reduce((t, r) => t + (r.custo || 0), 0);
+
+  // Gasto de reports que foram excluídos do histórico (o dinheiro já foi pra IA).
+  // Se a lista de reports está no limite, os mais antigos saíram por corte — não por
+  // exclusão —, então só conta o consumo a partir do report mais antigo que ainda existe.
+  let excluidos = [];
+  try {
+    const ativos = new Set(todos.map((r) => r.id));
+    const corte = todos.length >= LIMITE ? todos[0].quando : '';
+    excluidos = (await db.range(CHAVE_CONSUMO)).filter((c) => !ativos.has(c.id) && (!corte || c.quando >= corte));
+  } catch (err) {
+    console.error('Falha ao ler o consumo:', err.message);
+  }
+  const excluidosDentro = filtrar(excluidos, { de, ate, sdr });
 
   // Por SDR
   const porUsuario = new Map();
@@ -177,6 +222,7 @@ async function resumo({ de, ate, sdr } = {}) {
   return {
     // Do período filtrado — sempre em ordem cronológica: da primeira pra última.
     total: dentro.length,
+    consumoExcluido: { total: excluidosDentro.length, custo: soma(excluidosDentro) },
     custo: soma(dentro),
     custoMedio: dentro.length ? soma(dentro) / dentro.length : 0,
     tokensEntrada: dentro.reduce((t, r) => t + (r.entrada || 0), 0),
@@ -189,6 +235,7 @@ async function resumo({ de, ate, sdr } = {}) {
     ultimos: dentro.slice(-60),
     // Sempre sobre tudo, para o filtro não esconder o retrato geral
     geral: {
+      consumoExcluido: { total: excluidos.length, custo: soma(excluidos) },
       total: todos.length,
       custo: soma(todos),
       hoje: todos.filter((r) => dia(r) === hoje).length,
@@ -229,6 +276,13 @@ async function buscarPorChave(reportKey) {
   return null;
 }
 
+/** Registro completo de um report pelo id, ou null. */
+async function buscarPorId(id) {
+  if (!id) return null;
+  const todos = await db.range(CHAVE_DB);
+  return todos.find((r) => r.id === id) || null;
+}
+
 const RESULTADOS_VALIDOS = new Set(['', 'venda_call', 'venda_fup', 'pix_compromisso']);
 const DATA_OK = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -248,26 +302,45 @@ function diasEntre(a, b) {
  *   dataFechamento?: string}} campos
  * @returns {Promise<boolean>} true se achou o report e atualizou.
  */
-async function atualizarResultado(id, campos = {}) {
+async function atualizarResultado(id, campos = {}, { versaoEsperada } = {}) {
   if (!id) return false;
-  const resultado = RESULTADOS_VALIDOS.has(campos.resultado) ? campos.resultado : '';
-  const dataReuniao = DATA_OK.test(campos.dataReuniao || '') ? campos.dataReuniao : '';
-  const dataFechamento = DATA_OK.test(campos.dataFechamento || '') ? campos.dataFechamento : '';
-  return db.atualizarNaLista(
+  // Só mexe no que veio no pedido: editar um campo não pode apagar os outros.
+  const tem = (k) => Object.prototype.hasOwnProperty.call(campos, k) && campos[k] !== undefined;
+  let versao = 0;
+  const achou = await db.atualizarNaLista(
     CHAVE_DB,
     (r) => r.id === id,
-    (r) => ({
-      ...r,
-      closerId: campos.closerId || '',
-      closerNome: campos.closerNome || '',
-      closerEmail: campos.closerEmail || '',
-      leadEmail: String(campos.leadEmail || '').trim(),
-      resultado,
-      dataReuniao,
-      dataFechamento,
-      diasParaFechar: diasEntre(dataReuniao, dataFechamento),
-    })
+    (r) => {
+      const atual = Number(r.versao) || 0;
+      // Quem editou baseado numa versão antiga não sobrescreve o que outra pessoa salvou depois.
+      if (versaoEsperada != null && Number(versaoEsperada) !== atual) {
+        const e = new Error('Este report foi alterado por outra pessoa. Atualize a tela e edite de novo.');
+        e.codigo = 'CONFLITO';
+        e.atual = r;
+        throw e;
+      }
+      const novo = { ...r };
+      if (tem('closerId')) {
+        novo.closerId = campos.closerId || '';
+        novo.closerNome = campos.closerNome || '';
+        novo.closerEmail = campos.closerEmail || '';
+      }
+      if (tem('leadEmail')) novo.leadEmail = String(campos.leadEmail || '').trim().slice(0, 200);
+      if (tem('resultado')) novo.resultado = RESULTADOS_VALIDOS.has(campos.resultado) ? campos.resultado : '';
+      if (tem('dataReuniao')) novo.dataReuniao = DATA_OK.test(campos.dataReuniao || '') ? campos.dataReuniao : '';
+      if (tem('dataFechamento')) {
+        novo.dataFechamento = DATA_OK.test(campos.dataFechamento || '') ? campos.dataFechamento : '';
+      }
+      novo.diasParaFechar = diasEntre(novo.dataReuniao, novo.dataFechamento);
+      novo.versao = atual + 1;
+      novo.atualizadoEm = new Date().toISOString();
+      versao = novo.versao;
+      return novo;
+    }
   );
+  return achou ? { versao } : false;
 }
 
-module.exports = { registrar, resumo, listar, remover, buscarPorChave, atualizarResultado, hojeStr };
+module.exports = {
+  registrar, resumo, listar, remover, buscarPorChave, buscarPorId, atualizarResultado, hojeStr,
+};

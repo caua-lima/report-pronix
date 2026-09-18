@@ -204,24 +204,31 @@ app.delete('/api/admin/reports/:id', admin, async (req, res) => {
  */
 app.patch('/api/admin/reports/:id/resultado', admin, async (req, res) => {
   try {
-    const { closerId, leadEmail, resultado, dataReuniao, dataFechamento } = req.body || {};
-    let closer = null;
-    if (closerId) {
-      closer = await closers.porId(closerId);
-      if (!closer) return res.status(400).json({ erro: 'Closer não encontrado.' });
-    }
-    const ok = await stats.atualizarResultado(req.params.id, {
-      closerId: closer ? closer.id : '',
-      closerNome: closer ? closer.nome : '',
-      closerEmail: closer ? closer.email : '',
-      leadEmail,
-      resultado,
-      dataReuniao,
-      dataFechamento,
+    const body = req.body || {};
+    const tem = (k) => Object.prototype.hasOwnProperty.call(body, k);
+    // Só entra no que veio no pedido: mudar um campo não apaga os outros. Se vier
+    // "versao", o servidor recusa (409) quando o report já foi alterado por outra pessoa.
+    const campos = {};
+    ['leadEmail', 'resultado', 'dataReuniao', 'dataFechamento'].forEach((k) => {
+      if (tem(k)) campos[k] = body[k];
     });
-    if (!ok) return res.status(404).json({ erro: 'Report não encontrado.' });
-    res.json({ ok: true });
+    if (tem('closerId')) {
+      let closer = null;
+      if (body.closerId) {
+        closer = await closers.porId(body.closerId);
+        if (!closer) return res.status(400).json({ erro: 'Closer não encontrado.' });
+      }
+      campos.closerId = closer ? closer.id : '';
+      campos.closerNome = closer ? closer.nome : '';
+      campos.closerEmail = closer ? closer.email : '';
+    }
+    const feito = await stats.atualizarResultado(req.params.id, campos, {
+      versaoEsperada: tem('versao') ? body.versao : undefined,
+    });
+    if (!feito) return res.status(404).json({ erro: 'Report não encontrado.' });
+    res.json({ ok: true, versao: feito.versao });
   } catch (err) {
+    if (err.codigo === 'CONFLITO') return res.status(409).json({ erro: err.message, atual: err.atual });
     res.status(500).json({ erro: err.message });
   }
 });
@@ -258,6 +265,27 @@ app.get('/api/admin/reports/:id/pdf', admin, async (req, res) => {
     res.set('Content-Type', 'application/pdf');
     res.set('Content-Disposition', `attachment; filename="${salvo.arquivo || 'report.pdf'}"`);
     res.send(Buffer.from(salvo.base64, 'base64'));
+  } catch (err) {
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+/**
+ * Reabre o PDF de um report já gerado, sem chamar a IA. O SDR só enxerga os
+ * seus; o admin enxerga todos. Devolve JSON (e não o arquivo) para a extensão
+ * conseguir baixar mandando a chave no header, sem pôr a chave na URL.
+ */
+app.get('/api/reports/:id/pdf', auth, async (req, res) => {
+  try {
+    const r = await stats.buscarPorId(req.params.id);
+    const permitido = r && (req.usuario.papel === 'admin' || r.usuarioId === req.usuario.id);
+    // Report de outra pessoa responde igual a "não existe" — não confirma que o id existe.
+    if (!permitido) return res.status(404).json({ erro: 'Report não encontrado.' });
+    const salvo = await pdfStorage.ler(r.id);
+    if (!salvo || !salvo.base64) {
+      return res.status(404).json({ erro: 'O PDF deste report não está mais guardado.' });
+    }
+    res.json({ arquivo: salvo.arquivo || r.arquivo || 'report.pdf', arquivoBase64: salvo.base64, lead: r.lead, quando: r.quando });
   } catch (err) {
     res.status(500).json({ erro: err.message });
   }
@@ -314,11 +342,35 @@ app.get('/api/admin/reports/pdf-zip', admin, async (req, res) => {
 // ---------------------------------------------------------------------------
 // Report (extensão e modo manual) — devolve o PDF em base64 (sem disco).
 // ---------------------------------------------------------------------------
-async function responderReport(req, res, dados, nome, origem, reportKey) {
+/**
+ * Sanitiza o resumo de captura enviado pela extensão (áudios achados/transcritos).
+ * Nunca confia em "incompleta" vindo do cliente: recalcula dos números.
+ */
+function sanitizarCaptura(c) {
+  if (!c || typeof c !== 'object') return null;
+  const n = (v) => {
+    const x = Math.floor(Number(v));
+    return Number.isFinite(x) && x >= 0 ? Math.min(x, 100000) : 0;
+  };
+  const audios = n(c.audios);
+  const audiosTranscritos = Math.min(n(c.audiosTranscritos), audios);
+  return {
+    plataforma: c.plataforma === 'whatsapp' || c.plataforma === 'instagram' ? c.plataforma : '',
+    versao: String(c.versao || '').slice(0, 12),
+    mensagens: n(c.mensagens),
+    audios,
+    audiosTranscritos,
+    incompleta: audiosTranscritos < audios,
+  };
+}
+
+async function responderReport(req, res, dados, nome, origem, reportKey, captura) {
   // Quem assina o report é o dono da chave, não uma variável do servidor.
   dados.sdr = req.usuario.nome;
   const uso = dados.uso;
   delete dados.uso; // consumo é assunto do admin: não vai junto do report.
+  const meta = dados._meta || {};
+  delete dados._meta; // métricas internas de qualidade: também não vão pro cliente.
   const buffer = await gerarPdfBuffer(dados);
   const arquivo = nomeArquivoPdf(dados.lead || nome);
   // Gera o id aqui (não dentro de stats.registrar) pra poder salvar o PDF sob
@@ -338,6 +390,8 @@ async function responderReport(req, res, dados, nome, origem, reportKey) {
       reportKey,
       arquivo,
       qualidade: (uso && uso.qualidade) || 'standard',
+      captura,
+      citacoesRemovidas: meta.citacoesRemovidas || 0,
     })
     .catch((err) => console.error('Falha ao registrar o report:', err.message));
   await pdfStorage
@@ -370,7 +424,14 @@ async function checarDuplicataETravar(req, res, reportKey) {
     if (existente) {
       res.json({
         duplicado: true,
-        existente: { id: existente.id, quando: existente.quando, lead: existente.lead, arquivo: existente.arquivo },
+        existente: {
+          id: existente.id,
+          quando: existente.quando,
+          lead: existente.lead,
+          arquivo: existente.arquivo,
+          // Só dá para reabrir o próprio report (admin abre qualquer um).
+          podeAbrir: req.usuario.papel === 'admin' || existente.usuarioId === req.usuario.id,
+        },
       });
       return false;
     }
@@ -385,7 +446,7 @@ async function checarDuplicataETravar(req, res, reportKey) {
 app.post('/api/report-direto', auth, async (req, res) => {
   let reportKey = null;
   try {
-    const { mensagens, nome, qualidade } = req.body || {};
+    const { mensagens, nome, qualidade, captureQuality } = req.body || {};
     const qualidadeFinal = qualidadeValida(qualidade);
     const { historico: normalizadas } = normalizarConversa(Array.isArray(mensagens) ? mensagens : []);
     reportKey = calcularReportKey({ historicoNormalizado: normalizadas, promptVersao: PROMPT_VERSAO, qualidade: qualidadeFinal });
@@ -393,7 +454,7 @@ app.post('/api/report-direto', auth, async (req, res) => {
     if (!(await checarDuplicataETravar(req, res, reportKey))) return;
 
     const dados = await dadosDireto({ mensagens, nome, sdr: req.usuario.nome, qualidade: qualidadeFinal });
-    await responderReport(req, res, dados, nome, 'extensao', reportKey);
+    await responderReport(req, res, dados, nome, 'extensao', reportKey, sanitizarCaptura(captureQuality));
   } catch (err) {
     res.status(/Nenhuma mensagem/i.test(err.message) ? 400 : 500).json({ erro: err.message });
   } finally {
@@ -460,19 +521,74 @@ function saneadorDeReport(d) {
 // ---------------------------------------------------------------------------
 // Transcrição de áudio (Whisper local)
 // ---------------------------------------------------------------------------
+const MAX_AUDIO_BYTES = Number(process.env.MAX_AUDIO_BYTES) || 20 * 1024 * 1024;
+
+/** Por quanto tempo a transcrição de um mesmo áudio fica em cache (0 desliga). Padrão 24h. */
+function ttlCacheTranscricao() {
+  const v = process.env.TRANSCRIPTION_CACHE_TTL_SEG;
+  if (v === undefined || v === '') return 86400;
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+/**
+ * Tipo REAL do áudio pelos magic bytes — não confia no nome que o cliente manda
+ * (a extensão nomeava tudo "audio.ogg"). 'nao-audio' = claramente outra coisa
+ * (imagem, PDF, HTML/JSON, zip); 'desconhecido' = deixa passar como antes.
+ * @returns {{tipo: 'audio'|'nao-audio'|'desconhecido', ext: string}}
+ */
+function tipoDeAudio(buf) {
+  if (!buf || buf.length < 12) return { tipo: 'desconhecido', ext: '' };
+  const eq = (i, s) => s.split('').every((c, k) => buf[i + k] === c.charCodeAt(0));
+  if (buf[0] === 0xff && buf[1] === 0xd8) return { tipo: 'nao-audio', ext: '' }; // JPEG
+  if (buf[0] === 0x89 && eq(1, 'PNG')) return { tipo: 'nao-audio', ext: '' };
+  if (eq(0, 'GIF8') || eq(0, '%PDF') || eq(0, 'PK')) return { tipo: 'nao-audio', ext: '' };
+  if (eq(0, 'RIFF') && eq(8, 'WEBP')) return { tipo: 'nao-audio', ext: '' };
+  const primeiro = buf.slice(0, 64).toString('utf8').trimStart()[0];
+  if (primeiro === '<' || primeiro === '{') return { tipo: 'nao-audio', ext: '' }; // HTML/JSON de erro
+  if (eq(0, 'OggS')) return { tipo: 'audio', ext: '.ogg' };
+  if (eq(0, 'fLaC')) return { tipo: 'audio', ext: '.flac' };
+  if (eq(0, 'RIFF') && eq(8, 'WAVE')) return { tipo: 'audio', ext: '.wav' };
+  if (eq(4, 'ftyp')) return { tipo: 'audio', ext: '.m4a' };
+  if (buf[0] === 0x1a && buf[1] === 0x45 && buf[2] === 0xdf && buf[3] === 0xa3) return { tipo: 'audio', ext: '.webm' };
+  if (eq(0, 'ID3')) return { tipo: 'audio', ext: '.mp3' };
+  if (buf[0] === 0xff && (buf[1] & 0xe0) === 0xe0) return { tipo: 'audio', ext: '.mp3' };
+  return { tipo: 'desconhecido', ext: '' };
+}
+
 app.post('/api/transcrever', auth, async (req, res) => {
   try {
     const { audioBase64, nome } = req.body || {};
     if (!audioBase64) return res.status(400).json({ erro: 'Nenhum áudio recebido.' });
-    const buffer = Buffer.from(audioBase64, 'base64');
-    const ext = path.extname((nome || '').toString()) || '.ogg';
-    let texto = await transcribeBuffer(buffer, ext);
+    const buffer = Buffer.from(String(audioBase64), 'base64');
+    if (!buffer.length) return res.status(400).json({ erro: 'Nenhum áudio recebido.' });
+    if (buffer.length > MAX_AUDIO_BYTES) {
+      return res.status(400).json({
+        erro: `Áudio grande demais (${Math.round(buffer.length / 1048576)}MB). O limite é ${Math.round(MAX_AUDIO_BYTES / 1048576)}MB.`,
+      });
+    }
+    const detectado = tipoDeAudio(buffer);
+    if (detectado.tipo === 'nao-audio') {
+      return res.status(400).json({ erro: 'Isso não parece um arquivo de áudio.' });
+    }
+    // O tipo detectado manda; só sem detecção usa a extensão do nome (com validação em transcribeBuffer).
+    const ext = detectado.ext || path.extname((nome || '').toString()) || '.ogg';
+
+    // Mesmo áudio (mesmos bytes) = mesma transcrição: evita retranscrever ao gerar de novo.
+    const ttl = ttlCacheTranscricao();
+    const chaveCache = 'tr:' + crypto.createHash('sha256').update(buffer).digest('hex');
+    let texto = ttl ? await db.cacheGet(chaveCache) : null;
+    let doCache = texto !== null;
+    if (texto === null) {
+      texto = await transcribeBuffer(buffer, ext);
+      if (texto && texto.trim()) await db.cacheSet(chaveCache, texto, ttl);
+    }
     // Ponto único onde áudio vira texto (extensão e modo manual passam por aqui):
     // corta transcrição excepcionalmente longa antes dela virar tokens de prompt.
     const limite = Number(process.env.MAX_AUDIO_TRANSCRIPTION_CHARS) || 6000;
     if (texto.length > limite) texto = texto.slice(0, limite) + '…';
 
-    res.json({ texto });
+    res.json({ texto, cache: doCache });
   } catch (err) {
     res.status(500).json({ erro: err.message });
   }
@@ -575,3 +691,5 @@ if (require.main === module) {
 }
 
 module.exports = app;
+module.exports.tipoDeAudio = tipoDeAudio;
+module.exports.sanitizarCaptura = sanitizarCaptura;

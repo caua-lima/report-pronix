@@ -7,6 +7,12 @@
 const GROQ_URL = 'https://api.groq.com/openai/v1/audio/transcriptions';
 const GROQ_CHAT_URL = 'https://api.groq.com/openai/v1/chat/completions';
 
+// Estourou o tempo? Mensagem clara em vez de "The operation was aborted due to timeout".
+const erroDeRede = (msgTimeout) => (e) => {
+  if (e && (e.name === 'TimeoutError' || e.name === 'AbortError')) throw new Error(msgTimeout);
+  throw e;
+};
+
 /**
  * Transcreve um buffer de áudio usando o Groq.
  * @param {Buffer} buffer
@@ -28,7 +34,8 @@ async function transcreverGroq(buffer, filename = 'audio.ogg') {
     method: 'POST',
     headers: { Authorization: `Bearer ${key}` },
     body: form,
-  });
+    signal: AbortSignal.timeout(Number(process.env.GROQ_TIMEOUT_MS) || 50000),
+  }).catch(erroDeRede('A transcrição demorou demais. Tente de novo.'));
 
   if (!r.ok) {
     const detalhe = await r.text().catch(() => '');
@@ -65,6 +72,7 @@ async function lerImagemGroq(buffer, mime = 'image/jpeg') {
   const dataUrl = `data:${mime};base64,${buffer.toString('base64')}`;
 
   const r = await fetch(GROQ_CHAT_URL, {
+    signal: AbortSignal.timeout(Number(process.env.GROQ_TIMEOUT_MS) || 50000),
     method: 'POST',
     headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -80,7 +88,7 @@ async function lerImagemGroq(buffer, mime = 'image/jpeg') {
         },
       ],
     }),
-  });
+  }).catch(erroDeRede('A leitura da imagem demorou demais. Tente de novo.'));
 
   if (!r.ok) {
     const detalhe = await r.text().catch(() => '');

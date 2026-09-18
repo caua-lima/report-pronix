@@ -11,7 +11,7 @@ const URL_REDIS = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_
 const TOKEN_REDIS = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN || '';
 const usandoRedis = Boolean(URL_REDIS && TOKEN_REDIS);
 
-const DATA_DIR = path.join(__dirname, '..', 'data');
+const DATA_DIR = process.env.CR_DATA_DIR || path.join(__dirname, '..', 'data');
 const arquivo = (chave) => path.join(DATA_DIR, `${chave}.json`);
 
 // Na Vercel sem KV o disco é só leitura: falha na hora, com o motivo, em vez de
@@ -206,4 +206,43 @@ async function destravar(chave) {
   travasLocais.delete(chave);
 }
 
-module.exports = { getJson, setJson, push, range, removerDaLista, atualizarNaLista, travar, destravar, usandoRedis };
+// --- Cache com validade ---------------------------------------------------
+const cacheLocal = new Map(); // chave -> { valor, expiraEm }
+
+/** Lê um valor do cache (string) ou null se não existe/expirou. Falha do banco = null (é só cache). */
+async function cacheGet(chave) {
+  try {
+    if (usandoRedis) {
+      const v = await redis(['GET', `cache:${chave}`]);
+      return v == null ? null : String(v);
+    }
+    const e = cacheLocal.get(chave);
+    if (!e) return null;
+    if (e.expiraEm <= Date.now()) {
+      cacheLocal.delete(chave);
+      return null;
+    }
+    return e.valor;
+  } catch (_) {
+    return null;
+  }
+}
+
+/** Grava no cache por `ttlSeg` segundos. Nunca lança: cache que falha não pode derrubar quem chama. */
+async function cacheSet(chave, valor, ttlSeg) {
+  if (!ttlSeg || ttlSeg <= 0) return;
+  try {
+    if (usandoRedis) {
+      await redis(['SET', `cache:${chave}`, String(valor), 'EX', String(Math.floor(ttlSeg))]);
+      return;
+    }
+    if (cacheLocal.size > 500) cacheLocal.clear(); // teto simples: é só o modo local
+    cacheLocal.set(chave, { valor: String(valor), expiraEm: Date.now() + ttlSeg * 1000 });
+  } catch (_) {
+    /* ignora */
+  }
+}
+
+module.exports = {
+  getJson, setJson, push, range, removerDaLista, atualizarNaLista, travar, destravar, cacheGet, cacheSet, usandoRedis,
+};
