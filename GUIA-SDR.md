@@ -32,6 +32,8 @@ A chave é sua e individual: é ela que assina o seu nome no report. Não passe 
 3. Vai aparecer um aviso na tela mostrando o andamento. Enquanto estiver **"Lendo a conversa…"**, **não troque de conversa** (ele está rolando e lendo a que está aberta). Quando o aviso virar **"Gerando report…"**, a leitura terminou e você já pode responder outros leads.
 4. No fim aparece **✅ Report pronto!** com o botão de **baixar o PDF**.
 
+**Já existe um report igual?** Se você gerar duas vezes a mesma conversa, o aviso oferece **Abrir o existente** (baixa o PDF que já foi gerado, sem custo) ou **Gerar de novo** (chama a IA outra vez e custa). Só abra de novo se a conversa mudou.
+
 No aviso final também vem quantos áudios ele transcreveu:
 
 - `3 áudio(s) transcrito(s)` — pegou todos.
@@ -48,7 +50,8 @@ A extensão só funciona no computador. Pra gerar report do que você atende pel
 1. Tire **print** da conversa (pode ser mais de um, se for longa).
 2. Abra o site da PRONIX no navegador do celular e cole a sua chave.
 3. Toque em **"Ou cole um print da conversa"** e escolha os prints da galeria.
-4. O texto da conversa aparece sozinho na caixa. Confira, ajuste se precisar, e toque em **Gerar Report**.
+4. O texto da conversa aparece sozinho na caixa (print muito comprido é lido em partes). Confira, ajuste se precisar, e toque em **Gerar Report**. O botão fica travado enquanto ainda está lendo prints ou áudios.
+5. Se colar **áudios**, escolha antes se quem gravou foi o **lead** ou **você**: o texto entra no fim da caixa como `LEAD (áudio):` ou `VENDEDOR (áudio):`. Mova a linha se a ordem importar.
 
 > Outra opção sem print: no WhatsApp, abra a conversa → menu (⋮) → **Exportar conversa** → **Sem mídia**. Aí é só colar o texto na caixa.
 
@@ -61,6 +64,7 @@ Lê a conversa inteira (inclusive as mensagens antigas), transcreve os áudios e
 | O que aparece | O que fazer |
 | --- | --- |
 | "Chave inválida ou ausente" | A chave foi colada errada ou tem espaço sobrando. Copie de novo e valide. Se insistir, peça outra ao admin. |
+| "A conversa mudou durante a leitura" | Você abriu outra conversa enquanto ele lia. Nada foi gerado: abra a conversa do lead, espere o aviso virar "Gerando report…" e tente de novo. |
 | "Nenhuma mensagem encontrada" | Abra a conversa do lead (a janela com as mensagens na tela) e atualize a página (F5). |
 | O ícone não faz nada | Atualize a aba (F5). Ele só age em `web.whatsapp.com` e `instagram.com/direct`. |
 | ⚠️ nos áudios | Chame o admin com um print.  |

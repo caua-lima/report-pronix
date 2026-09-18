@@ -127,11 +127,22 @@ ver o passo a passo de instalação para o SDR em [`GUIA-SDR.md`](GUIA-SDR.md).
 npm test
 ```
 
-Roda `tests/auditoria.test.js` (Node ≥ 18, sem dependências novas, sem rede, sem chave de
-API e sem navegador): carrega trechos reais da extensão e do painel em sandboxes com
-objetos simulados e confere as correções da auditoria (escape de HTML, silenciamento de
-áudio só durante a geração, destino do servidor no `background.js`, botão de gerar,
-política de privacidade). Não substitui um teste manual no WhatsApp/Instagram reais.
+Roda todos os `tests/*.test.js` (Node ≥ 18; a única dependência extra é o `jsdom`, só de
+desenvolvimento). Sem rede, sem chave de API real, sem custo e sem tocar em `data/`
+(o banco de teste é uma pasta temporária, via `CR_DATA_DIR`):
+
+| Arquivo | O que cobre |
+| --- | --- |
+| `servidor.test.js` | A API inteira com IA e Groq simulados: acessos, geração, duplicado, reabrir PDF só do dono, resultado com versão (409), consumo de reports excluídos, áudio (tipo real, cache), `captureQuality`. |
+| `qualidade.test.js` | 36 casos sintéticos: conferência de citações (número trocado, fala inventada, ordem das palavras) e normalização da conversa (falas repetidas, limite, sinal comercial). |
+| `extensao-dom.test.js` | Os content scripts **reais** do WhatsApp e do Instagram em DOM simulado: lista virtualizada que ignora `scrollTop`, remetente, áudios, troca de conversa no meio da leitura, falas repetidas, duplicado. |
+| `painel.test.js` | O painel **real** com API falsa: abas sob demanda, edição de resultado, duplicado, áudio/print, rascunho, chaves mascaradas. |
+| `popup.test.js` | Popup da extensão: último report só do dono da chave, edição guardada. |
+| `audio-cliente.test.js` | Validador de áudio dos dois content scripts. |
+| `auditoria.test.js` | Correções pontuais da auditoria (escape de HTML, silenciamento de áudio, destino do servidor). |
+
+Não substitui um teste manual no WhatsApp e no Instagram reais: o DOM simulado reproduz o
+que foi medido ao vivo, mas os dois sites mudam de layout sem avisar.
 
 ## Deploy (Vercel)
 
@@ -170,10 +181,39 @@ SDR — nada de e-mail real, é só nome + chave gerada.
 | `MAX_AUDIO_TRANSCRIPTION_CHARS` | não (padrão `6000`) | Teto de caracteres de uma transcrição de áudio (aplicado em `/api/transcrever`). |
 | `MAX_REPORT_OUTPUT_TOKENS` | não (padrão `4000`) | Teto de tokens de saída pedido à Anthropic. |
 | `USD_BRL_RATE` | não (padrão `5.3`) | Taxa fixa usada só para exibir a estimativa de custo em BRL — nunca busca câmbio numa API externa. |
+| `MAX_AUDIO_BYTES` | não (padrão `20971520`) | Teto do tamanho de um áudio enviado para transcrição. |
+| `TRANSCRIPTION_CACHE_TTL_SEG` | não (padrão `86400`) | Por quanto tempo a transcrição de um mesmo áudio fica em cache (chave = hash dos bytes). `0` desliga. |
+| `ANTHROPIC_TIMEOUT_MS` / `GROQ_TIMEOUT_MS` | não (padrão `50000`) | Tempo máximo de cada chamada. A Vercel corta a função em 60s; estourar dá mensagem clara em vez de erro opaco. |
+| `CR_DATA_DIR` | não | Pasta dos arquivos de dados no modo local (padrão `data/`). Os testes usam uma pasta temporária. |
 
 `SDR_NAME` no `.env.example` é só um nome de exibição de reserva para quando o PDF é
 gerado sem usuário autenticado (uso local avulso) — em uso normal, quem assina o
 report é sempre o dono da chave (`x-cr-key`).
+
+## Qualidade do report
+
+- **Conversa como dado, não como instrução.** O prompt (`PROMPT_VERSAO = 'v2'`) põe a
+  conversa entre `<conversa>` e `</conversa>` e manda tratar tudo ali dentro como
+  material a analisar; marcas parecidas escritas por alguém na conversa são
+  neutralizadas (`src/citacoes.js`).
+- **Regras de leitura:** só é afirmação do lead o que o lead escreveu; correção posterior
+  prevalece; faturamento não é lucro nem verba; números e nomes exatamente como ditos.
+- **Citações conferidas sem IA.** Depois da geração, cada "fala do lead" é comparada com
+  as falas reais (`verificarCitacoes`): inteira na conversa, ou com ≥ 80% das palavras
+  **na mesma ordem** e **todos os números iguais**. Fala inventada ou com número trocado
+  sai do report (o report continua válido sem citações). O painel mostra quantas foram
+  removidas, junto do cache do prompt e das capturas parciais — a base para decidir
+  custo e qualidade com número.
+- **Captura parcial visível.** A extensão manda quantos áudios achou e quantos
+  transcreveu (`captureQuality`); o servidor recalcula "incompleta" e o painel marca o
+  report como *captura parcial*.
+- **Trava de conversa.** Se o SDR abrir outra conversa durante a leitura, a extensão
+  aborta em vez de misturar duas conversas (WhatsApp: id da conversa nos `data-id`;
+  Instagram: endereço `/direct/t/<id>`). O nome do contato é o do começo da leitura.
+
+O que **não** existe: status por campo (confirmado/inferido) e a origem de cada
+afirmação por mensagem. Mudam o contrato com a IA e o PDF e só dá para validar com
+chamadas pagas de verdade — ver `docs/plano-implementacao.md`.
 
 ## Custo por report
 
@@ -190,7 +230,8 @@ como um novo report nem soma custo.
 ### Normalização e custo
 
 Antes de montar o prompt, `src/conversation-normalizer.js` limpa a conversa: remove
-mensagens vazias/duplicadas consecutivas, agrupa mensagens de texto seguidas do mesmo
+mensagens vazias e o eco de texto **longo** repetido em seguida ("ok", "sim" e "[áudio]"
+repetidos são falas reais e ficam), agrupa mensagens de texto seguidas do mesmo
 remetente (menos prefixo repetido) e, só se a conversa passar de `MAX_CONVERSATION_CHARS`,
 corta preservando as mensagens mais recentes **e** qualquer trecho com sinal comercial
 (dor, orçamento, prazo, decisor, objeção, concorrência, próximos passos, compromissos —
@@ -202,8 +243,10 @@ essas nunca somem por causa do limite). Quando isso acontece, o report volta com
 `/api/report-direto` e `/api/report-texto` calculam uma `reportKey` (hash da conversa
 normalizada + versão do prompt + modo de qualidade, em `src/idempotencia.js`). Se já
 existe um report com a mesma chave, o servidor **não chama a IA de novo** — devolve
-`{ duplicado: true, existente: {...} }` e a extensão/dashboard perguntam ao SDR se quer
-gerar mesmo assim (`forcarNovo: true` no corpo do pedido pula a checagem). Uma trava
+`{ duplicado: true, existente: { id, quando, lead, podeAbrir } }`. A extensão e o painel
+mostram duas opções: **Abrir o existente** (baixa o PDF guardado, sem IA — o SDR só abre
+os seus; o admin abre qualquer um, via `GET /api/reports/:id/pdf`) ou **Gerar de novo**
+(`forcarNovo: true` no corpo do pedido pula a checagem e cobra a IA de novo). Uma trava
 por `reportKey` (`db.travar`/`db.destravar`) também impede que duas chamadas
 simultâneas da mesma conversa (ex.: um retry de rede) gerem e cobrem em paralelo.
 

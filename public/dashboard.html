@@ -423,6 +423,7 @@
           <div class="kpi"><div class="l">Média mensal</div><div class="n peq" id="gMediaMes">$0</div></div>
         </div>
         <div id="consumoExcluido" class="hint hidden" style="margin:-4px 0 14px"></div>
+        <div id="baselineInfo" class="hint" style="margin:-4px 0 14px"></div>
 
         <div class="card">
           <div class="head"><div class="t"><i data-ic="user"></i>Por SDR</div><div class="sub">— reports e gasto de cada um, no período</div></div>
@@ -803,7 +804,7 @@
             <td style="color:var(--muted);font-size:.8rem">${new Date(u.criadoEm).toLocaleDateString('pt-BR')}</td>
             <td><div class="acoes">
               <button class="mini" data-copiar="${esc(u.chave)}">Copiar chave</button>
-              <button class="mini del" data-remover="${u.id}" data-nome="${esc(u.nome)}">Remover</button>
+              <button class="mini del" data-remover="${esc(u.id)}" data-nome="${esc(u.nome)}">Remover</button>
             </div></td>
           </tr>`).join('');
       } catch (e) {
@@ -918,7 +919,7 @@
           <tr>
             <td><b>${esc(c.nome)}</b></td>
             <td style="color:var(--muted)">${esc(c.email || '—')}</td>
-            <td><div class="acoes"><button class="mini del" data-remover-closer="${c.id}" data-desc="${esc(c.nome)}">Remover</button></div></td>
+            <td><div class="acoes"><button class="mini del" data-remover-closer="${esc(c.id)}" data-desc="${esc(c.nome)}">Remover</button></div></td>
           </tr>`).join('');
       } catch (e) {
         setStatus('statusCloser', e.message, { erro: true });
@@ -959,11 +960,11 @@
       }
     });
 
-    const selectCloser = (r) => `<select class="mini-select" data-campo="closerId" data-report="${r.id}">
+    const selectCloser = (r) => `<select class="mini-select" data-campo="closerId" data-report="${esc(r.id)}">
       <option value="">—</option>
-      ${closersCache.map((c) => `<option value="${c.id}" ${c.id === r.closerId ? 'selected' : ''}>${esc(c.nome)}</option>`).join('')}
+      ${closersCache.map((c) => `<option value="${esc(c.id)}" ${c.id === r.closerId ? 'selected' : ''}>${esc(c.nome)}</option>`).join('')}
     </select>`;
-    const selectResultado = (r) => `<select class="mini-select" data-campo="resultado" data-report="${r.id}">
+    const selectResultado = (r) => `<select class="mini-select" data-campo="resultado" data-report="${esc(r.id)}">
       ${RESULTADOS_OPCOES.map((o) => `<option value="${o.v}" ${o.v === (r.resultado || '') ? 'selected' : ''}>${o.t}</option>`).join('')}
     </select>`;
 
@@ -1078,6 +1079,11 @@
         $('gCusto').textContent = usd(s.geral.custo);
         $('gMediaDia').textContent = usd(s.geral.mediaDiaria);
         $('gMediaMes').textContent = usd(s.geral.mediaMensal);
+        const qual = s.qualidade || {};
+        $('baselineInfo').textContent =
+          `No período: ${Math.round((qual.taxaCache || 0) * 100)}% da entrada veio do cache do prompt · ` +
+          `captura parcial em ${qual.capturaParcial || 0} de ${qual.comCaptura || 0} reports da extensão · ` +
+          `${qual.citacoesRemovidas || 0} citação(ões) removida(s) por não baterem com a fala do lead.`;
         // Excluir um report tira ele dos números acima, mas o gasto com a IA já aconteceu.
         const ex = (s.geral && s.geral.consumoExcluido) || { total: 0, custo: 0 };
         $('consumoExcluido').classList.toggle('hidden', !(ex.total > 0));
@@ -1137,20 +1143,20 @@
           || '<tr><td colspan="3" style="color:var(--muted)">Sem histórico ainda.</td></tr>';
 
         $('ultimos').innerHTML = s.ultimos.map((r) => `
-          <tr data-linha-report="${r.id}" data-versao="${r.versao || 0}">
+          <tr data-linha-report="${esc(r.id)}" data-versao="${Number(r.versao) || 0}">
             <td>${esc(r.lead || '—')}${r.captura && r.captura.incompleta ? ` <span class="tag" title="${esc(r.captura.audiosTranscritos + ' de ' + r.captura.audios + ' áudio(s) transcritos')}" style="color:var(--danger)">captura parcial</span>` : ''}</td>
-            <td><input type="email" class="mini-date" data-campo="leadEmail" data-report="${r.id}" placeholder="e-mail do lead" value="${esc(r.leadEmail || '')}" style="max-width:170px" /></td>
+            <td><input type="email" class="mini-date" data-campo="leadEmail" data-report="${esc(r.id)}" placeholder="e-mail do lead" value="${esc(r.leadEmail || '')}" style="max-width:170px" /></td>
             <td>${esc(r.usuarioNome || '—')}</td>
             <td><span class="tag">${r.origem === 'manual' ? 'manual' : 'extensão'}</span></td>
             <td style="color:var(--muted);font-size:.82rem">${quando(r.quando)}</td>
             <td class="num">${usd(r.custo)}</td>
             <td>${selectCloser(r)}</td>
             <td>${selectResultado(r)}</td>
-            <td><input type="date" class="mini-date" data-campo="dataReuniao" data-report="${r.id}" value="${r.dataReuniao || ''}" /></td>
-            <td><input type="date" class="mini-date" data-campo="dataFechamento" data-report="${r.id}" value="${r.dataFechamento || ''}" /></td>
+            <td><input type="date" class="mini-date" data-campo="dataReuniao" data-report="${esc(r.id)}" value="${esc(r.dataReuniao || '')}" /></td>
+            <td><input type="date" class="mini-date" data-campo="dataFechamento" data-report="${esc(r.id)}" value="${esc(r.dataFechamento || '')}" /></td>
             <td class="num" style="color:var(--muted)">${r.diasParaFechar != null ? r.diasParaFechar : '—'}</td>
             <td><div class="acoes">
-              <button class="mini del" data-remover-report="${r.id}"
+              <button class="mini del" data-remover-report="${esc(r.id)}"
               data-desc="${esc((r.lead || 'sem lead') + ' · ' + (r.usuarioNome || '—') + ' · ' + quando(r.quando))}"
               title="Tirar do histórico">Remover</button>
             </div></td>
@@ -1216,7 +1222,7 @@
             <td>${esc(r.lead || '—')}</td>
             <td>${esc(r.usuarioNome || '—')}</td>
             <td style="color:var(--muted);font-size:.82rem">${quando(r.quando)}</td>
-            <td><div class="acoes"><button class="mini" data-baixar-pdf-report="${r.id}" data-nome-arquivo="${esc(r.arquivo || 'report.pdf')}">PDF</button></div></td>
+            <td><div class="acoes"><button class="mini" data-baixar-pdf-report="${esc(r.id)}" data-nome-arquivo="${esc(r.arquivo || 'report.pdf')}">PDF</button></div></td>
           </tr>`).join('')
           || '<tr><td colspan="4" style="color:var(--muted)">Nenhum report neste período.</td></tr>';
 

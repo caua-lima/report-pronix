@@ -149,6 +149,10 @@ test('gera o report: remove citação inventada e guarda a qualidade da captura'
   const linha = painel.ultimos.find((x) => x.lead === 'Marcos');
   E.id = linha.id;
   assert.equal(linha.citacoesRemovidas, 1);
+  assert.equal(painel.qualidade.capturaParcial, 1);
+  assert.equal(painel.qualidade.comCaptura, 1);
+  assert.equal(painel.qualidade.citacoesRemovidas, 1);
+  assert.equal(painel.qualidade.taxaCache, 0);
   // "incompleta" é recalculada no servidor: 1 de 3 áudios = incompleta, mesmo o cliente mandando false.
   assert.deepEqual(linha.captura, { plataforma: 'whatsapp', versao: '1.5.0', mensagens: 4, audios: 3, audiosTranscritos: 1, incompleta: true });
 });

@@ -1,57 +1,44 @@
 # Plano de implementação — pós-auditoria
 
-Ver o status de cada achado em [`auditoria-pronix.md`](auditoria-pronix.md).
-Princípio: mudanças pequenas, uma por commit, cada uma com teste e fácil de reverter. Nada de reescrever o que funciona.
+Status de cada achado em [`auditoria-pronix.md`](auditoria-pronix.md). Lista do que falta em [`checklist-pendencias.md`](checklist-pendencias.md).
 
-## Feito nesta rodada (Etapa 1 — integridade e segurança do cliente)
+Princípio: mudanças pequenas, cada uma com teste e fácil de reverter. Nada de reescrever o que funciona.
 
-A01 (parcial), A02, A08, A09 (texto), A12, A13 (parcial), A17, A20 + `npm test`.
-Extensão sobe para **1.4.4** (precisa enviar o zip à Chrome Web Store); o resto é servidor/site (`git push`).
+## Concluído
 
-## Etapa 2 — Confiabilidade da captura (próxima)
-
-| Item | Ideia | Como provar |
+| Etapa | Itens | Onde subir |
 |---|---|---|
-| A03 trava de conversa | Ler a identidade da conversa (nome/cabeçalho e, no WhatsApp, o chat aberto) no início e a cada passo; se mudar, abortar com aviso claro e **não** enviar nada | Teste com DOM simulado trocando o cabeçalho no meio |
-| A04 `captureQuality` | Enviar `{audios, transcritos, mensagens, incompleto}` ao servidor; o PDF/painel marcam "captura parcial" quando faltar áudio | Teste no `background.js` + servidor |
-| A06 áudio | Aceitar só formatos reconhecidos (ou desconhecido com mais evidência); nome do arquivo pelo tipo real | Fixtures binárias sintéticas |
-| A01 completo | Amarrar o blob à mensagem (duração/posição), não só ao tempo | Mock com dois áudios quase simultâneos |
-| A05 dedup | Chave incluindo remetente e posição; nunca descartar repetição legítima | Fixtures de conversas com "ok", "ok", "ok" |
+| 1 — Integridade e segurança do cliente | A01 (parcial), A02, A08, A12, A13, A17, A20 | `git push` + extensão |
+| 2 — Confiabilidade da captura | A03, A04, A05, A06, A01 (janela de tempo) | extensão 1.5.0 + servidor |
+| 3 — Dados e concorrência | A09, A10, A11, A15, A16, A21 | extensão 1.5.0 + `git push` |
+| 6 — UX e segurança restantes | A13, A14, A18, A19 e a varredura de `innerHTML` | extensão 1.5.0 + `git push` |
+| 4 — Qualidade (parte segura) | prompt v2, conferência de citações, suíte sintética | `git push` |
+| 5 — Custos (parte segura) | cache de transcrição, baseline no painel | `git push` |
 
-Risco: tudo aqui mexe na leitura que acabou de funcionar (Instagram v1.4.3). Só entra com fixtures sintéticas e teste manual em conversa própria.
+Extensão: **1.5.0** (manifest, popup, background e os dois content scripts mudaram → precisa enviar o zip à Chrome Web Store).
+Servidor/painel: só `git push origin main`.
 
-## Etapa 3 — Persistência e concorrência
+## O que ainda pode ser feito (nada aqui bloqueia o uso)
 
-- A09 completo: rota para o SDR abrir **o próprio** report existente (`existente.id`) sem chamar a IA. Decisão necessária: SDR pode ver PDFs só dos seus reports?
-- A15: enviar só o campo alterado e uma versão (`updatedAt`) para detectar conflito.
-- A10/A11: `ultimoReport` por usuário/servidor e limpeza ao trocar de chave.
-- A16: carregar cada aba de admin sob demanda.
-- A21: ledger de consumo separado dos reports (excluir report não apaga o gasto). Mantém "resultado em branco = sem venda".
+### 1. Status por campo e origem das afirmações (Etapa 4, a parte de risco)
+- **Ideia:** cada linha do resumo com `status` (confirmado, inferido, não informado, conflitante) e a lista de mensagens de onde veio.
+- **Por que não entrou:** exige numerar as mensagens no prompt e mudar o schema da ferramenta e o PDF. Não há como validar se o modelo mantém o formato das citações sem chamadas pagas reais.
+- **Como fazer com segurança:** rodada supervisionada, com uma conversa de teste sua e a API real, comparando o report antigo e o novo lado a lado. Só então ligar para todos.
 
-## Etapa 4 — Qualidade do report
+### 2. Avaliar modelo mais barato (Etapa 5)
+- Deixar o baseline do painel rodar 2–4 semanas (custo médio, % de cache, capturas parciais).
+- Rodar o mesmo conjunto de conversas sintéticas (`tests/qualidade.test.js`) contra o modelo candidato e comparar. Não promete economia antes disso.
 
-Só depois de existir uma suíte de 30–50 conversas sintéticas com resultado esperado:
-- campos com status (confirmado/inferido/não informado/conflitante) e `sourceMessageIds`;
-- regras comerciais (faturamento ≠ lucro, pergunta do SDR ≠ afirmação do lead, correção do lead prevalece, citação bate com a fonte, proteção contra instrução dentro da conversa);
-- manter o tom **só positivo** e a regra de decisor "fechado", já definidos pelo dono.
+### 3. Melhorias pequenas (se o uso pedir)
+- A01 por completo: amarrar o áudio à mensagem por um sinal confiável (hoje não existe um no DOM do WhatsApp/Instagram).
+- Chave do SDR no painel fora do `localStorage` (exige sessão por cookie).
+- Instagram: se o layout mudar, o primeiro sintoma é a leitura vir curta; o console mostra `[CR-instagram v1.5.0] passo N: janela X msg | +Y nova(s)`.
 
-## Etapa 5 — Custos (com medição)
+## Decisões que já foram tomadas (sem confirmar com você)
 
-1. Medir baseline (custo por report, tokens de entrada/saída, % de cache) a partir dos dados que já são registrados.
-2. Reabrir report existente (A09) — elimina o maior desperdício sem risco.
-3. Cache de transcrição por hash da mídia.
-4. Só então avaliar modelo mais barato, com a suíte da Etapa 4. Nenhuma economia é prometida antes do baseline.
+Você pediu para fazer tudo; onde a decisão era necessária, escolhi o mais seguro e deixei anotado:
 
-## Etapa 6 — UX e segurança restantes
-
-- A13 completo: estreitar `host_permissions` ao domínio de produção (decisão: qual é o domínio definitivo?).
-- A14: senha reserva de admin fora do `sessionStorage`; máscara de chaves na lista.
-- A18: fatiar prints longos antes de reduzir.
-- A19: timeouts e limites de payload.
-- Varredura completa dos `innerHTML` do dashboard (A12 restante).
-
-## Decisões que dependem do dono da ferramenta
-
-1. Domínio de produção definitivo (para estreitar `host_permissions`).
-2. SDR pode reabrir os próprios PDFs?
-3. Política de retenção de PDFs (hoje ficam até o admin excluir; a privacidade descreve isso).
+1. **Domínio de produção:** `report-closer.vercel.app` (é o que já está no popup e no README). Se houver outro domínio em uso, avise.
+2. **SDR reabre os próprios PDFs:** sim, só os dele; o admin abre qualquer um; de outra pessoa responde "não encontrado".
+3. **Retenção de PDFs:** sem prazo automático (ficam até o admin excluir), como já era, e descrito na política de privacidade.
+4. **Cache de transcrição:** 24h, só o texto, chaveado por hash do áudio; descrito na política de privacidade. `TRANSCRIPTION_CACHE_TTL_SEG=0` desliga.

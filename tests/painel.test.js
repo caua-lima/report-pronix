@@ -190,12 +190,16 @@ test('A21: mostra o consumo dos reports excluídos e marca captura parcial', asy
   });
   stats.geral.consumoExcluido = { total: 2, custo: 0.1234 };
   stats.geral.custo = 1;
+  stats.qualidade = { taxaCache: 0.634, comCaptura: 10, capturaParcial: 2, citacoesRemovidas: 1 };
   const p = abrirPainel(apiBase({ stats }), { hash: '#numeros' });
   await esperar(() => p.$('ultimos').textContent.includes('captura parcial'), { motivo: 'chip de captura' });
   assert.ok(visivel(p.$('consumoExcluido')));
   assert.match(p.$('consumoExcluido').textContent, /2 report\(s\) excluído\(s\)/);
   assert.match(p.$('consumoExcluido').textContent, /\$0[.,]12/);
   assert.match(p.$('ultimos').querySelector('.tag[title]').title, /1 de 3/);
+  assert.match(p.$('baselineInfo').textContent, /63% da entrada veio do cache/);
+  assert.match(p.$('baselineInfo').textContent, /captura parcial em 2 de 10/);
+  assert.match(p.$('baselineInfo').textContent, /1 citação\(ões\) removida/);
   p.fechar();
 });
 

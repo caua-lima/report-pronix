@@ -227,6 +227,23 @@ async function resumo({ de, ate, sdr } = {}) {
     custoMedio: dentro.length ? soma(dentro) / dentro.length : 0,
     tokensEntrada: dentro.reduce((t, r) => t + (r.entrada || 0), 0),
     tokensSaida: dentro.reduce((t, r) => t + (r.saida || 0), 0),
+    // Baseline para decidir custo/qualidade com número, não com achismo:
+    // taxaCache = parte da entrada que o cache do prompt devolveu barato; as demais mostram
+    // quantos reports saíram de leitura parcial (áudio que faltou) e quantas citações não bateram com o lead.
+    qualidade: (() => {
+      const leitura = dentro.reduce((t, r) => t + (r.cacheLeitura || 0), 0);
+      const escrita = dentro.reduce((t, r) => t + (r.cacheEscrita || 0), 0);
+      const entrada = dentro.reduce((t, r) => t + (r.entrada || 0), 0);
+      const total = leitura + escrita + entrada;
+      return {
+        taxaCache: total ? leitura / total : 0,
+        tokensCacheLeitura: leitura,
+        tokensCacheEscrita: escrita,
+        comCaptura: dentro.filter((r) => r.captura).length,
+        capturaParcial: dentro.filter((r) => r.captura && r.captura.incompleta).length,
+        citacoesRemovidas: dentro.reduce((t, r) => t + (r.citacoesRemovidas || 0), 0),
+      };
+    })(),
     porUsuario: [...porUsuario.values()].sort((a, b) => b.total - a.total),
     porCloser: [...porCloser.values()]
       .map((c) => ({ ...c, taxa: c.total ? c.vendas / c.total : 0 }))
