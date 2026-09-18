@@ -262,10 +262,17 @@
       <div class="card">
         <div class="head"><div class="t"><i data-ic="message"></i>Conversa</div><div class="sub">— jogue os áudios e cole o texto; tudo vira o report</div></div>
 
+        <div class="row" style="margin-bottom:8px;align-items:center;gap:8px">
+          <label for="quemAudio" style="margin:0">Quem gravou os áudios?</label>
+          <select id="quemAudio" class="mini-select">
+            <option value="LEAD">Lead</option>
+            <option value="VENDEDOR">Eu (vendedor)</option>
+          </select>
+        </div>
         <div id="dropzone" class="dropzone">
           <i class="ic" data-ic="headphones"></i>
           <div class="big">Arraste os áudios aqui</div>
-          <div class="small">ou clique para selecionar · vários de uma vez · o texto entra na conversa abaixo</div>
+          <div class="small">ou clique para selecionar · vários de uma vez · o texto entra no fim da conversa abaixo (mova a linha se a ordem importar)</div>
         </div>
         <input id="audio" type="file" accept="audio/*,.ogg,.opus,.m4a,.mp3,.aac,.wav" multiple class="hidden" />
         <div id="files" class="files"></div>
@@ -290,6 +297,15 @@
 
       <button id="gerar" class="btn btn-block">Gerar Report</button>
       <div id="status" class="status"></div>
+
+      <div id="duplicadoBox" class="card hidden" style="margin-top:12px">
+        <div id="duplicadoTexto" style="margin-bottom:10px"></div>
+        <div class="acoes">
+          <button id="dupAbrir" class="btn">Abrir o existente</button>
+          <button id="dupGerar" class="btn sec">Gerar de novo (custo extra)</button>
+          <button id="dupCancelar" class="btn sec">Cancelar</button>
+        </div>
+      </div>
 
       <div id="resultado" class="card hidden" style="margin-top:18px">
         <div class="result-head">
@@ -406,6 +422,7 @@
           <div class="kpi"><div class="l">Média diária</div><div class="n peq" id="gMediaDia">$0</div></div>
           <div class="kpi"><div class="l">Média mensal</div><div class="n peq" id="gMediaMes">$0</div></div>
         </div>
+        <div id="consumoExcluido" class="hint hidden" style="margin:-4px 0 14px"></div>
 
         <div class="card">
           <div class="head"><div class="t"><i data-ic="user"></i>Por SDR</div><div class="sub">— reports e gasto de cada um, no período</div></div>
@@ -593,6 +610,16 @@
     const $ = (id) => document.getElementById(id);
     const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
+    // fetch com limite de tempo: a Vercel corta a função em 60s, e ficar esperando para sempre deixa a tela travada.
+    function fetchComTempo(url, opts, ms) {
+      return fetch(url, Object.assign({}, opts, { signal: AbortSignal.timeout(ms || 65000) })).catch((e) => {
+        if (e && (e.name === 'TimeoutError' || e.name === 'AbortError')) {
+          throw new Error('O servidor demorou demais para responder. Tente de novo.');
+        }
+        throw e;
+      });
+    }
+
     // ---------- Ícones ----------
     // Desenhos de traço embutidos: a página tem de ser autocontida (a Vercel e a
     // extensão não carregam script/fonte de fora).
@@ -684,20 +711,26 @@
     document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () => abrir(t.dataset.aba)));
 
     // ---------- Admin (compartilhado entre as abas Acessos e Números) ----------
-    let senhaAdmin = sessionStorage.getItem('adminPass') || '';
+    // A senha reserva de admin vive só na memória desta aba (nada de sessionStorage): recarregar a página pede de novo.
+    let senhaAdmin = '';
+    try { sessionStorage.removeItem('adminPass'); } catch (_) { /* valor guardado por versões antigas */ }
 
     async function api(metodo, url, corpo) {
       // O servidor aceita a chave de admin ou a senha reserva — mandamos o que tiver.
       const headers = { 'Content-Type': 'application/json' };
       if (getChave()) headers['x-cr-key'] = getChave();
       if (senhaAdmin) headers['x-admin-pass'] = senhaAdmin;
-      const r = await fetch(url, {
+      const r = await fetchComTempo(url, {
         method: metodo,
         headers,
         body: corpo ? JSON.stringify(corpo) : undefined,
       });
       const j = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(j.erro || 'Falha na requisição.');
+      if (!r.ok) {
+        const e = new Error(j.erro || 'Falha na requisição.');
+        e.status = r.status; // 409 = alguém alterou o mesmo report antes de você
+        throw e;
+      }
       return j;
     }
 
@@ -711,18 +744,12 @@
       senhaAdmin = senha;
       try {
         await api('POST', '/api/admin/login', {});
-        sessionStorage.setItem('adminPass', senhaAdmin);
         mostrarAdmin(true);
         aplicarPapel();
-        carregarUsuarios();
-        await carregarClosers();
-        carregarStats();
-        carregarArquivos();
-        carregarBase();
+        await carregarAba(abaAtual());
         return true;
       } catch (e) {
         senhaAdmin = '';
-        sessionStorage.removeItem('adminPass');
         mostrarAdmin(false);
         aplicarPapel();
         document.querySelectorAll('.status-admin').forEach((s) => setStatus(s, e.message, { erro: true }));
@@ -730,15 +757,24 @@
       }
     }
 
+    const abaAtual = () => (location.hash || '').replace('#', '') || 'report';
+
+    /** Carrega SÓ o que a aba pedida precisa (antes toda abertura de aba baixava acessos, closers, números, arquivos e base juntos). */
+    async function carregarAba(aba) {
+      if (aba === 'acessos') return carregarUsuarios();
+      if (aba === 'numeros') {
+        await carregarClosers(); // as linhas da tabela oferecem os closers no select
+        return carregarStats();
+      }
+      if (aba === 'arquivos') return carregarArquivos();
+      if (aba === 'base') return carregarBase();
+    }
+
     async function pedirAdmin() {
       // Chave de admin já basta; a senha é só o caminho reserva.
       if (souAdmin) {
         mostrarAdmin(true);
-        carregarUsuarios();
-        await carregarClosers();
-        carregarStats();
-        carregarArquivos();
-        carregarBase();
+        await carregarAba(abaAtual());
       } else if (senhaAdmin) {
         entrarAdmin(senhaAdmin);
       } else {
@@ -753,6 +789,8 @@
     );
 
     // ---------- Aba: Acessos ----------
+    // A chave completa não fica exposta na tela: só o começo e o fim (clique mostra; "Copiar chave" copia a inteira).
+    const mascarar = (k) => (String(k).length > 12 ? String(k).slice(0, 6) + '…' + String(k).slice(-4) : '••••');
     async function carregarUsuarios() {
       if (!souAdmin && !senhaAdmin) return;
       try {
@@ -761,7 +799,7 @@
         $('lista').innerHTML = usuarios.map((u) => `
           <tr>
             <td><b>${esc(u.nome)}</b>${u.papel === 'admin' ? ' <span class="tag" style="color:var(--gold-ink);border-color:var(--primary)">admin</span>' : ''}</td>
-            <td><span class="chave">${esc(u.chave)}</span></td>
+            <td><span class="chave" data-cheia="${esc(u.chave)}" data-mascara="${esc(mascarar(u.chave))}" title="Clique para mostrar ou ocultar" style="cursor:pointer">${esc(mascarar(u.chave))}</span></td>
             <td style="color:var(--muted);font-size:.8rem">${new Date(u.criadoEm).toLocaleDateString('pt-BR')}</td>
             <td><div class="acoes">
               <button class="mini" data-copiar="${esc(u.chave)}">Copiar chave</button>
@@ -774,6 +812,13 @@
     }
 
     $('lista').addEventListener('click', async (ev) => {
+      const k = ev.target.closest('.chave');
+      if (k) {
+        const aberta = k.dataset.aberta === '1';
+        k.textContent = aberta ? k.dataset.mascara : k.dataset.cheia;
+        k.dataset.aberta = aberta ? '0' : '1';
+        return;
+      }
       const c = ev.target.closest('[data-copiar]');
       const d = ev.target.closest('[data-remover]');
       if (c) {
@@ -922,28 +967,41 @@
       ${RESULTADOS_OPCOES.map((o) => `<option value="${o.v}" ${o.v === (r.resultado || '') ? 'selected' : ''}>${o.t}</option>`).join('')}
     </select>`;
 
-    /** Lê os campos da linha (e-mail do lead/closer/resultado/datas) e salva juntos — o PATCH substitui tudo de uma vez. */
-    async function salvarResultadoLinha(id) {
+    /**
+     * Salva SÓ o campo que foi mexido, junto da versão que esta linha tinha ao ser carregada:
+     * o servidor recusa (409) se outra pessoa já alterou o report, em vez de sobrescrever.
+     * Uma fila por linha: duas mudanças seguidas esperam a versão nova voltar antes de enviar.
+     */
+    const filaResultado = new Map();
+    function salvarResultadoLinha(id, campo) {
+      const anterior = filaResultado.get(id) || Promise.resolve();
+      const proxima = anterior.then(() => enviarResultado(id, campo));
+      filaResultado.set(id, proxima.catch(() => {}));
+      return proxima;
+    }
+    async function enviarResultado(id, campo) {
       const linha = document.querySelector(`tr[data-linha-report="${id}"]`);
-      if (!linha) return;
-      const val = (nome) => linha.querySelector(`[data-campo="${nome}"]`).value;
+      if (!linha || !campo) return;
       try {
-        await api('PATCH', '/api/admin/reports/' + id + '/resultado', {
-          leadEmail: val('leadEmail'),
-          closerId: val('closerId'),
-          resultado: val('resultado'),
-          dataReuniao: val('dataReuniao'),
-          dataFechamento: val('dataFechamento'),
+        const r = await api('PATCH', '/api/admin/reports/' + id + '/resultado', {
+          [campo.dataset.campo]: campo.value,
+          versao: Number(linha.dataset.versao || 0),
         });
+        linha.dataset.versao = r.versao;
         toast('Salvo.');
         carregarStats(); // atualiza "Dias" calculado no servidor
       } catch (e) {
-        setStatus('statusFiltro', e.message, { erro: true });
+        if (e.status === 409) {
+          toast('Outra pessoa alterou este report — tela atualizada.');
+          carregarStats();
+        } else {
+          setStatus('statusFiltro', e.message, { erro: true });
+        }
       }
     }
     $('ultimos').addEventListener('change', (ev) => {
       const campo = ev.target.closest('[data-campo]');
-      if (campo) salvarResultadoLinha(campo.dataset.report);
+      if (campo) salvarResultadoLinha(campo.dataset.report, campo);
     });
 
     /** Botões de período preenchem as datas; mexer nas datas na mão desliga os botões. */
@@ -970,7 +1028,7 @@
       const headers = {};
       if (getChave()) headers['x-cr-key'] = getChave();
       if (senhaAdmin) headers['x-admin-pass'] = senhaAdmin;
-      const r = await fetch(url, { headers });
+      const r = await fetchComTempo(url, { headers }, 120000);
       if (!r.ok) {
         const j = await r.json().catch(() => ({}));
         throw new Error(j.erro || 'Falha ao baixar o arquivo.');
@@ -1020,6 +1078,12 @@
         $('gCusto').textContent = usd(s.geral.custo);
         $('gMediaDia').textContent = usd(s.geral.mediaDiaria);
         $('gMediaMes').textContent = usd(s.geral.mediaMensal);
+        // Excluir um report tira ele dos números acima, mas o gasto com a IA já aconteceu.
+        const ex = (s.geral && s.geral.consumoExcluido) || { total: 0, custo: 0 };
+        $('consumoExcluido').classList.toggle('hidden', !(ex.total > 0));
+        $('consumoExcluido').textContent = ex.total > 0
+          ? `Consumo real: ${ex.total} report(s) excluído(s) não aparecem nos números, mas já custaram ${usd(ex.custo)}. Gasto total real: ${usd((s.geral.custo || 0) + ex.custo)}.`
+          : '';
 
         // Mantém a escolha atual do filtro ao repovoar a lista de SDRs.
         const sel = $('filtroSdr');
@@ -1073,8 +1137,8 @@
           || '<tr><td colspan="3" style="color:var(--muted)">Sem histórico ainda.</td></tr>';
 
         $('ultimos').innerHTML = s.ultimos.map((r) => `
-          <tr data-linha-report="${r.id}">
-            <td>${esc(r.lead || '—')}</td>
+          <tr data-linha-report="${r.id}" data-versao="${r.versao || 0}">
+            <td>${esc(r.lead || '—')}${r.captura && r.captura.incompleta ? ` <span class="tag" title="${esc(r.captura.audiosTranscritos + ' de ' + r.captura.audios + ' áudio(s) transcritos')}" style="color:var(--danger)">captura parcial</span>` : ''}</td>
             <td><input type="email" class="mini-date" data-campo="leadEmail" data-report="${r.id}" placeholder="e-mail do lead" value="${esc(r.leadEmail || '')}" style="max-width:170px" /></td>
             <td>${esc(r.usuarioNome || '—')}</td>
             <td><span class="tag">${r.origem === 'manual' ? 'manual' : 'extensão'}</span></td>
@@ -1211,6 +1275,26 @@
     const getChave = () => ($('chave').value || '').trim();
     const hdr = (extra) => Object.assign({ 'x-cr-key': getChave() }, extra || {});
 
+    // Leituras em andamento (transcrever áudio, ler print) e geração em andamento: o botão de gerar só
+    // libera quando nada estiver rodando — senão o report sairia sem o que ainda está sendo lido.
+    let tarefasAbertas = 0;
+    let gerandoAgora = false;
+    function atualizarBotaoGerar() {
+      const btn = $('gerar');
+      btn.disabled = gerandoAgora || tarefasAbertas > 0;
+      btn.textContent = tarefasAbertas > 0 ? 'Aguarde: lendo áudios e prints…' : 'Gerar Report';
+    }
+    async function comTarefa(fn) {
+      tarefasAbertas++;
+      atualizarBotaoGerar();
+      try {
+        return await fn();
+      } finally {
+        tarefasAbertas--;
+        atualizarBotaoGerar();
+      }
+    }
+
     function appendConversa(linha) {
       const ta = $('texto');
       ta.value = (ta.value.trim() ? ta.value.replace(/\s*$/, '') + '\n' : '') + linha + '\n';
@@ -1234,22 +1318,24 @@
         rd.readAsDataURL(file);
       });
     }
-    async function transcreverFiles(files) {
+    const transcreverFiles = (files) => comTarefa(() => transcreverFilesInterno(files));
+    async function transcreverFilesInterno(files) {
       const lista = [...files].filter((f) => f && f.size);
       if (!lista.length) return;
       setStatus('statusAudio', `Transcrevendo ${lista.length} áudio(s)…`, { loading: true });
       let ok = 0;
+      const quem = $('quemAudio').value === 'VENDEDOR' ? 'VENDEDOR' : 'LEAD'; // vale para este lote
       for (const f of lista) {
         const row = fileRow(f.name);
         try {
           const audioBase64 = await fileToBase64(f);
-          const r = await fetch('/api/transcrever', {
+          const r = await fetchComTempo('/api/transcrever', {
             method: 'POST', headers: hdr({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({ audioBase64, nome: f.name }),
           });
           const data = await r.json();
           if (!r.ok) throw new Error(data.erro || 'falhou');
-          appendConversa(`(áudio): ${(data.texto || '').trim() || '[áudio sem fala reconhecida]'}`);
+          appendConversa(`${quem} (áudio): ${(data.texto || '').trim() || '[áudio sem fala reconhecida]'}`);
           row.className = 'file-row ok';
           row.innerHTML = `<i class="ic" data-ic="check" style="color:var(--ouro-tinta)"></i><span class="nm">${esc(f.name)}</span><span class="st">adicionado</span>`;
           aplicarIcones(row);
@@ -1261,6 +1347,7 @@
         }
       }
       setStatus('statusAudio', `${ok} de ${lista.length} áudio(s) na conversa.`, { ok: ok > 0, erro: ok === 0 });
+      atualizarEstimativaCusto();
     }
     const dz = $('dropzone');
     dz.addEventListener('click', () => $('audio').click());
@@ -1272,11 +1359,52 @@
     // ---------- Print da conversa -> texto (Groq com visão, plano gratuito) ----------
 
     /**
-     * Encolhe o print antes de mandar: print de celular vem com 2–5MB e resolução
-     * muito maior do que o modelo precisa pra ler. Só reduz quem passa do limite —
-     * imagem pequena vai como está, pra não perder nitidez do texto à toa.
+     * Decide se o print precisa ser FATIADO. Print de celular normal (ex.: 1290x2796) é só reduzido e
+     * continua legível. Mas uma página longa (ex.: 1080x10000) reduzida para 1600px de altura viraria uma
+     * tira de ~170px de largura — texto ilegível. Nesse caso corta em fatias com um pedaço repetido
+     * (sobreposição) para nenhuma mensagem ser cortada ao meio.
+     * @returns {null | {larg: number, escala: number, fatias: {y: number, h: number}[]}} null = não fatiar
      */
-    function prepararImagem(file, maxLado = 1600) {
+    function planejarFatias(largura, altura, maxLado = 1600) {
+      const maior = Math.max(largura, altura);
+      if (maior <= maxLado) return null; // cabe como está
+      if (largura * (maxLado / maior) >= 600) return null; // reduzir ainda deixa o texto legível
+      const larg = Math.min(largura, 1080);
+      const escala = larg / largura;
+      const total = Math.round(altura * escala);
+      const ALTURA_FATIA = 1400;
+      const SOBRA = 120;
+      const fatias = [];
+      for (let y = 0; y < total; y += ALTURA_FATIA - SOBRA) {
+        const h = Math.min(ALTURA_FATIA, total - y);
+        fatias.push({ y, h });
+        if (y + h >= total) break;
+      }
+      return { larg, escala, fatias };
+    }
+
+    /** Junta o texto de duas fatias seguidas tirando as linhas repetidas da sobreposição. */
+    const chaveLinha = (l) => l.toLowerCase().replace(/[^a-z0-9\u00e0-\u00fa]+/g, '');
+    function mesclarLinhas(anterior, novo) {
+      const a = String(anterior).split('\n').filter((l) => l.trim());
+      const n = String(novo).split('\n').filter((l) => l.trim());
+      const max = Math.min(8, a.length, n.length);
+      for (let k = max; k > 0; k--) {
+        let bate = true;
+        for (let j = 0; j < k; j++) {
+          if (chaveLinha(a[a.length - k + j]) !== chaveLinha(n[j])) { bate = false; break; }
+        }
+        if (bate) return a.concat(n.slice(k)).join('\n');
+      }
+      return a.concat(n).join('\n');
+    }
+
+    /**
+     * Prepara o print para envio e devolve uma LISTA de imagens (base64): uma só na maioria dos casos,
+     * várias quando é um print comprido demais. Print de celular vem com 2–5MB e resolução muito maior
+     * do que o modelo precisa — só reduz quem passa do limite; imagem pequena vai como está.
+     */
+    function prepararImagens(file, maxLado = 1600) {
       return new Promise((resolve, reject) => {
         const rd = new FileReader();
         rd.onerror = reject;
@@ -1285,7 +1413,20 @@
           img.onerror = reject;
           img.onload = () => {
             const maior = Math.max(img.width, img.height);
-            if (maior <= maxLado) return resolve(String(rd.result).split(',')[1]); // já cabe: manda original
+            if (maior <= maxLado) return resolve([String(rd.result).split(',')[1]]); // já cabe: manda original
+            const plano = planejarFatias(img.width, img.height, maxLado);
+            if (plano) {
+              const partes = plano.fatias.map((f) => {
+                const cv = document.createElement('canvas');
+                cv.width = plano.larg;
+                cv.height = f.h;
+                const ctx = cv.getContext('2d');
+                ctx.imageSmoothingQuality = 'high';
+                ctx.drawImage(img, 0, f.y / plano.escala, img.width, f.h / plano.escala, 0, 0, plano.larg, f.h);
+                return cv.toDataURL('image/jpeg', 0.92).split(',')[1];
+              });
+              return resolve(partes);
+            }
             const escala = maxLado / maior;
             const cv = document.createElement('canvas');
             cv.width = Math.round(img.width * escala);
@@ -1294,7 +1435,7 @@
             ctx.imageSmoothingQuality = 'high';
             ctx.drawImage(img, 0, 0, cv.width, cv.height);
             // 0.92: texto de print continua legível e o arquivo cai muito.
-            resolve(cv.toDataURL('image/jpeg', 0.92).split(',')[1]);
+            resolve([cv.toDataURL('image/jpeg', 0.92).split(',')[1]]);
           };
           img.src = String(rd.result);
         };
@@ -1310,7 +1451,8 @@
       return row;
     }
 
-    async function lerImagens(files) {
+    const lerImagens = (files) => comTarefa(() => lerImagensInterno(files));
+    async function lerImagensInterno(files) {
       const lista = [...files].filter((f) => f && f.size && /^image\//.test(f.type));
       if (!lista.length) return;
       setStatus('statusImg', `Lendo ${lista.length} print(s)…`, { loading: true });
@@ -1319,14 +1461,20 @@
         const nome = f.name || 'print colado';
         const row = fileRowImg(nome);
         try {
-          const imagemBase64 = await prepararImagem(f);
-          const r = await fetch('/api/ler-imagem', {
-            method: 'POST', headers: hdr({ 'Content-Type': 'application/json' }),
-            body: JSON.stringify({ imagemBase64 }),
-          });
-          const data = await r.json();
-          if (!r.ok) throw new Error(data.erro || 'falhou');
-          const texto = (data.texto || '').trim();
+          const partes = await prepararImagens(f);
+          let texto = '';
+          for (let p = 0; p < partes.length; p++) {
+            if (partes.length > 1) row.querySelector('.st').textContent = `lendo parte ${p + 1} de ${partes.length}…`;
+            const r = await fetchComTempo('/api/ler-imagem', {
+              method: 'POST', headers: hdr({ 'Content-Type': 'application/json' }),
+              body: JSON.stringify({ imagemBase64: partes[p] }),
+            });
+            const data = await r.json();
+            if (!r.ok) throw new Error(data.erro || 'falhou');
+            const lido = (data.texto || '').trim();
+            if (lido) texto = texto ? mesclarLinhas(texto, lido) : lido;
+          }
+          texto = texto.trim();
           if (!texto) throw new Error('não achei conversa nesta imagem');
           appendConversa(texto);
           row.className = 'file-row ok';
@@ -1400,11 +1548,44 @@
       for (let i = 0; i < partes.length - 1; i++) ref = ref[partes[i]];
       ref[partes[partes.length - 1]] = valor;
     }
+    // Rascunho: o report na tela (com as edições) sobrevive a recarregar a página. Fica só no sessionStorage
+    // desta aba (some ao fechar a aba) e é amarrado à chave de quem gerou — nunca aparece para outra pessoa.
+    const CHAVE_RASCUNHO = 'crRascunho';
+    function donoDaChave() {
+      let h = 5381;
+      for (const c of getChave()) h = ((h << 5) + h + c.charCodeAt(0)) | 0;
+      return String(h);
+    }
+    let rascunhoTimer = null;
+    function guardarRascunho() {
+      clearTimeout(rascunhoTimer);
+      rascunhoTimer = setTimeout(() => {
+        try {
+          if (!reportAtual) return sessionStorage.removeItem(CHAVE_RASCUNHO);
+          sessionStorage.setItem(CHAVE_RASCUNHO, JSON.stringify({ dados: reportAtual, dono: donoDaChave() }));
+        } catch (_) { /* rascunho é só uma conveniência */ }
+      }, 300);
+    }
+    function restaurarRascunho() {
+      try {
+        const bruto = sessionStorage.getItem(CHAVE_RASCUNHO);
+        if (!bruto) return;
+        const r = JSON.parse(bruto);
+        if (!r || !r.dados || r.dono !== donoDaChave()) return;
+        reportAtual = r.dados;
+        $('report').innerHTML = renderReport(reportAtual);
+        aplicarIcones($('report'));
+        $('resultado').classList.remove('hidden');
+        setStatus('status', 'Report restaurado (com as suas edições). Baixe o PDF ou gere outro.', { ok: true });
+      } catch (_) { /* rascunho corrompido: ignora */ }
+    }
+
     // Ao editar qualquer campo, atualiza o objeto em memória (fonte da verdade do PDF).
     $('report').addEventListener('input', (ev) => {
       const el = ev.target.closest('[data-edit]');
       if (!el || !reportAtual) return;
       gravarNoCaminho(reportAtual, el.dataset.edit, el.innerText.trim());
+      guardarRascunho();
     });
 
     // Baixar PDF: regera a partir do objeto editado (não chama a IA, é só desenho).
@@ -1415,7 +1596,7 @@
       btn.innerHTML = '<span class="spinner"></span> Gerando…';
       btn.style.pointerEvents = 'none';
       try {
-        const r = await fetch('/api/pdf', {
+        const r = await fetchComTempo('/api/pdf', {
           method: 'POST', headers: hdr({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({ dados: reportAtual }),
         });
@@ -1433,34 +1614,70 @@
       }
     }
     $('dl').addEventListener('click', baixarPdf);
+    // ---------- Report igual já gerado: abrir o existente (sem IA) ou gerar de novo ----------
+    let duplicadoAtual = null;
+    function mostrarDuplicado(existente) {
+      duplicadoAtual = existente;
+      const quando = new Date(existente.quando).toLocaleString('pt-BR');
+      $('duplicadoTexto').textContent =
+        `Já existe um report igual pra ${existente.lead || 'este lead'}, gerado em ${quando}. Gerar de novo chama a IA outra vez (custo extra).`;
+      $('dupAbrir').classList.toggle('hidden', !existente.podeAbrir);
+      $('duplicadoBox').classList.remove('hidden');
+    }
+    function esconderDuplicado() {
+      duplicadoAtual = null;
+      $('duplicadoBox').classList.add('hidden');
+    }
+    $('dupCancelar').addEventListener('click', esconderDuplicado);
+    $('dupGerar').addEventListener('click', () => { esconderDuplicado(); gerar(true); });
+    $('dupAbrir').addEventListener('click', async () => {
+      if (!duplicadoAtual) return;
+      const btn = $('dupAbrir');
+      btn.disabled = true;
+      try {
+        const r = await fetchComTempo('/api/reports/' + encodeURIComponent(duplicadoAtual.id) + '/pdf', { headers: hdr() }, 30000);
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.erro || 'Não consegui abrir o report existente.');
+        const a = document.createElement('a');
+        a.href = 'data:application/pdf;base64,' + j.arquivoBase64;
+        a.download = j.arquivo || 'report.pdf';
+        a.click();
+        setStatus('status', 'Report existente aberto — nenhuma IA foi usada.', { ok: true });
+        esconderDuplicado();
+      } catch (e) {
+        setStatus('status', e.message, { erro: true });
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
     async function gerar(forcarNovo) {
-      if (!forcarNovo && $('gerar').disabled) return; // já tem um report sendo gerado
+      if (gerandoAgora) return; // já tem um report sendo gerado (clique duplo)
+      if (tarefasAbertas > 0) {
+        setStatus('status', 'Espere terminar a leitura dos áudios e prints antes de gerar.', { erro: true });
+        return;
+      }
       const texto = $('texto').value.trim();
       if (!texto) { setStatus('status', 'Cole a conversa (ou jogue os áudios) antes de gerar.', { erro: true }); return; }
-      $('gerar').disabled = true; $('resultado').classList.add('hidden');
+      esconderDuplicado();
+      gerandoAgora = true; atualizarBotaoGerar(); $('resultado').classList.add('hidden');
       setStatus('status', 'Gerando report…', { loading: true });
-      let refazendo = false;
       try {
-        const r = await fetch('/api/report-texto', {
+        const r = await fetchComTempo('/api/report-texto', {
           method: 'POST', headers: hdr({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({ texto, nome: $('nomeLead').value.trim(), forcarNovo: !!forcarNovo }),
         });
         const data = await r.json();
         if (!r.ok) throw new Error(data.erro || 'Erro ao gerar o report.');
-        // Idempotência: mesma conversa já gerada antes — não chama a IA de novo
-        // sem confirmação (evita cobrar duas vezes pelo mesmo report).
+        // Idempotência: mesma conversa já gerada antes — não chama a IA de novo sem o SDR escolher
+        // (evita cobrar duas vezes pelo mesmo report). Abrir o existente não custa nada.
         if (data.duplicado) {
           setStatus('status', '');
-          const quando = new Date(data.existente.quando).toLocaleString('pt-BR');
-          const confirmar = confirm(
-            `Já existe um report igual pra ${data.existente.lead || 'este lead'}, gerado em ${quando}.\n\n` +
-            'Gerar de novo chama a IA outra vez (custo extra). O PDF anterior continua arquivado com o admin. Gerar mesmo assim?'
-          );
-          // O botão continua travado até a segunda geração terminar (ela reativa no próprio finally).
-          if (confirmar) { refazendo = true; return gerar(true); }
+          mostrarDuplicado(data.existente);
           return;
         }
         reportAtual = data.dados; // fonte da verdade; edições atualizam este objeto
+        guardarRascunho();
         $('report').innerHTML = renderReport(reportAtual);
         aplicarIcones($('report'));
         $('resultado').classList.remove('hidden');
@@ -1472,23 +1689,25 @@
         carregarStats();
       } catch (err) {
         setStatus('status', err.message, { erro: true });
-      } finally { if (!refazendo) $('gerar').disabled = false; }
+      } finally { gerandoAgora = false; atualizarBotaoGerar(); }
     }
     $('gerar').addEventListener('click', () => gerar(false));
 
     // Estimativa de custo (determinística, sem IA) — atualiza com debounce ao digitar.
     let estimativaTimer = null;
+    let estimativaSeq = 0;
     async function atualizarEstimativaCusto() {
+      const seq = ++estimativaSeq; // uma resposta antiga que volta depois de uma nova não pode sobrescrever
       const texto = $('texto').value.trim();
       const el = $('estimativaCusto');
       if (!texto) { el.textContent = ''; return; }
       try {
-        const r = await fetch('/api/estimar-custo', {
+        const r = await fetchComTempo('/api/estimar-custo', {
           method: 'POST', headers: hdr({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({ texto }),
         });
         const data = await r.json();
-        if (!r.ok) return;
+        if (!r.ok || seq !== estimativaSeq) return;
         el.textContent =
           `Custo estimado: ~$${data.custoUsdEstimado.toFixed(4)} (~R$${data.custoBrlEstimado.toFixed(2)})` +
           (data.resumida ? ' · conversa longa: será resumida ao gerar' : '');
@@ -1506,7 +1725,7 @@
       if (!c) { setStatus('statusChave', 'Cole a chave que o admin te passou.', { erro: true }); return false; }
       localStorage.setItem('crChave', c);
       try {
-        const r = await fetch('/api/eu', { headers: hdr() });
+        const r = await fetchComTempo('/api/eu', { headers: hdr() }, 20000);
         const j = await r.json();
         if (!r.ok) throw new Error(j.erro || 'Chave inválida.');
         souAdmin = j.papel === 'admin';
@@ -1514,8 +1733,9 @@
         $('quem').innerHTML = (souAdmin ? 'Admin: <b>' : 'SDR: <b>') + esc(j.nome) + '</b>';
         aplicarPapel();
         if (souAdmin) {
-          pedirAdmin();
+          // abrir() já chama pedirAdmin() para as abas de admin — não carrega duas vezes.
           if (SO_ADMIN.includes(abaPedida)) abrir(abaPedida); // agora sim ele pode
+          else pedirAdmin();
         }
         return true;
       } catch (e) {
@@ -1536,6 +1756,7 @@
     $('urlServidor').textContent = location.origin;
     $('urlZip').textContent = location.origin + '/PRONIX-extensao.zip';
     usarPreset(0); // abre em "Hoje"
+    restaurarRascunho();
     aplicarPapel();
     abrir((location.hash || '').replace('#', '') || 'report');
   </script>
