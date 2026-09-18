@@ -4,10 +4,19 @@ const $ = (id) => document.getElementById(id);
 // A equipe usa a nuvem: só cola a chave. Trocar para http://localhost:3000 ao testar local.
 const DEFAULT_SERVER = 'https://report-closer.vercel.app';
 
-function setStatus(txt, { erro = false, loading = false } = {}) {
+// txt é texto puro (nome, erro de servidor etc. nunca viram HTML). Passe html:true
+// só com HTML que você mesmo montou, escapando o que vem de fora.
+function setStatus(txt, { erro = false, loading = false, html = false } = {}) {
   const el = $('status');
   el.className = 'status' + (erro ? ' erro' : '');
-  el.innerHTML = (loading ? '<span class="spinner"></span>' : '') + (txt || '');
+  el.textContent = '';
+  if (loading) {
+    const sp = document.createElement('span');
+    sp.className = 'spinner';
+    el.appendChild(sp);
+  }
+  if (html) el.insertAdjacentHTML('beforeend', txt || '');
+  else el.appendChild(document.createTextNode(txt || ''));
 }
 
 function escapeHtml(s) {
@@ -120,7 +129,7 @@ async function testarConexao() {
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.erro || 'Chave inválida.');
     $('sdrNome').textContent = j.nome;
-    setStatus(`Conectado como <b>${escapeHtml(j.nome)}</b>.`);
+    setStatus(`Conectado como <b>${escapeHtml(j.nome)}</b>.`, { html: true });
   } catch (err) {
     setStatus('' + (err.message === 'Failed to fetch' ? 'Servidor não respondeu — confira a URL.' : err.message), { erro: true });
   }
@@ -138,8 +147,9 @@ async function gerar() {
     setStatus('Iniciando…', { loading: true });
     await enviarStart(tab.id, server, plataforma.arquivo);
     setStatus(
-      '<b>Report iniciado!</b> Acompanhe o aviso no canto inferior direito do WhatsApp. ' +
-        'Você pode fechar este popup e continuar respondendo.'
+      '<b>Report iniciado!</b> Acompanhe o aviso no canto inferior direito da tela. ' +
+        'Você pode fechar este popup, mas não troque de conversa até o report ficar pronto.',
+      { html: true }
     );
   } catch (err) {
     setStatus(err.message, { erro: true });

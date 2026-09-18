@@ -52,10 +52,10 @@
 
   <main>
     <h1>Política de Privacidade</h1>
-    <div class="data">Extensão <strong>PRONIX Closer Report</strong> · atualizada em 22 de julho de 2026</div>
+    <div class="data">Extensão <strong>PRONIX Closer Report</strong> · atualizada em 18 de setembro de 2026</div>
 
     <div class="card">
-      <p style="margin:0"><strong>Resumo:</strong> a extensão é uma ferramenta interna de trabalho da PRONIX. Ela lê a conversa que o próprio colaborador tem aberta no WhatsApp Web, apenas quando ele clica em "Gerar Report", e envia esse conteúdo ao servidor da PRONIX para produzir um relatório em PDF. Não coletamos dados de navegação, não vendemos dados e não usamos essas informações para nenhuma outra finalidade.</p>
+      <p style="margin:0"><strong>Resumo:</strong> a extensão é uma ferramenta interna de trabalho da PRONIX. Ela lê a conversa que o próprio colaborador tem aberta no WhatsApp Web ou no Instagram Direct, apenas quando ele clica em "Gerar Report", e envia esse conteúdo ao servidor da PRONIX para produzir um relatório em PDF. Não coletamos dados de navegação, não vendemos dados e não usamos essas informações para nenhuma outra finalidade.</p>
     </div>
 
     <h2>Quem usa a extensão</h2>
@@ -63,7 +63,9 @@
 
     <h2>Quais dados são tratados</h2>
     <ul>
-      <li><strong>Conteúdo da conversa aberta no WhatsApp Web</strong> — mensagens de texto e mensagens de voz da conversa que o colaborador está atendendo, além do nome do contato exibido no cabeçalho.</li>
+      <li><strong>Conteúdo da conversa aberta no WhatsApp Web ou no Instagram Direct</strong> — mensagens de texto e mensagens de voz da conversa que o colaborador está atendendo, além do nome do contato exibido no cabeçalho.</li>
+      <li><strong>Dados que o administrador registra sobre cada report</strong> — qual closer atendeu, o resultado da reunião, as datas e o e-mail do lead, digitados manualmente no painel.</li>
+      <li><strong>Prints de conversa e áudios enviados no painel</strong> — quando o colaborador gera um report pelo site (aba manual), as imagens e áudios anexados também são lidos e transcritos.</li>
       <li><strong>Chave de acesso e endereço do servidor</strong> — guardados localmente no navegador do colaborador, para não precisar digitar a cada uso.</li>
     </ul>
     <p>A extensão <strong>não</strong> lê outras abas, não acessa histórico de navegação, não coleta senhas, não lê conversas que não estejam abertas na tela e não age sozinha: nada é lido sem o clique do colaborador.</p>
@@ -74,17 +76,18 @@
       <li>As mensagens de voz são transcritas em texto para entrarem no relatório.</li>
       <li>Para produzir o relatório e transcrever os áudios, o conteúdo é processado por provedores de inteligência artificial contratados pela PRONIX (Anthropic e Groq), que atuam como operadores e não utilizam esse conteúdo para treinar modelos.</li>
       <li>Registramos, para controle interno, qual colaborador gerou cada relatório, o nome do lead, a data e o custo de processamento.</li>
+      <li>Para ler a conversa completa e transcrever áudios, enquanto o report é gerado a extensão <strong>rola a conversa aberta</strong> para carregar as mensagens antigas e <strong>toca cada áudio no mudo</strong>. No Instagram, tocar um áudio pode marcá-lo como ouvido para quem o enviou. Essas ações só acontecem depois do clique em "Gerar Report".</li>
     </ul>
 
     <h2>O que não fazemos</h2>
     <ul>
       <li>Não vendemos nem compartilhamos dados com terceiros para publicidade.</li>
       <li>Não usamos os dados para avaliação de crédito nem para qualquer finalidade alheia ao atendimento comercial.</li>
-      <li>Não enviamos mensagens, não curtimos, não seguimos e não executamos nenhuma ação automática na conta do colaborador. A extensão apenas lê.</li>
+      <li>Não enviamos mensagens, não curtimos, não seguimos e não publicamos nada na conta do colaborador. A extensão apenas lê a conversa (a rolagem e a reprodução dos áudios descritas acima são só o meio de ler).</li>
     </ul>
 
     <h2>Armazenamento e retenção</h2>
-    <p>O PDF gerado é entregue ao colaborador e não fica salvo no servidor. Do histórico ficam apenas os dados de controle citados acima (colaborador, nome do lead, data e custo). A chave de acesso fica somente no navegador do colaborador e é apagada ao remover a extensão.</p>
+    <p>O PDF gerado é entregue ao colaborador e também fica guardado no servidor da PRONIX, acessível somente ao administrador, que pode baixá-lo ou excluí-lo a qualquer momento; ao excluir um report, o PDF correspondente é apagado junto. O texto bruto da conversa não é guardado: ficam o PDF e os dados de controle citados acima (colaborador, nome do lead, data, custo e o que o administrador registrar sobre a reunião). A chave de acesso fica somente no navegador do colaborador e é apagada ao remover a extensão.</p>
 
     <h2>Segurança</h2>
     <p>A comunicação com o servidor é feita por HTTPS. O acesso é individual por chave e pode ser revogado a qualquer momento pelo administrador.</p>

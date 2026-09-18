@@ -646,7 +646,14 @@
       const e = typeof el === 'string' ? $(el) : el;
       if (!e) return;
       e.className = 'status' + (o.erro ? ' erro' : o.ok ? ' ok' : '');
-      e.innerHTML = (o.loading ? '<span class="spinner"></span>' : '') + (txt || '');
+      // Texto puro: nome de lead, erro do servidor etc. nunca viram HTML.
+      e.textContent = '';
+      if (o.loading) {
+        const sp = document.createElement('span');
+        sp.className = 'spinner';
+        e.appendChild(sp);
+      }
+      e.appendChild(document.createTextNode(txt || ''));
     }
 
     // ---------- Menu ----------
@@ -788,7 +795,7 @@
         const { usuario } = await api('POST', '/api/admin/usuarios', { nome, papel });
         $('nome').value = '';
         const tipo = usuario.papel === 'admin' ? 'admin' : 'usuário';
-        setStatus('statusCriar', `Acesso de ${esc(usuario.nome)} (${tipo}) criado — copie a chave e envie para ele.`, { ok: true });
+        setStatus('statusCriar', `Acesso de ${usuario.nome} (${tipo}) criado — copie a chave e envie para ele.`, { ok: true });
         carregarUsuarios();
       } catch (e) {
         setStatus('statusCriar', e.message, { erro: true });
@@ -1208,6 +1215,9 @@
       const ta = $('texto');
       ta.value = (ta.value.trim() ? ta.value.replace(/\s*$/, '') + '\n' : '') + linha + '\n';
       ta.scrollTop = ta.scrollHeight;
+      // Mudar .value por código não dispara "input": agenda a estimativa de custo à mão.
+      clearTimeout(estimativaTimer);
+      estimativaTimer = setTimeout(atualizarEstimativaCusto, 700);
     }
     function fileRow(nome) {
       const row = document.createElement('div');
@@ -1424,10 +1434,12 @@
     }
     $('dl').addEventListener('click', baixarPdf);
     async function gerar(forcarNovo) {
+      if (!forcarNovo && $('gerar').disabled) return; // já tem um report sendo gerado
       const texto = $('texto').value.trim();
       if (!texto) { setStatus('status', 'Cole a conversa (ou jogue os áudios) antes de gerar.', { erro: true }); return; }
       $('gerar').disabled = true; $('resultado').classList.add('hidden');
       setStatus('status', 'Gerando report…', { loading: true });
+      let refazendo = false;
       try {
         const r = await fetch('/api/report-texto', {
           method: 'POST', headers: hdr({ 'Content-Type': 'application/json' }),
@@ -1442,9 +1454,10 @@
           const quando = new Date(data.existente.quando).toLocaleString('pt-BR');
           const confirmar = confirm(
             `Já existe um report igual pra ${data.existente.lead || 'este lead'}, gerado em ${quando}.\n\n` +
-            'Gerar de novo chama a IA outra vez (custo extra) — o PDF anterior não fica guardado aqui pra reabrir. Gerar mesmo assim?'
+            'Gerar de novo chama a IA outra vez (custo extra). O PDF anterior continua arquivado com o admin. Gerar mesmo assim?'
           );
-          if (confirmar) return gerar(true);
+          // O botão continua travado até a segunda geração terminar (ela reativa no próprio finally).
+          if (confirmar) { refazendo = true; return gerar(true); }
           return;
         }
         reportAtual = data.dados; // fonte da verdade; edições atualizam este objeto
@@ -1459,7 +1472,7 @@
         carregarStats();
       } catch (err) {
         setStatus('status', err.message, { erro: true });
-      } finally { $('gerar').disabled = false; }
+      } finally { if (!refazendo) $('gerar').disabled = false; }
     }
     $('gerar').addEventListener('click', () => gerar(false));
 
@@ -1497,7 +1510,7 @@
         const j = await r.json();
         if (!r.ok) throw new Error(j.erro || 'Chave inválida.');
         souAdmin = j.papel === 'admin';
-        setStatus('statusChave', `Conectado como ${esc(j.nome)}${souAdmin ? ' (admin)' : ''}.`, { ok: true });
+        setStatus('statusChave', `Conectado como ${j.nome}${souAdmin ? ' (admin)' : ''}.`, { ok: true });
         $('quem').innerHTML = (souAdmin ? 'Admin: <b>' : 'SDR: <b>') + esc(j.nome) + '</b>';
         aplicarPapel();
         if (souAdmin) {

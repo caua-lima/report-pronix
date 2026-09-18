@@ -35,16 +35,40 @@
 
   // Silencia qualquer <audio> da página: a captura precisa dar play pra
   // materializar o arquivo, e sem isso o áudio tocaria alto pro SDR.
+  // Só vale enquanto um report está sendo gerado: fora disso o SDR ouve os áudios
+  // normalmente. Guarda o estado original de cada <audio> pra devolver no fim.
+  let capturaAtiva = false;
+  const silenciados = new Map();
+  function silenciar(a) {
+    if (!silenciados.has(a)) silenciados.set(a, { muted: a.muted, volume: a.volume });
+    a.muted = true;
+    a.volume = 0;
+  }
+  function restaurarAudios() {
+    silenciados.forEach((estado, a) => {
+      try {
+        a.pause();
+        a.muted = estado.muted;
+        a.volume = estado.volume;
+      } catch (_) {
+        /* elemento já descartado pela página */
+      }
+    });
+    silenciados.clear();
+  }
   try {
-    const mutar = () =>
-      document.querySelectorAll('audio').forEach((a) => {
-        a.muted = true;
-        a.volume = 0;
-      });
+    const mutar = () => {
+      if (capturaAtiva) document.querySelectorAll('audio').forEach(silenciar);
+    };
     new MutationObserver(mutar).observe(document.documentElement, { childList: true, subtree: true });
   } catch (_) {
     /* ignora */
   }
+
+  // Todo texto que vem de fora (nome do contato, erro do servidor, nome de arquivo)
+  // passa por aqui antes de ir para innerHTML.
+  const escHtml = (s) =>
+    String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
   // --- Helpers de áudio -----------------------------------------------------
   // Cópia consciente do que existe em content.js (WhatsApp): são funções puras e
@@ -238,15 +262,30 @@
    * Tenta pegar os bytes do áudio desta bolha. Devolve base64 ou null.
    * Estratégias em ordem (ver comentário do topo do arquivo).
    */
+  // Qualquer saída (inclusive as antecipadas) deixa o áudio da bolha pausado.
   async function capturarAudio(bolha, dbg, iteracoes = 30) {
+    try {
+      return await capturarAudioDaBolha(bolha, dbg, iteracoes);
+    } finally {
+      try {
+        bolha.querySelectorAll('audio').forEach((a) => a.pause());
+      } catch (_) {
+        /* ok */
+      }
+    }
+  }
+
+  async function capturarAudioDaBolha(bolha, dbg, iteracoes) {
+    // A fila global é compartilhada por todas as mensagens: só aceita blobs criados
+    // a partir deste clique, senão daria pra atribuir o áudio de OUTRA mensagem.
+    const t0 = Date.now() - 250;
     // Lê o <audio> DESTA bolha (nunca document.querySelector: pegaria o de outra
     // mensagem). Serve tanto pra blob: quanto pra https:// do CDN.
     const tentarElementoAudio = async () => {
       const a = bolha.querySelector('audio');
       const src = a && (a.currentSrc || a.src || '');
       if (!src) return null;
-      a.muted = true;
-      a.volume = 0;
+      silenciar(a);
       const buf = await fetchArrayBuffer(src);
       if (!buf) {
         logA(`${dbg}: <audio> tem src (${src.slice(0, 12)}…) mas o fetch falhou — provável CORS do CDN`);
@@ -277,7 +316,7 @@
       b64 = await tentarElementoAudio();
       if (b64) return b64;
       for (const b of blobsAudio) {
-        if (b.usado) continue;
+        if (b.usado || b.ts < t0) continue;
         b.usado = true;
         const buf = await fetchArrayBuffer(b.url);
         if (ehAudioBuffer(buf)) {
@@ -562,7 +601,7 @@
     if (arquivoBase64) {
       const url = 'data:application/pdf;base64,' + arquivoBase64;
       acao =
-        `<a href="${url}" download="${arquivo || 'report.pdf'}" style="display:inline-block;margin-top:8px;background:#ffc400;color:#121214;` +
+        `<a href="${escHtml(url)}" download="${escHtml(arquivo || 'report.pdf')}" style="display:inline-block;margin-top:8px;background:#ffc400;color:#121214;` +
         `font-weight:700;text-decoration:none;padding:6px 10px;border-radius:7px"><svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:-2px;flex:none" fill="none" stroke="#121214" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg> Baixar PDF</a>`;
     }
     el.innerHTML =
@@ -586,6 +625,7 @@
       return;
     }
     jobEmAndamento = true;
+    capturaAtiva = true;
     try {
       mostrarBadge({
         texto:
@@ -612,7 +652,7 @@
       );
 
       if (!resp || !resp.ok) {
-        mostrarBadge({ texto: '' + ((resp && resp.erro) || 'Falha ao gerar o report.'), cor: '#ff6b6b' });
+        mostrarBadge({ texto: escHtml((resp && resp.erro) || 'Falha ao gerar o report.'), cor: '#ff6b6b' });
         jobEmAndamento = false;
         return;
       }
@@ -632,7 +672,7 @@
           chrome.runtime.sendMessage({ action: 'reportFetch', server, mensagens, nome, forcarNovo: true }, resolve)
         );
         if (!resp2 || !resp2.ok) {
-          mostrarBadge({ texto: '' + ((resp2 && resp2.erro) || 'Falha ao gerar o report.'), cor: '#ff6b6b' });
+          mostrarBadge({ texto: escHtml((resp2 && resp2.erro) || 'Falha ao gerar o report.'), cor: '#ff6b6b' });
           jobEmAndamento = false;
           return;
         }
@@ -641,9 +681,11 @@
 
       finalizar(resp, nome, server, stats);
     } catch (e) {
-      mostrarBadge({ texto: '' + e.message, cor: '#ff6b6b' });
+      mostrarBadge({ texto: escHtml(e.message), cor: '#ff6b6b' });
     } finally {
       jobEmAndamento = false;
+      capturaAtiva = false;
+      restaurarAudios();
     }
   }
 
@@ -662,7 +704,7 @@
           : `<span style="color:#f0ad4e">${s.audiosTranscritos} de ${s.audios} áudio(s) transcrito(s)</span>` +
             ' <span style="color:#8b98a5">— o resto entrou como [áudio]</span>';
     mostrarBadge({
-      texto: `<svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:-2px;flex:none" fill="none" stroke="#25d366" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="m9 11 3 3L22 4"/></svg> <b>Report pronto!</b> (${nome || 'contato'})<br>${resumoAudio}`,
+      texto: `<svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:-2px;flex:none" fill="none" stroke="#25d366" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="m9 11 3 3L22 4"/></svg> <b>Report pronto!</b> (${escHtml(nome || 'contato')})<br>${resumoAudio}`,
       arquivo: resp.arquivo,
       arquivoBase64: resp.arquivoBase64,
     });

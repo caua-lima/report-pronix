@@ -121,6 +121,18 @@ sem disco persistente (é exatamente por isso que a Vercel exige o KV).
 Em produção o time usa a versão publicada na **Chrome Web Store** (atualiza sozinha) —
 ver o passo a passo de instalação para o SDR em [`GUIA-SDR.md`](GUIA-SDR.md).
 
+### Testes
+
+```bash
+npm test
+```
+
+Roda `tests/auditoria.test.js` (Node ≥ 18, sem dependências novas, sem rede, sem chave de
+API e sem navegador): carrega trechos reais da extensão e do painel em sandboxes com
+objetos simulados e confere as correções da auditoria (escape de HTML, silenciamento de
+áudio só durante a geração, destino do servidor no `background.js`, botão de gerar,
+política de privacidade). Não substitui um teste manual no WhatsApp/Instagram reais.
+
 ## Deploy (Vercel)
 
 1. Conecte o repositório na Vercel.
@@ -329,3 +341,6 @@ consolidada).
 
 - [`GUIA-SDR.md`](GUIA-SDR.md) — passo a passo de instalação e uso para quem só vai
   gerar reports (sem acesso admin).
+- [`docs/auditoria-pronix.md`](docs/auditoria-pronix.md) — status de cada achado da
+  auditoria externa (corrigido, parcial, confirmado, não verificado).
+- [`docs/plano-implementacao.md`](docs/plano-implementacao.md) — o que falta, em etapas.

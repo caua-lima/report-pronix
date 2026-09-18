@@ -29,7 +29,7 @@ A chave é sua e individual: é ela que assina o seu nome no report. Não passe 
 
 1. Abra a conversa do lead no WhatsApp Web (ou no Instagram Direct).
 2. Clique no ícone da PRONIX → **Gerar Report da conversa aberta**.
-3. Vai aparecer um aviso na tela mostrando o andamento. **Pode continuar usando o WhatsApp/Instagram normalmente**, inclusive falar com outros leads — ele trabalha em segundo plano.
+3. Vai aparecer um aviso na tela mostrando o andamento. Enquanto estiver **"Lendo a conversa…"**, **não troque de conversa** (ele está rolando e lendo a que está aberta). Quando o aviso virar **"Gerando report…"**, a leitura terminou e você já pode responder outros leads.
 4. No fim aparece **✅ Report pronto!** com o botão de **baixar o PDF**.
 
 No aviso final também vem quantos áudios ele transcreveu:

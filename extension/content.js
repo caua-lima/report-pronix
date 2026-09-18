@@ -7,16 +7,40 @@
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
   // Silencia qualquer <audio> que o WhatsApp criar (a captura "toca" no mudo).
+  // Só vale enquanto um report está sendo gerado: fora disso o SDR ouve os áudios
+  // normalmente. Guarda o estado original de cada <audio> pra devolver no fim.
+  let capturaAtiva = false;
+  const silenciados = new Map();
+  function silenciar(a) {
+    if (!silenciados.has(a)) silenciados.set(a, { muted: a.muted, volume: a.volume });
+    a.muted = true;
+    a.volume = 0;
+  }
+  function restaurarAudios() {
+    silenciados.forEach((estado, a) => {
+      try {
+        a.pause();
+        a.muted = estado.muted;
+        a.volume = estado.volume;
+      } catch (_) {
+        /* elemento já descartado pela página */
+      }
+    });
+    silenciados.clear();
+  }
   try {
-    const mutar = () =>
-      document.querySelectorAll('audio').forEach((a) => {
-        a.muted = true;
-        a.volume = 0;
-      });
+    const mutar = () => {
+      if (capturaAtiva) document.querySelectorAll('audio').forEach(silenciar);
+    };
     new MutationObserver(mutar).observe(document.documentElement, { childList: true, subtree: true });
   } catch (_) {
     /* ignora */
   }
+
+  // Todo texto que vem de fora (nome do contato, erro do servidor, nome de arquivo)
+  // passa por aqui antes de ir para innerHTML.
+  const escHtml = (s) =>
+    String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
   function arrayBufferToBase64(buf) {
     const bytes = new Uint8Array(buf);
@@ -105,6 +129,9 @@
   // Força o WhatsApp a materializar o áudio (baixa se preciso + play no mudo),
   // captura os bytes (via <audio> ou via hook createObjectURL). Retorna base64 ou null.
   async function capturarBytes(el, dbg, iteracoes = 40) {
+    // A fila global é compartilhada por todas as mensagens: só aceita blobs criados
+    // a partir deste clique, senão daria pra atribuir o áudio de OUTRA mensagem.
+    const t0 = Date.now() - 250;
     // 1) Se houver botão de baixar (áudio não carregado ainda), clica primeiro.
     const btnBaixar = el.querySelector(
       '[data-icon="audio-download"], [data-icon="down"], [data-icon*="download" i], span[data-icon="audio-download"]'
@@ -147,14 +174,13 @@
     for (let i = 0; i < iteracoes; i++) {
       const a = el.querySelector('audio');
       if (a && (a.currentSrc || a.src || '').startsWith('blob:')) {
-        a.muted = true;
-        a.volume = 0;
+        silenciar(a);
         try { a.pause(); } catch (_) {}
         const buf = await fetchArrayBuffer(a.currentSrc || a.src);
         if (ehAudioBuffer(buf)) { logA(`áudio ${dbg || ''}: via <audio> OK ${buf.byteLength}`); return arrayBufferToBase64(buf); }
       }
       for (const b of blobsAudio) {
-        if (b.usado) continue;
+        if (b.usado || b.ts < t0) continue;
         b.usado = true;
         const buf = await fetchArrayBuffer(b.url);
         if (ehAudioBuffer(buf)) {
@@ -627,12 +653,12 @@
     if (arquivoBase64) {
       const url = 'data:application/pdf;base64,' + arquivoBase64;
       acao =
-        `<a href="${url}" download="${arquivo || 'report.docx'}" style="display:inline-block;margin-top:8px;background:#25d366;color:#05130c;` +
+        `<a href="${escHtml(url)}" download="${escHtml(arquivo || 'report.pdf')}" style="display:inline-block;margin-top:8px;background:#25d366;color:#05130c;` +
         `font-weight:700;text-decoration:none;padding:6px 10px;border-radius:7px"><svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:-2px;flex:none" fill="none" stroke="#121214" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg> Baixar PDF</a>`;
     } else if (arquivo && server) {
       const url = server + '/api/download/' + encodeURIComponent(arquivo);
       acao =
-        `<a href="${url}" target="_blank" style="display:inline-block;margin-top:8px;background:#25d366;color:#05130c;` +
+        `<a href="${escHtml(url)}" target="_blank" rel="noopener noreferrer" style="display:inline-block;margin-top:8px;background:#25d366;color:#05130c;` +
         `font-weight:700;text-decoration:none;padding:6px 10px;border-radius:7px"><svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:-2px;flex:none" fill="none" stroke="#121214" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg> Baixar PDF</a>`;
     }
     el.innerHTML =
@@ -655,6 +681,7 @@
       return;
     }
     jobEmAndamento = true;
+    capturaAtiva = true;
     try {
       mostrarBadge({
         texto:
@@ -689,7 +716,7 @@
       );
 
       if (!resp || !resp.ok) {
-        mostrarBadge({ texto: '' + ((resp && resp.erro) || 'Falha ao gerar o report.'), cor: '#ff6b6b' });
+        mostrarBadge({ texto: escHtml((resp && resp.erro) || 'Falha ao gerar o report.'), cor: '#ff6b6b' });
         jobEmAndamento = false;
         return;
       }
@@ -700,7 +727,7 @@
         const quando = new Date(resp.existente.quando).toLocaleString('pt-BR');
         const confirmar = confirm(
           `Já existe um report igual pra ${resp.existente.lead || 'este lead'}, gerado em ${quando}.\n\n` +
-            'Gerar de novo chama a IA outra vez (custo extra) — o PDF anterior não fica guardado aqui pra reabrir. Gerar mesmo assim?'
+            'Gerar de novo chama a IA outra vez (custo extra). O PDF anterior continua arquivado com o admin. Gerar mesmo assim?'
         );
         if (!confirmar) {
           mostrarBadge({ texto: 'Geração cancelada — já existe um report igual pra esta conversa.', cor: '#f0ad4e' });
@@ -711,7 +738,7 @@
           chrome.runtime.sendMessage({ action: 'reportFetch', server, mensagens, nome, forcarNovo: true }, resolve)
         );
         if (!resp || !resp.ok) {
-          mostrarBadge({ texto: '' + ((resp && resp.erro) || 'Falha ao gerar o report.'), cor: '#ff6b6b' });
+          mostrarBadge({ texto: escHtml((resp && resp.erro) || 'Falha ao gerar o report.'), cor: '#ff6b6b' });
           jobEmAndamento = false;
           return;
         }
@@ -735,15 +762,17 @@
                 ' <span style="color:#8b98a5">— o resto entrou como [áudio]</span>';
 
       mostrarBadge({
-        texto: `<svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:-2px;flex:none" fill="none" stroke="#25d366" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="m9 11 3 3L22 4"/></svg> <b>Report pronto!</b> (${nome || 'lead'})<br>${resumoAudio}`,
+        texto: `<svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:-2px;flex:none" fill="none" stroke="#25d366" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="m9 11 3 3L22 4"/></svg> <b>Report pronto!</b> (${escHtml(nome || 'lead')})<br>${resumoAudio}`,
         arquivo: resp.arquivo,
         server,
         arquivoBase64: resp.arquivoBase64,
       });
     } catch (e) {
-      mostrarBadge({ texto: '' + e.message, cor: '#ff6b6b' });
+      mostrarBadge({ texto: escHtml(e.message), cor: '#ff6b6b' });
     } finally {
       jobEmAndamento = false;
+      capturaAtiva = false;
+      restaurarAudios();
     }
   }
 
