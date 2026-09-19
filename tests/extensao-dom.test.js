@@ -4,7 +4,7 @@
 // os áudios no lugar — e as correções de captura da auditoria (A01, A03, A04, A05, A09).
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { abrirPagina, montarInstagram, montarWhatsApp, esperar, indiceDoAudio } = require('./helpers/dom');
+const { abrirPagina, montarInstagram, montarWhatsApp, esperar, indiceDoAudio, audioFake } = require('./helpers/dom');
 
 const RESPOSTA_PDF = { ok: true, dados: { lead: 'X' }, arquivo: 'Report_X.pdf', arquivoBase64: 'AAAA' };
 
@@ -361,6 +361,54 @@ test('WhatsApp: se ALGUM áudio baixa, os que faltam ainda são repescados (comp
   assert.ok(!logs.some((l) => /não vou repescar/.test(l)));
   assert.ok(logs.filter((l) => /sem blob de áudio/.test(l)).length >= 4, 'os 2 que faltam foram tentados de novo');
   assert.match(pagina.badge(), /2 de 4 áudio/);
+  pagina.fechar();
+});
+
+// ---------------------------------------------------------------- WhatsApp: arquivos que o WhatsApp cria ANTES do clique
+// O jsdom não preenche "source" no postMessage (o script confere ev.source === window): dispara o evento à mão.
+const avisarBlob = (p, url, ts) =>
+  p.w.dispatchEvent(new p.w.MessageEvent('message', { data: { __crAudio: true, url, ts }, source: p.w }));
+const postarBlobsAntigos = (p, indices) =>
+  indices.forEach((ix, k) => {
+    const url = 'blob:antigo-' + k;
+    p.blobs.set(url, audioFake(ix));
+    avisarBlob(p, url, Date.now() - 60000);
+  });
+
+test('WhatsApp: áudio cujo arquivo já existia na fila antes do clique AINDA é lido (plano B)', async () => {
+  const conversa = [
+    { from: 'eu', texto: 'Oi', hora: '10:00, 01/09/2026' },
+    { from: 'eles', tipo: 'audio', semBytes: true },
+    { from: 'eles', tipo: 'audio', semBytes: true },
+    { from: 'eu', texto: 'Ok', hora: '10:05, 01/09/2026' },
+  ];
+  const { envio, pagina } = await rodarWhatsApp(conversa, { opcoes: { idsSimples: true }, durante: (p) => postarBlobsAntigos(p, [41, 42]) });
+  assert.deepEqual(envio.mensagens.filter((m) => m.type === 'audio').map((m) => m.content), ['transcrição do áudio 41', 'transcrição do áudio 42']);
+  assert.deepEqual(envio.captureQuality, { plataforma: 'whatsapp', versao: 'teste', mensagens: 4, audios: 2, audiosTranscritos: 2 });
+  pagina.fechar();
+});
+
+test('WhatsApp: arquivo criado pelo clique tem prioridade sobre os antigos da fila', async () => {
+  const conversa = [
+    { from: 'eu', texto: 'Oi', hora: '10:00, 01/09/2026' },
+    { from: 'eles', tipo: 'audio', semBytes: true },
+    { from: 'eles', tipo: 'audio', semBytes: true },
+  ];
+  const { envio, pagina } = await rodarWhatsApp(conversa, {
+    opcoes: { idsSimples: true },
+    durante: (p) => {
+      postarBlobsAntigos(p, [41, 42]);
+      // Ao clicar em cada play, o WhatsApp "cria" o arquivo certo daquela mensagem.
+      p.document.querySelectorAll('[data-icon="audio-play"]').forEach((span, k) => {
+        span.addEventListener('click', () => {
+          const url = 'blob:novo-' + k;
+          p.blobs.set(url, audioFake(90 + k));
+          avisarBlob(p, url, Date.now());
+        });
+      });
+    },
+  });
+  assert.deepEqual(envio.mensagens.filter((m) => m.type === 'audio').map((m) => m.content), ['transcrição do áudio 90', 'transcrição do áudio 91']);
   pagina.fechar();
 });
 

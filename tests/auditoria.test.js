@@ -134,7 +134,7 @@ for (const arq of ['extension/content.js', 'extension/content-instagram.js']) {
   test(`A01: ${arq} só aceita da fila global blobs criados depois do clique`, () => {
     const src = ler(arq);
     assert.match(src, /const t0 = Date\.now\(\) - 250;/);
-    assert.match(src, /if \(b\.usado \|\| b\.ts < t0\) continue;/);
+    assert.match(src, /if \(b\.usado \|\| \(b\.ts < t0 && !antigosOk\)\) continue;/);
     assert.ok(!/if \(b\.usado\) continue;/.test(src), 'o consumo cego da fila não pode voltar');
   });
 }

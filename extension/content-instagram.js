@@ -322,8 +322,12 @@
     for (let i = 0; i < iteracoes; i++) {
       b64 = await tentarElementoAudio();
       if (b64) return b64;
+      // 1º os arquivos criados a partir deste clique (são desta mensagem por construção). 2º, se nada novo
+      // aparecer em ~1s, os que já existiam na fila: o WhatsApp às vezes cria o arquivo ANTES do clique — foi
+      // assim que a captura sempre funcionou, e sem isso esses áudios nunca seriam lidos.
+      const antigosOk = i >= 6 && !blobsAudio.some((b) => !b.usado && b.ts >= t0);
       for (const b of blobsAudio) {
-        if (b.usado || b.ts < t0) continue;
+        if (b.usado || (b.ts < t0 && !antigosOk)) continue;
         b.usado = true;
         const buf = await fetchArrayBuffer(b.url);
         if (ehAudioBuffer(buf)) {
