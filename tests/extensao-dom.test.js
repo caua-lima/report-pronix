@@ -280,6 +280,90 @@ test('WhatsApp: o nome do contato é o do início da leitura (A03)', async () =>
   pagina.fechar();
 });
 
+// O WhatsApp Web passou a usar data-id só com hexadecimais (visto ao vivo). Sem o id da conversa, a
+// trava (A03) cai para o nome do cabeçalho.
+test('WhatsApp (data-id no formato novo): lê tudo normalmente', async () => {
+  const { envio, pagina } = await rodarWhatsApp(CONVERSA_WA, { opcoes: { idsSimples: true } });
+  assert.equal(envio.mensagens.length, 6);
+  assert.deepEqual(envio.mensagens.map((m) => m.from), ['eu', 'eles', 'eles', 'eu', 'eles', 'eles']);
+  assert.equal(envio.nome, 'Contato Teste');
+  pagina.fechar();
+});
+
+test('WhatsApp (data-id no formato novo): troca de conversa é pega pelo nome do contato (A03)', async () => {
+  const servidor = servidorFalso();
+  const { pagina } = await rodarWhatsApp(CONVERSA_WA, {
+    servidor,
+    opcoes: { idsSimples: true },
+    durante: (p) => {
+      let rolou = 0;
+      const rolagem = p.document.getElementById('rolagem');
+      const desc = Object.getOwnPropertyDescriptor(rolagem, 'scrollTop');
+      Object.defineProperty(rolagem, 'scrollTop', {
+        get: desc.get,
+        set: (v) => {
+          if (++rolou === 1) {
+            const s = p.document.querySelector('#main header span');
+            s.setAttribute('title', 'Outra Pessoa');
+            s.textContent = 'Outra Pessoa';
+          }
+          desc.set(v);
+        },
+      });
+    },
+  });
+  assert.equal(servidor.chamadas.reports.length, 0);
+  assert.match(pagina.badge(), /conversa mudou/i);
+  pagina.fechar();
+});
+
+// ---------------------------------------------------------------- WhatsApp: áudio que não chega
+const coletarLogs = (p) => {
+  const logs = [];
+  p.w.console.log = (...a) => logs.push(a.join(' '));
+  return logs;
+};
+
+test('WhatsApp: se o WhatsApp não entrega nenhum áudio (mídia expirada), faz UMA passada só e explica', async () => {
+  const conversa = [
+    { from: 'eu', texto: 'Oi', hora: '10:00, 01/09/2026' },
+    { from: 'eles', tipo: 'audio', semBytes: true },
+    { from: 'eles', tipo: 'audio', semBytes: true },
+    { from: 'eles', tipo: 'audio', semBytes: true },
+    { from: 'eles', tipo: 'audio', semBytes: true },
+    { from: 'eu', texto: 'Entendi', hora: '10:05, 01/09/2026' },
+  ];
+  let logs;
+  const { envio, pagina } = await rodarWhatsApp(conversa, { opcoes: { idsSimples: true }, durante: (p) => { logs = coletarLogs(p); } });
+
+  assert.equal(envio.mensagens.filter((m) => m.content === '[áudio]').length, 4, 'os áudios entram como [áudio]');
+  assert.deepEqual(envio.captureQuality, { plataforma: 'whatsapp', versao: 'teste', mensagens: 6, audios: 4, audiosTranscritos: 0 });
+  assert.equal(logs.filter((l) => /sem blob de áudio/.test(l)).length, 4, 'uma tentativa por áudio, sem repescagem');
+  assert.ok(logs.some((l) => /não vou repescar/.test(l)));
+  assert.ok(logs.some((l) => /fila anterior ao clique/.test(l)), 'diagnóstico da fila aparece no console');
+  assert.ok(logs.every((l) => !/^\[CR-audio\]/.test(l)), 'nenhum log de áudio sem versão');
+  assert.ok(logs.some((l) => l.startsWith('[CR-audio vteste]')));
+  assert.match(pagina.badge(), /não entregou os arquivos de áudio/);
+  pagina.fechar();
+});
+
+test('WhatsApp: se ALGUM áudio baixa, os que faltam ainda são repescados (comportamento de sempre)', async () => {
+  const conversa = [
+    { from: 'eu', texto: 'Oi', hora: '10:00, 01/09/2026' },
+    { from: 'eles', tipo: 'audio' },
+    { from: 'eles', tipo: 'audio' },
+    { from: 'eles', tipo: 'audio', semBytes: true },
+    { from: 'eles', tipo: 'audio', semBytes: true },
+  ];
+  let logs;
+  const { envio, pagina } = await rodarWhatsApp(conversa, { durante: (p) => { logs = coletarLogs(p); } });
+  assert.equal(envio.captureQuality.audiosTranscritos, 2);
+  assert.ok(!logs.some((l) => /não vou repescar/.test(l)));
+  assert.ok(logs.filter((l) => /sem blob de áudio/.test(l)).length >= 4, 'os 2 que faltam foram tentados de novo');
+  assert.match(pagina.badge(), /2 de 4 áudio/);
+  pagina.fechar();
+});
+
 test('WhatsApp: mensagens de remetentes diferentes com o mesmo texto e hora não se fundem (A05)', async () => {
   const conversa = [
     { from: 'eu', texto: 'ok', hora: '10:00, 01/09/2026' },

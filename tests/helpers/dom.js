@@ -178,7 +178,7 @@ function montarInstagram(pagina, mensagens, { visiveis = 6, contato = 'Contato T
 /**
  * @param {{from: 'eu'|'eles', tipo?: 'texto'|'audio', texto?: string, hora?: string, jid?: string}[]} mensagens
  */
-function montarWhatsApp(pagina, mensagens, { contato = 'Contato Teste', jid = '5511999990000@c.us' } = {}) {
+function montarWhatsApp(pagina, mensagens, { contato = 'Contato Teste', jid = '5511999990000@c.us', idsSimples = false } = {}) {
   const w = pagina.w;
   const d = w.document;
   d.body.innerHTML = `<div id="main"><header><span dir="auto" title="${contato}">${contato}</span></header><div id="rolagem" style="overflow-y:auto"></div></div>`;
@@ -191,10 +191,15 @@ function montarWhatsApp(pagina, mensagens, { contato = 'Contato Teste', jid = '5
   const html = mensagens
     .map((m, i) => {
       const dir = m.from === 'eu' ? 'out' : 'in';
-      const dataId = `${m.from === 'eu' ? 'true' : 'false'}_${m.jid || jid}_MSG${String(i).padStart(4, '0')}`;
+      // idsSimples = formato que o WhatsApp Web passou a usar (visto ao vivo): id só com hexadecimais,
+      // sem "true_"/"false_" nem o id da conversa.
+      const dataId = idsSimples
+        ? `A5${(0xf00000 + i * 977).toString(16).toUpperCase().padStart(12, '0')}`
+        : `${m.from === 'eu' ? 'true' : 'false'}_${m.jid || jid}_MSG${String(i).padStart(4, '0')}`;
       if (m.tipo === 'audio') {
         const url = `blob:wa-${i}`;
-        pagina.blobs.set(url, audioFake(m.indiceAudio != null ? m.indiceAudio : i));
+        // semBytes = o WhatsApp não entregou o arquivo (mídia expirada): o fetch do blob falha.
+        if (!m.semBytes) pagina.blobs.set(url, audioFake(m.indiceAudio != null ? m.indiceAudio : i));
         return `<div class="message-${dir}" data-id="${dataId}"><div><span data-icon="audio-play"></span><audio src="${url}"></audio></div></div>`;
       }
       const hora = m.hora || '10:00, 01/09/2026';

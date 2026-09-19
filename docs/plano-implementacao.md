@@ -15,7 +15,7 @@ Princípio: mudanças pequenas, cada uma com teste e fácil de reverter. Nada de
 | 4 — Qualidade (parte segura) | prompt v2, conferência de citações, suíte sintética | `git push` |
 | 5 — Custos (parte segura) | cache de transcrição, baseline no painel | `git push` |
 
-Extensão: **1.5.0** (manifest, popup, background e os dois content scripts mudaram → precisa enviar o zip à Chrome Web Store).
+Extensão: **1.5.1** (manifest, popup, background e os dois content scripts mudaram → precisa enviar o zip à Chrome Web Store).
 Servidor/painel: só `git push origin main`.
 
 ## O que ainda pode ser feito (nada aqui bloqueia o uso)
@@ -32,7 +32,7 @@ Servidor/painel: só `git push origin main`.
 ### 3. Melhorias pequenas (se o uso pedir)
 - A01 por completo: amarrar o áudio à mensagem por um sinal confiável (hoje não existe um no DOM do WhatsApp/Instagram).
 - Chave do SDR no painel fora do `localStorage` (exige sessão por cookie).
-- Instagram: se o layout mudar, o primeiro sintoma é a leitura vir curta; o console mostra `[CR-instagram v1.5.0] passo N: janela X msg | +Y nova(s)`.
+- Instagram: se o layout mudar, o primeiro sintoma é a leitura vir curta; o console mostra `[CR-instagram v1.5.1] passo N: janela X msg | +Y nova(s)`.
 
 ## Decisões que já foram tomadas (sem confirmar com você)
 

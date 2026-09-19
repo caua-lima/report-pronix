@@ -1,7 +1,7 @@
 # Auditoria PRONIX — status dos achados
 
 Origem: `PRONIX_AUDITORIA_E_PROMPT_CLAUDE.md` (auditoria externa de 18/09/2026, feita só sobre o site público e o ZIP da extensão v1.4.3, **sem** acesso ao backend, prompt, banco, logs ou PDF).
-Extensão publicada com estas correções: **1.5.0**.
+Extensão publicada com estas correções: **1.5.1** (a 1.5.1 acrescenta só o diagnóstico de áudio do WhatsApp descrito no checklist).
 
 Regra desta rodada: cada achado foi conferido no código atual antes de qualquer mudança, e nada foi dado como resolvido sem teste.
 Legenda: **Corrigido** (mudança + teste) · **Mitigado** (o risco caiu, sobra um resíduo descrito) · **Não feito** (decisão explícita, com o motivo).

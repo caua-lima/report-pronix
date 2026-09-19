@@ -64,6 +64,7 @@ Lê a conversa inteira (inclusive as mensagens antigas), transcreve os áudios e
 | O que aparece | O que fazer |
 | --- | --- |
 | "Chave inválida ou ausente" | A chave foi colada errada ou tem espaço sobrando. Copie de novo e valide. Se insistir, peça outra ao admin. |
+| "O WhatsApp não entregou os arquivos de áudio" | O WhatsApp Web só consegue tocar áudio que ainda está nos servidores dele; áudio antigo costuma expirar (aparece erro no console e o áudio nem toca se você clicar nele à mão). Eles entram no report como `[áudio]`. Se o áudio é importante, ouça no celular e escreva o resumo na conversa, ou use a **Transcrição** do próprio WhatsApp quando ela aparecer. |
 | "A conversa mudou durante a leitura" | Você abriu outra conversa enquanto ele lia. Nada foi gerado: abra a conversa do lead, espere o aviso virar "Gerando report…" e tente de novo. |
 | "Nenhuma mensagem encontrada" | Abra a conversa do lead (a janela com as mensagens na tela) e atualize a página (F5). |
 | O ícone não faz nada | Atualize a aba (F5). Ele só age em `web.whatsapp.com` e `instagram.com/direct`. |

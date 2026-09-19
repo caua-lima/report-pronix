@@ -69,14 +69,37 @@
   // na lista — por isso o teto é alto: cabe uma conversa cheia sem perder nada.
   const blobsAudio = [];
   const MAX_BLOBS_FILA = 500;
+  let totalBlobsVistos = 0; // quantos arquivos o WhatsApp já criou (a fila é cortada em MAX_BLOBS_FILA; este não)
   window.addEventListener('message', (ev) => {
     if (ev.source === window && ev.data && ev.data.__crAudio && ev.data.url) {
+      totalBlobsVistos++;
       blobsAudio.push({ url: ev.data.url, ts: ev.data.ts || Date.now() });
       if (blobsAudio.length > MAX_BLOBS_FILA) blobsAudio.shift();
     }
   });
 
-  const logA = (...a) => console.log('[CR-audio]', ...a);
+  // Toda linha leva a versão: um log colado sem versão não diz qual extensão estava rodando.
+  const logA = (...a) => console.log(`[CR-audio v${VERSAO}]`, ...a);
+
+  // Diagnóstico (uma vez por leitura): dos blobs que já existiam ANTES do clique, quantos são áudio de
+  // verdade? Separa "o WhatsApp não entregou o arquivo" (mídia expirada) de "o arquivo existia e a
+  // extensão não pegou".
+  let filaDiagnosticada = false;
+  async function diagnosticarFila(t0) {
+    if (filaDiagnosticada) return;
+    filaDiagnosticada = true;
+    let audio = 0;
+    let outros = 0;
+    let semBytes = 0;
+    for (const b of blobsAudio.slice(-30)) {
+      if (b.ts >= t0) continue;
+      const buf = await fetchArrayBuffer(b.url);
+      if (!buf) semBytes++;
+      else if (ehAudioBuffer(buf)) audio++;
+      else outros++;
+    }
+    logA(`fila anterior ao clique: ${audio} áudio(s) válido(s), ${outros} outro(s), ${semBytes} sem bytes`);
+  }
 
   // O gancho que intercepta os áudios precisa rodar no contexto da PÁGINA. O
   // manifesto pede isso com world:"MAIN", mas nem todo Chromium respeita (Brave e
@@ -204,7 +227,12 @@
       }
       await sleep(150);
     }
-    logA(`áudio ${dbg || ''}: sem blob de áudio (blobs vistos=${blobsAudio.length}, antes=${antes})`);
+    const novos = blobsAudio.filter((b) => b.ts >= t0).length;
+    logA(
+      `áudio ${dbg || ''}: sem blob de áudio (na fila=${blobsAudio.length}, novos após o clique=${novos}, ` +
+        `<audio> na bolha=${!!el.querySelector('audio')}, botão de play=${!!btn}, botão de baixar=${!!btnBaixar})`
+    );
+    if (!novos) await diagnosticarFila(t0);
     return null;
   }
 
@@ -600,7 +628,9 @@
     //    paciência, até não faltar nenhum (ou esgotar as tentativas).
     const MAX_PASSADAS = 6;
     let faltaramAntes = Infinity;
+    filaDiagnosticada = false;
     for (let passada = 0; passada < MAX_PASSADAS; passada++) {
+      const vistosAntesDaPassada = totalBlobsVistos;
       const iteracoes = 40 + passada * 25; // ~6s na 1ª, subindo até ~24s por áudio
       if (passada > 0 && capturarAudio) {
         mostrarBadge({
@@ -613,6 +643,13 @@
       if (!capturarAudio) break; // sem áudio: uma passada basta
       const faltam = faltamAudios();
       if (faltam === 0) break; // pegou todos
+      // Primeira passada inteira: nenhum áudio saiu E o WhatsApp não criou arquivo nenhum ao clicar nos
+      // áudios (nem um). Ele não está entregando as mídias (costuma ser áudio antigo, já expirado no
+      // servidor). Repescar só gasta minutos esperando o que não vai chegar.
+      if (passada === 0 && audioBytes.size === 0 && totalBlobsVistos === vistosAntesDaPassada && faltam >= 3) {
+        logA(`nenhum dos ${faltam} áudios foi entregue pelo WhatsApp (mídia expirada?) — não vou repescar.`);
+        break;
+      }
       // Se uma passada inteira não recuperou NENHUM novo, insistir não ajuda:
       // provavelmente é mídia que o WhatsApp não consegue mais baixar.
       if (faltam >= faltaramAntes) break;
@@ -897,7 +934,9 @@
                 '<svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:-2px;flex:none" fill="none" stroke="#f0ad4e" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m21.7 18-8-14a2 2 0 0 0-3.4 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg> <b>Recarregue a aba do WhatsApp (F5)</b>' +
                 ' <span style="color:#8b98a5">e gere de novo — a leitura de áudio não iniciou</span>'
               : `<svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:-2px;flex:none" fill="none" stroke="#f0ad4e" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m21.7 18-8-14a2 2 0 0 0-3.4 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg> ${stats.audiosTranscritos} de ${stats.audios} áudio(s) transcrito(s)` +
-                ' <span style="color:#8b98a5">— o resto entrou como [áudio]</span>';
+                (stats.audiosTranscritos === 0
+                  ? ' <span style="color:#8b98a5">— o WhatsApp não entregou os arquivos de áudio (áudios antigos costumam expirar); entraram como [áudio]</span>'
+                  : ' <span style="color:#8b98a5">— o resto entrou como [áudio]</span>');
 
       mostrarBadge({
         texto: `<svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:-2px;flex:none" fill="none" stroke="#25d366" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="m9 11 3 3L22 4"/></svg> <b>Report pronto!</b> (${escHtml(nome || 'lead')})<br>${resumoAudio}`,
