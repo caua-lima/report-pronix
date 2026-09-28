@@ -106,12 +106,20 @@ const indiceDoAudio = (base64) => Buffer.from(base64, 'base64')[4] - 1;
  * @param {*} pagina retorno de abrirPagina
  * @param {{from: 'eu'|'eles', tipo?: 'texto'|'audio', texto?: string, dur?: string}[]} mensagens
  */
-function montarInstagram(pagina, mensagens, { visiveis = 6, contato = 'Contato Teste' } = {}) {
+/**
+ * Opções extras:
+ *  - semFlex: o Instagram deixou de usar flex-direction: row-reverse (só sobra a posição na tela);
+ *  - longas: bolhas largas (uma mensagem minha comprida começa ANTES do meio da tela);
+ *  - carregadasNoInicio + atrasoTopo: só as últimas N mensagens estão carregadas; as antigas chegam
+ *    de 10 em 10, e só depois de `atrasoTopo` tentativas paradas no topo (rede lenta).
+ */
+function montarInstagram(pagina, mensagens, { visiveis = 6, contato = 'Contato Teste', semFlex = false, longas = false, carregadasNoInicio = null, atrasoTopo = 0 } = {}) {
   const w = pagina.w;
   const d = w.document;
   d.body.innerHTML = `<div id="app"><header><span>${contato}</span></header><div id="lista" style="overflow-y:auto"></div></div>`;
   const lista = d.getElementById('lista');
-  const estado = { inicio: Math.max(0, mensagens.length - visiveis) };
+  const carregadoDesde = carregadasNoInicio == null ? 0 : Math.max(0, mensagens.length - carregadasNoInicio);
+  const estado = { inicio: Math.max(carregadoDesde, mensagens.length - visiveis), carregadoDesde, tentativasTopo: 0 };
 
   Object.defineProperty(lista, 'scrollHeight', { get: () => mensagens.length * ALTURA_LINHA });
   Object.defineProperty(lista, 'clientHeight', { get: () => visiveis * ALTURA_LINHA });
@@ -122,7 +130,7 @@ function montarInstagram(pagina, mensagens, { visiveis = 6, contato = 'Contato T
     const el = d.createElement('div');
     el.dataset.i = String(i);
     el.dataset.enviada = m.from === 'eu' ? '1' : '0';
-    el.setAttribute('style', `display:flex; flex-direction: ${m.from === 'eu' ? 'row-reverse' : 'row'}`);
+    el.setAttribute('style', `display:flex; flex-direction: ${m.from === 'eu' && !semFlex ? 'row-reverse' : 'row'}`);
     if (m.tipo === 'audio') {
       const url = `blob:mock-${i}`;
       pagina.blobs.set(url, audioFake(m.indiceAudio != null ? m.indiceAudio : i));
@@ -154,8 +162,9 @@ function montarInstagram(pagina, mensagens, { visiveis = 6, contato = 'Contato T
     const row = this.closest && this.closest('[data-i]');
     if (row) {
       const top = (Number(row.dataset.i) - estado.inicio) * ALTURA_LINHA;
-      const left = row.dataset.enviada === '1' ? 320 : 10;
-      return { top, bottom: top + ALTURA_LINHA - 4, height: ALTURA_LINHA - 4, left, right: left + 200, width: 200 };
+      const largura = longas ? 430 : 200;
+      const left = row.dataset.enviada === '1' ? 600 - 20 - largura : 10; // minha encosta na direita
+      return { top, bottom: top + ALTURA_LINHA - 4, height: ALTURA_LINHA - 4, left, right: left + largura, width: largura };
     }
     if (this.id === 'lista') return { top: 0, left: 0, right: 600, bottom: visiveis * ALTURA_LINHA, width: 600, height: visiveis * ALTURA_LINHA };
     return { top: 0, left: 0, right: 0, bottom: 0, width: 0, height: 0 };
@@ -164,9 +173,21 @@ function montarInstagram(pagina, mensagens, { visiveis = 6, contato = 'Contato T
     const row = this.closest && this.closest('[data-i]');
     if (!row) return;
     const i = Number(row.dataset.i);
+    // Parado no topo do que já carregou: o Instagram busca as antigas na rede, mas só "responde" depois
+    // de algumas tentativas. Quando chegam, aparecem acima (e a janela mostra algumas delas).
+    if (i === estado.carregadoDesde && estado.inicio === estado.carregadoDesde && estado.carregadoDesde > 0) {
+      estado.tentativasTopo++;
+      if (estado.tentativasTopo > atrasoTopo) {
+        estado.tentativasTopo = 0;
+        estado.carregadoDesde = Math.max(0, estado.carregadoDesde - 10);
+        estado.inicio = Math.max(estado.carregadoDesde, estado.inicio - 2);
+        render();
+        return;
+      }
+    }
     const bloco = arg && arg.block;
     const alvo = bloco === 'center' ? i - Math.floor(visiveis / 2) : i;
-    estado.inicio = Math.max(0, Math.min(mensagens.length - visiveis, alvo));
+    estado.inicio = Math.max(estado.carregadoDesde, Math.min(mensagens.length - visiveis, alvo));
     render();
   };
   return { lista, estado, render };
@@ -178,7 +199,12 @@ function montarInstagram(pagina, mensagens, { visiveis = 6, contato = 'Contato T
 /**
  * @param {{from: 'eu'|'eles', tipo?: 'texto'|'audio', texto?: string, hora?: string, jid?: string}[]} mensagens
  */
-function montarWhatsApp(pagina, mensagens, { contato = 'Contato Teste', jid = '5511999990000@c.us', idsSimples = false } = {}) {
+/**
+ * semSinais: WhatsApp sem classes message-in/out, sem "true_/false_" no data-id, sem tique e com o MEU
+ * nome (não "Você") no data-pre-plain-text. Só a posição da bolha diz quem mandou.
+ * posicao: false = o navegador não informa a posição (larguras zeradas).
+ */
+function montarWhatsApp(pagina, mensagens, { contato = 'Contato Teste', jid = '5511999990000@c.us', idsSimples = false, semSinais = false, posicao = true } = {}) {
   const w = pagina.w;
   const d = w.document;
   d.body.innerHTML = `<div id="main"><header><span dir="auto" title="${contato}">${contato}</span></header><div id="rolagem" style="overflow-y:auto"></div></div>`;
@@ -200,9 +226,18 @@ function montarWhatsApp(pagina, mensagens, { contato = 'Contato Teste', jid = '5
         const url = `blob:wa-${i}`;
         // semBytes = o WhatsApp não entregou o arquivo (mídia expirada): o fetch do blob falha.
         if (!m.semBytes) pagina.blobs.set(url, audioFake(m.indiceAudio != null ? m.indiceAudio : i));
+        if (semSinais) {
+          return `<div role="row" data-row-i="${i}" data-lado="${m.from === 'eu' ? 'd' : 'e'}"><div data-id="A5${String(i).padStart(12, '0')}"><span data-icon="audio-play"></span><audio src="${url}"></audio></div></div>`;
+        }
         return `<div class="message-${dir}" data-id="${dataId}"><div><span data-icon="audio-play"></span><audio src="${url}"></audio></div></div>`;
       }
       const hora = m.hora || '10:00, 01/09/2026';
+      if (semSinais) {
+        return (
+          `<div role="row" data-row-i="${i}" data-lado="${m.from === 'eu' ? 'd' : 'e'}"><div data-id="A5${String(i).padStart(12, '0')}">` +
+          `<div class="copyable-text" data-pre-plain-text="[${hora}] ${m.from === 'eu' ? 'Cauã Lima' : contato}: "><span class="selectable-text"></span></div></div></div>`
+        );
+      }
       return (
         `<div class="message-${dir}" data-id="${dataId}"><div class="copyable-text" data-pre-plain-text="[${hora}] ${m.from === 'eu' ? 'Você' : contato}: ">` +
         `<span class="selectable-text"></span></div></div>`
@@ -210,10 +245,22 @@ function montarWhatsApp(pagina, mensagens, { contato = 'Contato Teste', jid = '5
     })
     .join('');
   rolagem.innerHTML = html;
-  [...rolagem.querySelectorAll('.message-in, .message-out')].forEach((el, i) => {
+  [...rolagem.querySelectorAll(semSinais ? '[data-row-i]' : '.message-in, .message-out')].forEach((el, i) => {
     const t = el.querySelector('.selectable-text');
     if (t) t.textContent = mensagens[i].texto;
   });
+  if (semSinais) {
+    // Painel da conversa com 800px; bolha minha encosta na direita, a do lead na esquerda.
+    w.Element.prototype.getBoundingClientRect = function () {
+      const vazio = { top: 0, left: 0, right: 0, bottom: 0, width: 0, height: 0 };
+      if (!posicao) return vazio;
+      if (this.id === 'main') return { top: 0, left: 0, right: 800, bottom: 600, width: 800, height: 600 };
+      const row = this.closest && this.closest('[data-lado]');
+      if (!row) return vazio;
+      const left = row.dataset.lado === 'd' ? 480 : 20;
+      return { top: 0, left, right: left + 300, bottom: 30, width: 300, height: 30 };
+    };
+  }
   w.Element.prototype.scrollIntoView = function () {};
   return { rolagem };
 }

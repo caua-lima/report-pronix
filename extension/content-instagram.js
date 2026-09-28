@@ -156,14 +156,18 @@
   /** Sobe os pais até achar o elemento que realmente rola (mesmo truque do content.js do WhatsApp). */
   function acharScroller(el) {
     let n = el ? el.parentElement : null;
+    // Conversa curta (cabe inteira na tela): o container de rolagem existe, mas ainda não rola. Sem
+    // guardar este, a conversa não era achada ("Não achei a conversa na tela").
+    let semRolagem = null;
     while (n && n !== document.body) {
       const st = getComputedStyle(n);
-      if ((st.overflowY === 'auto' || st.overflowY === 'scroll') && n.scrollHeight > n.clientHeight + 20) {
-        return n;
+      if (st.overflowY === 'auto' || st.overflowY === 'scroll') {
+        if (n.scrollHeight > n.clientHeight + 20) return n;
+        if (!semRolagem) semRolagem = n;
       }
       n = n.parentElement;
     }
-    return null;
+    return semRolagem;
   }
 
   /**
@@ -211,12 +215,13 @@
       }
       n = n.parentElement;
     }
-    // Fallback por posição: enviada fica na metade direita do container.
+    // Fallback por posição: a bolha enviada encosta na DIREITA do container, a recebida na esquerda.
+    // Compara as folgas dos dois lados (e não "passou do meio"): uma mensagem minha comprida começa
+    // antes do meio e seria lida como do lead.
     if (root) {
       const rEl = el.getBoundingClientRect();
       const rRoot = root.getBoundingClientRect();
-      const meio = rRoot.left + rRoot.width / 2;
-      return rEl.left > meio;
+      return rRoot.right - rEl.right < rEl.left - rRoot.left;
     }
     return false;
   }
@@ -516,11 +521,22 @@
 
     // 1) Sobe até o topo, ancorando na primeira mensagem renderizada. Cada
     //    subida faz o Instagram carregar mais histórico acima.
+    //    Se a primeira mensagem não mudou, pode ser o topo OU o Instagram ainda buscando as mensagens
+    //    antigas na rede (conversa longa, internet lenta). Antes de concluir que é o topo, tenta de novo
+    //    esperando mais (até ~3,5s no total) — concluir cedo demais é perder o começo da conversa.
+    const ESPERAS_TOPO = [700, 1200, 1600];
     let ancora = null;
     let subidas = 0;
+    let paciencia = 0;
     for (let i = 0; i < 300; i++) {
       const nos = nosBrutos();
-      if (!nos.length || nos[0] === ancora) break; // não mexeu = topo da conversa
+      if (!nos.length) break;
+      if (nos[0] === ancora) {
+        if (paciencia >= ESPERAS_TOPO.length) break; // não mexeu mesmo esperando: é o topo
+        await irPara(ancora, 'center', ESPERAS_TOPO[paciencia++]);
+        continue;
+      }
+      paciencia = 0;
       ancora = nos[0];
       await irPara(ancora, 'center', 420);
       subidas++;
@@ -603,8 +619,17 @@
 
     // Tira o que era só andaime interno antes de mandar pro servidor.
     const limpas = mensagens.map(({ from, type, content, timestamp }) => ({ from, type, content, timestamp }));
-    const stats = { total: limpas.length, audios: audios.length, audiosTranscritos: transcritos };
-    logI(`${stats.total} mensagens lidas — ${stats.audios} áudio(s) (${stats.audiosTranscritos} com transcrição).`);
+    const stats = {
+      total: limpas.length,
+      audios: audios.length,
+      audiosTranscritos: transcritos,
+      doVendedor: limpas.filter((m) => m.from === 'eu').length,
+      doLead: limpas.filter((m) => m.from !== 'eu').length,
+    };
+    logI(
+      `${stats.total} mensagens lidas — ${stats.audios} áudio(s) (${stats.audiosTranscritos} com transcrição) — ` +
+        `${stats.doVendedor} do vendedor, ${stats.doLead} do lead.`
+    );
     // O nome vem do INÍCIO da leitura: lido no fim, podia ser o de outra conversa aberta enquanto os áudios transcreviam.
     return { mensagens: limpas, nome: alvoNome || nomeDoContato(), stats };
   }
@@ -730,6 +755,22 @@
     });
   }
 
+
+  // Quantas mensagens de cada lado. Se a leitura do remetente quebrar (o site mudou a marcação), aparece
+  // aqui na hora: "0 suas" numa conversa de 20 mensagens é leitura errada, e o SDR vê antes de mandar.
+  const remetenteSuspeito = (s) => !!s && s.total >= 6 && (s.doVendedor === 0 || s.doLead === 0);
+  function linhaRemetentes(s) {
+    if (!s || !s.total || s.doVendedor == null) return '';
+    const base = `<span style="color:#8b98a5">${s.total} mensagens · ${s.doVendedor} suas · ${s.doLead} do lead</span><br>`;
+    if (!remetenteSuspeito(s)) return base;
+    return (
+      base +
+      '<span style="color:#f0ad4e"><b>Confira o report:</b> ' +
+      (s.doVendedor === 0 ? 'nenhuma mensagem sua' : 'nenhuma mensagem do lead') +
+      ' foi reconhecida. Se estiver errado, copie o console (F12) e mande para o admin.</span><br>'
+    );
+  }
+
   let jobEmAndamento = false;
 
   async function gerarReportEmBackground(server) {
@@ -767,6 +808,8 @@
         mensagens: stats.total,
         audios: stats.audios,
         audiosTranscritos: stats.audiosTranscritos,
+        mensagensVendedor: stats.doVendedor,
+        mensagensLead: stats.doLead,
       };
       const resp = await new Promise((resolve) =>
         chrome.runtime.sendMessage({ action: 'reportFetch', server, mensagens, nome, captureQuality }, resolve)
@@ -826,7 +869,7 @@
           : `<span style="color:#f0ad4e">${s.audiosTranscritos} de ${s.audios} áudio(s) transcrito(s)</span>` +
             ' <span style="color:#8b98a5">— o resto entrou como [áudio]</span>';
     mostrarBadge({
-      texto: `<svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:-2px;flex:none" fill="none" stroke="#25d366" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="m9 11 3 3L22 4"/></svg> <b>Report pronto!</b> (${escHtml(nome || 'contato')})<br>${resumoAudio}`,
+      texto: `<svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:-2px;flex:none" fill="none" stroke="#25d366" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="m9 11 3 3L22 4"/></svg> <b>Report pronto!</b> (${escHtml(nome || 'contato')})<br>${linhaRemetentes(s)}${resumoAudio}`,
       arquivo: resp.arquivo,
       arquivoBase64: resp.arquivoBase64,
     });

@@ -434,13 +434,22 @@ function sanitizarCaptura(c) {
   };
   const audios = n(c.audios);
   const audiosTranscritos = Math.min(n(c.audiosTranscritos), audios);
+  const mensagens = n(c.mensagens);
+  // Extensões antigas não mandam a contagem por remetente: aí fica null (e nada é marcado como suspeito).
+  const temRemetente = c.mensagensVendedor != null && c.mensagensLead != null;
+  const vendedor = temRemetente ? n(c.mensagensVendedor) : null;
+  const lead = temRemetente ? n(c.mensagensLead) : null;
   return {
     plataforma: c.plataforma === 'whatsapp' || c.plataforma === 'instagram' ? c.plataforma : '',
     versao: String(c.versao || '').slice(0, 12),
-    mensagens: n(c.mensagens),
+    mensagens,
     audios,
     audiosTranscritos,
     incompleta: audiosTranscritos < audios,
+    mensagensVendedor: vendedor,
+    mensagensLead: lead,
+    // Conversa de 6+ mensagens com um dos lados zerado: quase sempre é leitura errada do remetente.
+    remetenteSuspeito: temRemetente && mensagens >= 6 && (vendedor === 0 || lead === 0),
   };
 }
 

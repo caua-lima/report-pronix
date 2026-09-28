@@ -1172,7 +1172,7 @@
 
         $('ultimos').innerHTML = s.ultimos.map((r) => `
           <tr data-linha-report="${esc(r.id)}" data-versao="${Number(r.versao) || 0}">
-            <td>${esc(r.lead || '—')}${r.captura && r.captura.incompleta ? ` <span class="tag" title="${esc(r.captura.audiosTranscritos + ' de ' + r.captura.audios + ' áudio(s) transcritos')}" style="color:var(--danger)">captura parcial</span>` : ''}</td>
+            <td>${esc(r.lead || '—')}${r.captura && r.captura.incompleta ? ` <span class="tag" title="${esc(r.captura.audiosTranscritos + ' de ' + r.captura.audios + ' áudio(s) transcritos')}" style="color:var(--danger)">captura parcial</span>` : ''}${r.captura && r.captura.remetenteSuspeito ? ` <span class="tag" title="${esc((r.captura.mensagensVendedor || 0) + ' do vendedor, ' + (r.captura.mensagensLead || 0) + ' do lead')}" style="color:var(--danger)">remetente a conferir</span>` : ''}</td>
             <td><input type="email" class="mini-date" data-campo="leadEmail" data-report="${esc(r.id)}" placeholder="e-mail do lead" value="${esc(r.leadEmail || '')}" style="max-width:170px" /></td>
             <td>${esc(r.usuarioNome || '—')}</td>
             <td><span class="tag">${r.origem === 'manual' ? 'manual' : 'extensão'}</span></td>

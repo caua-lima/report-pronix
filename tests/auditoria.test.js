@@ -26,7 +26,7 @@ const ATAQUE = '<img src=x onerror=alert(1)>';
 // ---------------------------------------------------------------- A12
 test('A12: setStatus do popup trata o texto como texto, não como HTML', () => {
   const src = ler('extension/popup.js');
-  const codigo = fatia(src, 'function setStatus(', '\nfunction escapeHtml');
+  const codigo = fatia(src, 'let statusVersao = 0;', '\nfunction escapeHtml');
   const filhos = [];
   const el = {
     className: '',

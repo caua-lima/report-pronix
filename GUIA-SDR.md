@@ -34,6 +34,8 @@ A chave é sua e individual: é ela que assina o seu nome no report. Não passe 
 
 **Já existe um report igual?** Se você gerar duas vezes a mesma conversa, o aviso oferece **Abrir o existente** (baixa o PDF que já foi gerado, sem custo) ou **Gerar de novo** (chama a IA outra vez e custa). Só abra de novo se a conversa mudou.
 
+No aviso final vem **quantas mensagens são suas e quantas do lead** (ex.: `42 mensagens · 18 suas · 24 do lead`). Se aparecer **"Confira o report: nenhuma mensagem sua foi reconhecida"**, a leitura do remetente falhou: não mande esse report, copie o console (F12) e avise o admin.
+
 No aviso final também vem quantos áudios ele transcreveu:
 
 - `3 áudio(s) transcrito(s)` — pegou todos.
@@ -42,6 +44,17 @@ No aviso final também vem quantos áudios ele transcreveu:
 > **Áudio:** pra transcrever, ele precisa **tocar** cada áudio no mudo. Você não escuta nada, mas no Instagram isso pode marcar o áudio como "ouvido" pra quem mandou — se isso for um problema numa conversa específica, gere o report só depois de já ter ouvido os áudios normalmente.
 
 > **Instagram Direct é recente:** se o report sair estranho (mensagem trocada de remetente, áudio faltando) me avisa com um print — o Instagram muda o layout com frequência e pode precisar de ajuste.
+
+## 4. Fim do dia: o .zip para o líder
+
+Todo dia, antes de ir embora, baixe o .zip com os seus reports do dia e mande para o líder. Tem dois jeitos:
+
+- **Pela extensão:** clique no ícone da PRONIX → **Baixar meus reports de hoje (.zip)**. Pronto.
+- **Pelo site:** abra o site da PRONIX → aba **Reports do dia** (cole a sua chave na aba "Gerar report" na primeira vez). Lá aparece a lista do dia e dá para escolher outro dia.
+
+**Gerou mais de um report do mesmo lead** (o áudio não veio, leu algo errado, você refez)? O .zip leva só o **último** de cada lead — os anteriores ficam de fora sozinhos. No site, eles aparecem apagados como "refeito — vale o das 15:42". Se por algum motivo você quiser mandar um anterior em vez do último, marque e desmarque na lista antes de baixar.
+
+> "Mesmo lead" = o mesmo contato (o nome ou telefone que aparece no topo da conversa) no mesmo dia. No modo manual, use sempre o mesmo **Nome do lead** ao refazer, senão ele entende como leads diferentes.
 
 ## No celular (WhatsApp Business do telefone)
 

@@ -39,9 +39,9 @@ function servidorFalso(opcoes = {}) {
 const terminou = (p) => /Report pronto|conversa mudou|Nenhuma mensagem|Não achei|Falha|Já existe/i.test(p.badge());
 const limpar = (m) => ({ from: m.from, type: m.type, content: m.content });
 
-async function rodarInstagram(conversa, { visiveis = 6, servidor = servidorFalso(), url = 'https://www.instagram.com/direct/t/111/', durante } = {}) {
+async function rodarInstagram(conversa, { visiveis = 6, servidor = servidorFalso(), url = 'https://www.instagram.com/direct/t/111/', durante, opcoes = {} } = {}) {
   const pagina = abrirPagina({ arquivo: 'extension/content-instagram.js', url, aoEnviar: servidor.aoEnviar });
-  const cenario = montarInstagram(pagina, conversa, { visiveis });
+  const cenario = montarInstagram(pagina, conversa, { visiveis, ...opcoes });
   if (durante) durante(pagina, cenario);
   pagina.iniciar();
   await esperar(() => terminou(pagina), { motivo: 'fim do job do Instagram' });
@@ -127,11 +127,11 @@ test('Instagram: se a transcrição falha, o áudio entra como [áudio] e o repo
 // ---------------------------------------------------------------- Instagram: A04 (qualidade da captura)
 test('Instagram: envia o resumo da captura (áudios achados e transcritos) ao servidor (A04)', async () => {
   const { envio, pagina } = await rodarInstagram(CONVERSA);
-  assert.deepEqual(envio.captureQuality, { plataforma: 'instagram', versao: 'teste', mensagens: 12, audios: 2, audiosTranscritos: 2 });
+  assert.deepEqual(envio.captureQuality, { plataforma: 'instagram', versao: 'teste', mensagens: 12, audios: 2, audiosTranscritos: 2, mensagensVendedor: 6, mensagensLead: 6 });
   pagina.fechar();
 
   const parcial = await rodarInstagram(CONVERSA, { servidor: servidorFalso({ transcricaoFalha: true }) });
-  assert.deepEqual(parcial.envio.captureQuality, { plataforma: 'instagram', versao: 'teste', mensagens: 12, audios: 2, audiosTranscritos: 0 });
+  assert.deepEqual(parcial.envio.captureQuality, { plataforma: 'instagram', versao: 'teste', mensagens: 12, audios: 2, audiosTranscritos: 0, mensagensVendedor: 6, mensagensLead: 6 });
   parcial.pagina.fechar();
 });
 
@@ -231,7 +231,7 @@ test('WhatsApp: lê tudo na ordem, com remetente, áudio transcrito e mensagens 
     { from: 'eles', type: 'texto', content: 'ok' },
     { from: 'eles', type: 'texto', content: 'ok' },
   ]);
-  assert.deepEqual(envio.captureQuality, { plataforma: 'whatsapp', versao: 'teste', mensagens: 6, audios: 1, audiosTranscritos: 1 });
+  assert.deepEqual(envio.captureQuality, { plataforma: 'whatsapp', versao: 'teste', mensagens: 6, audios: 1, audiosTranscritos: 1, mensagensVendedor: 2, mensagensLead: 4 });
   pagina.fechar();
 });
 
@@ -337,7 +337,7 @@ test('WhatsApp: se o WhatsApp não entrega nenhum áudio (mídia expirada), faz 
   const { envio, pagina } = await rodarWhatsApp(conversa, { opcoes: { idsSimples: true }, durante: (p) => { logs = coletarLogs(p); } });
 
   assert.equal(envio.mensagens.filter((m) => m.content === '[áudio]').length, 4, 'os áudios entram como [áudio]');
-  assert.deepEqual(envio.captureQuality, { plataforma: 'whatsapp', versao: 'teste', mensagens: 6, audios: 4, audiosTranscritos: 0 });
+  assert.deepEqual(envio.captureQuality, { plataforma: 'whatsapp', versao: 'teste', mensagens: 6, audios: 4, audiosTranscritos: 0, mensagensVendedor: 2, mensagensLead: 4 });
   assert.equal(logs.filter((l) => /sem blob de áudio/.test(l)).length, 4, 'uma tentativa por áudio, sem repescagem');
   assert.ok(logs.some((l) => /não vou repescar/.test(l)));
   assert.ok(logs.some((l) => /fila anterior ao clique/.test(l)), 'diagnóstico da fila aparece no console');
@@ -384,7 +384,7 @@ test('WhatsApp: áudio cujo arquivo já existia na fila antes do clique AINDA é
   ];
   const { envio, pagina } = await rodarWhatsApp(conversa, { opcoes: { idsSimples: true }, durante: (p) => postarBlobsAntigos(p, [41, 42]) });
   assert.deepEqual(envio.mensagens.filter((m) => m.type === 'audio').map((m) => m.content), ['transcrição do áudio 41', 'transcrição do áudio 42']);
-  assert.deepEqual(envio.captureQuality, { plataforma: 'whatsapp', versao: 'teste', mensagens: 4, audios: 2, audiosTranscritos: 2 });
+  assert.deepEqual(envio.captureQuality, { plataforma: 'whatsapp', versao: 'teste', mensagens: 4, audios: 2, audiosTranscritos: 2, mensagensVendedor: 2, mensagensLead: 2 });
   pagina.fechar();
 });
 
@@ -431,5 +431,74 @@ test('WhatsApp: duplicado oferece abrir o existente (A09)', async () => {
   pagina.document.querySelector('[data-cr-acao="abrir"]').click();
   await esperar(() => !!servidor.chamadas.baixou, { motivo: 'abrir existente' });
   assert.equal(servidor.chamadas.reports.length, 1);
+  pagina.fechar();
+});
+
+// ---------------------------------------------------------------- leitura mais resistente a mudanças de layout
+test('Instagram: histórico que demora a carregar ainda é lido desde a primeira mensagem', async () => {
+  const longa = Array.from({ length: 40 }, (_, i) => ({ from: i % 2 ? 'eles' : 'eu', texto: `mensagem ${i}` }));
+  // Só as últimas 8 estão na tela; as antigas chegam de 10 em 10, e só na 3ª tentativa parada no topo.
+  const { envio, pagina } = await rodarInstagram(longa, { opcoes: { carregadasNoInicio: 8, atrasoTopo: 2 } });
+  assert.equal(envio.mensagens.length, 40, 'nenhuma mensagem antiga pode faltar');
+  assert.equal(envio.mensagens[0].content, 'mensagem 0');
+  assert.deepEqual(envio.mensagens.map(limpar), esperadas(longa));
+  pagina.fechar();
+});
+
+test('Instagram: sem o row-reverse, mensagem MINHA comprida continua sendo minha (posição por folga)', async () => {
+  const conversa = [
+    { from: 'eu', texto: 'Oi, tudo bem? Vi que você vende no Mercado Livre e queria entender a sua operação hoje' },
+    { from: 'eles', texto: 'Tudo sim! Vendo peças de moto, comecei faz uns dois anos e quero crescer' },
+    { from: 'eu', texto: 'Perfeito. Quanto você fatura por mês, mais ou menos, contando todos os canais?' },
+    { from: 'eles', texto: 'Uns 50 mil' },
+  ];
+  const { envio, pagina } = await rodarInstagram(conversa, { opcoes: { semFlex: true, longas: true } });
+  assert.deepEqual(envio.mensagens.map((m) => m.from), ['eu', 'eles', 'eu', 'eles']);
+  pagina.fechar();
+});
+
+const CONVERSA_SEM_SINAIS = [
+  { from: 'eu', texto: 'Oi Marcos, tudo bem?', hora: '10:00, 01/09/2026' },
+  { from: 'eles', texto: 'Tudo sim', hora: '10:01, 01/09/2026' },
+  { from: 'eu', texto: 'Consegue investir 3 mil?', hora: '10:02, 01/09/2026' },
+  { from: 'eles', tipo: 'audio' },
+  { from: 'eles', texto: 'ok', hora: '10:04, 01/09/2026' },
+  { from: 'eu', texto: 'Fechado', hora: '10:05, 01/09/2026' },
+  { from: 'eles', texto: 'Bora', hora: '10:06, 01/09/2026' },
+  { from: 'eu', texto: 'Te chamo amanhã', hora: '10:07, 01/09/2026' },
+];
+
+test('WhatsApp: sem classes, sem "true_/false_" e sem tique, o remetente sai pela posição da bolha', async () => {
+  const { envio, pagina } = await rodarWhatsApp(CONVERSA_SEM_SINAIS, { opcoes: { semSinais: true } });
+  assert.deepEqual(envio.mensagens.map((m) => m.from), ['eu', 'eles', 'eu', 'eles', 'eles', 'eu', 'eles', 'eu']);
+  assert.equal(envio.mensagens[3].content, 'transcrição do áudio 3');
+  assert.equal(envio.captureQuality.mensagensVendedor, 4);
+  assert.equal(envio.captureQuality.mensagensLead, 4);
+  assert.match(pagina.badge(), /8 mensagens · 4 suas · 4 do lead/);
+  assert.doesNotMatch(pagina.badge(), /Confira o report/);
+  pagina.fechar();
+});
+
+test('WhatsApp: se nada indica quem mandou, o aviso final manda conferir (em vez de passar batido)', async () => {
+  const { envio, pagina } = await rodarWhatsApp(CONVERSA_SEM_SINAIS, { opcoes: { semSinais: true, posicao: false } });
+  assert.equal(envio.captureQuality.mensagensVendedor, 0);
+  assert.match(pagina.badge(), /Confira o report: nenhuma mensagem sua foi reconhecida/);
+  pagina.fechar();
+});
+
+test('Instagram: o aviso final mostra quantas mensagens são suas e quantas do lead', async () => {
+  const { pagina } = await rodarInstagram(CONVERSA);
+  assert.match(pagina.badge(), /12 mensagens · 6 suas · 6 do lead/);
+  pagina.fechar();
+});
+
+test('Instagram: conversa curta, que cabe inteira na tela (sem rolagem), é lida', async () => {
+  const conversa = [
+    { from: 'eu', texto: 'Oi, tudo bem?' },
+    { from: 'eles', texto: 'Tudo, e você?' },
+    { from: 'eu', texto: 'Tudo ótimo' },
+  ];
+  const { envio, pagina } = await rodarInstagram(conversa, { visiveis: 6 });
+  assert.deepEqual(envio.mensagens.map(limpar), esperadas(conversa));
   pagina.fechar();
 });

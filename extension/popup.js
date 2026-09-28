@@ -6,7 +6,11 @@ const DEFAULT_SERVER = 'https://report-closer.vercel.app';
 
 // txt é texto puro (nome, erro de servidor etc. nunca viram HTML). Passe html:true
 // só com HTML que você mesmo montou, escapando o que vem de fora.
+// Sobe a cada mensagem: quem terminou um trabalho em segundo plano (validar a chave) confere se
+// ninguém escreveu nada depois dele antes de escrever por cima.
+let statusVersao = 0;
 function setStatus(txt, { erro = false, loading = false, html = false } = {}) {
+  statusVersao++;
   const el = $('status');
   el.className = 'status' + (erro ? ' erro' : '');
   el.textContent = '';
@@ -124,6 +128,10 @@ async function testarConexao() {
     return;
   }
   setStatus('Validando…', { loading: true });
+  // O SDR pode clicar em "Gerar" ou no .zip enquanto a chave valida: aí a mensagem dele é mais nova e
+  // o "Conectado como…" não pode apagá-la (o nome no topo do popup continua sendo atualizado).
+  const minhaVersao = statusVersao;
+  const podeEscrever = () => statusVersao === minhaVersao;
   try {
     const r = await fetch(server + '/api/eu', { headers: { 'x-cr-key': chave } });
     const j = await r.json().catch(() => ({}));
@@ -136,9 +144,11 @@ async function testarConexao() {
         esconderReport();
       }
     });
-    setStatus(`Conectado como <b>${escapeHtml(j.nome)}</b>.`, { html: true });
+    if (podeEscrever()) setStatus(`Conectado como <b>${escapeHtml(j.nome)}</b>.`, { html: true });
   } catch (err) {
-    setStatus('' + (err.message === 'Failed to fetch' ? 'Servidor não respondeu — confira a URL.' : err.message), { erro: true });
+    if (podeEscrever()) {
+      setStatus('' + (err.message === 'Failed to fetch' ? 'Servidor não respondeu — confira a URL.' : err.message), { erro: true });
+    }
   }
 }
 
@@ -162,6 +172,45 @@ async function gerar() {
     setStatus(err.message, { erro: true });
   } finally {
     $('gerar').disabled = false;
+  }
+}
+
+// .zip de hoje: os reports desta chave gerados hoje, só o último de cada lead — mesma regra da aba
+// "Reports do dia" do site (o servidor decide quais entram).
+async function baixarZipDoDia() {
+  const chave = getChave();
+  if (!chave) {
+    setStatus('Cole a sua chave de acesso (peça ao admin).', { erro: true });
+    return;
+  }
+  const btn = $('zipDia');
+  btn.disabled = true;
+  setStatus('Preparando o .zip de hoje…', { loading: true });
+  try {
+    const r = await fetch(getServer() + '/api/meus-reports/zip', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-cr-key': chave },
+      body: JSON.stringify({}),
+      signal: AbortSignal.timeout(120000),
+    });
+    if (!r.ok) {
+      const j = await r.json().catch(() => ({}));
+      throw new Error(j.erro || `Erro ${r.status}`);
+    }
+    const blob = await r.blob();
+    const m = (r.headers.get('Content-Disposition') || '').match(/filename="([^"]+)"/);
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = (m && m[1]) || 'reports.zip';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+    const n = r.headers.get('X-Reports-No-Zip');
+    setStatus(`.zip de hoje baixado${n ? ` com ${n} report(s)` : ''} — o último de cada lead.`);
+  } catch (e) {
+    const tempo = e && (e.name === 'TimeoutError' || e.name === 'AbortError');
+    setStatus(tempo ? 'O servidor demorou demais. Tente de novo.' : e.message === 'Failed to fetch' ? 'Servidor não respondeu.' : e.message, { erro: true });
+  } finally {
+    btn.disabled = false;
   }
 }
 
@@ -271,6 +320,7 @@ $('testar').addEventListener('click', () => {
   chrome.storage.local.set({ server: getServer(), chave: getChave() }, testarConexao);
 });
 $('gerar').addEventListener('click', gerar);
+$('zipDia').addEventListener('click', baixarZipDoDia);
 $('dl').addEventListener('click', baixarPdf);
 carregarUltimo();
 

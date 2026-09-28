@@ -1,27 +1,40 @@
 # Checklist — o que falta para terminar
 
-Atualizado em 18/09/2026, com a extensão **1.5.1** e todo o trabalho da auditoria feito e testado (117 testes).
+Atualizado em 28/09/2026, com a extensão **1.5.3** e todo o trabalho da auditoria feito e testado (117 testes).
 Detalhes técnicos em [`auditoria-pronix.md`](auditoria-pronix.md) e [`plano-implementacao.md`](plano-implementacao.md).
 
 ## A. Feito
 
 - [x] Achados A01–A21 tratados (status de cada um em `auditoria-pronix.md`)
 - [x] Prompt v2, conferência de citações sem IA, cache de transcrição, baseline no painel
-- [x] Extensão 1.5.1 empacotada (`C:\Users\caual\Downloads\PRONIX-extensao-loja.zip`)
+- [x] Extensão 1.5.3 empacotada (`C:\Users\caual\Downloads\PRONIX-extensao-loja.zip`)
 - [x] 117 testes automáticos (`npm test`), sem rede e sem custo
 - [x] Merge local na `main`
+
+## Novo em 28/09 (extensão 1.5.3 + servidor)
+
+- [x] **Reports do dia (.zip para o líder):** aba no site para todo usuário e botão no popup; só o último report de cada lead (dá para ajustar na lista). Admin: opção "só o último" no .zip da aba Arquivos, marcada por padrão.
+- [x] Leitura do Instagram: conversa curta (sem rolagem) não dava "Não achei a conversa"; histórico que demora a carregar não corta o começo; remetente de mensagem sua comprida.
+- [x] Leitura do WhatsApp: remetente pela posição da bolha quando os sinais somem (o `data-id` já perdeu o `true_/false_`).
+- [x] Aviso final com "X suas · Y do lead" e alerta quando um lado vem zerado; painel marca "remetente a conferir".
+- [x] Popup: a validação da chave não apaga mais a mensagem de "Gerar"/".zip" clicados logo ao abrir.
+
+Para testar a 1.5.3 (além da lista abaixo):
+- [ ] Gerar 2 reports do mesmo lead e baixar o .zip (popup e site): deve vir só o último
+- [ ] Conferir no aviso final se "X suas · Y do lead" bate com a conversa
+- [ ] Instagram: uma conversa curta (3–4 mensagens) e uma bem longa
 
 ## B. Com você (nada disso eu consigo fazer daqui)
 
 - [ ] `git push origin main` (sobe servidor, painel, documentação e o zip de download do painel)
 - [ ] Conferir na Vercel que o deploy terminou e abrir o painel (aba **Reports gerados**: deve aparecer a linha "No período: …% da entrada veio do cache…")
-- [ ] Carregar a extensão 1.5.1 e testar **antes de enviar à loja**:
+- [ ] Carregar a extensão 1.5.3 e testar **antes de enviar à loja**:
   - [ ] WhatsApp: gerar 1 report com áudio. Conferir "N áudio(s) transcrito(s)"
   - [ ] WhatsApp: gerar de novo a mesma conversa → deve aparecer **Abrir o existente** / **Gerar de novo**
   - [ ] WhatsApp: abrir outra conversa no meio da leitura → deve avisar "A conversa mudou…" e não gerar
-  - [ ] Instagram: gerar 1 report numa conversa longa (e, se der, com áudio). Se faltar mensagem, mandar as linhas `[CR-instagram v1.5.1]` do console (F12)
+  - [ ] Instagram: gerar 1 report numa conversa longa (e, se der, com áudio). Se faltar mensagem, mandar as linhas `[CR-instagram v1.5.3]` do console (F12)
   - [ ] Ouvir um áudio normalmente depois do report (o som tem que funcionar)
-- [ ] Enviar `PRONIX-extensao-loja.zip` (1.5.1) à Chrome Web Store
+- [ ] Enviar `PRONIX-extensao-loja.zip` (1.5.3) à Chrome Web Store
   - [ ] A permissão de hosts diminuiu (só `report-closer.vercel.app`): a loja pode pedir uma justificativa curta
   - [ ] Conferir a declaração de privacidade da loja com a política nova
 - [ ] Confirmar `GROQ_API_KEY` na Vercel e testar 1 print (aba manual) e 1 print bem comprido

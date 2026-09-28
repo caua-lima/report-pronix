@@ -349,12 +349,12 @@
     if (row.classList && (row.classList.contains('message-out') || row.querySelector('.message-out'))) return true;
     if (row.classList && (row.classList.contains('message-in') || row.querySelector('.message-in'))) return false;
 
-    // 3) Tique de status (enviado/entregue/lido): SÓ mensagem MINHA tem confirmação.
+    // 3) Tique de status (enviado/entregue/lido/enviando): SÓ mensagem MINHA tem confirmação.
     //    O lead nunca tem tique — então achar um aqui garante que é minha. Funciona em
     //    áudio, que era o furo: a voz da Agatha não tinha texto, mas TEM tique.
     if (
       row.querySelector &&
-      row.querySelector('[data-icon^="msg-check"], [data-icon^="msg-dblcheck"], [data-icon="status-dblcheck"], [data-icon="status-check"]')
+      row.querySelector('[data-icon^="msg-check"], [data-icon^="msg-dblcheck"], [data-icon="status-dblcheck"], [data-icon="status-check"], [data-icon="msg-time"]')
     ) {
       return true;
     }
@@ -366,15 +366,42 @@
       }
     }
 
-    // 5) data-pre-plain-text: "[hora, data] Remetente: " — "Você" = eu; nome = deles.
+    // 5) data-pre-plain-text: "[hora, data] Remetente: " — "Você" = eu. Um nome aqui NÃO decide sozinho:
+    //    em mensagem minha o WhatsApp pode mostrar o meu próprio nome, e não "Você".
     const copy = row.querySelector && row.querySelector('.copyable-text');
     const pre = copy && copy.getAttribute('data-pre-plain-text');
     if (pre) {
       const m = pre.match(/\]\s*(.+?):\s*$/);
-      if (m) return /^você$/i.test(m[1].trim());
+      if (m && /^você$/i.test(m[1].trim())) return true;
     }
 
+    // 6) Último recurso — posição na tela: bolha minha encosta na direita do painel, a do lead na esquerda.
+    //    O WhatsApp muda a marcação de tempos em tempos (o data-id já perdeu o "true_/false_"); sem isto,
+    //    quando todos os sinais acima somem, TUDO viraria mensagem do lead.
+    const lado = ladoNaTela(row);
+    if (lado) return lado === 'direita';
+
     return false; // padrão: lead
+  }
+
+  /** 'direita' | 'esquerda' | '' (não dá para dizer): de que lado do painel da conversa a bolha está. */
+  function ladoNaTela(row) {
+    try {
+      const alvo =
+        row.querySelector &&
+        row.querySelector('.selectable-text, .copyable-text, audio, input[type="range"], [data-icon*="audio" i], [data-icon*="ptt" i], img');
+      const painel = document.querySelector('#main');
+      if (!alvo || !painel) return '';
+      const a = alvo.getBoundingClientRect();
+      const p = painel.getBoundingClientRect();
+      if (!a.width || !p.width) return '';
+      const folgaEsq = a.left - p.left;
+      const folgaDir = p.right - a.right;
+      if (Math.abs(folgaEsq - folgaDir) < p.width * 0.08) return ''; // no meio: não decide
+      return folgaDir < folgaEsq ? 'direita' : 'esquerda';
+    } catch (_) {
+      return '';
+    }
   }
 
   // "20:57, 06/07/2026" -> { iso, ms }  (best-effort, formato pt-BR)
@@ -708,7 +735,10 @@
       total: mensagens.length,
       audios: audios.length,
       audiosTranscritos: audiosTranscritos.length,
+      doVendedor: mensagens.filter((m) => m.from === 'eu').length,
+      doLead: mensagens.filter((m) => m.from !== 'eu').length,
     };
+    logA(`remetentes: ${stats.doVendedor} do vendedor, ${stats.doLead} do lead (estratégia de leitura ${_estrategiaMsg})`);
 
     console.log(
       `[Closer Report] ${stats.total} mensagens lidas — ` +
@@ -843,6 +873,22 @@
     });
   }
 
+
+  // Quantas mensagens de cada lado. Se a leitura do remetente quebrar (o site mudou a marcação), aparece
+  // aqui na hora: "0 suas" numa conversa de 20 mensagens é leitura errada, e o SDR vê antes de mandar.
+  const remetenteSuspeito = (s) => !!s && s.total >= 6 && (s.doVendedor === 0 || s.doLead === 0);
+  function linhaRemetentes(s) {
+    if (!s || !s.total || s.doVendedor == null) return '';
+    const base = `<span style="color:#8b98a5">${s.total} mensagens · ${s.doVendedor} suas · ${s.doLead} do lead</span><br>`;
+    if (!remetenteSuspeito(s)) return base;
+    return (
+      base +
+      '<span style="color:#f0ad4e"><b>Confira o report:</b> ' +
+      (s.doVendedor === 0 ? 'nenhuma mensagem sua' : 'nenhuma mensagem do lead') +
+      ' foi reconhecida. Se estiver errado, copie o console (F12) e mande para o admin.</span><br>'
+    );
+  }
+
   let jobEmAndamento = false;
 
   async function gerarReportEmBackground(server) {
@@ -888,6 +934,8 @@
         mensagens: stats.total,
         audios: stats.audios,
         audiosTranscritos: stats.audiosTranscritos,
+        mensagensVendedor: stats.doVendedor,
+        mensagensLead: stats.doLead,
       };
       let resp = await new Promise((resolve) =>
         chrome.runtime.sendMessage({ action: 'reportFetch', server, mensagens, nome, captureQuality }, resolve)
@@ -943,7 +991,7 @@
                   : ' <span style="color:#8b98a5">— o resto entrou como [áudio]</span>');
 
       mostrarBadge({
-        texto: `<svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:-2px;flex:none" fill="none" stroke="#25d366" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="m9 11 3 3L22 4"/></svg> <b>Report pronto!</b> (${escHtml(nome || 'lead')})<br>${resumoAudio}`,
+        texto: `<svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:-2px;flex:none" fill="none" stroke="#25d366" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="m9 11 3 3L22 4"/></svg> <b>Report pronto!</b> (${escHtml(nome || 'lead')})<br>${linhaRemetentes(stats)}${resumoAudio}`,
         arquivo: resp.arquivo,
         server,
         arquivoBase64: resp.arquivoBase64,

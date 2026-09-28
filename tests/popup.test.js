@@ -26,7 +26,7 @@ const REPORT = {
 };
 
 /** Abre o popup com o storage inicial dado; `nomePorChave` simula o /api/eu do servidor. */
-async function abrirPopup(storageInicial, { nomePorChave = {} } = {}) {
+async function abrirPopup(storageInicial, { nomePorChave = {}, zip = null } = {}) {
   const html = fs.readFileSync(path.join(RAIZ, 'extension', 'popup.html'), 'utf8').replace(/<script[^>]*src=[^>]*><\/script>/g, '');
   const dom = new JSDOM(html, { url: 'chrome-extension://teste/popup.html', runScripts: 'outside-only', pretendToBeVisual: true });
   const w = dom.window;
@@ -49,15 +49,45 @@ async function abrirPopup(storageInicial, { nomePorChave = {} } = {}) {
       },
     },
   };
-  Object.defineProperty(w, 'crypto', { value: webcrypto, configurable: true });
-  w.TextEncoder = TextEncoder;
-  w.fetch = async (url, opts) => {
-    const chave = opts && opts.headers && opts.headers['x-cr-key'];
-    const nome = nomePorChave[chave];
-    return { ok: !!nome, json: async () => (nome ? { ok: true, nome } : { erro: 'Chave inválida.' }) };
+  // Conta o trabalho assíncrono em andamento (rede e hash da chave): o teste só fecha a janela
+  // quando o popup terminou — fechar no meio deixava promessas órfãs e o teste falhava às vezes.
+  let pendentes = 0;
+  const rastrear = (p) => {
+    pendentes++;
+    return p.finally(() => { pendentes--; });
   };
+  Object.defineProperty(w, 'crypto', {
+    value: { subtle: { digest: (...a) => rastrear(webcrypto.subtle.digest(...a)) } },
+    configurable: true,
+  });
+  w.TextEncoder = TextEncoder;
+  if (!w.AbortSignal.timeout) w.AbortSignal.timeout = () => new w.AbortController().signal;
+  const downloads = [];
+  w.URL.createObjectURL = () => 'blob:teste';
+  w.URL.revokeObjectURL = () => {};
+  w.HTMLAnchorElement.prototype.click = function () { downloads.push({ href: this.href, nome: this.download }); };
+  w.fetch = (url, opts) =>
+    rastrear((async () => {
+      if (String(url).includes('/api/meus-reports/zip')) return zip(url, opts);
+      const chave = opts && opts.headers && opts.headers['x-cr-key'];
+      const nome = nomePorChave[chave];
+      return { ok: !!nome, json: async () => (nome ? { ok: true, nome } : { erro: 'Chave inválida.' }) };
+    })());
   w.eval(fs.readFileSync(path.join(RAIZ, 'extension', 'popup.js'), 'utf8'));
-  return { w, document: w.document, storage };
+  return { w, document: w.document, storage, downloads, pendentes: () => pendentes };
+}
+
+/** Popup ocioso: nada de rede pendente e a validação da chave já terminou. */
+const pronto = (p) => esperar(
+  () => p.pendentes() === 0 && !/Validando/.test(p.document.getElementById('status').textContent),
+  { motivo: 'popup ocioso' }
+);
+
+/** Espera o popup terminar o que está fazendo (validação da chave, hash) e só então fecha. */
+async function fechar(p) {
+  await pronto(p);
+  await dormir(30);
+  return p.w.close();
 }
 
 test('A11: mostra o último report só para o dono da chave, no mesmo servidor', async () => {
@@ -67,23 +97,23 @@ test('A11: mostra o último report só para o dono da chave, no mesmo servidor',
   const ana = await abrirPopup({ chave: 'pnx_ana', server: SERVER, ultimoReport: guardado }, { nomePorChave: { pnx_ana: 'Ana' } });
   await esperar(() => !ana.document.getElementById('report').classList.contains('hidden'), { motivo: 'report da Ana' });
   assert.match(ana.document.getElementById('report').textContent, /Mostrar o caminho/);
-  ana.w.close();
+  await fechar(ana);
 
   const bia = await abrirPopup({ chave: 'pnx_bia', server: SERVER, ultimoReport: guardado }, { nomePorChave: { pnx_bia: 'Bia' } });
   await dormir(80);
   assert.ok(bia.document.getElementById('report').classList.contains('hidden'), 'report da Ana não pode aparecer para a Bia');
-  bia.w.close();
+  await fechar(bia);
 
   const outroServidor = await abrirPopup({ chave: 'pnx_ana', server: 'https://outro.exemplo.com', ultimoReport: guardado }, { nomePorChave: { pnx_ana: 'Ana' } });
   await dormir(80);
   assert.ok(outroServidor.document.getElementById('report').classList.contains('hidden'));
-  outroServidor.w.close();
+  await fechar(outroServidor);
 
   // Report antigo (versão anterior da extensão, sem "dono"): não mostra.
   const semDono = await abrirPopup({ chave: 'pnx_ana', server: SERVER, ultimoReport: { ...guardado, dono: undefined } });
   await dormir(80);
   assert.ok(semDono.document.getElementById('report').classList.contains('hidden'));
-  semDono.w.close();
+  await fechar(semDono);
 });
 
 test('A11: validar outra chave apaga o report guardado da pessoa anterior', async () => {
@@ -94,7 +124,7 @@ test('A11: validar outra chave apaga o report guardado da pessoa anterior', asyn
   );
   await esperar(() => !p.storage.ultimoReport, { motivo: 'report removido ao validar outra chave' });
   assert.ok(p.document.getElementById('report').classList.contains('hidden'));
-  p.w.close();
+  await fechar(p);
 });
 
 test('A10: a edição feita no popup é guardada (e sobrevive a fechar o popup)', async () => {
@@ -108,13 +138,13 @@ test('A10: a edição feita no popup é guardada (e sobrevive a fechar o popup)'
   await esperar(() => p.storage.ultimoReport.versao === 1, { motivo: 'edição gravada' });
   assert.equal(p.storage.ultimoReport.dados.secoes[0].itens[0], 'Mostrar o caminho do Mercado Livre');
   assert.equal(p.storage.ultimoReport.dono, dono, 'continua sendo da mesma pessoa');
-  p.w.close();
+  await fechar(p);
 
   // Popup reaberto: a versão editada é a que aparece.
   const reaberto = await abrirPopup(p.storage, { nomePorChave: { pnx_ana: 'Ana' } });
   await esperar(() => !reaberto.document.getElementById('report').classList.contains('hidden'), { motivo: 'report reaberto' });
   assert.match(reaberto.document.getElementById('report').textContent, /Mercado Livre/);
-  reaberto.w.close();
+  await fechar(reaberto);
 });
 
 test('A10: edição não sobrescreve um report NOVO que chegou enquanto o popup estava aberto', async () => {
@@ -131,5 +161,76 @@ test('A10: edição não sobrescreve um report NOVO que chegou enquanto o popup 
   await dormir(700);
   assert.equal(p.storage.ultimoReport.dados.lead, 'Outro Lead', 'o report novo continua intacto');
   assert.equal(p.storage.ultimoReport.versao, 0);
-  p.w.close();
+  await fechar(p);
+});
+
+// ---------------------------------------------------------------- .zip de hoje pelo popup
+const respostaZip = (p, cabecalhos, status = 200, corpo = {}) => ({
+  ok: status < 400,
+  status,
+  blob: async () => new p.w.Blob(['PK']),
+  json: async () => corpo,
+  headers: { get: (k) => cabecalhos[String(k).toLowerCase()] || null },
+});
+
+test('popup: "Baixar meus reports de hoje" baixa o .zip que o servidor montou (último de cada lead)', async () => {
+  const pedidos = [];
+  let p;
+  p = await abrirPopup({ chave: 'pnx_ana', server: SERVER }, {
+    nomePorChave: { pnx_ana: 'Ana' },
+    zip: async (url, opts) => {
+      pedidos.push({ url, opts });
+      return respostaZip(p, { 'content-disposition': 'attachment; filename="Reports_Ana_28-09-2026.zip"', 'x-reports-no-zip': '3' });
+    },
+  });
+  await pronto(p);
+  p.document.getElementById('zipDia').click();
+  await esperar(() => p.downloads.length === 1, { motivo: 'download do .zip' });
+  assert.equal(pedidos[0].url, SERVER + '/api/meus-reports/zip');
+  assert.equal(pedidos[0].opts.method, 'POST');
+  assert.equal(pedidos[0].opts.headers['x-cr-key'], 'pnx_ana');
+  assert.deepEqual(JSON.parse(pedidos[0].opts.body), {}, 'sem seleção: o servidor usa o último de cada lead');
+  assert.equal(p.downloads[0].nome, 'Reports_Ana_28-09-2026.zip');
+  await esperar(() => /baixado com 3 report/.test(p.document.getElementById('status').textContent), { motivo: 'status' });
+  assert.equal(p.document.getElementById('zipDia').disabled, false);
+  await fechar(p);
+});
+
+test('popup: sem report no dia, mostra o motivo e libera o botão', async () => {
+  let p;
+  p = await abrirPopup({ chave: 'pnx_ana', server: SERVER }, {
+    nomePorChave: { pnx_ana: 'Ana' },
+    zip: async () => respostaZip(p, {}, 400, { erro: 'Você não gerou nenhum report neste dia.' }),
+  });
+  await pronto(p);
+  p.document.getElementById('zipDia').click();
+  await esperar(() => /nenhum report neste dia/.test(p.document.getElementById('status').textContent), { motivo: 'erro na tela' });
+  assert.equal(p.downloads.length, 0);
+  assert.equal(p.document.getElementById('zipDia').disabled, false);
+  await fechar(p);
+});
+
+test('popup: sem chave, nem chama o servidor', async () => {
+  let chamou = false;
+  const p = await abrirPopup({ chave: '', server: SERVER }, { zip: async () => { chamou = true; } });
+  p.document.getElementById('zipDia').click();
+  await dormir(30);
+  assert.equal(chamou, false);
+  assert.match(p.document.getElementById('status').textContent, /Cole a sua chave/);
+  await fechar(p);
+});
+
+test('popup: clicar no .zip enquanto a chave ainda valida não perde a mensagem do .zip', async () => {
+  let p;
+  p = await abrirPopup({ chave: 'pnx_ana', server: SERVER }, {
+    nomePorChave: { pnx_ana: 'Ana' },
+    zip: async () => respostaZip(p, {}, 400, { erro: 'Você não gerou nenhum report neste dia.' }),
+  });
+  // Clica na hora, sem esperar o "Validando…" terminar.
+  p.document.getElementById('zipDia').click();
+  await pronto(p);
+  await dormir(50);
+  assert.match(p.document.getElementById('status').textContent, /nenhum report neste dia/);
+  assert.equal(p.document.getElementById('sdrNome').textContent, 'Ana', 'o nome no topo continua sendo atualizado');
+  await fechar(p);
 });

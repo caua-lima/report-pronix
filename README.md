@@ -207,6 +207,12 @@ report é sempre o dono da chave (`x-cr-key`).
 - **Captura parcial visível.** A extensão manda quantos áudios achou e quantos
   transcreveu (`captureQuality`); o servidor recalcula "incompleta" e o painel marca o
   report como *captura parcial*.
+- **Remetente conferido.** A extensão também manda quantas mensagens leu de cada lado;
+  o aviso final mostra "N mensagens · X suas · Y do lead" e alerta quando um lado vem
+  zerado numa conversa de 6+ mensagens (quase sempre é leitura errada do remetente). O
+  painel marca esses reports como *remetente a conferir*. Quando o WhatsApp/Instagram
+  some com os sinais de remetente, a extensão usa a posição da bolha (a sua encosta na
+  direita) em vez de jogar tudo para o lead.
 - **Trava de conversa.** Se o SDR abrir outra conversa durante a leitura, a extensão
   aborta em vez de misturar duas conversas (WhatsApp: id da conversa nos `data-id`;
   Instagram: endereço `/direct/t/<id>`). O nome do contato é o do começo da leitura.
@@ -280,6 +286,29 @@ nova — **pin em `^7.0.1`**: a partir da v8 o pacote virou ESM puro e quebra o
 some junto. Não há expurgo automático por tempo — como os arquivos são
 pequenos isso não é urgente, mas fica registrado como próximo passo caso vire
 necessidade.
+
+## Reports do dia (.zip para o líder)
+
+Todo usuário (SDR ou admin) baixa o .zip com **os próprios** reports do dia — pela aba
+**Reports do dia** do painel ou pelo botão **Baixar meus reports de hoje (.zip)** do
+popup da extensão.
+
+- **Só o último de cada lead.** Quando o SDR refaz o report de um lead (áudio que não
+  veio, informação lida errado), vale o último. `src/diario.js` agrupa por SDR + dia +
+  lead e marca o gerado por último. "Mesmo lead" = mesmo **contato** (nome ou telefone
+  que a extensão leu no cabeçalho, guardado em `contato` em cada report) — estável entre
+  gerações, ao contrário do nome que a IA devolve. Sem contato (reports manuais sem nome
+  ou anteriores a esta versão), usa o nome do lead. Status lido por engano ("online",
+  "Ativo(a) agora") nunca junta leads diferentes.
+- **Ajuste manual.** A aba lista todos os reports do dia com uma caixa por report
+  (marcada = vai no .zip); o SDR pode trocar qual versão manda.
+- `GET /api/meus-reports?dia=YYYY-MM-DD` (lista, com `usar`, `substituidoPor`,
+  `geracoes`) e `POST /api/meus-reports/zip` `{ dia, ids? }` — sem `ids`, o último de cada
+  lead; com `ids`, exatamente esses, sempre restritos aos reports **da própria chave**
+  naquele dia. Nome do arquivo: `Reports_<SDR>_<dd-mm-aaaa>.zip`; nomes repetidos dentro
+  do .zip ganham " (2)". Cabeçalhos `X-Reports-No-Zip` e `X-Reports-Sem-Pdf`.
+- **Admin:** o .zip da aba **Arquivos** tem a opção **"só o último report de cada lead
+  no dia"** marcada por padrão (`?ultimo=1` em `/api/admin/reports/pdf-zip`).
 
 ## Print de conversa (e uso no celular)
 

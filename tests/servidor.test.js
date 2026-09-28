@@ -154,7 +154,7 @@ test('gera o report: remove citação inventada e guarda a qualidade da captura'
   assert.equal(painel.qualidade.citacoesRemovidas, 1);
   assert.equal(painel.qualidade.taxaCache, 0);
   // "incompleta" é recalculada no servidor: 1 de 3 áudios = incompleta, mesmo o cliente mandando false.
-  assert.deepEqual(linha.captura, { plataforma: 'whatsapp', versao: '1.5.0', mensagens: 4, audios: 3, audiosTranscritos: 1, incompleta: true });
+  assert.deepEqual(linha.captura, { plataforma: 'whatsapp', versao: '1.5.0', mensagens: 4, audios: 3, audiosTranscritos: 1, incompleta: true, mensagensVendedor: null, mensagensLead: null, remetenteSuspeito: false });
 });
 
 test('o prompt separa a conversa por marcas e tem as regras de leitura (injeção, correção, faturamento)', async () => {
@@ -325,6 +325,13 @@ test('sanitizarCaptura recalcula "incompleta" e limita os números', () => {
   assert.equal(c.mensagens, 0);
   assert.equal(c.audiosTranscritos, 2, 'não pode ter mais transcritos que áudios');
   assert.equal(c.incompleta, false);
+  assert.equal(c.mensagensVendedor, null, 'extensão antiga: sem contagem');
+  assert.equal(c.remetenteSuspeito, false);
+
+  const suspeita = sanitizarCaptura({ mensagens: 20, audios: 0, audiosTranscritos: 0, mensagensVendedor: 0, mensagensLead: 20 });
+  assert.equal(suspeita.remetenteSuspeito, true, '20 mensagens e nenhuma do vendedor');
+  assert.equal(sanitizarCaptura({ mensagens: 4, mensagensVendedor: 0, mensagensLead: 4 }).remetenteSuspeito, false, 'conversa curta não conta');
+  assert.equal(sanitizarCaptura({ mensagens: 20, mensagensVendedor: 8, mensagensLead: 12 }).remetenteSuspeito, false);
 });
 
 // ---------------------------------------------------------------- .zip do dia (o último report de cada lead)
