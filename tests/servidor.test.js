@@ -326,3 +326,108 @@ test('sanitizarCaptura recalcula "incompleta" e limita os números', () => {
   assert.equal(c.audiosTranscritos, 2, 'não pode ter mais transcritos que áudios');
   assert.equal(c.incompleta, false);
 });
+
+// ---------------------------------------------------------------- .zip do dia (o último report de cada lead)
+/** Lista os nomes dos arquivos de um .zip lendo o diretório central (sem dependência nova). */
+function listarZip(buf) {
+  const eocd = buf.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
+  const total = buf.readUInt16LE(eocd + 10);
+  let p = buf.readUInt32LE(eocd + 16);
+  const nomes = [];
+  for (let i = 0; i < total; i++) {
+    const nLen = buf.readUInt16LE(p + 28);
+    const xLen = buf.readUInt16LE(p + 30);
+    const cLen = buf.readUInt16LE(p + 32);
+    nomes.push(buf.slice(p + 46, p + 46 + nLen).toString('utf8'));
+    p += 46 + nLen + xLen + cLen;
+  }
+  return nomes;
+}
+
+async function baixar(metodo, rota, { chave, admin, corpo } = {}) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (chave) headers['x-cr-key'] = chave;
+  if (admin) headers['x-admin-pass'] = 'senha-de-teste';
+  const r = await global.fetch(base + rota, { method: metodo, headers, body: corpo ? JSON.stringify(corpo) : undefined });
+  const buf = Buffer.from(await r.arrayBuffer());
+  return { status: r.status, headers: r.headers, buf };
+}
+
+/** Gera um report com o nome que a IA "devolve" (vira o nome do arquivo) para um contato. */
+async function gerarComo(chave, contato, leadDaIa, variacao) {
+  const resposta = anthropicPadrao();
+  resposta.content[0].input.lead = leadDaIa;
+  respostaAnthropic = resposta;
+  const conversa = msgs.concat([{ from: 'eles', type: 'texto', content: 'detalhe ' + variacao }]);
+  const r = await api('POST', '/api/report-direto', { chave, corpo: { mensagens: conversa, nome: contato } });
+  respostaAnthropic = null;
+  assert.equal(r.status, 200, JSON.stringify(r.json));
+  return r;
+}
+
+const Z = {};
+test('zip do dia: prepara SDRs e reports (3 do mesmo contato, 1 de outro lead, 1 de outro SDR)', async () => {
+  Z.duda = (await api('POST', '/api/admin/usuarios', { admin: true, corpo: { nome: 'Duda Araújo', papel: 'sdr' } })).json.usuario.chave;
+  Z.edu = (await api('POST', '/api/admin/usuarios', { admin: true, corpo: { nome: 'Edu SDR', papel: 'sdr' } })).json.usuario.chave;
+  // Contato não salvo (telefone): a IA devolve um nome diferente a cada geração, mas é o MESMO lead.
+  await gerarComo(Z.duda, '+55 11 98888-7777', 'Rafael v1', 1);
+  await gerarComo(Z.duda, '+55 11 98888-7777', 'Rafael v2', 2);
+  await gerarComo(Z.duda, '+55 11 98888-7777', 'Rafael v3', 3);
+  await gerarComo(Z.duda, 'Júlia Ramos', 'Júlia Ramos', 4);
+  await gerarComo(Z.edu, '+55 11 98888-7777', 'Rafael do Edu', 5);
+});
+
+test('zip do dia: a lista do SDR mostra só os dele, com o último de cada lead marcado', async () => {
+  const r = await api('GET', '/api/meus-reports', { chave: Z.duda });
+  assert.equal(r.status, 200);
+  assert.equal(r.json.total, 4);
+  assert.equal(r.json.leads, 2);
+  const rafael = r.json.reports.filter((x) => x.contato === '+55 11 98888-7777');
+  assert.deepEqual(rafael.map((x) => x.usar), [false, false, true]);
+  assert.deepEqual(rafael.map((x) => x.geracoes), [3, 3, 3]);
+  assert.equal(rafael[0].substituidoPor, rafael[2].id);
+  assert.ok(r.json.reports.every((x) => !/Edu/.test(x.lead)), 'report de outro SDR não aparece');
+  Z.lista = r.json.reports;
+
+  assert.equal((await api('GET', '/api/meus-reports')).status, 401);
+  const outroDia = await api('GET', '/api/meus-reports?dia=2020-01-01', { chave: Z.duda });
+  assert.equal(outroDia.json.total, 0);
+});
+
+test('zip do dia: sem escolher nada, o .zip leva só o último de cada lead', async () => {
+  const z = await baixar('POST', '/api/meus-reports/zip', { chave: Z.duda, corpo: {} });
+  assert.equal(z.status, 200);
+  assert.match(z.headers.get('content-type'), /zip/);
+  assert.match(z.headers.get('content-disposition'), /Reports_Duda-Araujo_\d{2}-\d{2}-\d{4}\.zip/);
+  assert.equal(z.headers.get('x-reports-no-zip'), '2');
+  assert.equal(z.headers.get('x-reports-sem-pdf'), '0');
+  const nomes = listarZip(z.buf).sort();
+  assert.equal(nomes.length, 2);
+  assert.match(nomes[0], /^Report_Julia-Ramos_/);
+  assert.match(nomes[1], /^Report_Rafael-v3_/, 'do Rafael, só a 3ª geração');
+});
+
+test('zip do dia: com a seleção da tela, leva exatamente o que foi marcado (e nada de outro SDR)', async () => {
+  const primeiro = Z.lista.find((x) => /v1/.test(x.lead));
+  const doEdu = (await api('GET', '/api/meus-reports', { chave: Z.edu })).json.reports[0];
+  const z = await baixar('POST', '/api/meus-reports/zip', { chave: Z.duda, corpo: { ids: [primeiro.id, doEdu.id] } });
+  assert.equal(z.status, 200);
+  assert.deepEqual(listarZip(z.buf).map((n) => n.replace(/_\d.*$/, '')), ['Report_Rafael-v1']);
+
+  const nada = await baixar('POST', '/api/meus-reports/zip', { chave: Z.duda, corpo: { ids: [] } });
+  assert.equal(nada.status, 400);
+  const outroDia = await baixar('POST', '/api/meus-reports/zip', { chave: Z.duda, corpo: { dia: '2020-01-01' } });
+  assert.equal(outroDia.status, 400);
+  assert.match(JSON.parse(outroDia.buf.toString()).erro, /nenhum report neste dia/i);
+});
+
+test('zip do admin: com "só o último", tira os refeitos; sem, leva tudo', async () => {
+  const hoje = Z.lista[0].quando ? (await api('GET', '/api/meus-reports', { chave: Z.duda })).json.dia : '';
+  const todos = await baixar('GET', `/api/admin/reports/pdf-zip?de=${hoje}&ate=${hoje}&sdr=${encodeURIComponent('Duda Araújo')}`, { admin: true });
+  assert.equal(listarZip(todos.buf).length, 4);
+  const ultimos = await baixar('GET', `/api/admin/reports/pdf-zip?de=${hoje}&ate=${hoje}&sdr=${encodeURIComponent('Duda Araújo')}&ultimo=1`, { admin: true });
+  const nomes = listarZip(ultimos.buf).sort();
+  assert.equal(nomes.length, 2);
+  assert.ok(nomes.every((n) => n.startsWith('Duda Araújo/')));
+  assert.match(nomes[1], /Rafael-v3/);
+});

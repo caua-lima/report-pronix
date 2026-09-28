@@ -23,7 +23,7 @@ const LIMITE_CONSUMO = 20000;
  *   PDF sob a mesma chave em src/pdfStorage.js), passa aqui; senão gera um novo.
  */
 async function registrar({
-  id, usuarioId, usuarioNome, lead, origem, uso, reportKey, arquivo, qualidade, captura, citacoesRemovidas,
+  id, usuarioId, usuarioNome, lead, contato, origem, uso, reportKey, arquivo, qualidade, captura, citacoesRemovidas,
 }) {
   const quando = new Date().toISOString();
   const u = uso || {};
@@ -43,6 +43,9 @@ async function registrar({
       usuarioId: usuarioId || '',
       usuarioNome: usuarioNome || '',
       lead: lead || '',
+      // Nome/telefone que a extensão leu no cabeçalho da conversa (ou o nome digitado no modo manual).
+      // É o que identifica "o mesmo lead" entre gerações — ver src/diario.js.
+      contato: String(contato || '').trim().slice(0, 120),
       origem: origem || 'extensao', // extensao | manual
       quando,
       dia: emDiaLocal(quando), // dia no fuso do time, para o filtro do dashboard

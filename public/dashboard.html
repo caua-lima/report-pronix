@@ -122,6 +122,7 @@
     .spinner { width: 14px; height: 14px; border: 2px solid color-mix(in srgb, var(--muted) 30%, transparent); border-top-color: var(--ouro); border-radius: 50%; animation: spin .7s linear infinite; flex: none; }
     @keyframes spin { to { transform: rotate(360deg); } }
     .hidden { display: none !important; }
+    tr.substituido td { opacity: .55; }
     .hint { font-size: .8rem; color: var(--muted); margin-top: 10px; line-height: 1.6; }
 
     /* ---------- Ícones ---------- */
@@ -239,6 +240,7 @@
     </div>
     <nav class="menu">
       <button class="tab on" data-aba="report"><i data-ic="file-text"></i>Gerar report</button>
+      <button class="tab" data-aba="dia"><i data-ic="download"></i>Reports do dia</button>
       <button class="tab so-admin hidden" data-aba="acessos"><i data-ic="key"></i>Acessos</button>
       <button class="tab so-admin hidden" data-aba="numeros"><i data-ic="chart"></i>Reports gerados</button>
       <button class="tab so-admin hidden" data-aba="arquivos"><i data-ic="download"></i>Arquivos</button>
@@ -314,6 +316,27 @@
         </div>
         <div class="hint" style="margin:0 0 10px">Clique em qualquer trecho para editar. O PDF é gerado com as suas alterações.</div>
         <div id="report" class="report editavel"></div>
+      </div>
+    </section>
+
+    <!-- ================= ABA: REPORTS DO DIA (todo usuário, só os próprios) ================= -->
+    <section id="aba-dia" class="hidden">
+      <div class="card">
+        <div class="head"><div class="t"><i data-ic="download"></i>Reports do dia</div><div class="sub">— o .zip com os seus reports, para mandar ao líder no fim do dia</div></div>
+        <div class="hint" style="margin:0 0 12px">Gerou mais de um report do mesmo lead? O .zip leva só o <b>último</b> de cada um. Se precisar, marque ou desmarque na lista antes de baixar.</div>
+        <div class="row">
+          <div style="flex:1;min-width:160px"><label for="diaMeus">Dia</label><input id="diaMeus" type="date" /></div>
+          <button id="verMeus" class="btn sec"><i data-ic="refresh"></i>Atualizar</button>
+          <button id="baixarMeus" class="btn"><i data-ic="download"></i>Baixar .zip do dia</button>
+        </div>
+        <div id="statusMeus" class="status"></div>
+      </div>
+      <div class="card">
+        <table>
+          <thead><tr><th style="width:44px">No .zip</th><th>Lead</th><th>Horário</th><th>Origem</th><th></th></tr></thead>
+          <tbody id="listaMeus"></tbody>
+        </table>
+        <div id="vazioMeus" class="hint">Nenhum report neste dia.</div>
       </div>
     </section>
 
@@ -509,6 +532,10 @@
             <button id="verArquivos" class="btn">Ver</button>
             <button id="baixarZipTudo" class="btn sec"><i data-ic="download"></i>Baixar tudo (.zip)</button>
           </div>
+          <label style="display:flex;align-items:center;gap:8px;margin-top:10px;font-weight:500">
+            <input id="soUltimoArq" type="checkbox" checked style="width:auto" />
+            No .zip, só o último report de cada lead no dia (os refeitos ficam de fora)
+          </label>
           <div id="statusArquivos" class="status"></div>
         </div>
 
@@ -685,7 +712,7 @@
     }
 
     // ---------- Menu ----------
-    const ABAS = ['report', 'acessos', 'numeros', 'arquivos', 'base', 'extensao'];
+    const ABAS = ['report', 'dia', 'acessos', 'numeros', 'arquivos', 'base', 'extensao'];
     const SO_ADMIN = ['acessos', 'numeros', 'arquivos', 'base', 'extensao'];
     let souAdmin = false;
     // Guardado porque a chave é validada de forma assíncrona: quem abre direto
@@ -701,6 +728,7 @@
       document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('on', t.dataset.aba === aba));
       location.hash = aba;
       if (SO_ADMIN.includes(aba)) pedirAdmin();
+      if (aba === 'dia') carregarMeus();
     }
 
     /** Mostra ou esconde as abas de admin conforme o papel da chave. */
@@ -1187,6 +1215,13 @@
     $('filtroSdrArq').addEventListener('change', carregarArquivos);
     $('verArquivos').addEventListener('click', carregarArquivos);
 
+    // Filtro do .zip = filtro da tela + "só o último de cada lead" (marcado por padrão).
+    function queryZipArq(extra) {
+      const q = filtroArqQuery(extra);
+      if ($('soUltimoArq').checked) q.set('ultimo', '1');
+      return q;
+    }
+
     function filtroArqQuery(extra) {
       const q = new URLSearchParams();
       if ($('deArq').value) q.set('de', $('deArq').value);
@@ -1237,7 +1272,7 @@
       btn.disabled = true;
       setStatus('statusArquivos', 'Preparando o .zip…', { loading: true });
       try {
-        await baixarArquivoAdmin('/api/admin/reports/pdf-zip?' + filtroArqQuery().toString(), 'reports.zip');
+        await baixarArquivoAdmin('/api/admin/reports/pdf-zip?' + queryZipArq().toString(), 'reports.zip');
         setStatus('statusArquivos', 'Download iniciado.', { ok: true });
       } catch (e) {
         setStatus('statusArquivos', e.message, { erro: true });
@@ -1254,7 +1289,7 @@
         const nomeSdr = bZipSdr.dataset.baixarZipSdr;
         try {
           await baixarArquivoAdmin(
-            '/api/admin/reports/pdf-zip?' + filtroArqQuery({ sdr: nomeSdr }).toString(),
+            '/api/admin/reports/pdf-zip?' + queryZipArq({ sdr: nomeSdr }).toString(),
             nomeSdr + '.zip'
           );
         } catch (e) {
@@ -1756,6 +1791,107 @@
     $('chave').addEventListener('change', () => localStorage.setItem('crChave', getChave()));
     $('chave').value = localStorage.getItem('crChave') || '';
     if (getChave()) validarChave(); else setStatus('statusChave', 'Cole a sua chave para usar.', {});
+
+    // ---------- Aba: Reports do dia (todo usuário; o servidor só devolve os reports da própria chave) ----------
+    const horaBR = (iso) => new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    let meusDia = null; // dia que está na lista (é o que vai no .zip)
+
+    function resumoMeus() {
+      const caixas = [...document.querySelectorAll('#listaMeus [data-meu]')];
+      const marcados = caixas.filter((c) => c.checked).length;
+      return { caixas, marcados };
+    }
+    function mostrarResumoMeus(j) {
+      const { marcados } = resumoMeus();
+      setStatus('statusMeus',
+        `${j.total} report(s) gerado(s) · ${j.leads} lead(s) · o .zip leva ${marcados}` +
+        (j.total > j.leads ? ` (${j.total - j.leads} refeito(s) ficam de fora)` : '') + '.',
+        { ok: true });
+    }
+    let ultimoMeus = null;
+
+    async function carregarMeus() {
+      if (!$('diaMeus').value) $('diaMeus').value = hojeISO();
+      if (!getChave()) {
+        setStatus('statusMeus', 'Cole a sua chave na aba "Gerar report" primeiro.', { erro: true });
+        return;
+      }
+      const dia = $('diaMeus').value;
+      setStatus('statusMeus', 'Carregando…', { loading: true });
+      try {
+        const r = await fetchComTempo('/api/meus-reports?dia=' + encodeURIComponent(dia), { headers: hdr() }, 30000);
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.erro || 'Falha ao carregar os reports do dia.');
+        meusDia = j.dia;
+        ultimoMeus = j;
+        const porId = new Map(j.reports.map((x) => [x.id, x]));
+        $('vazioMeus').style.display = j.reports.length ? 'none' : '';
+        $('listaMeus').innerHTML = j.reports.map((x) => {
+          const novo = x.substituidoPor ? porId.get(x.substituidoPor) : null;
+          const nota = x.usar
+            ? (x.geracoes > 1 ? `o último de ${x.geracoes} gerados` : '')
+            : `refeito — vale o das ${novo ? horaBR(novo.quando) : '?'}`;
+          return `<tr class="${x.usar ? '' : 'substituido'}">
+            <td><input type="checkbox" data-meu="${esc(x.id)}" ${x.usar ? 'checked' : ''} style="width:auto" /></td>
+            <td>${esc(x.lead || x.contato || '—')}</td>
+            <td>${horaBR(x.quando)}</td>
+            <td><span class="tag">${x.origem === 'manual' ? 'manual' : 'extensão'}</span></td>
+            <td style="color:var(--muted);font-size:.82rem">${esc(nota)}</td>
+          </tr>`;
+        }).join('');
+        mostrarResumoMeus(j);
+      } catch (e) {
+        setStatus('statusMeus', e.message, { erro: true });
+      }
+    }
+    $('verMeus').addEventListener('click', carregarMeus);
+    $('diaMeus').addEventListener('change', carregarMeus);
+    $('listaMeus').addEventListener('change', (ev) => {
+      const c = ev.target.closest('[data-meu]');
+      if (!c) return;
+      c.closest('tr').classList.toggle('substituido', !c.checked);
+      if (ultimoMeus) mostrarResumoMeus(ultimoMeus);
+    });
+
+    $('baixarMeus').addEventListener('click', async () => {
+      if (!getChave()) { setStatus('statusMeus', 'Cole a sua chave na aba "Gerar report" primeiro.', { erro: true }); return; }
+      const { caixas, marcados } = resumoMeus();
+      const dia = meusDia || $('diaMeus').value || hojeISO();
+      const corpo = { dia };
+      // Lista na tela: vai o que está marcado. Sem lista (ainda carregando): o servidor usa o último de cada lead.
+      if (caixas.length) {
+        if (!marcados) { setStatus('statusMeus', 'Marque pelo menos um report para baixar.', { erro: true }); return; }
+        corpo.ids = caixas.filter((c) => c.checked).map((c) => c.dataset.meu);
+      }
+      const btn = $('baixarMeus');
+      btn.disabled = true;
+      setStatus('statusMeus', 'Preparando o .zip…', { loading: true });
+      try {
+        const r = await fetchComTempo('/api/meus-reports/zip', {
+          method: 'POST', headers: hdr({ 'Content-Type': 'application/json' }), body: JSON.stringify(corpo),
+        }, 120000);
+        if (!r.ok) {
+          const j = await r.json().catch(() => ({}));
+          throw new Error(j.erro || 'Falha ao gerar o .zip.');
+        }
+        const blob = await r.blob();
+        const m = (r.headers.get('Content-Disposition') || '').match(/filename="([^"]+)"/);
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = (m && m[1]) || 'reports.zip';
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+        const n = r.headers.get('X-Reports-No-Zip') || '';
+        const sem = Number(r.headers.get('X-Reports-Sem-Pdf') || 0);
+        setStatus('statusMeus',
+          `.zip baixado com ${n} report(s).` + (sem ? ` ${sem} não tinha(m) PDF guardado e ficou(aram) de fora.` : ''),
+          { ok: true });
+      } catch (e) {
+        setStatus('statusMeus', e.message, { erro: true });
+      } finally {
+        btn.disabled = false;
+      }
+    });
 
     // ---------- Início ----------
     aplicarIcones(); // ícones da estrutura fixa

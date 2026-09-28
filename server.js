@@ -21,6 +21,7 @@ const stats = require('./src/stats');
 const pdfStorage = require('./src/pdfStorage');
 const db = require('./src/db');
 const base = require('./src/base');
+const diario = require('./src/diario');
 
 const QUALIDADES_VALIDAS = new Set(['eco', 'standard', 'premium']);
 const qualidadeValida = (q) => (QUALIDADES_VALIDAS.has(q) ? q : 'standard');
@@ -36,6 +37,8 @@ app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Headers', 'Content-Type, x-cr-key, x-admin-pass');
   res.header('Access-Control-Allow-Methods', 'GET,POST,PATCH,DELETE,OPTIONS');
+  // A extensão lê o nome do .zip e quantos reports foram nele.
+  res.header('Access-Control-Expose-Headers', 'Content-Disposition, X-Reports-No-Zip, X-Reports-Sem-Pdf');
   if (req.method === 'OPTIONS') return res.sendStatus(204);
   next();
 });
@@ -303,37 +306,114 @@ const TETO_ZIP = 500; // protege contra timeout/memória num filtro largo demais
  */
 app.get('/api/admin/reports/pdf-zip', admin, async (req, res) => {
   try {
-    const registros = await stats.listar(filtroDaQuery(req.query));
+    const todos = await stats.listar(filtroDaQuery(req.query));
+    // ?ultimo=1: do mesmo lead no mesmo dia (por SDR), só o report gerado por último.
+    const registros = req.query.ultimo === '1' ? diario.marcarUltimos(todos).filter((r) => r.usar) : todos;
     if (registros.length > TETO_ZIP) {
       return res.status(400).json({
         erro: `Filtro largo demais (${registros.length} reports). Estreite o período ou escolha um SDR — o limite por download é ${TETO_ZIP}.`,
       });
     }
 
-    const comPdf = (
-      await Promise.all(
-        registros.map(async (r) => ({ r, salvo: await pdfStorage.ler(r.id).catch(() => null) }))
-      )
-    ).filter((x) => x.salvo && x.salvo.base64);
-
+    const comPdf = await lerPdfs(registros);
     if (comPdf.length === 0) {
       return res.status(404).json({ erro: 'Nenhum PDF encontrado para esse filtro.' });
     }
 
     const nomeZip = `Reports_PRONIX_${new Date().toISOString().slice(0, 10)}.zip`;
-    res.set('Content-Type', 'application/zip');
-    res.set('Content-Disposition', `attachment; filename="${nomeZip}"`);
+    await enviarZip(
+      res,
+      nomeZip,
+      comPdf.map(({ r, salvo }) => ({ nome: `${pastaSegura(r.usuarioNome)}/${salvo.arquivo || r.id + '.pdf'}`, base64: salvo.base64 }))
+    );
+  } catch (err) {
+    if (!res.headersSent) res.status(500).json({ erro: err.message });
+  }
+});
 
-    const zip = archiver('zip', { zlib: { level: 9 } });
-    zip.on('error', (err) => res.status(500).end(err.message));
-    zip.pipe(res);
-    comPdf.forEach(({ r, salvo }) => {
-      const pasta = pastaSegura(r.usuarioNome);
-      zip.append(Buffer.from(salvo.base64, 'base64'), {
-        name: `${pasta}/${salvo.arquivo || r.id + '.pdf'}`,
-      });
+/** Lê os PDFs guardados dos reports (os que não têm PDF — reports antigos — ficam de fora). */
+async function lerPdfs(registros) {
+  const lidos = await Promise.all(registros.map(async (r) => ({ r, salvo: await pdfStorage.ler(r.id).catch(() => null) })));
+  return lidos.filter((x) => x.salvo && x.salvo.base64);
+}
+
+/** Monta e envia o .zip. Nomes repetidos (dois leads com o mesmo nome) ganham " (2)" para não se sobrescreverem. */
+async function enviarZip(res, nomeZip, arquivos) {
+  res.set('Content-Type', 'application/zip');
+  res.set('Content-Disposition', `attachment; filename="${nomeZip}"`);
+  const zip = archiver('zip', { zlib: { level: 9 } });
+  zip.on('error', (err) => res.status(500).end(err.message));
+  zip.pipe(res);
+  const nomes = diario.nomesUnicos(arquivos.map((a) => a.nome));
+  arquivos.forEach((a, i) => zip.append(Buffer.from(a.base64, 'base64'), { name: nomes[i] }));
+  await zip.finalize();
+}
+
+// ---------------------------------------------------------------------------
+// Reports do dia do PRÓPRIO usuário — o .zip que vai para o líder no fim do dia.
+// Quando o mesmo lead teve mais de um report no dia, vale o último (src/diario.js).
+// Qualquer usuário com chave usa; cada um só enxerga os seus.
+// ---------------------------------------------------------------------------
+async function meusReportsDoDia(usuario, dia) {
+  const doDia = await stats.listar({ de: dia, ate: dia });
+  return diario.marcarUltimos(doDia.filter((r) => r.usuarioId === usuario.id));
+}
+
+app.get('/api/meus-reports', auth, async (req, res) => {
+  try {
+    const dia = dataOk(req.query.dia) || stats.hojeStr();
+    const marcados = await meusReportsDoDia(req.usuario, dia);
+    res.json({
+      dia,
+      total: marcados.length,
+      leads: marcados.filter((r) => r.usar).length,
+      reports: marcados.map((r) => ({
+        id: r.id,
+        lead: r.lead,
+        contato: r.contato || '',
+        quando: r.quando,
+        origem: r.origem,
+        arquivo: r.arquivo,
+        usar: r.usar,
+        substituidoPor: r.substituidoPor,
+        geracoes: r.geracoes,
+      })),
     });
-    await zip.finalize();
+  } catch (err) {
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+app.post('/api/meus-reports/zip', auth, async (req, res) => {
+  try {
+    const body = req.body || {};
+    const dia = dataOk(body.dia) || stats.hojeStr();
+    const marcados = await meusReportsDoDia(req.usuario, dia);
+    // Sem "ids": o último de cada lead. Com "ids": o que o usuário marcou na tela — sempre
+    // restrito aos reports DELE naquele dia (id de outra pessoa é simplesmente ignorado).
+    let escolhidos;
+    if (Array.isArray(body.ids)) {
+      const pedidos = new Set(body.ids.slice(0, 500).map(String));
+      escolhidos = marcados.filter((r) => pedidos.has(r.id));
+    } else {
+      escolhidos = marcados.filter((r) => r.usar);
+    }
+    if (!escolhidos.length) {
+      return res.status(400).json({
+        erro: marcados.length ? 'Marque pelo menos um report para baixar.' : 'Você não gerou nenhum report neste dia.',
+      });
+    }
+    const comPdf = await lerPdfs(escolhidos);
+    if (!comPdf.length) return res.status(404).json({ erro: 'O PDF desses reports não está guardado.' });
+
+    const diaBr = dia.split('-').reverse().join('-');
+    res.set('X-Reports-No-Zip', String(comPdf.length));
+    res.set('X-Reports-Sem-Pdf', String(escolhidos.length - comPdf.length));
+    await enviarZip(
+      res,
+      `Reports_${diario.nomeAscii(req.usuario.nome)}_${diaBr}.zip`,
+      comPdf.map(({ r, salvo }) => ({ nome: salvo.arquivo || r.arquivo || r.id + '.pdf', base64: salvo.base64 }))
+    );
   } catch (err) {
     if (!res.headersSent) res.status(500).json({ erro: err.message });
   }
@@ -385,6 +465,7 @@ async function responderReport(req, res, dados, nome, origem, reportKey, captura
       usuarioId: req.usuario.id,
       usuarioNome: req.usuario.nome,
       lead: dados.lead || nome || '',
+      contato: nome,
       origem,
       uso,
       reportKey,

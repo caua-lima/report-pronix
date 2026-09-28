@@ -32,16 +32,16 @@ function criarApi(padroes = {}) {
       const h = handlers.get(chave) || [...handlers].find(([k]) => new RegExp('^' + k + '$').test(chave))?.[1];
       if (!h) return resposta(404, { erro: 'rota sem handler no teste: ' + chave });
       const r = await h({ corpo, url: u, query: u.searchParams });
-      return resposta(r.status || 200, r.corpo);
+      return resposta(r.status || 200, r.corpo, r.headers);
     },
   };
   Object.entries(padroes).forEach(([k, fn]) => api.quando(k, fn));
   return api;
 }
-const resposta = (status, corpo) => ({
+const resposta = (status, corpo, headers = {}) => ({
   ok: status < 400,
   status,
-  headers: { get: () => '' },
+  headers: { get: (k) => headers[String(k).toLowerCase()] || '' },
   json: async () => corpo,
   blob: async () => ({}),
 });
@@ -484,4 +484,114 @@ test('A10: o report editado sobrevive a recarregar a página e só volta para a 
   await dormir(40);
   assert.ok(!visivel(outra.$('resultado')), 'report de outra pessoa não aparece');
   outra.fechar();
+});
+
+// ---------------------------------------------------------------- Reports do dia (.zip para o líder)
+const DIA = {
+  dia: '2026-09-28', total: 4, leads: 2,
+  reports: [
+    { id: 'a1', lead: 'Rafael', contato: '+55 11 98888-7777', quando: '2026-09-28T13:00:00.000Z', origem: 'extensao', usar: false, substituidoPor: 'a3', geracoes: 3 },
+    { id: 'a2', lead: 'Rafael', contato: '+55 11 98888-7777', quando: '2026-09-28T14:00:00.000Z', origem: 'extensao', usar: false, substituidoPor: 'a3', geracoes: 3 },
+    { id: 'a3', lead: 'Rafael', contato: '+55 11 98888-7777', quando: '2026-09-28T15:30:00.000Z', origem: 'extensao', usar: true, substituidoPor: null, geracoes: 3 },
+    { id: 'b1', lead: 'Júlia <b>', contato: 'Júlia', quando: '2026-09-28T16:00:00.000Z', origem: 'manual', usar: true, substituidoPor: null, geracoes: 1 },
+  ],
+};
+const apiDoDia = () =>
+  apiBase({ papel: 'sdr', nome: 'Ana' })
+    .quando('GET /api/meus-reports', () => ({ corpo: DIA }))
+    .quando('POST /api/meus-reports/zip', () => ({
+      corpo: {},
+      headers: { 'content-disposition': 'attachment; filename="Reports_Ana_28-09-2026.zip"', 'x-reports-no-zip': '2', 'x-reports-sem-pdf': '0' },
+    }));
+const caixa = (p, id) => p.document.querySelector(`[data-meu="${id}"]`);
+
+test('Reports do dia: a aba aparece para o SDR e marca só o último de cada lead', async () => {
+  const api = apiDoDia();
+  const p = abrirPainel(api, { hash: '#dia' });
+  await esperar(() => p.$('listaMeus').querySelectorAll('tr').length === 4, { motivo: 'lista do dia' });
+  assert.ok(visivel(p.$('aba-dia')), 'SDR (não admin) abre a aba');
+  assert.ok(visivel(p.document.querySelector('.tab[data-aba="dia"]')));
+  assert.deepEqual(['a1', 'a2', 'a3', 'b1'].map((id) => caixa(p, id).checked), [false, false, true, true]);
+  assert.match(p.$('listaMeus').textContent, /refeito — vale o das/);
+  assert.match(p.$('listaMeus').textContent, /o último de 3 gerados/);
+  assert.equal(p.$('listaMeus').querySelector('b'), null, 'nome do lead não vira HTML');
+  assert.match(p.$('statusMeus').textContent, /4 report\(s\) gerado\(s\) · 2 lead\(s\) · o \.zip leva 2 \(2 refeito\(s\) ficam de fora\)/);
+  assert.equal(api.pedidos.filter((x) => x.chave.includes('/api/admin/')).length, 0);
+  assert.deepEqual(p.erros, []);
+  p.fechar();
+});
+
+test('Reports do dia: baixar manda os marcados e baixa o .zip com o nome do servidor', async () => {
+  const api = apiDoDia();
+  const p = abrirPainel(api, { hash: '#dia' });
+  await esperar(() => p.$('listaMeus').querySelectorAll('tr').length === 4, { motivo: 'lista do dia' });
+
+  // O SDR prefere a 2ª versão do Rafael: marca a2 e desmarca a3.
+  caixa(p, 'a2').checked = true;
+  caixa(p, 'a2').dispatchEvent(new p.w.Event('change', { bubbles: true }));
+  caixa(p, 'a3').checked = false;
+  caixa(p, 'a3').dispatchEvent(new p.w.Event('change', { bubbles: true }));
+  assert.match(p.$('statusMeus').textContent, /o \.zip leva 2/);
+
+  p.$('baixarMeus').click();
+  await esperar(() => p.downloads.length === 1, { motivo: 'download do .zip' });
+  assert.deepEqual(api.corpos('POST /api/meus-reports/zip'), [{ dia: '2026-09-28', ids: ['a2', 'b1'] }]);
+  assert.equal(p.downloads[0].nome, 'Reports_Ana_28-09-2026.zip');
+  assert.match(p.$('statusMeus').textContent, /\.zip baixado com 2 report\(s\)/);
+  assert.equal(p.$('baixarMeus').disabled, false);
+  p.fechar();
+});
+
+test('Reports do dia: nada marcado não chama o servidor; erro do servidor aparece e o botão volta', async () => {
+  const api = apiDoDia();
+  const p = abrirPainel(api, { hash: '#dia' });
+  await esperar(() => p.$('listaMeus').querySelectorAll('tr').length === 4, { motivo: 'lista do dia' });
+  p.document.querySelectorAll('[data-meu]').forEach((c) => { c.checked = false; });
+  p.$('baixarMeus').click();
+  assert.match(p.$('statusMeus').textContent, /Marque pelo menos um/);
+  assert.equal(api.contar('POST /api/meus-reports/zip'), 0);
+
+  caixa(p, 'b1').checked = true;
+  api.quando('POST /api/meus-reports/zip', () => ({ status: 404, corpo: { erro: 'O PDF desses reports não está guardado.' } }));
+  p.$('baixarMeus').click();
+  await esperar(() => /não está guardado/.test(p.$('statusMeus').textContent), { motivo: 'erro na tela' });
+  assert.equal(p.$('baixarMeus').disabled, false);
+  assert.equal(p.downloads.length, 0);
+  p.fechar();
+});
+
+test('Reports do dia: trocar a data recarrega a lista daquele dia', async () => {
+  const api = apiDoDia();
+  const p = abrirPainel(api, { hash: '#dia' });
+  await esperar(() => api.contar('GET /api/meus-reports') === 1, { motivo: 'primeira carga' });
+  p.$('diaMeus').value = '2026-09-25';
+  p.$('diaMeus').dispatchEvent(new p.w.Event('change', { bubbles: true }));
+  await esperar(() => api.contar('GET /api/meus-reports') === 2, { motivo: 'recarga' });
+  const ultimo = api.pedidos.filter((x) => x.chave === 'GET /api/meus-reports').at(-1);
+  assert.equal(ultimo.query.get('dia'), '2026-09-25');
+  await esperar(() => p.$('listaMeus').querySelectorAll('tr').length === 4, { motivo: 'lista renderizada' });
+  p.fechar();
+});
+
+test('Arquivos (admin): o .zip vai com "só o último de cada lead" por padrão, e dá pra desligar', async () => {
+  const api = apiBase({ stats: statsVazio({ porUsuario: [{ nome: 'Ana', total: 3, custo: 0.1, entrada: 1, saida: 1 }] }) });
+  api.quando('GET /api/admin/reports/pdf-zip', () => ({ corpo: {} }));
+  const p = abrirPainel(api, { hash: '#arquivos' });
+  await esperar(() => p.$('porSdrArquivos').textContent.includes('Ana'), { motivo: 'aba arquivos' });
+  assert.equal(p.$('soUltimoArq').checked, true);
+
+  p.$('baixarZipTudo').click();
+  await esperar(() => api.contar('GET /api/admin/reports/pdf-zip') === 1, { motivo: 'zip com ultimo' });
+  p.document.querySelector('[data-baixar-zip-sdr]').click();
+  await esperar(() => api.contar('GET /api/admin/reports/pdf-zip') === 2, { motivo: 'zip do SDR' });
+  p.$('soUltimoArq').checked = false;
+  await esperar(() => !p.$('baixarZipTudo').disabled, { motivo: 'botão livre depois do 1º download' });
+  p.$('baixarZipTudo').click();
+  await esperar(() => api.contar('GET /api/admin/reports/pdf-zip') === 3, { motivo: 'zip sem ultimo' });
+
+  const queries = api.pedidos.filter((x) => x.chave === 'GET /api/admin/reports/pdf-zip').map((x) => x.query);
+  assert.deepEqual(queries.map((q) => q.get('ultimo')), ['1', '1', null]);
+  assert.equal(queries[1].get('sdr'), 'Ana');
+  await esperar(() => !p.$('baixarZipTudo').disabled, { motivo: 'botão livre' });
+  p.fechar();
 });
