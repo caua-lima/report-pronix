@@ -595,3 +595,46 @@ test('Arquivos (admin): o .zip vai com "só o último de cada lead" por padrão,
   await esperar(() => !p.$('baixarZipTudo').disabled, { motivo: 'botão livre' });
   p.fechar();
 });
+
+// ---------------------------------------------------------------- Ficha do RD Station: teste do admin
+test('Extensão (admin): testar a ficha do RD mostra o que o SDR vai ver e quais formatos de telefone foram tentados', async () => {
+  const api = apiBase().quando('POST /api/admin/crm/teste', ({ corpo }) => ({
+    corpo: {
+      configurado: true, encontrado: true,
+      ficha: {
+        nome: 'Marcos <b>Pereira</b>',
+        negociacao: { etapa: 'MQL', funil: 'Funil MQL', responsavel: 'Cauã Lima' },
+        formulario: { campos: [{ rotulo: 'Investimento', valor: '+ de R$5.000' }] },
+        campos: [{ rotulo: 'Cidade', valor: 'Salvador' }],
+      },
+      diagnostico: { tentativas: [{ variante: '71999998888', resultados: 0, bateu: false }, { variante: '(71) 99999-8888', resultados: 1, bateu: true }] },
+      pedido: corpo,
+    },
+  }));
+  const p = abrirPainel(api, { hash: '#extensao' });
+  await aberto(p);
+  p.$('crmTeste').value = '(71) 99999-8888';
+  p.$('crmTestar').click();
+  await esperar(() => !p.$('resultadoCrm').classList.contains('hidden'), { motivo: 'resultado do teste' });
+  assert.deepEqual(api.corpos('POST /api/admin/crm/teste'), [{ telefone: '71999998888' }]);
+  const t = p.$('resultadoCrm').textContent;
+  assert.match(t, /Telefone "\(71\) 99999-8888": 1 resultado\(s\)  ← achou por este/);
+  assert.match(t, /Etapa: MQL · Funil MQL/);
+  assert.match(t, /Investimento: \+ de R\$5\.000/);
+  assert.match(t, /Cidade: Salvador/);
+  assert.equal(p.$('resultadoCrm').querySelector('b'), null, 'dado do CRM não vira HTML');
+  assert.match(p.$('statusCrm').textContent, /Encontrado/);
+  p.fechar();
+});
+
+test('Extensão (admin): sem token no servidor, avisa o que falta; nome vai como nome', async () => {
+  const api = apiBase().quando('POST /api/admin/crm/teste', () => ({ corpo: { configurado: false } }));
+  const p = abrirPainel(api, { hash: '#extensao' });
+  await aberto(p);
+  p.$('crmTeste').value = 'Marcos Pereira';
+  p.$('crmTestar').click();
+  await esperar(() => /RDSTATION_CRM_TOKEN/.test(p.$('statusCrm').textContent), { motivo: 'aviso de token' });
+  assert.deepEqual(api.corpos('POST /api/admin/crm/teste'), [{ nome: 'Marcos Pereira' }]);
+  assert.equal(p.$('crmTestar').disabled, false);
+  p.fechar();
+});

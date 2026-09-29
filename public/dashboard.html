@@ -629,6 +629,16 @@
         <div class="head"><div class="t"><i data-ic="chart"></i>Report do dia</div><div class="sub">— texto do fechamento diário</div></div>
         <a href="/dia" class="btn sec" style="display:inline-block;text-decoration:none">Abrir report do dia</a>
       </div>
+      <div class="card">
+        <div class="head"><div class="t"><i data-ic="target"></i>Ficha do lead (RD Station CRM)</div><div class="sub">— o cartão que aparece no WhatsApp ao abrir uma conversa</div></div>
+        <div class="hint" style="margin:0 0 12px">Precisa da variável <code>RDSTATION_CRM_TOKEN</code> na Vercel. Teste com o telefone (ou o nome) de um lead que já está no RD: aparece exatamente o que o SDR vai ver.</div>
+        <div class="row">
+          <input id="crmTeste" class="grow" type="text" placeholder="Telefone (ex.: 71 99999-8888) ou nome do lead" />
+          <button id="crmTestar" class="btn sec">Testar</button>
+        </div>
+        <div id="statusCrm" class="status"></div>
+        <pre id="resultadoCrm" class="hint hidden" style="white-space:pre-wrap;margin:8px 0 0"></pre>
+      </div>
     </section>
   </div>
 
@@ -1890,6 +1900,48 @@
         setStatus('statusMeus', e.message, { erro: true });
       } finally {
         btn.disabled = false;
+      }
+    });
+
+    // ---------- Aba Extensão: teste da ficha do RD Station CRM (admin) ----------
+    $('crmTestar').addEventListener('click', async () => {
+      const v = $('crmTeste').value.trim();
+      if (!v) { setStatus('statusCrm', 'Digite o telefone ou o nome de um lead que está no RD.', { erro: true }); return; }
+      const digitos = v.replace(/\D/g, '');
+      const corpo = digitos.length >= 8 && !/[a-zA-ZÀ-ÿ]/.test(v) ? { telefone: digitos } : { nome: v };
+      $('crmTestar').disabled = true;
+      $('resultadoCrm').classList.add('hidden');
+      setStatus('statusCrm', 'Consultando o RD Station…', { loading: true });
+      try {
+        const r = await api('POST', '/api/admin/crm/teste', corpo);
+        if (!r.configurado) {
+          setStatus('statusCrm', 'O token do RD Station ainda não está no servidor (variável RDSTATION_CRM_TOKEN na Vercel).', { erro: true });
+          return;
+        }
+        const linhas = [];
+        ((r.diagnostico && r.diagnostico.tentativas) || []).forEach((t) =>
+          linhas.push(t.nome
+            ? `Busca pelo nome: ${t.resultados} resultado(s)`
+            : `Telefone "${t.variante}": ${t.resultados} resultado(s)${t.bateu ? '  ← achou por este' : ''}`));
+        if (r.encontrado) {
+          const f = r.ficha;
+          const n = f.negociacao || {};
+          linhas.push('', `Lead: ${f.nome}`, `Etapa: ${[n.etapa, n.funil].filter(Boolean).join(' · ') || '—'}`, `Responsável: ${n.responsavel || '—'}`);
+          ((f.formulario && f.formulario.campos) || []).forEach((c) => linhas.push(`${c.rotulo}: ${c.valor}`));
+          (f.campos || []).forEach((c) => linhas.push(`${c.rotulo}: ${c.valor}`));
+          setStatus('statusCrm', 'Encontrado. É isto que o SDR vai ver no WhatsApp:', { ok: true });
+        } else if (r.candidatos && r.candidatos.length) {
+          r.candidatos.forEach((c) => linhas.push(`• ${c.nome}  ${c.telefone || ''}`));
+          setStatus('statusCrm', 'Mais de um contato com esse nome — no WhatsApp o SDR escolhe na lista.', { ok: true });
+        } else {
+          setStatus('statusCrm', 'Não encontrado no RD Station. Confira se esse telefone está no contato do RD.', { erro: true });
+        }
+        $('resultadoCrm').textContent = linhas.join('\n');
+        $('resultadoCrm').classList.toggle('hidden', !linhas.length);
+      } catch (e) {
+        setStatus('statusCrm', e.message, { erro: true });
+      } finally {
+        $('crmTestar').disabled = false;
       }
     });
 

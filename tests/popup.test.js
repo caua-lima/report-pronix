@@ -234,3 +234,17 @@ test('popup: clicar no .zip enquanto a chave ainda valida não perde a mensagem 
   assert.equal(p.document.getElementById('sdrNome').textContent, 'Ana', 'o nome no topo continua sendo atualizado');
   await fechar(p);
 });
+
+test('popup: liga/desliga da ficha do RD Station fica salvo (ligado por padrão)', async () => {
+  const p = await abrirPopup({ chave: 'pnx_ana', server: SERVER }, { nomePorChave: { pnx_ana: 'Ana' } });
+  const caixa = p.document.getElementById('fichaCrm');
+  assert.equal(caixa.checked, true);
+  caixa.checked = false;
+  caixa.dispatchEvent(new p.w.Event('change', { bubbles: true }));
+  assert.equal(p.storage.fichaCrm, false);
+  await fechar(p);
+
+  const reaberto = await abrirPopup(p.storage, { nomePorChave: { pnx_ana: 'Ana' } });
+  assert.equal(reaberto.document.getElementById('fichaCrm').checked, false);
+  await fechar(reaberto);
+});

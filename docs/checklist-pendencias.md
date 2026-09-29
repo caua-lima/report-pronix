@@ -11,6 +11,15 @@ Detalhes técnicos em [`auditoria-pronix.md`](auditoria-pronix.md) e [`plano-imp
 - [x] 117 testes automáticos (`npm test`), sem rede e sem custo
 - [x] Merge local na `main`
 
+## Novo em 29/09: ficha do lead do RD Station no WhatsApp (extensão 1.6.0 + servidor)
+
+- [x] Cartão no WhatsApp Web com etapa, funil, responsável, respostas do formulário, campos e anotações do RD Station CRM; busca por telefone (vários formatos, confere os 8 últimos dígitos), por nome (lista quando há mais de um) e manual no cartão.
+- [x] Liga/desliga no popup; minimizar e fechar por conversa.
+- [x] Teste do admin no painel (aba Extensão) mostrando os formatos de telefone tentados.
+- [ ] **Você:** criar a variável `RDSTATION_CRM_TOKEN` na Vercel (token de um usuário do CRM que vê todas as negociações) e fazer redeploy
+- [ ] **Você:** no painel → Extensão → Ficha do lead → **Testar** com o telefone de um lead que está no RD (ex.: o do print)
+- [ ] **Você:** enviar a extensão 1.6.0 à Chrome Web Store e abrir a conversa desse lead no WhatsApp
+
 ## Novo em 28/09 (extensão 1.5.3 + servidor)
 
 - [x] **Reports do dia (.zip para o líder):** aba no site para todo usuário e botão no popup; só o último report de cada lead (dá para ajustar na lista). Admin: opção "só o último" no .zip da aba Arquivos, marcada por padrão.

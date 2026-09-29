@@ -79,6 +79,21 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
+  // Ficha do lead no RD Station CRM (o token do CRM fica no servidor; aqui só vai telefone/nome).
+  if (msg && msg.action === 'crmLead') {
+    (async () => {
+      const corpo = {
+        telefone: String(msg.telefone || '').slice(0, 30),
+        nome: String(msg.nome || '').slice(0, 80),
+        contatoId: String(msg.contatoId || '').slice(0, 40),
+      };
+      const r = await chamar('/api/crm/lead', corpo, { timeoutMs: 20000 });
+      if (!r.ok) return sendResponse({ ok: false, erro: r.erro });
+      sendResponse({ ok: true, ...r.data });
+    })();
+    return true;
+  }
+
   if (msg && msg.action === 'reportFetch') {
     (async () => {
       const r = await chamar('/api/report-direto', {

@@ -26,7 +26,7 @@ async function esperar(cond, { ms = 20000, motivo = 'condição' } = {}) {
  * @param {{arquivo: string, url: string, aoEnviar?: Function, blobs?: Map}} o
  *   aoEnviar(msg) responde às mensagens ao service worker (transcreverAudio, reportFetch...)
  */
-function abrirPagina({ arquivo, url, aoEnviar, blobs = new Map() }) {
+function abrirPagina({ arquivo, url, aoEnviar, blobs = new Map(), intervaloRapido = false, storage: storageInicial = {} }) {
   const dom = new JSDOM('<!doctype html><html><head></head><body></body></html>', {
     url,
     pretendToBeVisual: true,
@@ -37,11 +37,17 @@ function abrirPagina({ arquivo, url, aoEnviar, blobs = new Map() }) {
   // Os "sleeps" dos scripts (centenas de ms) viram 0ms: o teste roda rápido e sem depender de relógio.
   const setTimeoutReal = w.setTimeout.bind(w);
   w.setTimeout = (fn, _ms, ...args) => setTimeoutReal(fn, 0, ...args);
+  // Vigias com setInterval (ficha do CRM: 1,5s) ficam no tempo real, a não ser que o teste peça rápido.
+  if (intervaloRapido) {
+    const setIntervalReal = w.setInterval.bind(w);
+    w.setInterval = (fn, _ms, ...args) => setIntervalReal(fn, 10, ...args);
+  }
   w.document.documentElement.setAttribute('data-cr-audio-hook', '1'); // gancho "instalado"
 
   const enviadas = [];
   const ouvintes = [];
-  const storage = {};
+  const storage = { ...storageInicial };
+  const ouvintesStorage = [];
   w.chrome = {
     runtime: {
       lastError: null,
@@ -57,10 +63,14 @@ function abrirPagina({ arquivo, url, aoEnviar, blobs = new Map() }) {
       local: {
         get: (padrao, cb) => cb(Object.assign({}, padrao, storage)),
         set: (o, cb) => {
+          const mud = {};
+          Object.keys(o).forEach((k) => { mud[k] = { oldValue: storage[k], newValue: o[k] }; });
           Object.assign(storage, o);
+          ouvintesStorage.forEach((fn) => fn(mud, 'local'));
           if (cb) cb();
         },
       },
+      onChanged: { addListener: (fn) => ouvintesStorage.push(fn) },
     },
   };
   w.confirm = () => true;

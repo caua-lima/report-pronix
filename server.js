@@ -22,6 +22,7 @@ const pdfStorage = require('./src/pdfStorage');
 const db = require('./src/db');
 const base = require('./src/base');
 const diario = require('./src/diario');
+const crm = require('./src/crm');
 
 const QUALIDADES_VALIDAS = new Set(['eco', 'standard', 'premium']);
 const qualidadeValida = (q) => (QUALIDADES_VALIDAS.has(q) ? q : 'standard');
@@ -348,6 +349,29 @@ async function enviarZip(res, nomeZip, arquivos) {
   arquivos.forEach((a, i) => zip.append(Buffer.from(a.base64, 'base64'), { name: nomes[i] }));
   await zip.finalize();
 }
+
+// ---------------------------------------------------------------------------
+// Ficha do lead no RD Station CRM — o cartão que a extensão mostra no WhatsApp Web.
+// POST (e não GET) para o telefone/nome do lead não ficar em URL nem em log de acesso.
+// ---------------------------------------------------------------------------
+app.post('/api/crm/lead', auth, async (req, res) => {
+  try {
+    const { telefone, nome, contatoId } = req.body || {};
+    res.json(await crm.consultarLead({ telefone, nome, contatoId }));
+  } catch (err) {
+    res.status(502).json({ erro: err.message });
+  }
+});
+
+/** Teste do admin: mesma busca, sem cache e com o passo a passo (quais formatos de telefone foram tentados). */
+app.post('/api/admin/crm/teste', admin, async (req, res) => {
+  try {
+    const { telefone, nome } = req.body || {};
+    res.json(await crm.consultarLead({ telefone, nome }, { diagnostico: true, semCache: true }));
+  } catch (err) {
+    res.status(502).json({ erro: err.message });
+  }
+});
 
 // ---------------------------------------------------------------------------
 // Reports do dia do PRÓPRIO usuário — o .zip que vai para o líder no fim do dia.

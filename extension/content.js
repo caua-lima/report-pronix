@@ -1005,6 +1005,262 @@
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // Ficha do lead (RD Station CRM): ao abrir uma conversa, um cartão no canto mostra a negociação
+  // do lead — etapa, funil, responsável e as respostas do formulário (Profissão, Estado,
+  // Investimento...) — para prospectar sem trocar de aba. Liga/desliga no popup da extensão.
+  // Tudo que vem do CRM entra na tela como TEXTO (textContent), nunca como HTML.
+  // ---------------------------------------------------------------------------
+  const FICHA_ID = 'cr-ficha-crm';
+  const ficha = { ligada: true, minimizada: false, chave: null, fechadaPara: null, seq: 0, timer: null, vigia: null };
+
+  /** Telefone da conversa aberta: o cabeçalho (contato não salvo mostra o número) ou o id do chat no data-id. */
+  function telefoneDaConversa() {
+    const header = document.querySelector('#main header');
+    if (header) {
+      for (const s of header.querySelectorAll('span[title], span[dir="auto"]')) {
+        const t = (s.getAttribute('title') || s.textContent || '').trim();
+        if (/^\+?[\d\s().-]{10,22}$/.test(t)) return t.replace(/\D/g, '');
+      }
+    }
+    const main = document.querySelector('#main');
+    if (main) {
+      for (const el of main.querySelectorAll('[data-id]')) {
+        const m = /(\d{10,15})@c\.us/.exec(el.getAttribute('data-id') || '');
+        if (m) return m[1];
+      }
+    }
+    return '';
+  }
+
+  /** Cria um elemento com estilo e filhos; string vira nó de TEXTO (dado do CRM nunca vira HTML). */
+  function elem(tag, estilo, ...filhos) {
+    const e = document.createElement(tag);
+    if (estilo) e.style.cssText = estilo;
+    filhos.flat().forEach((f) => {
+      if (f == null || f === false) return;
+      e.appendChild(typeof f === 'string' ? document.createTextNode(f) : f);
+    });
+    return e;
+  }
+  const botaoFicha = (rotulo, aoClicar, destaque) => {
+    const b = elem(
+      'button',
+      `cursor:pointer;border:0;border-radius:7px;padding:5px 9px;font-weight:600;font-size:12px;line-height:1.2;font-family:inherit;${destaque ? 'background:#ffc400;color:#121214' : 'background:#26333f;color:#e6edf3'}`,
+      rotulo
+    );
+    b.type = 'button';
+    b.addEventListener('click', aoClicar);
+    return b;
+  };
+  const linhaCampo = (rotulo, valor, forte) =>
+    elem(
+      'div',
+      'margin:5px 0',
+      elem('div', 'font-size:11px;color:#8b98a5;text-transform:uppercase;letter-spacing:.03em', rotulo),
+      elem('div', `color:${forte ? '#ffc400' : '#e6edf3'};font-weight:${forte ? 700 : 500};word-break:break-word`, valor)
+    );
+
+  function esconderFicha() {
+    const el = document.getElementById(FICHA_ID);
+    if (el) el.remove();
+  }
+
+  function formBusca() {
+    const input = elem('input', 'flex:1;min-width:0;background:#0d141c;border:1px solid #26333f;border-radius:7px;color:#e6edf3;padding:5px 8px;font-size:12px;font-family:inherit');
+    input.placeholder = 'Telefone ou nome no RD';
+    const buscar = () => {
+      const v = input.value.trim();
+      if (!v) return;
+      const digitos = v.replace(/\D/g, '');
+      consultarFicha(digitos.length >= 8 && !/[a-zA-ZÀ-ÿ]/.test(v) ? { telefone: digitos } : { nome: v });
+    };
+    input.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter') buscar();
+    });
+    return elem('div', 'display:flex;gap:6px;margin-top:10px', input, botaoFicha('Buscar', buscar));
+  }
+
+  function renderFicha(estado) {
+    if (!ficha.ligada || (ficha.fechadaPara && ficha.fechadaPara === ficha.chave)) return;
+    let el = document.getElementById(FICHA_ID);
+    if (!el) {
+      el = document.createElement('div');
+      el.id = FICHA_ID;
+      // Fora do #main de propósito: a leitura da conversa (report) nunca pode confundir o cartão com mensagem.
+      el.style.cssText = [
+        'position:fixed', 'top:70px', 'right:16px', 'z-index:2147483646', 'width:290px',
+        'max-height:calc(100vh - 150px)', 'overflow:auto', 'background:#16212e', 'color:#e6edf3',
+        'border:1px solid #26333f', 'border-left:4px solid #ffc400', 'border-radius:10px', 'padding:10px 12px',
+        'font:13px/1.4 -apple-system,Segoe UI,Roboto,sans-serif', 'box-shadow:0 6px 24px rgba(0,0,0,.4)',
+      ].join(';');
+      document.body.appendChild(el);
+    }
+    el.textContent = '';
+
+    const titulo = estado.ficha ? estado.ficha.nome || 'Lead' : 'Ficha do lead';
+    const btnMin = botaoFicha(ficha.minimizada ? '+' : '–', () => {
+      ficha.minimizada = !ficha.minimizada;
+      try {
+        chrome.storage.local.set({ fichaCrmMinimizada: ficha.minimizada });
+      } catch (_) {
+        /* ok */
+      }
+      renderFicha(estado);
+    });
+    btnMin.title = ficha.minimizada ? 'Abrir a ficha' : 'Minimizar';
+    const btnX = botaoFicha('×', () => {
+      ficha.fechadaPara = ficha.chave; // só nesta conversa; abre de novo na próxima
+      esconderFicha();
+    });
+    btnX.title = 'Fechar nesta conversa';
+    el.appendChild(
+      elem(
+        'div',
+        'display:flex;align-items:center;gap:6px',
+        elem('div', 'flex:1;min-width:0',
+          elem('div', 'font-size:10.5px;color:#ffc400;font-weight:700;letter-spacing:.06em', 'RD STATION'),
+          elem('div', 'font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis', titulo)),
+        btnMin,
+        btnX
+      )
+    );
+    if (ficha.minimizada) return;
+
+    const corpo = elem('div', 'margin-top:8px');
+    el.appendChild(corpo);
+
+    if (estado.tipo === 'carregando') {
+      corpo.appendChild(elem('div', 'color:#8b98a5', 'Buscando no RD Station…'));
+      return;
+    }
+    if (estado.tipo === 'erro') {
+      corpo.appendChild(elem('div', 'color:#ff6b6b', estado.erro));
+      corpo.appendChild(elem('div', 'margin-top:8px', botaoFicha('Tentar de novo', () => consultarFicha(estado.busca))));
+      return;
+    }
+    if (estado.tipo === 'nao-encontrado') {
+      corpo.appendChild(elem('div', 'color:#8b98a5', 'Não achei este lead no RD Station. Busque pelo telefone ou nome:'));
+      corpo.appendChild(formBusca());
+      return;
+    }
+    if (estado.tipo === 'candidatos') {
+      corpo.appendChild(elem('div', 'color:#8b98a5;margin-bottom:6px', 'Mais de um contato com esse nome. Qual é?'));
+      estado.candidatos.forEach((c) => {
+        const b = botaoFicha([c.nome, c.telefone].filter(Boolean).join(' · '), () => consultarFicha({ contatoId: c.id }));
+        b.style.cssText += ';display:block;width:100%;text-align:left;margin:4px 0';
+        corpo.appendChild(b);
+      });
+      corpo.appendChild(formBusca());
+      return;
+    }
+
+    // Ficha encontrada
+    const f = estado.ficha;
+    const n = f.negociacao;
+    if (n) {
+      const etapa = [n.etapa, n.funil].filter(Boolean).join(' · ');
+      if (etapa) corpo.appendChild(elem('div', 'font-weight:600', etapa));
+      if (n.responsavel) corpo.appendChild(elem('div', 'color:#8b98a5;font-size:12px', 'Responsável: ' + n.responsavel));
+    } else {
+      corpo.appendChild(elem('div', 'color:#8b98a5', 'Contato sem negociação no RD.'));
+    }
+    if (f.formulario && f.formulario.campos.length) {
+      const bloco = elem('div', 'margin-top:8px;padding-top:6px;border-top:1px solid #26333f');
+      f.formulario.campos.forEach((c) => bloco.appendChild(linhaCampo(c.rotulo, c.valor, /invest/i.test(c.rotulo))));
+      const meta = [f.formulario.autor, f.formulario.quando].filter(Boolean).join(' · ');
+      if (meta) bloco.appendChild(elem('div', 'font-size:11px;color:#8b98a5;margin-top:4px', 'Anotado por ' + meta));
+      corpo.appendChild(bloco);
+    }
+    if (f.campos && f.campos.length) {
+      const bloco = elem('div', 'margin-top:8px;padding-top:6px;border-top:1px solid #26333f');
+      f.campos.forEach((c) => bloco.appendChild(linhaCampo(c.rotulo, c.valor)));
+      corpo.appendChild(bloco);
+    }
+    if (f.anotacoes && f.anotacoes.length) {
+      const det = document.createElement('details');
+      det.style.cssText = 'margin-top:8px;padding-top:6px;border-top:1px solid #26333f';
+      det.appendChild(elem('summary', 'cursor:pointer;color:#8b98a5;font-size:12px', `Outras anotações (${f.anotacoes.length})`));
+      f.anotacoes.forEach((a) => {
+        det.appendChild(elem('div', 'font-size:11px;color:#8b98a5;margin-top:6px', [a.autor, a.quando].filter(Boolean).join(' · ')));
+        det.appendChild(elem('div', 'white-space:pre-wrap;word-break:break-word', a.texto));
+      });
+      corpo.appendChild(det);
+    }
+    if (f.totalNegociacoes > 1) {
+      corpo.appendChild(elem('div', 'font-size:11px;color:#8b98a5;margin-top:6px', `Este contato tem ${f.totalNegociacoes} negociações — mostrando a em aberto.`));
+    }
+    if (n && /^https:\/\/crm\.rdstation\.com\//.test(n.url || '')) {
+      const a = elem('a', 'display:inline-block;margin-top:8px;color:#ffc400;font-weight:600;text-decoration:none', 'Abrir no RD Station ↗');
+      a.href = n.url;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      corpo.appendChild(a);
+    }
+  }
+
+  async function consultarFicha(busca) {
+    const seq = ++ficha.seq;
+    renderFicha({ tipo: 'carregando', busca });
+    let r;
+    try {
+      r = await new Promise((res) => chrome.runtime.sendMessage({ action: 'crmLead', ...busca }, res));
+    } catch (_) {
+      // Extensão atualizada/recarregada: este script ficou órfão. Para de vigiar em silêncio.
+      clearInterval(ficha.vigia);
+      esconderFicha();
+      return;
+    }
+    if (seq !== ficha.seq) return; // resposta de uma conversa que o SDR já deixou
+    if (!r || !r.ok) return renderFicha({ tipo: 'erro', erro: (r && r.erro) || 'Não consegui consultar o RD Station.', busca });
+    if (!r.configurado) return esconderFicha(); // CRM não ligado no servidor: não mostra nada
+    if (r.encontrado && r.ficha) return renderFicha({ tipo: 'ok', ficha: r.ficha, busca });
+    if (r.candidatos && r.candidatos.length) return renderFicha({ tipo: 'candidatos', candidatos: r.candidatos, busca });
+    renderFicha({ tipo: 'nao-encontrado', busca });
+  }
+
+  /** A cada 1,5s: a conversa aberta mudou? Então busca a ficha do novo lead. */
+  function verificarConversa() {
+    if (!ficha.ligada) return;
+    if (!document.querySelector('#main')) {
+      ficha.chave = null;
+      esconderFicha();
+      return;
+    }
+    const telefone = telefoneDaConversa();
+    const nome = nomeDoContato();
+    const chave = telefone || nome;
+    if (!chave || chave === ficha.chave) return;
+    ficha.chave = chave;
+    ficha.fechadaPara = null;
+    clearTimeout(ficha.timer);
+    ficha.timer = setTimeout(() => consultarFicha({ telefone, nome: telefone && nome.replace(/\D/g, '') === telefone ? '' : nome }), 700);
+  }
+
+  try {
+    chrome.storage.local.get({ fichaCrm: true, fichaCrmMinimizada: false }, (c) => {
+      ficha.ligada = c.fichaCrm !== false;
+      ficha.minimizada = !!c.fichaCrmMinimizada;
+      ficha.vigia = setInterval(() => {
+        try {
+          verificarConversa();
+        } catch (_) {
+          /* uma falha de leitura do DOM não pode derrubar o vigia */
+        }
+      }, 1500);
+    });
+    if (chrome.storage.onChanged) {
+      chrome.storage.onChanged.addListener((mud) => {
+        if (!mud.fichaCrm) return;
+        ficha.ligada = mud.fichaCrm.newValue !== false;
+        if (!ficha.ligada) esconderFicha();
+        ficha.chave = null; // ao religar, busca de novo a conversa aberta
+      });
+    }
+  } catch (_) {
+    /* sem storage (contexto inválido): sem ficha */
+  }
+
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (msg && msg.action === 'start') {
       // Dispara em background e responde na hora para o popup poder fechar.

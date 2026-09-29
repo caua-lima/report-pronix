@@ -321,6 +321,12 @@ $('testar').addEventListener('click', () => {
 });
 $('gerar').addEventListener('click', gerar);
 $('zipDia').addEventListener('click', baixarZipDoDia);
+
+// Ficha do RD Station no WhatsApp: ligada por padrão; o content script escuta a mudança na hora.
+chrome.storage.local.get({ fichaCrm: true }, (c) => {
+  $('fichaCrm').checked = c.fichaCrm !== false;
+});
+$('fichaCrm').addEventListener('change', () => chrome.storage.local.set({ fichaCrm: $('fichaCrm').checked }));
 $('dl').addEventListener('click', baixarPdf);
 carregarUltimo();
 

@@ -52,10 +52,10 @@
 
   <main>
     <h1>Política de Privacidade</h1>
-    <div class="data">Extensão <strong>PRONIX Closer Report</strong> · atualizada em 18 de setembro de 2026</div>
+    <div class="data">Extensão <strong>PRONIX Closer Report</strong> · atualizada em 29 de setembro de 2026</div>
 
     <div class="card">
-      <p style="margin:0"><strong>Resumo:</strong> a extensão é uma ferramenta interna de trabalho da PRONIX. Ela lê a conversa que o próprio colaborador tem aberta no WhatsApp Web ou no Instagram Direct, apenas quando ele clica em "Gerar Report", e envia esse conteúdo ao servidor da PRONIX para produzir um relatório em PDF. Não coletamos dados de navegação, não vendemos dados e não usamos essas informações para nenhuma outra finalidade.</p>
+      <p style="margin:0"><strong>Resumo:</strong> a extensão é uma ferramenta interna de trabalho da PRONIX. Ela lê a conversa que o próprio colaborador tem aberta no WhatsApp Web ou no Instagram Direct, apenas quando ele clica em "Gerar Report", e envia esse conteúdo ao servidor da PRONIX para produzir um relatório em PDF. Ao abrir uma conversa no WhatsApp Web, ela também pode mostrar a ficha do lead que já está no CRM da PRONIX (RD Station CRM) — essa função pode ser desligada no popup. Não coletamos dados de navegação, não vendemos dados e não usamos essas informações para nenhuma outra finalidade.</p>
     </div>
 
     <h2>Quem usa a extensão</h2>
@@ -66,15 +66,17 @@
       <li><strong>Conteúdo da conversa aberta no WhatsApp Web ou no Instagram Direct</strong> — mensagens de texto e mensagens de voz da conversa que o colaborador está atendendo, além do nome do contato exibido no cabeçalho.</li>
       <li><strong>Dados que o administrador registra sobre cada report</strong> — qual closer atendeu, o resultado da reunião, as datas e o e-mail do lead, digitados manualmente no painel.</li>
       <li><strong>Prints de conversa e áudios enviados no painel</strong> — quando o colaborador gera um report pelo site (aba manual), as imagens e áudios anexados também são lidos e transcritos.</li>
+      <li><strong>Telefone ou nome do contato da conversa aberta no WhatsApp Web</strong> — com a ficha do lead ligada (padrão; desliga no popup), ao abrir uma conversa a extensão envia ao servidor da PRONIX o telefone (ou o nome, quando o número não aparece) do contato para buscar a negociação dele no RD Station CRM da PRONIX. O conteúdo das mensagens não é enviado para isso.</li>
       <li><strong>Chave de acesso e endereço do servidor</strong> — guardados localmente no navegador do colaborador, para não precisar digitar a cada uso.</li>
     </ul>
-    <p>A extensão <strong>não</strong> lê outras abas, não acessa histórico de navegação, não coleta senhas, não lê conversas que não estejam abertas na tela e não age sozinha: nada é lido sem o clique do colaborador.</p>
+    <p>A extensão <strong>não</strong> lê outras abas, não acessa histórico de navegação, não coleta senhas, não lê conversas que não estejam abertas na tela e não lê as mensagens sem o clique do colaborador em "Gerar Report". A única leitura automática é a do cabeçalho da conversa aberta (telefone ou nome), para a ficha do lead descrita acima.</p>
 
     <h2>Como os dados são usados</h2>
     <ul>
       <li>O texto da conversa é enviado ao servidor da PRONIX, que gera o relatório de handoff em PDF.</li>
       <li>As mensagens de voz são transcritas em texto para entrarem no relatório.</li>
       <li>Para produzir o relatório e transcrever os áudios, o conteúdo é processado por provedores de inteligência artificial contratados pela PRONIX (Anthropic e Groq), que atuam como operadores e não utilizam esse conteúdo para treinar modelos.</li>
+      <li>A ficha do lead é consultada no RD Station CRM da PRONIX pelo servidor, com uma credencial que fica só no servidor (nunca no navegador). O resultado fica em cache no servidor por até 5 minutos, para não repetir a consulta ao trocar de conversa, e é apagado sozinho depois.</li>
       <li>Registramos, para controle interno, qual colaborador gerou cada relatório, o nome do lead, a data e o custo de processamento.</li>
       <li>Para ler a conversa completa e transcrever áudios, enquanto o report é gerado a extensão <strong>rola a conversa aberta</strong> para carregar as mensagens antigas e <strong>toca cada áudio no mudo</strong>. No Instagram, tocar um áudio pode marcá-lo como ouvido para quem o enviou. Essas ações só acontecem depois do clique em "Gerar Report".</li>
     </ul>

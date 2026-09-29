@@ -45,7 +45,16 @@ No aviso final também vem quantos áudios ele transcreveu:
 
 > **Instagram Direct é recente:** se o report sair estranho (mensagem trocada de remetente, áudio faltando) me avisa com um print — o Instagram muda o layout com frequência e pode precisar de ajuste.
 
-## 4. Fim do dia: o .zip para o líder
+## 4. Ficha do lead (RD Station) no WhatsApp
+
+Ao abrir a conversa de um lead no WhatsApp Web, aparece um cartão no canto de cima com o que já está no RD Station: **etapa e funil**, **responsável** e as respostas do formulário (**Profissão, Estado, Vende online, Investimento**...). Use para abrir a conversa já sabendo com quem está falando.
+
+- **–** minimiza (fica minimizado nas próximas conversas até você abrir de novo); **×** fecha só nesta conversa.
+- **"Não achei este lead no RD Station"**: o número da conversa não está no contato do RD (ou o contato está salvo com outro nome). Digite o telefone ou o nome no campo do cartão e clique em **Buscar**.
+- **"Mais de um contato com esse nome"**: clique no certo.
+- Para desligar: popup da PRONIX → desmarque **Mostrar a ficha do RD Station**.
+
+## 5. Fim do dia: o .zip para o líder
 
 Todo dia, antes de ir embora, baixe o .zip com os seus reports do dia e mande para o líder. Tem dois jeitos:
 

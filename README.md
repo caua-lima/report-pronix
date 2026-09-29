@@ -185,6 +185,8 @@ SDR — nada de e-mail real, é só nome + chave gerada.
 | `TRANSCRIPTION_CACHE_TTL_SEG` | não (padrão `86400`) | Por quanto tempo a transcrição de um mesmo áudio fica em cache (chave = hash dos bytes). `0` desliga. |
 | `ANTHROPIC_TIMEOUT_MS` / `GROQ_TIMEOUT_MS` | não (padrão `50000`) | Tempo máximo de cada chamada. A Vercel corta a função em 60s; estourar dá mensagem clara em vez de erro opaco. |
 | `CR_DATA_DIR` | não | Pasta dos arquivos de dados no modo local (padrão `data/`). Os testes usam uma pasta temporária. |
+| `RDSTATION_CRM_TOKEN` | só para a ficha do lead | Token de acesso do RD Station CRM (API v1). Vazio = ficha desligada. De um usuário que vê todas as negociações. |
+| `CRM_CACHE_TTL_SEG` / `CRM_TIMEOUT_MS` | não (padrão `300` / `8000`) | Cache da ficha no servidor e tempo máximo de cada chamada ao RD. |
 
 `SDR_NAME` no `.env.example` é só um nome de exibição de reserva para quando o PDF é
 gerado sem usuário autenticado (uso local avulso) — em uso normal, quem assina o
@@ -286,6 +288,31 @@ nova — **pin em `^7.0.1`**: a partir da v8 o pacote virou ESM puro e quebra o
 some junto. Não há expurgo automático por tempo — como os arquivos são
 pequenos isso não é urgente, mas fica registrado como próximo passo caso vire
 necessidade.
+
+## Ficha do lead no WhatsApp (RD Station CRM)
+
+Ao abrir uma conversa no WhatsApp Web, a extensão mostra um cartão no canto com a negociação
+do lead no RD Station CRM: etapa e funil, responsável, as respostas do formulário (a anotação
+com linhas "Campo: valor", como *Profissão / Estado / Vende online / Investimento*), campos
+personalizados, outras anotações e o link para abrir no RD. Liga/desliga no popup.
+
+- **Como acha o lead.** Pelo telefone da conversa (o cabeçalho mostra o número quando o
+  contato não está salvo; ou o id do chat, quando o WhatsApp o expõe). O servidor tenta os
+  formatos em que o número pode estar no RD (com/sem 55, com/sem o 9, formatado) e só aceita
+  um contato cujos **8 últimos dígitos** batem. Contato salvo com nome: busca pelo nome; mais
+  de um resultado vira uma lista para o SDR escolher. Não achou: o próprio cartão tem busca.
+- **Qual negociação.** A em aberto mais recente do contato; se todas fecharam, a última.
+- **Segurança.** O token (`RDSTATION_CRM_TOKEN`) fica só no servidor. A extensão manda só
+  telefone/nome, por POST (fora de URL e de log). Tudo que vem do CRM entra no cartão como
+  texto, nunca como HTML. O cartão fica fora do `#main`, então a leitura do report nunca o
+  confunde com mensagem.
+- **Custo de API.** Cache de 5 min por telefone no servidor (não achado: 2 min); usuários e
+  rótulos de campos do CRM: 1 h. Uma conversa nova custa de 3 a 8 chamadas ao RD.
+- `POST /api/crm/lead` `{ telefone?, nome?, contatoId? }` (chave do SDR) e
+  `POST /api/admin/crm/teste` (admin: sem cache, mostra quais formatos de telefone foram
+  tentados). No painel, aba **Extensão** → **Ficha do lead (RD Station CRM)** → Testar.
+- API usada (RD Station CRM v1): `/contacts?phone=`, `/contacts?q=`, `/contacts/{id}`,
+  `/deals/{id}`, `/activities?deal_id=`, `/users`, `/custom_fields?for=contact`.
 
 ## Reports do dia (.zip para o líder)
 
