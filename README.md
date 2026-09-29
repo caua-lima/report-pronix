@@ -296,10 +296,15 @@ do lead no RD Station CRM: etapa e funil, responsável, as respostas do formulá
 com linhas "Campo: valor", como *Profissão / Estado / Vende online / Investimento*), campos
 personalizados, outras anotações e o link para abrir no RD. Liga/desliga no popup.
 
-- **Como acha o lead.** Pelo telefone da conversa (o cabeçalho mostra o número quando o
-  contato não está salvo; ou o id do chat, quando o WhatsApp o expõe). O servidor tenta os
-  formatos em que o número pode estar no RD (com/sem 55, com/sem o 9, formatado) e só aceita
-  um contato cujos **8 últimos dígitos** batem. Contato salvo com nome: busca pelo nome; mais
+- **Como acha o lead.** Pelo telefone da conversa: o cabeçalho mostra o número quando o
+  contato não está salvo; ao abrir pelo botão de WhatsApp do card no RD
+  (`web.whatsapp.com/send?phone=…`), o número vem no link e vale para a conversa que ele
+  abriu, mesmo com o contato salvo por nome; ou o id do chat, quando o WhatsApp o expõe. O
+  servidor tenta os formatos em que o número pode estar no RD — primeiro como o card mostra,
+  `(11) 96763-6300`, depois só dígitos, com/sem 55 e com/sem o 9 — e só aceita um contato
+  cujos **8 últimos dígitos** batem.
+- **Onde aparece.** Encostado na borda direita da conversa (não da janela): quando a extensão
+  oficial do RD Station CRM está aberta à direita, o cartão fica ao lado do painel dela. Contato salvo com nome: busca pelo nome; mais
   de um resultado vira uma lista para o SDR escolher. Não achou: o próprio cartão tem busca.
 - **Qual negociação.** A em aberto mais recente do contato; se todas fecharam, a última.
 - **Segurança.** O token (`RDSTATION_CRM_TOKEN`) fica só no servidor. A extensão manda só

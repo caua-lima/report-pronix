@@ -52,10 +52,10 @@ global.fetch = async (url, opts) => {
   if (p === '/contacts') {
     const phone = u.searchParams.get('phone');
     const q = u.searchParams.get('q');
-    // O RD simulado só acha o Marcos pelo número formatado; pelo número cru devolve OUTRA pessoa
-    // (a extensão tem que conferir o telefone e não pegar a errada).
-    if (phone === '(71) 99999-8888') return json({ contacts: [MARCOS], total: 1 });
-    if (phone === '71999998888') return json({ contacts: [OUTRO], total: 1 });
+    // O RD simulado devolve OUTRA pessoa pelo número formatado e só acha o Marcos pelos dígitos
+    // (o servidor tem que conferir o telefone e não pegar a errada).
+    if (phone === '(71) 99999-8888') return json({ contacts: [OUTRO], total: 1 });
+    if (phone === '71999998888') return json({ contacts: [MARCOS], total: 1 });
     if (q === 'Ana') return json({ contacts: [ANA1, ANA2], total: 2 });
     if (q === 'Marcos Pereira') return json({ contacts: [MARCOS], total: 1 });
     return json({ contacts: [], total: 0 });
@@ -134,7 +134,7 @@ test('pelo telefone do WhatsApp: acha o lead certo (mesmo com o RD devolvendo ou
   assert.equal(r.json.encontrado, true);
   assert.equal(r.json.buscaPor, 'telefone');
   const f = r.json.ficha;
-  assert.equal(f.nome, 'Marcos Pereira', 'não pegou a "Outra Pessoa" que o RD devolveu pelo número cru');
+  assert.equal(f.nome, 'Marcos Pereira', 'não pegou a "Outra Pessoa" que o RD devolveu pelo número formatado');
   assert.deepEqual(f.negociacao, {
     nome: 'Marcos Pereira', etapa: 'MQL', funil: 'Funil MQL', responsavel: 'Cauã Lima', fonte: 'Instagram', campanha: '',
     criadaEm: '28/09/2026 20:00', url: 'https://crm.rdstation.com/app/deals/d1',
@@ -220,16 +220,17 @@ test('teste do admin: sem cache e com o passo a passo de quais formatos de telef
   const r = await post('/api/admin/crm/teste', { telefone: '5571999998888' }, { admin: true });
   assert.equal(r.json.encontrado, true);
   const t = r.json.diagnostico.tentativas;
-  assert.equal(t.at(-1).variante, '(71) 99999-8888');
-  assert.equal(t.at(-1).bateu, true);
-  assert.ok(t.some((x) => x.variante === '71999998888' && x.resultados === 1 && !x.bateu), 'resultado com telefone diferente é descartado');
-  assert.equal(r.json.diagnostico.encontradaCom, '(71) 99999-8888');
+  assert.deepEqual(t, [
+    { variante: '(71) 99999-8888', resultados: 1, bateu: false },
+    { variante: '71999998888', resultados: 1, bateu: true },
+  ], 'começa pelo formato do card do RD; resultado com telefone diferente é descartado');
+  assert.equal(r.json.diagnostico.encontradaCom, '71999998888');
 });
 
 // ---------------------------------------------------------------- funções puras
-test('variantes de telefone brasileiro (com/sem 55, com/sem o 9, formatado)', () => {
-  assert.deepEqual(crm.variantesTelefone('5571999998888'), ['71999998888', '5571999998888', '7199998888', '557199998888', '(71) 99999-8888']);
-  assert.deepEqual(crm.variantesTelefone('557199998888'), ['7199998888', '557199998888', '71999998888', '5571999998888']);
+test('variantes de telefone: formato do card do RD primeiro, depois dígitos, com/sem 55 e com/sem o 9', () => {
+  assert.deepEqual(crm.variantesTelefone('5511967636300'), ['(11) 96763-6300', '11967636300', '5511967636300', '(11) 6763-6300', '1167636300', '551167636300']);
+  assert.deepEqual(crm.variantesTelefone('557199998888'), ['(71) 9999-8888', '7199998888', '557199998888', '(71) 99999-8888', '71999998888', '5571999998888']);
   assert.deepEqual(crm.variantesTelefone('123'), []);
 });
 

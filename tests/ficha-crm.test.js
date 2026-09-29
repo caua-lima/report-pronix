@@ -205,3 +205,54 @@ test('com o cartão aberto, o report continua lendo só as mensagens da conversa
   assert.deepEqual(enviadas.map((m) => m.content), ['Oi, tudo bem?', 'Tudo sim']);
   p.fechar();
 });
+
+// ---------------------------------------------------------------- aberto pelo botão de WhatsApp do card no RD
+test('aberto pelo link do RD (send?phone=): contato salvo com nome também é buscado pelo número do link', async () => {
+  const srv = crmFalso(() => ({ ok: true, configurado: true, encontrado: true, ficha: FICHA_MARCOS }));
+  const p = abrirPagina({
+    arquivo: 'extension/content.js', url: 'https://web.whatsapp.com/send?phone=5511967636300&text=',
+    aoEnviar: srv.aoEnviar, intervaloRapido: true,
+  });
+  montarWhatsApp(p, CONVERSA, { contato: 'Rodrigo Melo', idsSimples: true });
+  await esperar(() => srv.consultas.length === 1, { motivo: '1ª consulta' });
+  assert.deepEqual(srv.consultas[0], { telefone: '5511967636300', nome: 'Rodrigo Melo', contatoId: '' });
+
+  // Trocou para outra conversa: o número do link NÃO vale para ela.
+  trocarConversa(p, 'Outra Pessoa');
+  await esperar(() => srv.consultas.length === 2, { motivo: '2ª consulta' });
+  assert.deepEqual(srv.consultas[1], { telefone: '', nome: 'Outra Pessoa', contatoId: '' });
+
+  // Voltou para a conversa do link: vale de novo.
+  trocarConversa(p, 'Rodrigo Melo');
+  await esperar(() => srv.consultas.length === 3, { motivo: '3ª consulta' });
+  assert.equal(srv.consultas[2].telefone, '5511967636300');
+  p.fechar();
+});
+
+test('link do RD aberto num contato não salvo: depois, outra conversa não herda o número do link', async () => {
+  const srv = crmFalso(() => ({ ok: true, configurado: true, encontrado: true, ficha: FICHA_MARCOS }));
+  const p = abrirPagina({
+    arquivo: 'extension/content.js', url: 'https://web.whatsapp.com/send?phone=5511967636300',
+    aoEnviar: srv.aoEnviar, intervaloRapido: true,
+  });
+  montarWhatsApp(p, CONVERSA, { contato: '+55 11 96763-6300', idsSimples: true });
+  await esperar(() => srv.consultas.length === 1, { motivo: '1ª consulta' });
+  trocarConversa(p, 'Contato Salvo');
+  await esperar(() => srv.consultas.length === 2, { motivo: '2ª consulta' });
+  assert.deepEqual(srv.consultas[1], { telefone: '', nome: 'Contato Salvo', contatoId: '' });
+  p.fechar();
+});
+
+test('o cartão encosta na borda da conversa (ao lado do painel do RD, não por cima)', async () => {
+  const srv = crmFalso(() => ({ ok: true, configurado: true, encontrado: true, ficha: FICHA_MARCOS }));
+  const p = abrir(srv);
+  // Janela de 1380px; a conversa (#main) vai até 1030px — o resto é o painel do RD Station.
+  Object.defineProperty(p.w, 'innerWidth', { value: 1380, configurable: true });
+  const main = p.document.querySelector('#main');
+  main.getBoundingClientRect = () => ({ left: 0, right: 1030, top: 0, bottom: 900, width: 1030, height: 900 });
+  await esperar(() => /Investimento/.test(textoCartao(p)), { motivo: 'ficha' });
+  await esperar(() => cartao(p).style.right === '366px', { motivo: 'posição ao lado do painel' });
+  assert.equal(cartao(p).style.top, '70px');
+  assert.equal(cartao(p).style.width, '290px');
+  p.fechar();
+});

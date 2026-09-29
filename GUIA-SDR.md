@@ -47,7 +47,7 @@ No aviso final também vem quantos áudios ele transcreveu:
 
 ## 4. Ficha do lead (RD Station) no WhatsApp
 
-Ao abrir a conversa de um lead no WhatsApp Web, aparece um cartão no canto de cima com o que já está no RD Station: **etapa e funil**, **responsável** e as respostas do formulário (**Profissão, Estado, Vende online, Investimento**...). Use para abrir a conversa já sabendo com quem está falando.
+Ao abrir a conversa de um lead no WhatsApp Web, aparece um cartão no canto de cima da conversa com o que já está no RD Station. O jeito mais certeiro é abrir pelo ícone de WhatsApp do card do lead no RD: o número vai junto e ele acha o lead mesmo se o contato estiver salvo com outro nome. O cartão mostra: **etapa e funil**, **responsável** e as respostas do formulário (**Profissão, Estado, Vende online, Investimento**...). Use para abrir a conversa já sabendo com quem está falando.
 
 - **–** minimiza (fica minimizado nas próximas conversas até você abrir de novo); **×** fecha só nesta conversa.
 - **"Não achei este lead no RD Station"**: o número da conversa não está no contato do RD (ou o contato está salvo com outro nome). Digite o telefone ou o nome no campo do cartão e clique em **Buscar**.

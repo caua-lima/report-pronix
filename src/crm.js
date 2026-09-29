@@ -69,18 +69,18 @@ function variantesTelefone(entrada) {
   };
   const brasil = d.startsWith('55') && (d.length === 12 || d.length === 13);
   const nacional = brasil ? d.slice(2) : d;
-  add(nacional);
-  if (brasil || nacional.length === 10 || nacional.length === 11) add('55' + nacional);
-  if (nacional.length === 11 && nacional[2] === '9') {
-    const sem9 = nacional.slice(0, 2) + nacional.slice(3);
-    add(sem9);
-    add('55' + sem9);
-  } else if (nacional.length === 10) {
-    const com9 = nacional.slice(0, 2) + '9' + nacional.slice(2);
-    add(com9);
-    add('55' + com9);
+  // O número como veio e, no Brasil, a mesma linha com/sem o 9 do celular.
+  const formas = [nacional];
+  if (nacional.length === 11 && nacional[2] === '9') formas.push(nacional.slice(0, 2) + nacional.slice(3));
+  else if (nacional.length === 10) formas.push(nacional.slice(0, 2) + '9' + nacional.slice(2));
+  const ehBr = brasil || nacional.length === 10 || nacional.length === 11;
+  for (const n of formas) {
+    // O card do RD mostra "(11) 96763-6300": esse formato vai primeiro; depois só dígitos, com e sem 55.
+    if (ehBr && n.length === 11) add(`(${n.slice(0, 2)}) ${n.slice(2, 7)}-${n.slice(7)}`);
+    if (ehBr && n.length === 10) add(`(${n.slice(0, 2)}) ${n.slice(2, 6)}-${n.slice(6)}`);
+    add(n);
+    if (ehBr) add('55' + n);
   }
-  if (nacional.length === 11) add(`(${nacional.slice(0, 2)}) ${nacional.slice(2, 7)}-${nacional.slice(7)}`);
   return v;
 }
 

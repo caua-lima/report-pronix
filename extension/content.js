@@ -1012,6 +1012,18 @@
   // Tudo que vem do CRM entra na tela como TEXTO (textContent), nunca como HTML.
   // ---------------------------------------------------------------------------
   const FICHA_ID = 'cr-ficha-crm';
+
+  // Aberto pelo botão de WhatsApp do card no RD (web.whatsapp.com/send?phone=5511...): o número do lead vem
+  // no link. Vale mesmo para contato salvo com nome — mas só para a conversa que o link abriu (o endereço
+  // não muda quando o SDR troca de conversa depois).
+  const telefoneDoLink = (() => {
+    try {
+      return (new URLSearchParams(location.search).get('phone') || '').replace(/\D/g, '');
+    } catch (_) {
+      return '';
+    }
+  })();
+  let conversaDoLink = null; // nome no cabeçalho da conversa que o link abriu
   const ficha = { ligada: true, minimizada: false, chave: null, fechadaPara: null, seq: 0, timer: null, vigia: null };
 
   /** Telefone da conversa aberta: o cabeçalho (contato não salvo mostra o número) ou o id do chat no data-id. */
@@ -1061,6 +1073,21 @@
       elem('div', `color:${forte ? '#ffc400' : '#e6edf3'};font-weight:${forte ? 700 : 500};word-break:break-word`, valor)
     );
 
+  function posicionarFicha() {
+    const el = document.getElementById(FICHA_ID);
+    const main = document.querySelector('#main');
+    if (!el || !main) return;
+    const r = main.getBoundingClientRect();
+    if (!r || r.width < 320) {
+      el.style.right = '16px';
+      el.style.top = '70px';
+      return;
+    }
+    el.style.right = Math.max(8, Math.round(window.innerWidth - r.right + 16)) + 'px';
+    el.style.top = Math.max(8, Math.round(r.top + 70)) + 'px';
+    el.style.width = Math.min(290, Math.round(r.width - 40)) + 'px';
+  }
+
   function esconderFicha() {
     const el = document.getElementById(FICHA_ID);
     if (el) el.remove();
@@ -1097,6 +1124,7 @@
       document.body.appendChild(el);
     }
     el.textContent = '';
+    posicionarFicha();
 
     const titulo = estado.ficha ? estado.ficha.nome || 'Lead' : 'Ficha do lead';
     const btnMin = botaoFicha(ficha.minimizada ? '+' : '–', () => {
@@ -1227,8 +1255,14 @@
       esconderFicha();
       return;
     }
-    const telefone = telefoneDaConversa();
+    let telefone = telefoneDaConversa();
     const nome = nomeDoContato();
+    if (telefoneDoLink.length >= 10) {
+      // A 1ª conversa que aparece depois de abrir pelo link é a do link (mesmo que o topo já mostre o número).
+      if (conversaDoLink === null) conversaDoLink = nome || telefone;
+      if (!telefone && nome && nome === conversaDoLink) telefone = telefoneDoLink;
+    }
+    posicionarFicha();
     const chave = telefone || nome;
     if (!chave || chave === ficha.chave) return;
     ficha.chave = chave;
