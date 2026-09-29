@@ -5,7 +5,7 @@ require('dotenv').config();
 const { gerarPdf } = require('./generatePdf');
 const base = require('./base');
 const { normalizarConversa, normalizarTextoLivre } = require('./conversation-normalizer');
-const { verificarCitacoes, neutralizarMarcas } = require('./citacoes');
+const { verificarCitacoes, neutralizarMarcas, citacaoDesanimadora } = require('./citacoes');
 const { normalizarConsciencia } = require('./consciencia');
 
 const LLM_PROVIDER = (process.env.LLM_PROVIDER || 'anthropic').toLowerCase();
@@ -14,7 +14,7 @@ const LLM_PROVIDER = (process.env.LLM_PROVIDER || 'anthropic').toLowerCase();
 // idênticos já gerados (ex.: mudança de tom, de campos obrigatórios). Compõe
 // a reportKey em src/idempotencia.js — sem isso, um prompt novo poderia ser
 // confundido com o antigo e nunca rodar de novo pra mesma conversa.
-const PROMPT_VERSAO = 'v3';
+const PROMPT_VERSAO = 'v4';
 
 // Modo de qualidade só troca o MODELO da Anthropic — nunca inferido sozinho:
 // "standard" é o comportamento de sempre (ANTHROPIC_MODEL), então nenhum
@@ -131,7 +131,7 @@ const EXEMPLO_GRANDE = {
   ],
   citacoes: [
     'Preciso começar no Mercado Livre, isso aí já tá decidido.',
-    'Tenho uns 100 mil parados em produto que não gira, isso me incomoda todo mês.',
+    'Se fizer sentido pra operação, a gente começa já no mês que vem.',
   ],
   consciencia: {
     nivel: 'solucao',
@@ -216,7 +216,7 @@ Preencha pela ferramenta "gerar_relatorio":
 - "lead": SÓ o nome do lead, como ele aparece na conversa (ou ""). Sem parênteses, sem comentário, sem "a confirmar" — este campo vira o título e o nome do arquivo.
 - "resumo": linhas rótulo/valor tiradas da conversa, SEMPRE com Investimento, Motivação e Decisor(es) preenchidos (nunca "a confirmar"), mais o que fizer sentido (status/nicho, urgência quando houver).
 - "secoes": OBRIGATÓRIO ter de 2 a 4 seções, SEMPRE incluindo "O que o closer deve bater" (numerada:true, ações concretas). Título curto e direto (SEM emoji, SEM símbolo) + bullets densos. As demais saem da conversa: "Perfil e momento", "Dor e objetivo", "Como fechar essa call". Nunca devolva secoes vazio nem só uma seção.
-- "citacoes": 1 a 3 FALAS EXATAS/verbatim do LEAD (copiadas literalmente das linhas do LEAD, inclusive áudios): dor, sinal de compra, objeção, objetivo. Sem paráfrase, sem falas do vendedor; [] se não houver.
+- "citacoes": 0 a 2 FALAS EXATAS/verbatim do LEAD (copiadas literalmente das linhas do LEAD, inclusive áudios), e SÓ se forem MUITO BOAS para o closer: sinal de compra, decisão tomada, urgência, entusiasmo, consciência do que quer ("era exatamente isso que eu procurava", "quero começar logo", "o investimento eu tenho"). PROIBIDO citar fala que possa desanimar o closer: preço caro, dúvida, medo, desconfiança, "vou pensar", falta de dinheiro ou de tempo, reclamação, dor contada em tom negativo. Na dúvida, deixe de fora. Sem paráfrase, sem falas do vendedor; [] é a resposta certa quando não houver fala muito boa.
 - "abertura": um EXTRA além do relatório completo — a fala com que o CLOSER começa a reunião, para ler quase como está. NÃO é o relatório; o corpo (as seções) continua obrigatório do mesmo jeito. Estilo do handoff: cumprimenta o lead pelo nome, diz que o pré-vendedor repassou o contexto, resume a situação real (se está começando do zero ou já vende, o que vende/quer, a motivação) e TERMINA confirmando com o lead ("é isso mesmo?"). 2 a 4 frases, primeira pessoa, tom cordial. Use SOMENTE o que apareceu na conversa. Não fale de preço nem de proposta. Se souber o nome do pré-vendedor, cite-o; senão, diga "meu time".
 - "consciencia": { "nivel", "porque" } conforme a seção NÍVEL DE CONSCIÊNCIA.
 - "conversa": 3 a 5 frases do desenrolar, com o nome do pré-vendedor e do lead (seção COMO FOI A CONVERSA).
@@ -387,7 +387,7 @@ const REPORT_TOOL = {
       },
       citacoes: {
         type: 'array',
-        description: 'Falas EXATAS (verbatim) do LEAD, fortes/úteis para o closer. Sem paráfrase.',
+        description: '0 a 2 falas EXATAS (verbatim) do LEAD, só se forem MUITO boas (sinal de compra, decisão, urgência, entusiasmo). Nada que desanime o closer. [] se não houver.',
         items: { type: 'string' },
       },
       abertura: {
@@ -551,11 +551,16 @@ function normalizarMensagem(m) {
  */
 function aplicarVerificacaoDeCitacoes(dados, falasDoLead) {
   const { mantidas, removidas } = verificarCitacoes(dados.citacoes, falasDoLead);
-  dados.citacoes = mantidas;
+  // "Nas palavras do lead" é vitrine: só fala muito boa, no máximo 2. O que pode desanimar o closer sai.
+  const boas = mantidas.filter((c) => !citacaoDesanimadora(c));
+  dados.citacoes = boas.slice(0, 2);
   dados._meta = { citacoesRemovidas: removidas.length };
   if (removidas.length) {
     // Só a quantidade: o conteúdo é fala de lead e não vai para log.
     console.warn(`[report] ${removidas.length} citação(ões) removida(s): não batem com falas do lead.`);
+  }
+  if (mantidas.length > boas.length) {
+    console.warn(`[report] ${mantidas.length - boas.length} citação(ões) tirada(s) por poder desanimar o closer.`);
   }
 }
 

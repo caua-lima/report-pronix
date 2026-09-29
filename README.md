@@ -26,6 +26,7 @@ SDR já tem aberta e logada — em qualquer uma das duas plataformas.
   conversa. O selo de consciência **só aparece de "consciente da solução" para cima** —
   abaixo disso fica fora do PDF, para não esfriar o closer (`src/consciencia.js`). Na
   dúvida entre dois níveis, a IA fica com o menor, para o selo ser confiável.
+- **Nas palavras do lead** só entra fala MUITO boa (sinal de compra, decisão, urgência, entusiasmo), no máximo 2. Fala real que pode desanimar o closer (preço caro, "vou pensar", medo, desconfiança, falta de dinheiro/tempo, reclamação) fica de fora: pelo prompt e por um filtro sem IA (`citacaoDesanimadora` em `src/citacoes.js`). Prompt `v4`.
 - **Como foi a conversa**: 3 a 5 frases do desenrolar, com os nomes ("Cauã explicou que a
   entrega é…; Marcos respondeu que faz sentido…") — o closer chega sabendo o que o SDR
   já apresentou e como o lead reagiu. Só o que foi dito, no mesmo tom de venda.

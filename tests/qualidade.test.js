@@ -124,3 +124,33 @@ test('normalização: entrada inválida não quebra', () => {
   assert.equal(normalizarConversa(null).resumida, false);
   assert.equal(normalizarTextoLivre(undefined).texto, '');
 });
+
+// ---------------------------------------------------------------- "Nas palavras do lead": só fala muito boa
+const { citacaoDesanimadora } = require('../src/citacoes');
+
+const BOAS = [
+  'Era exatamente isso que eu estava procurando',
+  'Quero começar o quanto antes',
+  'O investimento eu tenho, isso não é problema',
+  'Cara, eu tô muito animado com isso',
+  'Não vejo a hora de começar',
+  'Em 15 dias já fiz 104 vendas',
+  'Fechado, pode mandar o link',
+];
+const RUINS = [
+  'Achei meio caro',
+  'Tá caro pra mim agora',
+  'Vou pensar e te falo',
+  'Não sei se é o momento',
+  'Tenho medo de perder dinheiro',
+  'Já caí em golpe antes',
+  'Não confio muito nesses cursos',
+  'Não tenho dinheiro agora',
+  'Tô sem grana esse mês',
+  'Tá difícil, as vendas caíram',
+  'Isso me incomoda todo mês',
+  'Talvez mais pra frente',
+  'Tenho algumas dúvidas ainda',
+];
+for (const f of BOAS) test(`palavras do lead: fala boa fica — "${f}"`, () => assert.equal(citacaoDesanimadora(f), false));
+for (const f of RUINS) test(`palavras do lead: fala que desanima sai — "${f}"`, () => assert.equal(citacaoDesanimadora(f), true));

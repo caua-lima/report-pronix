@@ -89,4 +89,23 @@ function neutralizarMarcas(texto) {
   return String(texto == null ? '' : texto).replace(/<\s*\/?\s*conversa\s*>/gi, '[conversa]');
 }
 
-module.exports = { verificarCitacoes, neutralizarMarcas, norm };
+// "Nas palavras do lead" é vitrine do lead: fala real que esfria o closer (preço, medo, desconfiança,
+// falta de dinheiro ou de tempo, dúvida, "vou pensar", reclamação) não entra, mesmo que a IA mande.
+// Lista conservadora de expressões — "cara" (gíria) e "não" sozinho NÃO contam.
+const DESANIMA = new RegExp(
+  [
+    '\\bcaros?\\b', 'muito car[oa]', '(t[aá]|achei|meio|bem) car[oa]', 'car[ií]ssim', 'salgad',
+    'vou pensar', 'preciso pensar', 'deixa eu pensar', 'vou ver', 'depois eu vejo', 'mais pra frente', 'agora n[aã]o',
+    'n[aã]o sei se', 'talvez', 'd[uú]vida', 'duvido', 'medo', 'receio', 'insegur', 'desconfi', 'golpe', 'engan', 'n[aã]o confio',
+    'dif[ií]cil', 'complicad', 'n[aã]o consigo', 'n[aã]o posso', 'n[aã]o d[aá] (pra|para)',
+    'n[aã]o tenho (dinheiro|grana|condi|como|tempo)', 'sem (dinheiro|grana|condi|tempo)', 'apertad',
+    'd[ií]vida', 'endivid', 'preju[ií]zo', 'quebrei', 'falid', 'perdi (dinheiro|tudo)',
+    'frustr', 'cansad', 'desanim', 'decepcion', 'incomod', 'n[aã]o funciona', 'n[aã]o deu certo',
+  ].join('|'),
+  'i'
+);
+
+/** true = fala que pode desanimar o closer (fica fora do report). */
+const citacaoDesanimadora = (texto) => DESANIMA.test(String(texto || ''));
+
+module.exports = { verificarCitacoes, neutralizarMarcas, norm, citacaoDesanimadora };

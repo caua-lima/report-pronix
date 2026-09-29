@@ -502,3 +502,29 @@ test('report rico: PDF regerado depois de editar mantém os campos novos (e igno
   t = textoDoPdf(r.json.arquivoBase64);
   assert.ok(!t.includes('NÍVEL DE CONSCIÊNCIA'));
 });
+
+test('palavras do lead: fala real que desanima o closer sai do report; a boa fica; no máximo 2', async () => {
+  const resposta = anthropicPadrao();
+  resposta.content[0].input.citacoes = [
+    'Achei meio caro, vou pensar',
+    'Era exatamente isso que eu estava procurando',
+    'Quero começar semana que vem',
+    'Preciso começar no Mercado Livre, isso já tá decidido.',
+  ];
+  respostaAnthropic = resposta;
+  chamadasAnthropic.length = 0;
+  const conversa = [
+    { from: 'eu', type: 'texto', content: 'O investimento é a partir de 5 mil, tudo bem?' },
+    { from: 'eles', type: 'texto', content: 'Achei meio caro, vou pensar' },
+    { from: 'eu', type: 'texto', content: 'Te mostro como funciona a entrega.' },
+    { from: 'eles', type: 'texto', content: 'Era exatamente isso que eu estava procurando' },
+    { from: 'eles', type: 'texto', content: 'Quero começar semana que vem' },
+    { from: 'eles', type: 'texto', content: 'Preciso começar no Mercado Livre, isso já tá decidido. ' + Date.now() },
+  ];
+  const r = await api('POST', '/api/report-direto', { chave: E.ana, corpo: { mensagens: conversa, nome: 'Marcos' } });
+  respostaAnthropic = null;
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.json.dados.citacoes, ['Era exatamente isso que eu estava procurando', 'Quero começar semana que vem']);
+  assert.match(chamadasAnthropic[0].system[0].text, /SÓ se forem MUITO BOAS para o closer/);
+  assert.match(chamadasAnthropic[0].system[0].text, /PROIBIDO citar fala que possa desanimar o closer/);
+});
