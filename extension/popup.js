@@ -44,6 +44,9 @@ function listaEditavel(itens, ordenada, base) {
   return `<${tag}>${li}</${tag}>`;
 }
 
+// Nível de consciência: o report só mostra quando é bom (de "consciente da solução" para cima).
+const NIVEIS_VISIVEIS = { solucao: 'Consciente da solução', produto: 'Consciente da nossa entrega', pronto: 'Pronto para decidir' };
+
 function renderReport(d) {
   const linhas = [];
   if (d.lead) linhas.push(`<tr><td class="rot">Lead</td><td>${ed('lead', d.lead)}</td></tr>`);
@@ -64,7 +67,17 @@ function renderReport(d) {
   const abertura = d.abertura
     ? `<h2>${svgIc('<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>')} Como iniciar a reunião</h2><p class="frase">"${ed('abertura', d.abertura)}"</p>`
     : '';
-  return tabela + secoes + cit + frase + abertura;
+  const nivel = d.consciencia && NIVEIS_VISIVEIS[d.consciencia.nivel];
+  const sinais = d.sinais_compra || [];
+  const temperatura = nivel || sinais.length
+    ? `<h2>${svgIc('<path d="M14 14.8V4a2 2 0 0 0-4 0v10.8a4 4 0 1 0 4 0z"/>')} Temperatura do lead</h2>` +
+      (nivel ? `<p><b>Nível de consciência:</b> ${escapeHtml(nivel)}</p><p class="frase">${ed('consciencia.porque', d.consciencia.porque)}</p>` : '') +
+      (sinais.length ? `<p><b>Sinais de compra</b></p>${listaEditavel(sinais, false, 'sinais_compra')}` : '')
+    : '';
+  const conversa = (d.conversa || []).length
+    ? `<h2>${svgIc('<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>')} Como foi a conversa</h2>${listaEditavel(d.conversa, false, 'conversa')}`
+    : '';
+  return tabela + temperatura + conversa + secoes + cit + frase + abertura;
 }
 
 // Grava um valor no objeto seguindo o caminho "a.0.b".

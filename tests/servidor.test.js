@@ -21,6 +21,7 @@ Object.assign(process.env, {
   UPSTASH_REDIS_REST_URL: '',
   UPSTASH_REDIS_REST_TOKEN: '',
   LLM_PROVIDER: 'anthropic',
+  PDF_SEM_COMPRESSAO: '1', // dá para ler o texto dos PDFs nos testes
 });
 delete process.env.VERCEL;
 
@@ -437,4 +438,67 @@ test('zip do admin: com "só o último", tira os refeitos; sem, leva tudo', asyn
   assert.equal(nomes.length, 2);
   assert.ok(nomes.every((n) => n.startsWith('Duda Araújo/')));
   assert.match(nomes[1], /Rafael-v3/);
+});
+
+// ---------------------------------------------------------------- report enriquecido (consciência, conversa, sinais)
+function textoDoPdf(base64) {
+  const s = Buffer.from(base64, 'base64').toString('latin1');
+  return [...s.matchAll(/\[([^\]]*)\]\s*TJ/g)]
+    .map((m) => Buffer.from([...m[1].matchAll(/<([0-9a-fA-F]*)>/g)].map((x) => x[1]).join(''), 'hex').toString('latin1'))
+    .join('\n');
+}
+
+test('report rico: a IA recebe as regras novas, o formato de resposta e o nome do SDR para o "Como foi a conversa"', async () => {
+  chamadasAnthropic.length = 0;
+  const conversa = msgs.concat([{ from: 'eles', type: 'texto', content: 'pergunta nova ' + Date.now() }]);
+  await api('POST', '/api/report-direto', { chave: E.ana, corpo: { mensagens: conversa, nome: 'Marcos' } });
+  const chamada = chamadasAnthropic[0];
+  const system = chamada.system[0].text;
+  assert.match(system, /NÍVEL DE CONSCIÊNCIA/);
+  assert.match(system, /COMO FOI A CONVERSA/);
+  assert.match(system, /SINAIS DE COMPRA/);
+  assert.match(system, /Na dúvida entre dois níveis, fique com o MENOR/);
+  const schema = chamada.tools[0].input_schema;
+  assert.deepEqual(schema.properties.consciencia.properties.nivel.enum, ['inconsciente', 'problema', 'solucao', 'produto', 'pronto']);
+  assert.ok(schema.properties.conversa && schema.properties.sinais_compra);
+  assert.ok(schema.required.includes('consciencia') && schema.required.includes('conversa'));
+  assert.match(chamada.messages[0].content, /NOME DO PRÉ-VENDEDOR[^\n]*"Ana SDR"[^\n]*campo "conversa"/);
+});
+
+test('report rico: a resposta da IA volta limpa para a tela e vai para o PDF', async () => {
+  const resposta = anthropicPadrao();
+  Object.assign(resposta.content[0].input, {
+    consciencia: { nivel: 'Pronto', porque: 'Perguntou quando pode começar.' },
+    conversa: ['Ana SDR explicou que a entrega é a conta completa no Mercado Livre; Marcos disse que faz sentido.', ''],
+    sinais_compra: ['Perguntou quando pode começar'],
+  });
+  respostaAnthropic = resposta;
+  const conversa = msgs.concat([{ from: 'eles', type: 'texto', content: 'quando posso começar? ' + Date.now() }]);
+  const r = await api('POST', '/api/report-direto', { chave: E.ana, corpo: { mensagens: conversa, nome: 'Marcos' } });
+  respostaAnthropic = null;
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.json.dados.consciencia, { nivel: 'pronto', porque: 'Perguntou quando pode começar.' });
+  assert.deepEqual(r.json.dados.conversa, ['Ana SDR explicou que a entrega é a conta completa no Mercado Livre; Marcos disse que faz sentido.']);
+  const t = textoDoPdf(r.json.arquivoBase64);
+  assert.ok(t.includes('Pronto para decidir'));
+  assert.ok(t.includes('Ana SDR explicou que a entrega'));
+});
+
+test('report rico: PDF regerado depois de editar mantém os campos novos (e ignora nível inválido)', async () => {
+  const dados = {
+    lead: 'Marcos', resumo: [{ rotulo: 'Investimento', valor: 'R$5 mil' }],
+    secoes: [{ titulo: 'O que o closer deve bater', numerada: true, itens: ['Fechar'] }],
+    consciencia: { nivel: 'solucao', porque: 'Editado pelo SDR: já busca estrutura' },
+    conversa: ['Editado: Ana explicou a entrega completa'],
+    sinais_compra: ['Editado: pediu a reunião'],
+  };
+  let r = await api('POST', '/api/pdf', { chave: E.ana, corpo: { dados } });
+  assert.equal(r.status, 200);
+  let t = textoDoPdf(r.json.arquivoBase64);
+  for (const x of ['Consciente da solução', 'Editado pelo SDR: já busca estrutura', 'Editado: Ana explicou a entrega completa', 'Editado: pediu a reunião']) {
+    assert.ok(t.includes(x), 'faltou: ' + x);
+  }
+  r = await api('POST', '/api/pdf', { chave: E.ana, corpo: { dados: { ...dados, consciencia: { nivel: 'hackeado', porque: '<script>' } } } });
+  t = textoDoPdf(r.json.arquivoBase64);
+  assert.ok(!t.includes('NÍVEL DE CONSCIÊNCIA'));
 });

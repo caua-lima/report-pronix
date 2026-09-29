@@ -11,6 +11,12 @@ Detalhes técnicos em [`auditoria-pronix.md`](auditoria-pronix.md) e [`plano-imp
 - [x] 117 testes automáticos (`npm test`), sem rede e sem custo
 - [x] Merge local na `main`
 
+## Novo em 29/09: report mais rico (extensão 1.7.0 + servidor)
+
+- [x] Nível de consciência do lead (selo só de "consciente da solução" para cima), sinais de compra e "Como foi a conversa" com os nomes, no PDF, no popup e no painel (editáveis).
+- [x] Prompt v3 (a mesma conversa pode ser gerada de novo com o prompt novo).
+- [ ] **Você:** depois do push, gerar 2 ou 3 reports de conversas reais e conferir se o "Como foi a conversa" e o nível de consciência batem com o que aconteceu
+
 ## Novo em 29/09: ficha do lead do RD Station no WhatsApp (extensão 1.6.1 + servidor)
 
 - [x] 1.6.1: cartão ao lado do painel da extensão oficial do RD (não por cima); número do lead lido do link do botão de WhatsApp do card no RD; busca começa pelo formato do card, "(11) 96763-6300".
@@ -20,7 +26,7 @@ Detalhes técnicos em [`auditoria-pronix.md`](auditoria-pronix.md) e [`plano-imp
 - [x] Teste do admin no painel (aba Extensão) mostrando os formatos de telefone tentados.
 - [ ] **Você:** criar a variável `RDSTATION_CRM_TOKEN` na Vercel (token de um usuário do CRM que vê todas as negociações) e fazer redeploy
 - [ ] **Você:** no painel → Extensão → Ficha do lead → **Testar** com o telefone de um lead que está no RD (ex.: o do print)
-- [ ] **Você:** enviar a extensão 1.6.1 à Chrome Web Store e abrir a conversa desse lead no WhatsApp
+- [ ] **Você:** enviar a extensão 1.7.0 à Chrome Web Store e abrir a conversa desse lead no WhatsApp
 
 ## Novo em 28/09 (extensão 1.5.3 + servidor)
 

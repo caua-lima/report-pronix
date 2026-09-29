@@ -6,6 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const PDFDocument = require('pdfkit');
 const { slugify } = require('./generateDoc');
+const { infoDoNivel, mostrarConsciencia, NIVEIS } = require('./consciencia');
 
 const OUTPUT_DIR = path.join(__dirname, '..', 'output');
 
@@ -115,6 +116,91 @@ function render(doc, dados) {
     doc.x = MARGIN;
   }
 
+
+  // ---- Temperatura do lead: nível de consciência (só quando é bom) + sinais de compra ----
+  const verConsciencia = mostrarConsciencia(dados.consciencia);
+  const sinais = (dados.sinais_compra || []).filter(Boolean);
+  if (verConsciencia || sinais.length) {
+    const pad = 13;
+    const xIn = MARGIN + pad + 4;
+    const wTxt = larg - pad * 2 - 4;
+    const info = infoDoNivel(dados.consciencia);
+    const porque = verConsciencia ? String(dados.consciencia.porque || '') : '';
+
+    // Mede antes de desenhar (o cartão tem fundo).
+    let h = pad;
+    if (verConsciencia) {
+      h += 12 + 16; // rótulo + barra
+      doc.font('Helvetica-Bold').fontSize(12);
+      h += doc.heightOfString(info.rotulo, { width: wTxt }) + 2;
+      if (porque) {
+        doc.font('Helvetica').fontSize(10);
+        h += doc.heightOfString(porque, { width: wTxt }) + 4;
+      }
+    }
+    if (sinais.length) {
+      h += (verConsciencia ? 10 : 0) + 14;
+      doc.font('Helvetica').fontSize(10);
+      sinais.forEach((s) => { h += doc.heightOfString(String(s), { width: wTxt - 16 }) + 4; });
+    }
+    h += pad - 4;
+
+    novaPaginaSePreciso(doc, h + 12);
+    const y0 = doc.y;
+    doc.save().roundedRect(MARGIN, y0, larg, h, 9).fill(PRETO).restore();
+    doc.save().rect(MARGIN + 1, y0 + 1, 4, h - 2).fill(OURO).restore();
+    let y = y0 + pad;
+
+    if (verConsciencia) {
+      doc.font('Helvetica-Bold').fontSize(8.5).fillColor(OURO)
+        .text('NÍVEL DE CONSCIÊNCIA', xIn, y, { width: wTxt, characterSpacing: 0.5 });
+      y += 12;
+      // Barra de 5 degraus: acende até o nível do lead.
+      const gap = 4;
+      const wSeg = (Math.min(wTxt, 260) - gap * (NIVEIS.length - 1)) / NIVEIS.length;
+      NIVEIS.forEach((n, i) => {
+        const cor = n.numero <= info.numero ? OURO : '#3a3a42';
+        doc.save().roundedRect(xIn + i * (wSeg + gap), y + 2, wSeg, 6, 3).fill(cor).restore();
+      });
+      y += 16;
+      doc.font('Helvetica-Bold').fontSize(12).fillColor('#ffffff').text(info.rotulo, xIn, y, { width: wTxt });
+      y = doc.y + 2;
+      if (porque) {
+        doc.font('Helvetica').fontSize(10).fillColor('#d6d3cb').text(porque, xIn, y, { width: wTxt });
+        y = doc.y + 4;
+      }
+    }
+    if (sinais.length) {
+      if (verConsciencia) y += 10;
+      doc.font('Helvetica-Bold').fontSize(8.5).fillColor(OURO)
+        .text('SINAIS DE COMPRA', xIn, y, { width: wTxt, characterSpacing: 0.5 });
+      y += 14;
+      sinais.forEach((s) => {
+        doc.font('Helvetica-Bold').fontSize(10).fillColor(OURO).text('+', xIn, y, { width: 12 });
+        doc.font('Helvetica').fontSize(10).fillColor('#ffffff').text(String(s), xIn + 16, y, { width: wTxt - 16 });
+        y = doc.y + 4;
+      });
+    }
+    doc.y = y0 + h + 16;
+    doc.x = MARGIN;
+  }
+
+  // ---- Como foi a conversa (o desenrolar, com os nomes) ----
+  const conversa = (dados.conversa || []).filter(Boolean);
+  if (conversa.length) {
+    novaPaginaSePreciso(doc, 60);
+    doc.font('Helvetica-Bold').fontSize(12.5).fillColor('#0f172a').text('Como foi a conversa', MARGIN, doc.y);
+    const lyC = doc.y + 1.5;
+    doc.save().moveTo(MARGIN, lyC).lineTo(MARGIN + 44, lyC).lineWidth(2).strokeColor(OURO).stroke().restore();
+    doc.moveDown(0.55);
+    doc.font('Helvetica').fontSize(10.5).fillColor('#111827');
+    conversa.forEach((item) => {
+      novaPaginaSePreciso(doc, 26);
+      bullet(doc, '•', semEmoji(item), MARGIN, larg);
+      doc.moveDown(0.18);
+    });
+    doc.moveDown(0.7);
+  }
 
   // ---- Seções ----
   (dados.secoes || []).forEach((secao) => {
@@ -230,9 +316,12 @@ const MAX_PAGINAS = 2;
 const CORTES = [
   (d) => { d.citacoes = (d.citacoes || []).slice(0, 2); },
   (d) => { d.citacoes = (d.citacoes || []).slice(0, 1); },
+  (d) => { d.conversa = (d.conversa || []).slice(0, 4); },
   (d) => { d.secoes = (d.secoes || []).map((s) => ({ ...s, itens: (s.itens || []).slice(0, 3) })); },
   (d) => { d.citacoes = []; },
+  (d) => { d.conversa = (d.conversa || []).slice(0, 3); d.sinais_compra = (d.sinais_compra || []).slice(0, 3); },
   (d) => { d.secoes = (d.secoes || []).map((s) => ({ ...s, itens: (s.itens || []).slice(0, 2) })); },
+  (d) => { d.conversa = (d.conversa || []).slice(0, 2); d.sinais_compra = (d.sinais_compra || []).slice(0, 2); },
   (d) => { d.secoes = (d.secoes || []).slice(0, 3); },
   (d) => { d.secoes = (d.secoes || []).slice(0, 2); },
 ];
@@ -259,7 +348,7 @@ async function gerarPdfBuffer(dados) {
 function renderizarPdf(dados) {
   return new Promise((resolve, reject) => {
     try {
-      const doc = new PDFDocument({ size: 'A4', margin: MARGIN, bufferPages: true });
+      const doc = new PDFDocument({ size: 'A4', margin: MARGIN, bufferPages: true, compress: process.env.PDF_SEM_COMPRESSAO !== '1' });
       const chunks = [];
       let paginas = 0;
       doc.on('data', (c) => chunks.push(c));
@@ -317,4 +406,4 @@ async function gerarPdf(dados, jid) {
   return caminho;
 }
 
-module.exports = { gerarPdf, gerarPdfBuffer };
+module.exports = { gerarPdf, gerarPdfBuffer, renderizarPdf };

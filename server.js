@@ -23,6 +23,7 @@ const db = require('./src/db');
 const base = require('./src/base');
 const diario = require('./src/diario');
 const crm = require('./src/crm');
+const { normalizarConsciencia } = require('./src/consciencia');
 
 const QUALIDADES_VALIDAS = new Set(['eco', 'standard', 'premium']);
 const qualidadeValida = (q) => (QUALIDADES_VALIDAS.has(q) ? q : 'standard');
@@ -627,6 +628,9 @@ function saneadorDeReport(d) {
       }))
       .filter((s) => s.titulo || s.itens.length),
     citacoes: arr(d.citacoes).map(txt).map((t) => t.trim()).filter(Boolean),
+    consciencia: normalizarConsciencia(d.consciencia),
+    conversa: arr(d.conversa).map(txt).map((t) => t.trim()).filter(Boolean).slice(0, 6),
+    sinais_compra: arr(d.sinais_compra).map(txt).map((t) => t.trim()).filter(Boolean).slice(0, 5),
     abertura: txt(d.abertura).trim(),
     frase_impacto: txt(d.frase_impacto).trim(),
   };

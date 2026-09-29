@@ -638,3 +638,53 @@ test('Extensão (admin): sem token no servidor, avisa o que falta; nome vai como
   assert.equal(p.$('crmTestar').disabled, false);
   p.fechar();
 });
+
+// ---------------------------------------------------------------- report enriquecido na tela
+const RELATORIO_RICO = {
+  ...RELATORIO,
+  consciencia: { nivel: 'produto', porque: 'Perguntou como funciona o acompanhamento' },
+  sinais_compra: ['Confirmou o investimento'],
+  conversa: ['Ana explicou que a entrega é a conta completa; Marcos disse que faz sentido.'],
+};
+
+test('report rico no painel: mostra consciência, sinais e a conversa; editar vai para o PDF', async () => {
+  const api = apiBase({ papel: 'sdr', nome: 'Ana' })
+    .quando('POST /api/report-texto', () => ({ corpo: { dados: RELATORIO_RICO } }))
+    .quando('POST /api/pdf', () => ({ corpo: { arquivo: 'r.pdf', arquivoBase64: 'QQ==' } }));
+  const p = await painelSdrComTexto(api);
+  p.$('gerar').click();
+  await esperar(() => visivel(p.$('resultado')), { motivo: 'report na tela' });
+  const t = p.$('report').textContent;
+  for (const x of ['Temperatura do lead', 'Nível de consciência: Consciente da nossa entrega', 'Perguntou como funciona o acompanhamento',
+    'Sinais de compra', 'Confirmou o investimento', 'Como foi a conversa', 'Ana explicou que a entrega é a conta completa']) {
+    assert.ok(t.includes(x), 'faltou na tela: ' + x);
+  }
+  assert.ok(t.indexOf('Como foi a conversa') < t.indexOf('O que o closer deve bater'));
+
+  const campo = p.document.querySelector('[data-edit="conversa.0"]');
+  campo.textContent = 'Ana explicou a entrega (editado)';
+  campo.dispatchEvent(new p.w.Event('input', { bubbles: true }));
+  const porque = p.document.querySelector('[data-edit="consciencia.porque"]');
+  porque.textContent = 'Já pediu para começar (editado)';
+  porque.dispatchEvent(new p.w.Event('input', { bubbles: true }));
+  p.$('dl').click();
+  await esperar(() => api.contar('POST /api/pdf') === 1, { motivo: 'PDF pedido' });
+  const enviado = api.corpos('POST /api/pdf')[0].dados;
+  assert.deepEqual(enviado.conversa, ['Ana explicou a entrega (editado)']);
+  assert.equal(enviado.consciencia.porque, 'Já pediu para começar (editado)');
+  assert.equal(enviado.consciencia.nivel, 'produto');
+  await esperar(() => p.downloads.length === 1, { motivo: 'download do PDF terminar' });
+  p.fechar();
+});
+
+test('report rico no painel: consciência baixa não aparece na tela', async () => {
+  const api = apiBase({ papel: 'sdr', nome: 'Ana' })
+    .quando('POST /api/report-texto', () => ({ corpo: { dados: { ...RELATORIO_RICO, consciencia: { nivel: 'problema', porque: 'x' }, sinais_compra: [] } } }));
+  const p = await painelSdrComTexto(api);
+  p.$('gerar').click();
+  await esperar(() => visivel(p.$('resultado')), { motivo: 'report na tela' });
+  assert.ok(!p.$('report').textContent.includes('Nível de consciência'));
+  assert.ok(!p.$('report').textContent.includes('Temperatura do lead'));
+  assert.ok(p.$('report').textContent.includes('Como foi a conversa'));
+  p.fechar();
+});

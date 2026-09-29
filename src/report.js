@@ -6,6 +6,7 @@ const { gerarPdf } = require('./generatePdf');
 const base = require('./base');
 const { normalizarConversa, normalizarTextoLivre } = require('./conversation-normalizer');
 const { verificarCitacoes, neutralizarMarcas } = require('./citacoes');
+const { normalizarConsciencia } = require('./consciencia');
 
 const LLM_PROVIDER = (process.env.LLM_PROVIDER || 'anthropic').toLowerCase();
 
@@ -13,7 +14,7 @@ const LLM_PROVIDER = (process.env.LLM_PROVIDER || 'anthropic').toLowerCase();
 // idênticos já gerados (ex.: mudança de tom, de campos obrigatórios). Compõe
 // a reportKey em src/idempotencia.js — sem isso, um prompt novo poderia ser
 // confundido com o antigo e nunca rodar de novo pra mesma conversa.
-const PROMPT_VERSAO = 'v2';
+const PROMPT_VERSAO = 'v3';
 
 // Modo de qualidade só troca o MODELO da Anthropic — nunca inferido sozinho:
 // "standard" é o comportamento de sempre (ANTHROPIC_MODEL), então nenhum
@@ -71,6 +72,19 @@ const EXEMPLO_PEQUENO = {
     'Em 15 dias já fiz 104 vendas, tá saindo mais rápido do que eu imaginava.',
     'Eu quero mesmo é sair do CLT e ter qualidade de vida.',
   ],
+  consciencia: {
+    nivel: 'produto',
+    porque: 'Já entendeu como funciona o acompanhamento e topou o investimento na hora — chega sabendo o que quer.',
+  },
+  conversa: [
+    'O SDR abriu perguntando como estava a operação; Vitor contou da loja física de moto peças e das 104 vendas nos primeiros 15 dias no Mercado Livre.',
+    'O SDR explicou que o programa monta a estrutura de catálogo e Full com acompanhamento semanal; Vitor respondeu que era exatamente o que faltava.',
+    'Ao ouvir o valor mínimo de R$3 mil, Vitor respondeu "OK" e já aceitou marcar a reunião.',
+  ],
+  sinais_compra: [
+    'Aceitou o investimento mínimo de R$3 mil sem pedir desconto',
+    'Já tem tração: 104 vendas em 15 dias',
+  ],
   frase_impacto:
     'Ele já vendeu muito rápido no começo; agora a reunião precisa mostrar como transformar tração em estrutura para ele sair do CLT com segurança.',
 };
@@ -119,11 +133,24 @@ const EXEMPLO_GRANDE = {
     'Preciso começar no Mercado Livre, isso aí já tá decidido.',
     'Tenho uns 100 mil parados em produto que não gira, isso me incomoda todo mês.',
   ],
+  consciencia: {
+    nivel: 'solucao',
+    porque: 'Já decidiu pelo Mercado Livre como canal para escoar o estoque — procura o caminho certo para executar.',
+  },
+  conversa: [
+    'Márcia abriu dizendo que precisa começar no Mercado Livre e que isso já está decidido com o sócio.',
+    'O SDR perguntou sobre a operação; ela contou da distribuidora com 12 funcionários, só atacado, e dos R$100 mil de estoque parado.',
+    'O SDR explicou que o trabalho separa a linha e a precificação do varejo para não bater com o atacado; Márcia gostou e pediu para marcar a reunião.',
+  ],
+  sinais_compra: [
+    'Canal já decidido internamente: "isso aí já tá decidido"',
+    'Pediu a reunião depois da explicação sobre linha separada',
+  ],
   frase_impacto:
     'Ela não precisa ser vendida no canal — precisa de um caminho que não brigue com o atacado e que o sócio aprove sem estar na sala.',
 };
 
-const SYSTEM_PROMPT = `Você é um assistente de pré-vendas que lê a conversa entre um vendedor e um lead e monta o relatório de handoff que o closer vai usar para conduzir a reunião. CABE EM 1 PÁGINA.
+const SYSTEM_PROMPT = `Você é um assistente de pré-vendas que lê a conversa entre um vendedor e um lead e monta o relatório de handoff que o closer vai usar para conduzir a reunião. CABE EM ATÉ 2 PÁGINAS (o essencial na primeira).
 
 TOM — O RELATÓRIO É UMA VENDA DO LEAD PRO CLOSER, E TEM QUE SER SÓ POSITIVO. Ele precisa terminar de ler animado, com tesão de entrar na call — nenhuma frase pode soar como alerta, aviso ou veredito ruim. Isso muda 100% COMO você escreve, nunca o fato em si:
 - BANIDO do texto visível: "objeção", "risco", "problema", "desafio", "teme", "preocupa", "trava", "atrapalha", "dificulta", "barreira", "sem dinheiro", "não tem perfil", "pouco engajado", "difícil", "sem urgência", "bagunçado", "desinteressado", "respondeu seco" — e qualquer palavra que soe como alerta em vez de estratégia. Reescreva tudo em linguagem de plano de ação e oportunidade.
@@ -171,6 +198,18 @@ LEITURA DA CONVERSA — regras de fidelidade:
 
 O CORPO É OBRIGATÓRIO — este é o coração do handoff, o que o closer realmente lê para conduzir a call. O relatório NUNCA pode ser só o resumo + a abertura + as citações: TEM que ter no MÍNIMO 2 seções de análise, e uma delas é SEMPRE "O que o closer deve bater" (ações concretas para a reunião, lista numerada). As outras saem da conversa: "Perfil e momento", "Dor e objetivo", "Como fechar essa call". A abertura NÃO substitui as seções — ela é só a fala de início; o corpo analítico continua obrigatório mesmo quando a conversa é curta (aí as seções ficam curtas, mas existem).
 
+NÍVEL DE CONSCIÊNCIA (campo "consciencia") — classifique o lead na escala de consciência, SÓ pelo que ele disse ou demonstrou na conversa:
+- "inconsciente": ainda não demonstrou perceber o problema.
+- "problema": sabe que tem a dor (vende pouco, depende do CLT, estoque parado...), mas ainda não sabe como resolver.
+- "solucao": sabe que precisa de uma solução do tipo que oferecemos (estrutura, método, acompanhamento para vender online) e está buscando.
+- "produto": já entende o que a nossa entrega faz por ele — ouviu a explicação do pré-vendedor e reagiu bem, ou perguntou como funciona.
+- "pronto": quer entrar — perguntou de valores, condições ou início, confirmou o investimento ou pediu o próximo passo.
+Na dúvida entre dois níveis, fique com o MENOR: o closer precisa confiar nesse selo. Em "porque", UMA frase curta com a evidência, em tom de venda ("Já perguntou como funciona o acompanhamento e confirmou o investimento — chega decidido"). O relatório só mostra o selo do nível "solucao" para cima; abaixo disso ele fica fora do PDF. Então nunca escreva nada negativo aqui.
+
+COMO FOI A CONVERSA (campo "conversa") — 3 a 5 frases em ordem cronológica, contando o desenrolar para o closer chegar sabendo o que já foi dito. Terceira pessoa e com os nomes: o pré-vendedor pelo NOME DELE (informado abaixo, junto da conversa) e o lead pelo nome. Ex.: "Cauã abriu perguntando sobre a operação; Marcos contou que vende peças de moto há 2 anos." / "Cauã explicou que a entrega é X, Y e Z; Marcos respondeu que faz sentido para o momento dele." Registre o que o PRÉ-VENDEDOR apresentou (a entrega, o método, o próximo passo, a reunião marcada) e como o LEAD reagiu. Use só o que está na conversa: nada de entrega, benefício, preço ou data que não foi dito. Mesmo tom de venda do resto — o desenrolar mostra um lead engajado, nunca uma conversa difícil. Nos exemplos, "o SDR" está no lugar do nome do pré-vendedor; no seu relatório use o nome.
+
+SINAIS DE COMPRA (campo "sinais_compra") — 1 a 4 sinais concretos e curtos de que o lead quer avançar, cada um com a prova da conversa ("Aceitou o investimento de R$3 mil sem pedir desconto"; "Pediu para a esposa entrar na reunião"). Só o que aconteceu. Se não houver nenhum sinal claro, devolva [].
+
 TAMANHO (é um handoff, não um dossiê): resumo com 4 a 7 linhas; de 2 a 4 seções; no máximo 4 bullets por seção, cada um de 1 a 2 linhas. Não encha para parecer completo, mas também não colapse o corpo: as seções sempre existem.
 
 Preencha pela ferramenta "gerar_relatorio":
@@ -179,6 +218,9 @@ Preencha pela ferramenta "gerar_relatorio":
 - "secoes": OBRIGATÓRIO ter de 2 a 4 seções, SEMPRE incluindo "O que o closer deve bater" (numerada:true, ações concretas). Título curto e direto (SEM emoji, SEM símbolo) + bullets densos. As demais saem da conversa: "Perfil e momento", "Dor e objetivo", "Como fechar essa call". Nunca devolva secoes vazio nem só uma seção.
 - "citacoes": 1 a 3 FALAS EXATAS/verbatim do LEAD (copiadas literalmente das linhas do LEAD, inclusive áudios): dor, sinal de compra, objeção, objetivo. Sem paráfrase, sem falas do vendedor; [] se não houver.
 - "abertura": um EXTRA além do relatório completo — a fala com que o CLOSER começa a reunião, para ler quase como está. NÃO é o relatório; o corpo (as seções) continua obrigatório do mesmo jeito. Estilo do handoff: cumprimenta o lead pelo nome, diz que o pré-vendedor repassou o contexto, resume a situação real (se está começando do zero ou já vende, o que vende/quer, a motivação) e TERMINA confirmando com o lead ("é isso mesmo?"). 2 a 4 frases, primeira pessoa, tom cordial. Use SOMENTE o que apareceu na conversa. Não fale de preço nem de proposta. Se souber o nome do pré-vendedor, cite-o; senão, diga "meu time".
+- "consciencia": { "nivel", "porque" } conforme a seção NÍVEL DE CONSCIÊNCIA.
+- "conversa": 3 a 5 frases do desenrolar, com o nome do pré-vendedor e do lead (seção COMO FOI A CONVERSA).
+- "sinais_compra": 1 a 4 sinais concretos de compra, ou [].
 - "frase_impacto": uma frase única e afiada de fechamento (pode parafrasear).`;
 
 function montarHistoricoFormatado(historico) {
@@ -213,7 +255,7 @@ function montarUserPrompt(historicoFormatado, nomeContato, nomeSdr) {
     : '';
   const sdr = String(nomeSdr || '').trim();
   if (sdr) {
-    bloco += `\nNOME DO PRÉ-VENDEDOR (quem atendeu antes): "${sdr}". Use no campo "abertura" ("o ${sdr} me passou aqui...").\n`;
+    bloco += `\nNOME DO PRÉ-VENDEDOR (quem atendeu antes): "${sdr}". Use no campo "abertura" ("o ${sdr} me passou aqui...") e no campo "conversa" ("${sdr} explicou que...").\n`;
   }
   return montarUserPromptBase(historicoFormatado, bloco);
 }
@@ -296,6 +338,12 @@ function normalizarDados(dados) {
     ? dados.citacoes.map((x) => String(x).trim().replace(/^["“”']+|["“”']+$/g, '').trim()).filter(Boolean)
     : [];
 
+  out.consciencia = normalizarConsciencia(dados.consciencia);
+  const listaDeTextos = (v, max) =>
+    Array.isArray(v) ? v.map((x) => String(x == null ? '' : x).trim()).filter(Boolean).slice(0, max) : [];
+  out.conversa = listaDeTextos(dados.conversa, 6);
+  out.sinais_compra = listaDeTextos(dados.sinais_compra, 5);
+
   return out;
 }
 
@@ -347,9 +395,29 @@ const REPORT_TOOL = {
         description:
           'Fala pronta para o closer INICIAR a reunião, no estilo do handoff: cumprimenta o lead pelo nome, cita que o pré-vendedor repassou o contexto, resume a situação real dele (nível, o que vende/quer, motivação) e termina confirmando ("é isso mesmo?"). 2 a 4 frases, na primeira pessoa, só com o que apareceu na conversa.',
       },
+      consciencia: {
+        type: 'object',
+        description: 'Nível de consciência do lead, julgado só pelo que ele disse ou demonstrou na conversa.',
+        properties: {
+          nivel: { type: 'string', enum: ['inconsciente', 'problema', 'solucao', 'produto', 'pronto'] },
+          porque: { type: 'string', description: 'Uma frase curta, em tom de venda, com a evidência da conversa.' },
+        },
+        required: ['nivel', 'porque'],
+      },
+      conversa: {
+        type: 'array',
+        items: { type: 'string' },
+        description:
+          'Como foi a conversa: 3 a 5 frases em ordem cronológica, em terceira pessoa, com o nome do pré-vendedor e do lead ("Cauã explicou que a entrega é..."). Só o que foi dito.',
+      },
+      sinais_compra: {
+        type: 'array',
+        items: { type: 'string' },
+        description: '1 a 4 sinais concretos de que o lead quer avançar, cada um com a prova da conversa. [] se não houver.',
+      },
       frase_impacto: { type: 'string' },
     },
-    required: ['lead', 'resumo', 'secoes', 'abertura'],
+    required: ['lead', 'resumo', 'secoes', 'abertura', 'consciencia', 'conversa'],
   },
 };
 
@@ -656,4 +724,5 @@ module.exports = {
   dadosDireto,
   dadosDeTexto,
   PROMPT_VERSAO,
+  normalizarDados,
 };

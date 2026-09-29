@@ -20,6 +20,15 @@ SDR já tem aberta e logada — em qualquer uma das duas plataformas.
 - **Tom só positivo** — o relatório é pensado para "vender" o lead pro closer: nenhum
   ponto de atenção real (objeção, decisor ausente, orçamento apertado) é omitido, mas
   tudo é escrito como próximo passo estratégico, nunca como alerta ou veredito ruim.
+- **Temperatura do lead** (logo abaixo do resumo, cartão escuro): o **nível de
+  consciência** do lead (escala de Schwartz: inconsciente → problema → solução → nossa
+  entrega → pronto para decidir) com o porquê, e os **sinais de compra** com a prova da
+  conversa. O selo de consciência **só aparece de "consciente da solução" para cima** —
+  abaixo disso fica fora do PDF, para não esfriar o closer (`src/consciencia.js`). Na
+  dúvida entre dois níveis, a IA fica com o menor, para o selo ser confiável.
+- **Como foi a conversa**: 3 a 5 frases do desenrolar, com os nomes ("Cauã explicou que a
+  entrega é…; Marcos respondeu que faz sentido…") — o closer chega sabendo o que o SDR
+  já apresentou e como o lead reagiu. Só o que foi dito, no mesmo tom de venda.
 - O card final ("Como iniciar a reunião") traz a fala pronta **e** os 3 pontos-chave
   do resumo juntos — o closer não precisa reler o handoff inteiro entre uma call e
   outra.
@@ -234,6 +243,12 @@ diária/mensal e o gasto por SDR na aba **Reports gerados** do dashboard.
 
 Reeditar um report e baixar o PDF de novo (`/api/pdf`) **não** chama a IA — não conta
 como um novo report nem soma custo.
+
+### Versão do prompt
+
+`PROMPT_VERSAO` (em `src/report.js`) compõe a `reportKey`: subir a versão faz a mesma
+conversa poder ser gerada de novo com o prompt novo. `v3` = nível de consciência, "Como foi
+a conversa" e sinais de compra.
 
 ### Normalização e custo
 

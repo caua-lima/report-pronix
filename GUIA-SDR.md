@@ -79,7 +79,7 @@ A extensão só funciona no computador. Pra gerar report do que você atende pel
 
 ## O que ele faz
 
-Lê a conversa inteira (inclusive as mensagens antigas), transcreve os áudios e monta o report em PDF, sempre com **investimento, decisores e prioridade**, mais as falas do lead entre aspas. O arquivo sai como `Report_NomeDoLead_Data.pdf`.
+Lê a conversa inteira (inclusive as mensagens antigas), transcreve os áudios e monta o report em PDF, sempre com **investimento, decisores e prioridade**, mais as falas do lead entre aspas. Também traz o **nível de consciência** do lead (só quando ele está bom: de "consciente da solução" para cima), os **sinais de compra** e **"Como foi a conversa"**, contando o que você apresentou e como o lead reagiu. Por isso vale a pena explicar a entrega com clareza na conversa: ela vai para o report com o seu nome. O arquivo sai como `Report_NomeDoLead_Data.pdf`.
 
 ## Se der problema
 

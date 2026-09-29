@@ -248,3 +248,22 @@ test('popup: liga/desliga da ficha do RD Station fica salvo (ligado por padrão)
   assert.equal(reaberto.document.getElementById('fichaCrm').checked, false);
   await fechar(reaberto);
 });
+
+test('popup: último report mostra consciência (quando boa), sinais e "Como foi a conversa", editáveis', async () => {
+  const dono = await impressao('pnx_ana');
+  const dados = {
+    ...REPORT,
+    consciencia: { nivel: 'pronto', porque: 'Pediu para começar' },
+    sinais_compra: ['Pediu o link de pagamento'],
+    conversa: ['Ana explicou a entrega; Marcos topou.'],
+  };
+  const p = await abrirPopup({ chave: 'pnx_ana', server: SERVER, ultimoReport: { dados, nome: 'Marcos', server: SERVER, dono, quando: 7, versao: 0 } }, { nomePorChave: { pnx_ana: 'Ana' } });
+  await esperar(() => !p.document.getElementById('report').classList.contains('hidden'), { motivo: 'report na tela' });
+  const t = p.document.getElementById('report').textContent;
+  assert.ok(t.includes('Nível de consciência: Pronto para decidir'));
+  assert.ok(t.includes('Pediu o link de pagamento'));
+  assert.ok(t.includes('Como foi a conversa'));
+  assert.ok(p.document.querySelector('[data-edit="conversa.0"]'));
+  assert.ok(p.document.querySelector('[data-edit="consciencia.porque"]'));
+  await fechar(p);
+});
