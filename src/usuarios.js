@@ -24,8 +24,23 @@ const ehMaster = (u) => Boolean(u && u.papel === 'master');
 async function ler() {
   const j = await db.getJson(CHAVE_DB, { usuarios: [] });
   const lista = Array.isArray(j && j.usuarios) ? j.usuarios : [];
-  return { usuarios: lista.map(normalizar) };
+  const usuarios = lista.map(normalizar);
+  // Sem nenhum master (logo depois de o "admin" deixar de existir), o dono da ferramenta é promovido
+  // uma única vez, pelo nome (MASTER_NOME, padrão "Cauã Lima"). Depois disso a escolha fica gravada e
+  // só o master muda papéis.
+  if (usuarios.length && !usuarios.some((u) => u.papel === 'master')) {
+    const alvo = semAcento(process.env.MASTER_NOME || 'Cauã Lima');
+    const dono = usuarios.find((u) => semAcento(u.nome) === alvo);
+    if (dono) {
+      dono.papel = 'master';
+      await db.setJson(CHAVE_DB, { ...j, usuarios });
+    }
+  }
+  return { usuarios };
 }
+
+const semAcento = (s) =>
+  String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
 
 async function listar() {
   return (await ler()).usuarios;

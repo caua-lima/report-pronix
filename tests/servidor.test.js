@@ -615,3 +615,24 @@ test('usuário antigo com papel "admin" vira gestor (não master) na leitura', (
     assert.equal(r.json.usuarios.find((u) => u.id === 'velho1').papel, 'gestor');
   });
 });
+
+test('sem nenhum master, o dono (MASTER_NOME, padrão "Cauã Lima") é promovido uma vez e fica gravado', async () => {
+  const fs2 = require('fs');
+  const arq = require('path').join(DADOS, 'usuarios.json');
+  const original = fs2.readFileSync(arq, 'utf8');
+  try {
+    const j = JSON.parse(original);
+    j.usuarios = [
+      { id: 'a1', nome: 'Cauã Lima', papel: 'admin', chave: 'pnx_caua', criadoEm: '2026-07-16T10:00:00Z' },
+      { id: 'a2', nome: 'Samuel', papel: 'sdr', chave: 'pnx_samuel', criadoEm: '2026-07-16T10:00:00Z' },
+    ];
+    fs2.writeFileSync(arq, JSON.stringify(j));
+    const lista = (await api('GET', '/api/admin/usuarios', { admin: true })).json.usuarios;
+    assert.equal(lista.find((u) => u.nome === 'Cauã Lima').papel, 'master');
+    assert.equal(lista.find((u) => u.nome === 'Samuel').papel, 'sdr');
+    assert.equal(JSON.parse(fs2.readFileSync(arq, 'utf8')).usuarios[0].papel, 'master', 'gravado');
+    assert.equal((await api('POST', '/api/admin/usuarios', { chave: 'pnx_caua', corpo: { nome: 'Novo', papel: 'sdr' } })).status, 200, 'já age como master');
+  } finally {
+    fs2.writeFileSync(arq, original);
+  }
+});
