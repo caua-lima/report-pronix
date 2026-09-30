@@ -15,7 +15,7 @@ Detalhes técnicos em [`auditoria-pronix.md`](auditoria-pronix.md) e [`plano-imp
 
 - [x] Contato salvo com nome: acha no RD sem digitar número (nome limpo de "PRONIX" etc.; número do painel "Dados do contato")
 - [x] Acentos quebrados da anotação consertados; campos repetidos e de anúncio/origem fora do cartão
-- [x] Ficha e resumo só para quem o admin liberar (aba Acessos → Ficha RD; padrão: só admin)
+- [x] Ficha e resumo liberados para todos (30/09); aba Acessos → Ficha RD desliga para alguém
 - [x] Resumo rápido da conversa no cartão: cenário, onde parou, última pergunta, próximo passo
 - [ ] **Você:** enviar a extensão 1.8.0 à Chrome Web Store
 

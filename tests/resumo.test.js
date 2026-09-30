@@ -58,6 +58,11 @@ test.before(async () => {
   })).json()).usuario.chave;
   E.admin = await criar('Cauã Admin', 'admin');
   E.sdr = await criar('SDR Sem Ficha', 'sdr');
+  // Todos vêm liberados; este o admin desligou na aba Acessos.
+  const us = (await (await fetchReal(base + '/api/admin/usuarios', { headers: { 'x-admin-pass': 'senha-de-teste' } })).json()).usuarios;
+  await fetchReal(base + '/api/admin/usuarios/' + us.find((u) => u.nome === 'SDR Sem Ficha').id, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json', 'x-admin-pass': 'senha-de-teste' }, body: JSON.stringify({ fichaCrm: false }),
+  });
 });
 test.after(async () => {
   await new Promise((r) => servidor.close(r));
@@ -77,7 +82,7 @@ const CONVERSA = [
   { from: 'eu', type: 'texto', content: 'Consegue investir a partir de R$3 mil?', timestamp: '2026-09-21T13:05:00.000Z' },
 ];
 
-test('resumo rápido: só para quem tem a ficha liberada', async () => {
+test('resumo rápido: quem o admin desligou não usa', async () => {
   const r = await post('/api/resumo-rapido', { mensagens: CONVERSA, nome: 'Marcos' }, E.sdr);
   assert.equal(r.status, 403);
   assert.equal(chamadas.length, 0);

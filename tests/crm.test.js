@@ -283,28 +283,29 @@ test('escolhe a negociação em aberto; se todas fecharam, a última', () => {
   assert.equal(crm.escolherNegociacao([]), null);
 });
 
-// ---------------------------------------------------------------- só para quem o admin liberou
-test('ficha só para quem o admin liberou: SDR sem liberação não recebe nada (e o RD nem é consultado)', async () => {
-  chamadasRd.length = 0;
+// ---------------------------------------------------------------- liberado para todos (o admin pode desligar)
+test('ficha liberada para todos: SDR e admin já vêm ligados', async () => {
+  const us = (await (await fetchReal(base + '/api/admin/usuarios', { headers: { 'x-admin-pass': 'senha-de-teste' } })).json()).usuarios;
+  assert.equal(us.find((u) => u.nome === 'Admin Teste').fichaCrm, true);
+  assert.equal(us.find((u) => u.nome === 'SDR Sem Ficha').fichaCrm, true, 'SDR sem escolha do admin: ligado');
   const r = await post('/api/crm/lead', { telefone: '5571999998888' }, { chave: E.sdr2 });
-  assert.deepEqual(r.json, { configurado: false });
-  assert.equal(chamadasRd.length, 0);
+  assert.equal(r.json.encontrado, true);
 });
 
-test('admin já vem liberado; o admin liga e desliga pela API da aba Acessos', async () => {
-  const lista = async () => (await (await fetchReal(base + '/api/admin/usuarios', { headers: { 'x-admin-pass': 'senha-de-teste' } })).json()).usuarios;
-  const us = await lista();
-  assert.equal(us.find((u) => u.nome === 'Admin Teste').fichaCrm, true, 'admin: ligado por padrão');
-  assert.equal(us.find((u) => u.nome === 'SDR Sem Ficha').fichaCrm, false, 'SDR: desligado por padrão');
+test('o admin desliga e religa para alguém pela aba Acessos; desligado, o RD nem é consultado', async () => {
   const patch = (id, corpo, headers = { 'x-admin-pass': 'senha-de-teste' }) =>
     fetchReal(base + '/api/admin/usuarios/' + id, { method: 'PATCH', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(corpo) });
-  assert.equal((await patch(E.idSdr2, { fichaCrm: true }, { 'x-cr-key': E.sdr })).status, 401, 'SDR não libera ninguém');
+  assert.equal((await patch(E.idSdr2, { fichaCrm: false }, { 'x-cr-key': E.sdr })).status, 401, 'SDR não mexe em ninguém');
   assert.equal((await patch(E.idSdr2, { fichaCrm: 'sim' })).status, 400);
   assert.equal((await patch('naoexiste', { fichaCrm: true })).status, 404);
-  assert.equal((await patch(E.idSdr2, { fichaCrm: true })).status, 200);
+
+  assert.equal((await patch(E.idSdr2, { fichaCrm: false })).status, 200);
+  chamadasRd.length = 0;
+  assert.deepEqual((await post('/api/crm/lead', { telefone: '5511900001111' }, { chave: E.sdr2 })).json, { configurado: false });
+  assert.equal(chamadasRd.length, 0);
+
+  await patch(E.idSdr2, { fichaCrm: true });
   assert.equal((await post('/api/crm/lead', { telefone: '5571999998888' }, { chave: E.sdr2 })).json.encontrado, true);
-  await patch(E.idSdr2, { fichaCrm: false });
-  assert.deepEqual((await post('/api/crm/lead', { telefone: '5571999998888' }, { chave: E.sdr2 })).json, { configurado: false });
 });
 
 // ---------------------------------------------------------------- contato salvo com nome no WhatsApp

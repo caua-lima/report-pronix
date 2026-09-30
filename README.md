@@ -332,9 +332,9 @@ personalizados, outras anotações e o link para abrir no RD. Liga/desliga no po
 - **Acentos quebrados** que integrações gravam no RD ("EmpresÃ¡rio") são consertados, e campos
   repetidos ("Vende online?" x "Vende online") aparecem uma vez só. Campos de anúncio/origem
   ([AD]…, LP, UTM, criativo, conjunto) não entram na ficha.
-- **Só para quem o admin liberar**: aba **Acessos** → caixa **Ficha RD** por usuário (padrão: só
-  admin). Para os outros, o servidor responde como se o CRM estivesse desligado e o RD nem é
-  consultado.
+- **Liberado para todos os usuários.** Na aba **Acessos**, a caixa **Ficha RD** desliga (ou
+  religa) a ficha e o resumo rápido para uma pessoa. Desligado, o servidor responde como se o CRM
+  estivesse desligado e o RD nem é consultado.
 - **Resumo rápido da conversa** (botão no cartão): lê a conversa aberta, inclusive transcrevendo
   os áudios, e a IA devolve o **cenário**, **onde parou** (quem deve responder), a **última
   pergunta** e o **próximo passo** — para retomar um lead sem reler nem reouvir tudo.

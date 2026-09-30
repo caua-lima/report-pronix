@@ -851,7 +851,7 @@
       }
     }
 
-    // Ficha do RD Station no WhatsApp: liberada por usuário (por padrão, só admin).
+    // Ficha do RD Station no WhatsApp (e resumo rápido): liberada para todos; desmarcar desliga para a pessoa.
     $('lista').addEventListener('change', async (ev) => {
       const c = ev.target.closest('[data-ficha-crm]');
       if (!c) return;

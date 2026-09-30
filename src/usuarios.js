@@ -9,10 +9,11 @@ const db = require('./db');
 const CHAVE_DB = 'usuarios';
 
 // Quem já existia antes dos papéis entra como sdr — nunca como admin.
-// fichaCrm: quem vê a ficha do RD Station no WhatsApp. Sem escolha explícita do admin: só admin.
+// fichaCrm: quem vê a ficha do RD Station no WhatsApp (e o resumo rápido). Liberado para todos;
+// o admin pode desligar para alguém na aba Acessos (aí fica false, e essa escolha é respeitada).
 const normalizar = (u) => {
   const papel = u.papel === 'admin' ? 'admin' : 'sdr';
-  return { ...u, papel, fichaCrm: typeof u.fichaCrm === 'boolean' ? u.fichaCrm : papel === 'admin' };
+  return { ...u, papel, fichaCrm: typeof u.fichaCrm === 'boolean' ? u.fichaCrm : true };
 };
 
 async function ler() {
