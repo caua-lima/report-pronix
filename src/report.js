@@ -426,13 +426,14 @@ const REPORT_TOOL = {
 const STATUS_TRANSITORIO = new Set([429, 500, 502, 503, 529]);
 const espera = (ms) => new Promise((r) => setTimeout(r, ms));
 
-async function chamarAnthropic(userPrompt, system, qualidade) {
+async function chamarAnthropic(userPrompt, system, qualidade, opcoes = {}) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     throw new Error('ANTHROPIC_API_KEY não configurada no .env.');
   }
-  const model = modeloPorQualidade(normalizarQualidade(qualidade));
-  const maxTokens = Number(process.env.MAX_REPORT_OUTPUT_TOKENS) || 4000;
+  const model = opcoes.modelo || modeloPorQualidade(normalizarQualidade(qualidade));
+  const maxTokens = opcoes.maxTokens || Number(process.env.MAX_REPORT_OUTPUT_TOKENS) || 4000;
+  const ferramenta = opcoes.tool || REPORT_TOOL;
 
   const ESPERAS_MS = [1500, 4000]; // até 3 tentativas: 1ª direto, 2ª e 3ª com espera.
   const limiteMs = Number(process.env.ANTHROPIC_TIMEOUT_MS) || 50000;
@@ -455,8 +456,8 @@ async function chamarAnthropic(userPrompt, system, qualidade) {
         // dos 5min padrão): num dia de trabalho o prefixo é reescrito ~1x/hora, não a
         // cada report espaçado — menos reescrita = menos gasto.
         system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral', ttl: '1h' } }],
-        tools: [REPORT_TOOL],
-        tool_choice: { type: 'tool', name: 'gerar_relatorio' },
+        tools: [ferramenta],
+        tool_choice: { type: 'tool', name: ferramenta.name },
         messages: [{ role: 'user', content: userPrompt }],
       }),
       });
@@ -730,4 +731,19 @@ module.exports = {
   dadosDeTexto,
   PROMPT_VERSAO,
   normalizarDados,
+  chamarFerramenta,
+  montarHistoricoFormatado,
+  extrairJson,
 };
+
+/**
+ * Chamada avulsa com outra ferramenta de saída estruturada (ex.: resumo rápido). Mesmo retry,
+ * cache de prompt e contagem de tokens do report.
+ */
+async function chamarFerramenta({ system, userPrompt, tool, modelo, maxTokens }) {
+  if (LLM_PROVIDER === 'ollama') {
+    const campos = Object.keys(tool.input_schema.properties).join(', ');
+    return chamarOllama(`${userPrompt}\n\nResponda SÓ com um JSON com os campos: ${campos}.`, system);
+  }
+  return chamarAnthropic(userPrompt, system, 'standard', { tool, modelo, maxTokens });
+}

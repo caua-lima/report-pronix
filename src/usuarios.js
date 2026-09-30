@@ -9,7 +9,11 @@ const db = require('./db');
 const CHAVE_DB = 'usuarios';
 
 // Quem já existia antes dos papéis entra como sdr — nunca como admin.
-const normalizar = (u) => ({ ...u, papel: u.papel === 'admin' ? 'admin' : 'sdr' });
+// fichaCrm: quem vê a ficha do RD Station no WhatsApp. Sem escolha explícita do admin: só admin.
+const normalizar = (u) => {
+  const papel = u.papel === 'admin' ? 'admin' : 'sdr';
+  return { ...u, papel, fichaCrm: typeof u.fichaCrm === 'boolean' ? u.fichaCrm : papel === 'admin' };
+};
 
 async function ler() {
   const j = await db.getJson(CHAVE_DB, { usuarios: [] });
@@ -48,9 +52,19 @@ async function remover(id) {
   return dados.usuarios.length < antes;
 }
 
+/** Liga/desliga a ficha do RD Station para um usuário. */
+async function definirFichaCrm(id, ligada) {
+  const dados = await ler();
+  const u = dados.usuarios.find((x) => x.id === id);
+  if (!u) return false;
+  u.fichaCrm = Boolean(ligada);
+  await db.setJson(CHAVE_DB, dados);
+  return true;
+}
+
 async function porChave(chave) {
   if (!chave) return null;
   return (await ler()).usuarios.find((u) => u.chave === chave) || null;
 }
 
-module.exports = { listar, criar, remover, porChave };
+module.exports = { listar, criar, remover, porChave, definirFichaCrm };

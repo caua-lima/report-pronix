@@ -688,3 +688,21 @@ test('report rico no painel: consciência baixa não aparece na tela', async () 
   assert.ok(p.$('report').textContent.includes('Como foi a conversa'));
   p.fechar();
 });
+
+test('Acessos: a caixa "Ficha RD" liga e desliga a ficha do RD Station por usuário', async () => {
+  const api = apiBase({ usuarios: [
+    { id: 'u1', nome: 'Cauã', papel: 'admin', chave: 'pnx_Admin1234567890abcdefgh', criadoEm: '2026-09-01T10:00:00Z', fichaCrm: true },
+    { id: 'u2', nome: 'Bia', papel: 'sdr', chave: 'pnx_SdrSdr1234567890abcdefgh', criadoEm: '2026-09-01T10:00:00Z', fichaCrm: false },
+  ] }).quando('PATCH /api/admin/usuarios/u2', () => ({ corpo: { ok: true } }));
+  const p = abrirPainel(api, { hash: '#acessos' });
+  await esperar(() => p.$('lista').textContent.includes('Bia'), { motivo: 'lista de acessos' });
+  const caixa = (id) => p.document.querySelector(`[data-ficha-crm="${id}"]`);
+  assert.equal(caixa('u1').checked, true);
+  assert.equal(caixa('u2').checked, false);
+  caixa('u2').checked = true;
+  caixa('u2').dispatchEvent(new p.w.Event('change', { bubbles: true }));
+  await esperar(() => api.contar('PATCH /api/admin/usuarios/u2') === 1, { motivo: 'PATCH' });
+  assert.deepEqual(api.corpos('PATCH /api/admin/usuarios/u2'), [{ fichaCrm: true }]);
+  await esperar(() => /Ficha do RD liberada/.test(p.$('toast').textContent), { motivo: 'aviso' });
+  p.fechar();
+});

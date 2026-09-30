@@ -322,6 +322,25 @@ personalizados, outras anotações e o link para abrir no RD. Liga/desliga no po
 - **Onde aparece.** Encostado na borda direita da conversa (não da janela): quando a extensão
   oficial do RD Station CRM está aberta à direita, o cartão fica ao lado do painel dela. Contato salvo com nome: busca pelo nome; mais
   de um resultado vira uma lista para o SDR escolher. Não achou: o próprio cartão tem busca.
+- **Contato salvo com nome no WhatsApp.** O nome salvo é limpo das etiquetas do time
+  ("Armando PRONIX Moretti" → "Armando Moretti"; lista em `CRM_PALAVRAS_IGNORADAS`, além de
+  pronix/prxc/lead/cliente/sdr/closer) e buscado no RD: nome inteiro, nome limpo, nome +
+  sobrenome e, por último, o primeiro nome. Só escolhe sozinho quando um único contato do RD tem
+  todas as palavras do nome; senão, mostra a lista. Se o SDR abrir o painel "Dados do contato"
+  do WhatsApp, o número de lá é lido (um só número; grupo com vários é ignorado) e fica
+  guardado para aquela conversa enquanto a aba estiver aberta.
+- **Acentos quebrados** que integrações gravam no RD ("EmpresÃ¡rio") são consertados, e campos
+  repetidos ("Vende online?" x "Vende online") aparecem uma vez só. Campos de anúncio/origem
+  ([AD]…, LP, UTM, criativo, conjunto) não entram na ficha.
+- **Só para quem o admin liberar**: aba **Acessos** → caixa **Ficha RD** por usuário (padrão: só
+  admin). Para os outros, o servidor responde como se o CRM estivesse desligado e o RD nem é
+  consultado.
+- **Resumo rápido da conversa** (botão no cartão): lê a conversa aberta, inclusive transcrevendo
+  os áudios, e a IA devolve o **cenário**, **onde parou** (quem deve responder), a **última
+  pergunta** e o **próximo passo** — para retomar um lead sem reler nem reouvir tudo.
+  `POST /api/resumo-rapido` (`src/resumoRapido.js`); mesma conversa = resumo do cache (7 dias), sem
+  custo. O custo entra no gasto do painel como "resumos rápidos", fora da lista de reports.
+  Modelo: `ANTHROPIC_MODEL_RESUMO` (padrão: o mesmo dos reports).
 - **Qual negociação.** A em aberto mais recente do contato; se todas fecharam, a última.
 - **Segurança.** O token (`RDSTATION_CRM_TOKEN`) fica só no servidor. A extensão manda só
   telefone/nome, por POST (fora de URL e de log). Tudo que vem do CRM entra no cartão como

@@ -25,8 +25,18 @@ const FICHA_MARCOS = {
 };
 
 /** "Service worker" falso: responde a ficha conforme a função passada; guarda cada consulta. */
-function crmFalso(responder) {
+const RESUMO_FALSO = {
+  cenario: 'Marcos tem loja de moto peças e quer vender no Mercado Livre.',
+  peQueParou: 'Você perguntou se ele consegue investir R$3 mil e ele ainda não respondeu.',
+  ultimaPergunta: 'Você: Consegue investir a partir de R$3 mil?',
+  proximoPasso: 'Retomar confirmando o investimento.',
+  aguardando: 'lead',
+  ultimaMensagem: '21/09 10:05',
+};
+
+function crmFalso(responder, opcoes = {}) {
   const consultas = [];
+  const resumosPedidos = [];
   const aoEnviar = async (original) => {
     const msg = JSON.parse(JSON.stringify(original));
     if (msg.action === 'crmLead') {
@@ -34,9 +44,13 @@ function crmFalso(responder) {
       return responder(msg);
     }
     if (msg.action === 'reportFetch') return { ok: true, dados: {}, arquivo: 'r.pdf', arquivoBase64: 'AAAA', mensagensRecebidas: msg.mensagens };
+    if (msg.action === 'resumoRapido') {
+      resumosPedidos.push(msg);
+      return opcoes.resumo ? opcoes.resumo(msg) : { ok: true, resumo: RESUMO_FALSO, cache: false };
+    }
     return { ok: true };
   };
-  return { aoEnviar, consultas };
+  return { aoEnviar, consultas, resumosPedidos };
 }
 
 const CONVERSA = [
@@ -254,5 +268,111 @@ test('o cartão encosta na borda da conversa (ao lado do painel do RD, não por 
   await esperar(() => cartao(p).style.right === '366px', { motivo: 'posição ao lado do painel' });
   assert.equal(cartao(p).style.top, '70px');
   assert.equal(cartao(p).style.width, '290px');
+  p.fechar();
+});
+
+// ---------------------------------------------------------------- resumo rápido da conversa
+const botao = (p, texto) => [...cartao(p).querySelectorAll('button')].find((b) => b.textContent === texto);
+
+test('resumo rápido: o botão lê a conversa e mostra cenário, onde parou, última pergunta e próximo passo', async () => {
+  const srv = crmFalso(() => ({ ok: true, configurado: true, encontrado: true, ficha: FICHA_MARCOS }));
+  const p = abrir(srv);
+  await esperar(() => /Investimento/.test(textoCartao(p)), { motivo: 'ficha' });
+  assert.ok(botao(p, 'Resumo rápido da conversa'), 'botão no cartão');
+  botao(p, 'Resumo rápido da conversa').click();
+  await esperar(() => /Onde parou/.test(textoCartao(p)), { motivo: 'resumo na tela' });
+  assert.deepEqual(srv.resumosPedidos[0].mensagens.map((m) => m.content), ['Oi, tudo bem?', 'Tudo sim'], 'mandou a conversa lida');
+  const t = textoCartao(p);
+  for (const x of ['RESUMO RÁPIDO', 'Marcos tem loja de moto peças', 'Você perguntou se ele consegue investir R$3 mil',
+    'Última pergunta', 'Você: Consegue investir a partir de R$3 mil?', 'Próximo passo', 'Aguardando o lead · última mensagem 21/09 10:05']) {
+    assert.ok(t.includes(x), 'faltou no cartão: ' + x);
+  }
+  assert.ok(t.indexOf('RESUMO RÁPIDO') < t.indexOf('Profissão'), 'o resumo vem antes do formulário');
+  assert.equal(p.document.getElementById('closer-report-badge'), null, 'o aviso de andamento some ao terminar');
+
+  // Minimizar e abrir de novo não perde o resumo.
+  botao(p, '–').click();
+  botao(p, '+').click();
+  assert.match(textoCartao(p), /Onde parou/);
+  p.fechar();
+});
+
+test('resumo rápido: também aparece quando o lead não está no RD', async () => {
+  const srv = crmFalso(() => ({ ok: true, configurado: true, encontrado: false }));
+  const p = abrir(srv);
+  await esperar(() => /Não achei este lead/.test(textoCartao(p)), { motivo: 'não encontrado' });
+  botao(p, 'Resumo rápido da conversa').click();
+  await esperar(() => /Onde parou/.test(textoCartao(p)), { motivo: 'resumo' });
+  p.fechar();
+});
+
+test('resumo rápido: erro mostra a mensagem e "Tentar de novo" pede outra vez', async () => {
+  let vez = 0;
+  const srv = crmFalso(() => ({ ok: true, configurado: true, encontrado: true, ficha: FICHA_MARCOS }), {
+    resumo: () => (++vez === 1 ? { ok: false, erro: 'A IA demorou demais para responder.' } : { ok: true, resumo: RESUMO_FALSO }),
+  });
+  const p = abrir(srv);
+  await esperar(() => /Investimento/.test(textoCartao(p)), { motivo: 'ficha' });
+  botao(p, 'Resumo rápido da conversa').click();
+  await esperar(() => /demorou demais/.test(textoCartao(p)), { motivo: 'erro' });
+  botao(p, 'Tentar de novo').click();
+  await esperar(() => /Onde parou/.test(textoCartao(p)), { motivo: 'resumo na 2ª' });
+  assert.equal(srv.resumosPedidos.length, 2);
+  p.fechar();
+});
+
+test('resumo rápido: cada conversa tem o seu (trocar de conversa não mostra o resumo da anterior)', async () => {
+  const srv = crmFalso(() => ({ ok: true, configurado: true, encontrado: true, ficha: FICHA_MARCOS }));
+  const p = abrir(srv);
+  await esperar(() => /Investimento/.test(textoCartao(p)), { motivo: 'ficha' });
+  botao(p, 'Resumo rápido da conversa').click();
+  await esperar(() => /Onde parou/.test(textoCartao(p)), { motivo: 'resumo' });
+  trocarConversa(p, '+55 11 98888-7777');
+  await esperar(() => srv.consultas.length === 2 && /Investimento/.test(textoCartao(p)), { motivo: 'ficha da 2ª conversa' });
+  assert.doesNotMatch(textoCartao(p), /Onde parou/);
+  assert.ok(botao(p, 'Resumo rápido da conversa'));
+  p.fechar();
+});
+
+// ---------------------------------------------------------------- número pelo painel "Dados do contato"
+function abrirPainelDoContato(p, telefones) {
+  const d = p.document.createElement('div');
+  d.id = 'drawer-contato';
+  d.innerHTML = '<span dir="auto">Armando PRONIX Moretti</span>' + telefones.map((t) => `<span dir="auto">${t}</span>`).join('');
+  p.document.body.appendChild(d);
+  return d;
+}
+
+test('contato salvo com nome: abriu "Dados do contato", a ficha passa a buscar pelo número de lá', async () => {
+  const srv = crmFalso(() => ({ ok: true, configurado: true, encontrado: true, ficha: FICHA_MARCOS }));
+  const p = abrir(srv, { contato: 'Armando PRONIX Moretti' });
+  await esperar(() => srv.consultas.length === 1, { motivo: '1ª consulta (nome)' });
+  assert.deepEqual(srv.consultas[0], { telefone: '', nome: 'Armando PRONIX Moretti', contatoId: '' });
+
+  const painel = abrirPainelDoContato(p, ['+55 15 99767-1347']);
+  await esperar(() => srv.consultas.length === 2, { motivo: 'consulta pelo número do painel' });
+  assert.deepEqual(srv.consultas[1], { telefone: '5515997671347', nome: 'Armando PRONIX Moretti', contatoId: '' });
+
+  // Fechou o painel, foi para outra conversa e voltou: o número dessa conversa ficou guardado.
+  painel.remove();
+  trocarConversa(p, 'Outra Pessoa');
+  await esperar(() => srv.consultas.length === 3, { motivo: 'outra conversa' });
+  trocarConversa(p, 'Armando PRONIX Moretti');
+  await esperar(() => srv.consultas.length === 4, { motivo: 'volta' });
+  assert.equal(srv.consultas[3].telefone, '5515997671347');
+  p.fechar();
+});
+
+test('painel com vários números (grupo) ou número na lista de conversas: não usa', async () => {
+  const srv = crmFalso(() => ({ ok: true, configurado: true, encontrado: false }));
+  const p = abrir(srv, { contato: 'Grupo da Loja' });
+  await esperar(() => srv.consultas.length === 1, { motivo: '1ª consulta' });
+  abrirPainelDoContato(p, ['+55 11 90000-1111', '+55 21 98888-2222']);
+  const lista = p.document.createElement('div');
+  lista.id = 'pane-side';
+  lista.innerHTML = '<span dir="auto">+55 31 97777-3333</span>';
+  p.document.body.appendChild(lista);
+  await dormir(150);
+  assert.equal(srv.consultas.length, 1, 'nenhuma consulta nova por número');
   p.fechar();
 });

@@ -95,9 +95,29 @@ function contatoTemTelefone(contato, telefone) {
 
 // ---------------------------------------------------------------- texto das anotações
 
+// Texto que alguma integração gravou no RD com a codificação errada chega como "EmpresÃ¡rio",
+// "SÃ£o Paulo". Cada par/trio desses é o UTF-8 de UMA letra lido como Latin-1/Windows-1252:
+// dá para desfazer sem adivinhar. Texto normal ("SÃO PAULO", "ÂNGELA") não é tocado.
+const CP1252 = {
+  '€': 0x80, '‚': 0x82, 'ƒ': 0x83, '„': 0x84, '…': 0x85, '†': 0x86, '‡': 0x87, 'ˆ': 0x88, '‰': 0x89, 'Š': 0x8a,
+  '‹': 0x8b, 'Œ': 0x8c, 'Ž': 0x8e, '‘': 0x91, '’': 0x92, '“': 0x93, '”': 0x94, '•': 0x95, '–': 0x96, '—': 0x97,
+  '˜': 0x98, '™': 0x99, 'š': 0x9a, '›': 0x9b, 'œ': 0x9c, 'ž': 0x9e, 'Ÿ': 0x9f,
+};
+const CONT = '[\\u0080-\\u00BF€‚ƒ„…†‡ˆ‰Š‹ŒŽ‘’“”•–—˜™š›œžŸ]';
+const QUEBRADO = new RegExp(`[ÂÃ]${CONT}|â${CONT}${CONT}`, 'g');
+const byteDe = (c) => (c.charCodeAt(0) <= 0xff ? c.charCodeAt(0) : CP1252[c]);
+function consertarAcentos(s) {
+  return String(s == null ? '' : s).replace(QUEBRADO, (m) => {
+    const bytes = [...m].map(byteDe);
+    if (bytes.some((b) => b === undefined)) return m;
+    const letra = Buffer.from(bytes).toString('utf8');
+    return letra.length === 1 && letra !== '\uFFFD' ? letra : m;
+  });
+}
+
 /** Anotação do RD pode vir em HTML (<p>, <br>): vira texto puro, uma linha por parágrafo. */
 function limparTexto(html) {
-  return String(html || '')
+  return consertarAcentos(html)
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<\/(p|div|li|h\d)>/gi, '\n')
     .replace(/<[^>]*>/g, '')
@@ -161,7 +181,7 @@ const camposDoContato = () =>
 
 // ---------------------------------------------------------------- a ficha
 
-const valorTexto = (v) => (Array.isArray(v) ? v.filter(Boolean).join(', ') : String(v == null ? '' : v)).trim().slice(0, 300);
+const valorTexto = (v) => consertarAcentos(Array.isArray(v) ? v.filter(Boolean).join(', ') : String(v == null ? '' : v)).trim().slice(0, 300);
 
 /** Negociação que importa para a prospecção: a em aberto mais recente; senão, a última. */
 function escolherNegociacao(deals) {
@@ -199,16 +219,18 @@ async function montarFicha(contato) {
     .slice(0, 3)
     .map((n) => ({ autor: n.autor, quando: quandoBR(n.data), texto: n.texto.slice(0, 500) }));
 
-  // Campos personalizados da negociação e do contato (sem repetir o que o formulário já mostra).
-  const jaTem = new Set(((formulario && formulario.campos) || []).map((c) => c.rotulo.toLowerCase()));
+  // Campos personalizados da negociação e do contato, sem repetir o que o formulário já mostra
+  // ("Vende online?" e "Vende online" são o mesmo campo). Os de anúncio/origem ([AD]..., LP, UTM...)
+  // ficam de fora: não ajudam a prospectar.
+  const chaveRotulo = (r) => normalizarNome(r);
+  const jaTem = new Set(((formulario && formulario.campos) || []).map((c) => chaveRotulo(c.rotulo)));
   const campos = [];
   const addCampo = (rotulo, valor) => {
-    const r = String(rotulo || '').trim();
+    const r = consertarAcentos(String(rotulo || '')).trim();
     const v = valorTexto(valor);
-    if (r && v && !jaTem.has(r.toLowerCase())) {
-      jaTem.add(r.toLowerCase());
-      campos.push({ rotulo: r, valor: v });
-    }
+    if (!r || !v || jaTem.has(chaveRotulo(r))) return;
+    jaTem.add(chaveRotulo(r));
+    if (!ehCampoDeCampanha(r)) campos.push({ rotulo: r, valor: v }); // anúncio/origem: fora da ficha
   };
   ((deal && deal.deal_custom_fields) || []).forEach((c) => addCampo(c.custom_field && c.custom_field.label, c.value));
   const rotulo = new Map(rotulosContato.map((c) => [c.id, c.rotulo]));
@@ -216,7 +238,7 @@ async function montarFicha(contato) {
 
   const id = deal && (deal.id || deal._id);
   return {
-    nome: contato.name || '',
+    nome: consertarAcentos(contato.name || ''),
     telefones: (contato.phones || []).map((p) => p.phone).filter(Boolean).slice(0, 3),
     emails: (contato.emails || []).map((e) => e.email).filter(Boolean).slice(0, 2),
     negociacao: deal
@@ -239,6 +261,68 @@ async function montarFicha(contato) {
 }
 
 // ---------------------------------------------------------------- busca
+
+/** Sem acento, minúsculo, só letras/números: para comparar nomes e rótulos. */
+const normalizarNome = (s) =>
+  String(s || '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+
+const ehCampoDeCampanha = (rotulo) =>
+  /^\[ad\]|^utm|^lp$|varia[cç][aã]o lp|^(ad|an[uú]ncio)\b|criativo|conjunto|campanha|pixel|gclid|fbclid/i.test(String(rotulo || '').trim());
+
+// Palavras que o time põe no nome salvo do WhatsApp e que não fazem parte do nome da pessoa
+// ("Armando PRONIX Moretti", "Lead Ana Souza"). Dá para acrescentar outras em CRM_PALAVRAS_IGNORADAS.
+const IGNORADAS_PADRAO = ['pronix', 'prxc', 'lead', 'leads', 'cliente', 'sdr', 'closer'];
+function palavrasIgnoradas() {
+  const extras = String(process.env.CRM_PALAVRAS_IGNORADAS || '')
+    .split(',')
+    .map((p) => normalizarNome(p))
+    .filter(Boolean);
+  return new Set(IGNORADAS_PADRAO.concat(extras));
+}
+
+/**
+ * Palavras do nome salvo que identificam a pessoa (sem as etiquetas do time, números e emojis),
+ * como estão escritas (com acento, para a busca do RD) e normalizadas (para comparar).
+ */
+function palavrasComOriginal(nome) {
+  const ignoradas = palavrasIgnoradas();
+  return String(nome || '')
+    .replace(/\([^)]*\)|\[[^\]]*\]/g, ' ')
+    .split(/[\s|/\\_.,;:–—-]+/)
+    .map((p) => ({ original: p.replace(/[^\p{L}\p{N}'’]/gu, ''), norm: normalizarNome(p) }))
+    .filter((p) => p.original && p.norm.length >= 2 && !/^\d+$/.test(p.norm) && !p.norm.includes(' ') && !ignoradas.has(p.norm));
+}
+const palavrasDoNome = (nome) => palavrasComOriginal(nome).map((p) => p.norm);
+
+/**
+ * Buscas pelo nome, da mais específica para a mais ampla: o nome como está salvo, o nome limpo
+ * (sem "PRONIX" e afins), nome + sobrenome e, por último, só o primeiro nome.
+ */
+function consultasPorNome(nome) {
+  const partes = palavrasComOriginal(nome);
+  const orig = partes.map((p) => p.original);
+  const q = [];
+  const add = (x) => {
+    const t = String(x || '').trim();
+    if (t && !q.some((y) => normalizarNome(y) === normalizarNome(t))) q.push(t);
+  };
+  add(String(nome || '').trim());
+  if (orig.length) add(orig.join(' '));
+  if (orig.length > 2) add(`${orig[0]} ${orig[orig.length - 1]}`);
+  if (orig.length > 1) add(orig[0]);
+  return { consultas: q, palavras: partes.map((p) => p.norm) };
+}
+
+/** O nome do RD tem todas as palavras do nome salvo? ("armando moretti" cabe em "Armando Moretti Filho") */
+const temTodasAsPalavras = (contato, palavras) => {
+  const doRd = new Set(normalizarNome(contato.name).split(' '));
+  return palavras.length > 0 && palavras.every((p) => doRd.has(p));
+};
 
 const pareceTelefone = (s) => soDigitos(s).length >= 8 && !/[a-zA-ZÀ-ÿ]/.test(String(s || ''));
 const candidato = (c) => ({ id: c.id || c._id, nome: c.name || '', telefone: ((c.phones || [])[0] || {}).phone || '' });
@@ -292,13 +376,33 @@ async function consultarLead(busca = {}, opcoes = {}) {
     }
     // Sem telefone (contato salvo com nome) ou telefone não achado: tenta pelo nome.
     if (!contato && nome && !pareceTelefone(nome)) {
-      const r = await rd('/contacts', { q: nome, limit: 6 });
-      const achados = (r && r.contacts) || [];
-      diag.tentativas.push({ nome: true, resultados: achados.length });
-      if (achados.length === 1) {
-        resultado = { configurado: true, encontrado: true, buscaPor: 'nome', ficha: await montarFicha(achados[0]) };
-      } else if (achados.length > 1) {
-        resultado = { configurado: true, encontrado: false, buscaPor: 'nome', candidatos: achados.slice(0, 5).map(candidato) };
+      const { consultas, palavras } = consultasPorNome(nome);
+      let candidatos = null;
+      for (const q of consultas) {
+        const r = await rd('/contacts', { q, limit: 20 });
+        const achados = (r && r.contacts) || [];
+        diag.tentativas.push({ nome: q, resultados: achados.length });
+        if (!achados.length) continue;
+        // Escolhe sozinho só quando não há dúvida: um único contato com TODAS as palavras do nome
+        // salvo; ou um único resultado para a busca do nome inteiro/limpo (não a do primeiro nome).
+        const comTodas = achados.filter((c) => temTodasAsPalavras(c, palavras));
+        const soPrimeiroNome = palavras.length > 1 && normalizarNome(q) === palavras[0];
+        if (comTodas.length === 1) {
+          contato = comTodas[0];
+        } else if (achados.length === 1 && !soPrimeiroNome) {
+          contato = achados[0];
+        } else if (!candidatos) {
+          candidatos = (comTodas.length > 1 ? comTodas : achados).slice(0, 5).map(candidato);
+        }
+        if (contato) {
+          diag.encontradaCom = q;
+          break;
+        }
+      }
+      if (contato) {
+        resultado = { configurado: true, encontrado: true, buscaPor: 'nome', ficha: await montarFicha(contato) };
+      } else if (candidatos) {
+        resultado = { configurado: true, encontrado: false, buscaPor: 'nome', candidatos };
       }
     }
   }
@@ -315,5 +419,8 @@ module.exports = {
   contatoTemTelefone,
   limparTexto,
   extrairCampos,
+  consertarAcentos,
+  palavrasDoNome,
+  consultasPorNome,
   escolherNegociacao,
 };

@@ -1024,7 +1024,29 @@
     }
   })();
   let conversaDoLink = null; // nome no cabeçalho da conversa que o link abriu
-  const ficha = { ligada: true, minimizada: false, chave: null, fechadaPara: null, seq: 0, timer: null, vigia: null };
+
+  // Contato salvo com nome: o topo da conversa não mostra o número, mas o painel "Dados do contato"
+  // (clicar no nome) mostra. Quando ele está aberto, lemos o número e guardamos para essa conversa
+  // (só na memória desta aba), para as próximas vezes que ela for aberta.
+  const telefonesPorNome = new Map();
+  let leituraAnterior = null; // { nome, telefone } do tick passado: só aceita quando repete (evita troca de conversa no meio)
+
+  /** Número do painel "Dados do contato" aberto (fora da lista de conversas e da conversa). Vários números diferentes (grupo) = nenhum. */
+  function telefoneDoPainelDoContato() {
+    const achados = new Map(); // 8 últimos dígitos -> número completo
+    for (const s of document.querySelectorAll('span[dir="auto"], span.selectable-text, span[title], div[title]')) {
+      if (s.closest('#pane-side, #main, #' + FICHA_ID + ', #closer-report-badge, [contenteditable="true"]')) continue;
+      const t = (s.getAttribute('title') || s.textContent || '').trim();
+      if (!/^\+\d{1,3}[\d\s().-]{8,20}$/.test(t)) continue;
+      const d = t.replace(/\D/g, '');
+      achados.set(d.slice(-8), d);
+      if (achados.size > 1) return '';
+    }
+    return achados.size === 1 ? [...achados.values()][0] : '';
+  }
+  const ficha = { ligada: true, minimizada: false, chave: null, fechadaPara: null, seq: 0, timer: null, vigia: null, ultimoEstado: null };
+  // Resumo rápido por conversa (só na memória desta aba): some ao recarregar o WhatsApp.
+  const resumos = new Map();
 
   /** Telefone da conversa aberta: o cabeçalho (contato não salvo mostra o número) ou o id do chat no data-id. */
   function telefoneDaConversa() {
@@ -1108,8 +1130,91 @@
     return elem('div', 'display:flex;gap:6px;margin-top:10px', input, botaoFicha('Buscar', buscar));
   }
 
+  const redesenharFicha = () => {
+    if (ficha.ultimoEstado && document.getElementById(FICHA_ID)) renderFicha(ficha.ultimoEstado);
+  };
+
+  /**
+   * Resumo rápido: lê a conversa aberta (inclusive transcrevendo os áudios, no mudo) e pede à IA o
+   * cenário, onde parou, a última pergunta e o próximo passo. Não roda junto com um report.
+   */
+  async function pedirResumoRapido() {
+    const chave = ficha.chave;
+    if (!chave) return;
+    if (jobEmAndamento) {
+      resumos.set(chave, { tipo: 'erro', erro: 'Espere o report terminar para pedir o resumo.' });
+      return redesenharFicha();
+    }
+    jobEmAndamento = true;
+    capturaAtiva = true;
+    resumos.set(chave, { tipo: 'carregando' });
+    redesenharFicha();
+    const badgeAntes = !!document.getElementById(BADGE_ID);
+    try {
+      const { mensagens, nome } = await coletarConversa('ficha', true);
+      const r = await new Promise((res) => chrome.runtime.sendMessage({ action: 'resumoRapido', mensagens, nome }, res));
+      if (!r || !r.ok) throw new Error((r && r.erro) || 'Não consegui gerar o resumo.');
+      resumos.set(chave, { tipo: 'ok', dados: r.resumo });
+    } catch (e) {
+      resumos.set(chave, { tipo: 'erro', erro: e.message || 'Não consegui gerar o resumo.' });
+    } finally {
+      jobEmAndamento = false;
+      capturaAtiva = false;
+      restaurarAudios();
+      // A leitura usa o aviso do report para o andamento ("Transcrevendo áudios…"): tira ao terminar.
+      const b = document.getElementById(BADGE_ID);
+      if (b && !badgeAntes) b.remove();
+      if (ficha.chave === chave) redesenharFicha();
+    }
+  }
+
+  function blocoResumo() {
+    const r = resumos.get(ficha.chave);
+    const caixa = elem('div', 'margin:2px 0 10px;padding:8px 10px;background:#0d141c;border:1px solid #26333f;border-radius:8px');
+    const titulo = (t) => elem('div', 'font-size:10.5px;color:#ffc400;font-weight:700;letter-spacing:.06em;margin-bottom:4px', t);
+    if (!r) {
+      caixa.appendChild(botaoFicha('Resumo rápido da conversa', pedirResumoRapido, true));
+      caixa.appendChild(elem('div', 'font-size:11px;color:#8b98a5;margin-top:5px', 'Lê a conversa e os áudios (no mudo) e mostra o cenário e onde parou.'));
+      return caixa;
+    }
+    if (r.tipo === 'carregando') {
+      caixa.appendChild(titulo('RESUMO RÁPIDO'));
+      caixa.appendChild(elem('div', 'color:#8b98a5', 'Lendo a conversa e os áudios… não troque de conversa.'));
+      return caixa;
+    }
+    if (r.tipo === 'erro') {
+      caixa.appendChild(titulo('RESUMO RÁPIDO'));
+      caixa.appendChild(elem('div', 'color:#ff6b6b;margin-bottom:6px', r.erro));
+      caixa.appendChild(botaoFicha('Tentar de novo', pedirResumoRapido));
+      return caixa;
+    }
+    const d = r.dados || {};
+    caixa.appendChild(titulo('RESUMO RÁPIDO'));
+    if (d.cenario) caixa.appendChild(elem('div', 'margin-bottom:6px', d.cenario));
+    const item = (rotulo, valor, forte) =>
+      valor
+        ? elem('div', 'margin-top:5px',
+            elem('div', 'font-size:11px;color:#8b98a5;text-transform:uppercase;letter-spacing:.03em', rotulo),
+            elem('div', `color:${forte ? '#ffc400' : '#e6edf3'};font-weight:${forte ? 700 : 500}`, valor))
+        : null;
+    [item('Onde parou', d.peQueParou, true), item('Última pergunta', d.ultimaPergunta), item('Próximo passo', d.proximoPasso)]
+      .filter(Boolean)
+      .forEach((x) => caixa.appendChild(x));
+    const meta = [d.aguardando === 'voce' ? 'Você deve responder' : d.aguardando === 'lead' ? 'Aguardando o lead' : '', d.ultimaMensagem ? 'última mensagem ' + d.ultimaMensagem : '']
+      .filter(Boolean)
+      .join(' · ');
+    const rodape = elem('div', 'display:flex;align-items:center;gap:8px;margin-top:8px');
+    if (meta) rodape.appendChild(elem('div', 'flex:1;font-size:11px;color:#8b98a5', meta));
+    const atualizar = botaoFicha('Atualizar', pedirResumoRapido);
+    atualizar.title = 'Ler a conversa de novo (se chegaram mensagens novas)';
+    rodape.appendChild(atualizar);
+    caixa.appendChild(rodape);
+    return caixa;
+  }
+
   function renderFicha(estado) {
     if (!ficha.ligada || (ficha.fechadaPara && ficha.fechadaPara === ficha.chave)) return;
+    ficha.ultimoEstado = estado;
     let el = document.getElementById(FICHA_ID);
     if (!el) {
       el = document.createElement('div');
@@ -1157,6 +1262,7 @@
 
     const corpo = elem('div', 'margin-top:8px');
     el.appendChild(corpo);
+    if (estado.tipo !== 'carregando') corpo.appendChild(blocoResumo());
 
     if (estado.tipo === 'carregando') {
       corpo.appendChild(elem('div', 'color:#8b98a5', 'Buscando no RD Station…'));
@@ -1261,6 +1367,15 @@
       // A 1ª conversa que aparece depois de abrir pelo link é a do link (mesmo que o topo já mostre o número).
       if (conversaDoLink === null) conversaDoLink = nome || telefone;
       if (!telefone && nome && nome === conversaDoLink) telefone = telefoneDoLink;
+    }
+    if (!telefone && nome) {
+      if (!telefonesPorNome.has(nome)) {
+        const doPainel = telefoneDoPainelDoContato();
+        const repetiu = doPainel && leituraAnterior && leituraAnterior.nome === nome && leituraAnterior.telefone === doPainel;
+        leituraAnterior = doPainel ? { nome, telefone: doPainel } : null;
+        if (repetiu) telefonesPorNome.set(nome, doPainel);
+      }
+      telefone = telefonesPorNome.get(nome) || '';
     }
     posicionarFicha();
     const chave = telefone || nome;

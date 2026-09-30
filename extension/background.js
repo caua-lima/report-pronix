@@ -80,6 +80,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 
   // Ficha do lead no RD Station CRM (o token do CRM fica no servidor; aqui só vai telefone/nome).
+  // Resumo rápido da conversa (botão do cartão): cenário, onde parou, última pergunta, próximo passo.
+  if (msg && msg.action === 'resumoRapido') {
+    (async () => {
+      const r = await chamar('/api/resumo-rapido', { mensagens: msg.mensagens, nome: msg.nome }, { timeoutMs: 65000 });
+      if (!r.ok) return sendResponse({ ok: false, erro: r.erro });
+      sendResponse({ ok: true, resumo: r.data.resumo, cache: r.data.cache });
+    })();
+    return true;
+  }
+
   if (msg && msg.action === 'crmLead') {
     (async () => {
       const corpo = {

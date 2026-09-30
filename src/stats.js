@@ -149,10 +149,14 @@ async function resumo({ de, ate, sdr } = {}) {
   // Se a lista de reports está no limite, os mais antigos saíram por corte — não por
   // exclusão —, então só conta o consumo a partir do report mais antigo que ainda existe.
   let excluidos = [];
+  let resumosRapidos = [];
   try {
     const ativos = new Set(todos.map((r) => r.id));
     const corte = todos.length >= LIMITE ? todos[0].quando : '';
-    excluidos = (await db.range(CHAVE_CONSUMO)).filter((c) => !ativos.has(c.id) && (!corte || c.quando >= corte));
+    const consumo = await db.range(CHAVE_CONSUMO);
+    // Resumos rápidos do cartão do WhatsApp não são reports: têm a conta deles.
+    resumosRapidos = consumo.filter((c) => c.tipo === 'resumo');
+    excluidos = consumo.filter((c) => c.tipo !== 'resumo' && !ativos.has(c.id) && (!corte || c.quando >= corte));
   } catch (err) {
     console.error('Falha ao ler o consumo:', err.message);
   }
@@ -256,6 +260,7 @@ async function resumo({ de, ate, sdr } = {}) {
     // Sempre sobre tudo, para o filtro não esconder o retrato geral
     geral: {
       consumoExcluido: { total: excluidos.length, custo: soma(excluidos) },
+      resumosRapidos: { total: resumosRapidos.length, custo: soma(resumosRapidos) },
       total: todos.length,
       custo: soma(todos),
       hoje: todos.filter((r) => dia(r) === hoje).length,
@@ -361,6 +366,26 @@ async function atualizarResultado(id, campos = {}, { versaoEsperada } = {}) {
   return achou ? { versao } : false;
 }
 
+/** Consumo de IA que não é report (resumo rápido do cartão): entra no gasto, não na lista de reports. */
+async function registrarResumoRapido({ usuarioNome, uso }) {
+  const quando = new Date().toISOString();
+  const u = uso || {};
+  await db.push(
+    CHAVE_CONSUMO,
+    {
+      id: 'rr_' + crypto.randomBytes(5).toString('hex'),
+      tipo: 'resumo',
+      quando,
+      dia: emDiaLocal(quando),
+      usuarioNome: usuarioNome || '',
+      origem: 'resumo-rapido',
+      modelo: u.modelo || '',
+      custo: custoUSD({ modelo: u.modelo, entrada: u.entrada, saida: u.saida, cacheLeitura: u.cacheLeitura, cacheEscrita: u.cacheEscrita, quando }),
+    },
+    LIMITE_CONSUMO
+  );
+}
+
 module.exports = {
-  registrar, resumo, listar, remover, buscarPorChave, buscarPorId, atualizarResultado, hojeStr,
+  registrar, resumo, listar, remover, buscarPorChave, buscarPorId, atualizarResultado, hojeStr, registrarResumoRapido,
 };

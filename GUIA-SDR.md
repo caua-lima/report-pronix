@@ -49,6 +49,8 @@ No aviso final também vem quantos áudios ele transcreveu:
 
 Ao abrir a conversa de um lead no WhatsApp Web, aparece um cartão no canto de cima da conversa com o que já está no RD Station. O jeito mais certeiro é abrir pelo ícone de WhatsApp do card do lead no RD: o número vai junto e ele acha o lead mesmo se o contato estiver salvo com outro nome. O cartão mostra: **etapa e funil**, **responsável** e as respostas do formulário (**Profissão, Estado, Vende online, Investimento**...). Use para abrir a conversa já sabendo com quem está falando.
 
+- **Resumo rápido da conversa**: botão no topo do cartão. Ele lê a conversa (e os áudios, no mudo) e mostra o cenário, **onde parou**, a última pergunta e o próximo passo. Ideal para retomar um lead de dias atrás sem reouvir os áudios. Enquanto ele lê, não troque de conversa.
+- Contato salvo com nome e a ficha não achou? Clique no nome no topo da conversa para abrir **Dados do contato**: a ficha lê o número de lá sozinha.
 - **–** minimiza (fica minimizado nas próximas conversas até você abrir de novo); **×** fecha só nesta conversa.
 - **"Não achei este lead no RD Station"**: o número da conversa não está no contato do RD (ou o contato está salvo com outro nome). Digite o telefone ou o nome no campo do cartão e clique em **Buscar**.
 - **"Mais de um contato com esse nome"**: clique no certo.

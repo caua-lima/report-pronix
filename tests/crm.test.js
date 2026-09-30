@@ -34,6 +34,7 @@ const MARCOS = {
   contact_custom_fields: [{ custom_field_id: 'cf1', value: 'Salvador' }],
 };
 const OUTRO = { id: 'c9', name: 'Outra Pessoa', phones: [{ phone: '(11) 91234-5678' }], deals: [] };
+const ARMANDO = { id: 'c8', name: 'Armando Moretti Filho', phones: [{ phone: '(15) 99767-1347' }], deals: [{ id: 'd9', closed_at: null, win: null }], contact_custom_fields: [] };
 const ANA1 = { id: 'c2', name: 'Ana Souza', phones: [{ phone: '(21) 98888-1111' }], deals: [] };
 const ANA2 = { id: 'c3', name: 'Ana Lima', phones: [{ phone: '(31) 97777-2222' }], deals: [] };
 
@@ -58,9 +59,23 @@ global.fetch = async (url, opts) => {
     if (phone === '71999998888') return json({ contacts: [MARCOS], total: 1 });
     if (q === 'Ana') return json({ contacts: [ANA1, ANA2], total: 2 });
     if (q === 'Marcos Pereira') return json({ contacts: [MARCOS], total: 1 });
+    if (q === 'Armando Moretti') return json({ contacts: [ARMANDO], total: 1 });
+    if (q === 'Carlos') return json({ contacts: [{ id: 'c7', name: 'Carlos Silva', phones: [{ phone: '(11) 90000-7777' }], deals: [] }], total: 1 });
+    if (q === 'João') return json({ contacts: [{ id: 'c5', name: 'João Pedro Lima', phones: [], deals: [] }, { id: 'c6', name: 'João Souza', phones: [], deals: [] }], total: 2 });
     return json({ contacts: [], total: 0 });
   }
   if (p === '/contacts/c2') return json(ANA1);
+  if (p === '/deals/d9') {
+    return json({
+      id: 'd9', name: 'PRXC | Armando Moretti Filho', deal_stage: { name: 'Reunião Realizada' }, deal_pipeline: { name: 'Closers' }, user: { name: 'Vitor Santos' },
+      deal_custom_fields: [
+        { custom_field: { label: 'Vende online?' }, value: 'Já vendo e quero aumentar meus resultados no Mercado Livre' },
+        { custom_field: { label: '[AD]CAMPANHA' }, value: '[SMQL] [CAP] [META]' },
+        { custom_field: { label: 'LP' }, value: 'diagnostico-v2' },
+        { custom_field: { label: 'Motivo' }, value: 'JÁ VENDE' },
+      ],
+    });
+  }
   if (p === '/deals/d1') {
     return json({
       id: 'd1', name: 'Marcos Pereira', created_at: '2026-09-28T20:00:00-03:00',
@@ -72,6 +87,10 @@ global.fetch = async (url, opts) => {
         { custom_field: { label: 'Canais' }, value: ['Loja física', 'Instagram'] },
       ],
     });
+  }
+  if (p === '/activities' && u.searchParams.get('deal_id') === 'd9') {
+    return json({ activities: [{ id: 'a9', date: '2026-09-27T09:58:00-03:00', user_id: 'u1', deal_id: 'd9',
+      text: 'ProfissÃ£o: EmpresÃ¡rio\nEstado: SÃ£o Paulo\nVende online: JÃ¡ vendo e quero aumentar meus resultados no Mercado Livre\nInvestimento: R$3.000 a R$5.000' }] });
   }
   if (p === '/activities') {
     assert.equal(u.searchParams.get('deal_id'), 'd1');
@@ -104,6 +123,14 @@ test.before(async () => {
     return (await r.json()).usuario.chave;
   };
   E.sdr = await criar('SDR Teste', 'sdr');
+  E.sdr2 = await criar('SDR Sem Ficha', 'sdr');
+  E.admin = await criar('Admin Teste', 'admin');
+  const lista = await (await fetchReal(base + '/api/admin/usuarios', { headers: { 'x-admin-pass': 'senha-de-teste' } })).json();
+  E.idSdr = lista.usuarios.find((u) => u.nome === 'SDR Teste').id;
+  E.idSdr2 = lista.usuarios.find((u) => u.nome === 'SDR Sem Ficha').id;
+  await fetchReal(base + '/api/admin/usuarios/' + E.idSdr, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json', 'x-admin-pass': 'senha-de-teste' }, body: JSON.stringify({ fichaCrm: true }),
+  });
 });
 test.after(async () => {
   await new Promise((r) => servidor.close(r));
@@ -254,4 +281,74 @@ test('escolhe a negociação em aberto; se todas fecharam, a última', () => {
   assert.equal(crm.escolherNegociacao(MARCOS.deals).id, 'd1');
   assert.equal(crm.escolherNegociacao([{ id: 'x', win: true, closed_at: '1' }, { id: 'y', win: false, closed_at: '2' }]).id, 'y');
   assert.equal(crm.escolherNegociacao([]), null);
+});
+
+// ---------------------------------------------------------------- só para quem o admin liberou
+test('ficha só para quem o admin liberou: SDR sem liberação não recebe nada (e o RD nem é consultado)', async () => {
+  chamadasRd.length = 0;
+  const r = await post('/api/crm/lead', { telefone: '5571999998888' }, { chave: E.sdr2 });
+  assert.deepEqual(r.json, { configurado: false });
+  assert.equal(chamadasRd.length, 0);
+});
+
+test('admin já vem liberado; o admin liga e desliga pela API da aba Acessos', async () => {
+  const lista = async () => (await (await fetchReal(base + '/api/admin/usuarios', { headers: { 'x-admin-pass': 'senha-de-teste' } })).json()).usuarios;
+  const us = await lista();
+  assert.equal(us.find((u) => u.nome === 'Admin Teste').fichaCrm, true, 'admin: ligado por padrão');
+  assert.equal(us.find((u) => u.nome === 'SDR Sem Ficha').fichaCrm, false, 'SDR: desligado por padrão');
+  const patch = (id, corpo, headers = { 'x-admin-pass': 'senha-de-teste' }) =>
+    fetchReal(base + '/api/admin/usuarios/' + id, { method: 'PATCH', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(corpo) });
+  assert.equal((await patch(E.idSdr2, { fichaCrm: true }, { 'x-cr-key': E.sdr })).status, 401, 'SDR não libera ninguém');
+  assert.equal((await patch(E.idSdr2, { fichaCrm: 'sim' })).status, 400);
+  assert.equal((await patch('naoexiste', { fichaCrm: true })).status, 404);
+  assert.equal((await patch(E.idSdr2, { fichaCrm: true })).status, 200);
+  assert.equal((await post('/api/crm/lead', { telefone: '5571999998888' }, { chave: E.sdr2 })).json.encontrado, true);
+  await patch(E.idSdr2, { fichaCrm: false });
+  assert.deepEqual((await post('/api/crm/lead', { telefone: '5571999998888' }, { chave: E.sdr2 })).json, { configurado: false });
+});
+
+// ---------------------------------------------------------------- contato salvo com nome no WhatsApp
+test('nome salvo "Armando PRONIX Moretti" acha "Armando Moretti Filho" sozinho (sem digitar número)', async () => {
+  chamadasRd.length = 0;
+  const r = await post('/api/crm/lead', { nome: 'Armando PRONIX Moretti' }, { chave: E.sdr });
+  assert.equal(r.json.encontrado, true);
+  assert.equal(r.json.ficha.nome, 'Armando Moretti Filho');
+  assert.ok(chamadasRd.some((c) => c.includes('q=Armando PRONIX Moretti')));
+  assert.ok(chamadasRd.some((c) => c.includes('q=Armando Moretti')), 'tenta de novo sem o "PRONIX"');
+  const f = r.json.ficha;
+  assert.deepEqual(f.formulario.campos, [
+    { rotulo: 'Profissão', valor: 'Empresário' },
+    { rotulo: 'Estado', valor: 'São Paulo' },
+    { rotulo: 'Vende online', valor: 'Já vendo e quero aumentar meus resultados no Mercado Livre' },
+    { rotulo: 'Investimento', valor: 'R$3.000 a R$5.000' },
+  ], 'acentos quebrados da anotação consertados');
+  assert.deepEqual(f.campos, [{ rotulo: 'Motivo', valor: 'JÁ VENDE' }], '"Vende online?" não repete o do formulário');
+  assert.equal(f.campanha, undefined);
+  assert.ok(!JSON.stringify(f).includes('diagnostico-v2') && !JSON.stringify(f).includes('[AD]'), 'campos de anúncio/origem ficam fora da ficha');
+});
+
+test('só o primeiro nome bateu e o sobrenome é outro: não escolhe sozinho, mostra para o SDR escolher', async () => {
+  const r = await post('/api/crm/lead', { nome: 'Carlos PRONIX Tavares' }, { chave: E.sdr });
+  assert.equal(r.json.encontrado, false);
+  assert.deepEqual(r.json.candidatos, [{ id: 'c7', nome: 'Carlos Silva', telefone: '(11) 90000-7777' }]);
+});
+
+test('vários com o primeiro nome: lista para escolher', async () => {
+  const r = await post('/api/crm/lead', { nome: 'João PRONIX Ferreira' }, { chave: E.sdr });
+  assert.equal(r.json.encontrado, false);
+  assert.deepEqual(r.json.candidatos.map((c) => c.nome), ['João Pedro Lima', 'João Souza']);
+});
+
+test('acentos quebrados: conserta só o que está quebrado', () => {
+  assert.equal(crm.consertarAcentos('EmpresÃ¡rio de SÃ£o Paulo'), 'Empresário de São Paulo');
+  assert.equal(crm.consertarAcentos('AÃ‡ÃƒO Ã‰ JÃ¡'), 'AÇÃO É Já');
+  assert.equal(crm.consertarAcentos('SÃO PAULO e ÂNGELA'), 'SÃO PAULO e ÂNGELA', 'texto certo não muda');
+  assert.equal(crm.consertarAcentos(null), '');
+});
+
+test('nome salvo: tira etiquetas do time, números e emojis, mantendo os acentos para a busca', () => {
+  assert.deepEqual(crm.consultasPorNome('Armando PRONIX Moretti').consultas, ['Armando PRONIX Moretti', 'Armando Moretti', 'Armando']);
+  assert.deepEqual(crm.consultasPorNome('Lead João Paulo Souza 22 🚀').consultas, ['Lead João Paulo Souza 22 🚀', 'João Paulo Souza', 'João Souza', 'João']);
+  assert.deepEqual(crm.consultasPorNome('PRXC | Márcia Gonçalves').palavras, ['marcia', 'goncalves']);
+  assert.deepEqual(crm.consultasPorNome('Ana').consultas, ['Ana']);
 });

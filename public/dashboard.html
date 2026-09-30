@@ -370,7 +370,7 @@
         <div class="card">
           <div class="head"><div class="t"><i data-ic="users"></i>Equipe</div></div>
           <table>
-            <thead><tr><th>Nome</th><th>Chave</th><th>Criado</th><th></th></tr></thead>
+            <thead><tr><th>Nome</th><th>Chave</th><th title="Ficha do lead do RD Station no WhatsApp">Ficha RD</th><th>Criado</th><th></th></tr></thead>
             <tbody id="lista"></tbody>
           </table>
           <div id="vazio" class="hint">Nenhum acesso criado ainda.</div>
@@ -839,6 +839,7 @@
           <tr>
             <td><b>${esc(u.nome)}</b>${u.papel === 'admin' ? ' <span class="tag" style="color:var(--gold-ink);border-color:var(--primary)">admin</span>' : ''}</td>
             <td><span class="chave" data-cheia="${esc(u.chave)}" data-mascara="${esc(mascarar(u.chave))}" title="Clique para mostrar ou ocultar" style="cursor:pointer">${esc(mascarar(u.chave))}</span></td>
+            <td><input type="checkbox" data-ficha-crm="${esc(u.id)}" ${u.fichaCrm ? 'checked' : ''} style="width:auto" title="Mostrar a ficha do RD Station no WhatsApp para ${esc(u.nome)}" /></td>
             <td style="color:var(--muted);font-size:.8rem">${new Date(u.criadoEm).toLocaleDateString('pt-BR')}</td>
             <td><div class="acoes">
               <button class="mini" data-copiar="${esc(u.chave)}">Copiar chave</button>
@@ -849,6 +850,22 @@
         setStatus('statusCriar', e.message, { erro: true });
       }
     }
+
+    // Ficha do RD Station no WhatsApp: liberada por usuário (por padrão, só admin).
+    $('lista').addEventListener('change', async (ev) => {
+      const c = ev.target.closest('[data-ficha-crm]');
+      if (!c) return;
+      c.disabled = true;
+      try {
+        await api('PATCH', '/api/admin/usuarios/' + c.dataset.fichaCrm, { fichaCrm: c.checked });
+        toast(c.checked ? 'Ficha do RD liberada.' : 'Ficha do RD desligada.');
+      } catch (e) {
+        c.checked = !c.checked;
+        setStatus('statusCriar', e.message, { erro: true });
+      } finally {
+        c.disabled = false;
+      }
+    });
 
     $('lista').addEventListener('click', async (ev) => {
       const k = ev.target.closest('.chave');

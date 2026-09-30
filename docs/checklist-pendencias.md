@@ -11,6 +11,14 @@ Detalhes técnicos em [`auditoria-pronix.md`](auditoria-pronix.md) e [`plano-imp
 - [x] 117 testes automáticos (`npm test`), sem rede e sem custo
 - [x] Merge local na `main`
 
+## Novo em 29/09: ficha automática + resumo rápido (extensão 1.8.0 + servidor)
+
+- [x] Contato salvo com nome: acha no RD sem digitar número (nome limpo de "PRONIX" etc.; número do painel "Dados do contato")
+- [x] Acentos quebrados da anotação consertados; campos repetidos e de anúncio/origem fora do cartão
+- [x] Ficha e resumo só para quem o admin liberar (aba Acessos → Ficha RD; padrão: só admin)
+- [x] Resumo rápido da conversa no cartão: cenário, onde parou, última pergunta, próximo passo
+- [ ] **Você:** enviar a extensão 1.8.0 à Chrome Web Store
+
 ## Novo em 29/09: report mais rico (extensão 1.7.0 + servidor)
 
 - [x] Nível de consciência do lead (selo só de "consciente da solução" para cima), sinais de compra e "Como foi a conversa" com os nomes, no PDF, no popup e no painel (editáveis).
