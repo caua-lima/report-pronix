@@ -124,7 +124,7 @@ test.before(async () => {
   };
   E.sdr = await criar('SDR Teste', 'sdr');
   E.sdr2 = await criar('SDR Sem Ficha', 'sdr');
-  E.admin = await criar('Admin Teste', 'admin');
+  E.admin = await criar('Admin Teste', 'master');
 });
 test.after(async () => {
   await new Promise((r) => servidor.close(r));
@@ -284,7 +284,7 @@ test('ficha disponível para todo usuário com chave (SDR ou admin), sem libera�
   const patch = await fetchReal(base + '/api/admin/usuarios/qualquer', {
     method: 'PATCH', headers: { 'Content-Type': 'application/json', 'x-admin-pass': 'senha-de-teste' }, body: JSON.stringify({ fichaCrm: false }),
   });
-  assert.equal(patch.status, 404, 'não existe mais liberação por usuário');
+  assert.equal(patch.status, 400, 'não existe mais liberação por usuário (só papel)');
 });
 
 // ---------------------------------------------------------------- contato salvo com nome no WhatsApp

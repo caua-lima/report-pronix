@@ -90,6 +90,29 @@ async function admin(req, res, next) {
   }
 }
 
+/**
+ * Exige MASTER: só o master (ou a ADMIN_PASSWORD, que é o reserva e cria o primeiro master)
+ * cria, edita e remove usuários. O gestor vê e faz tudo o mais.
+ */
+async function master(req, res, next) {
+  try {
+    const chave = req.get('x-cr-key') || req.query.chave;
+    if (chave) {
+      const u = await usuarios.porChave(String(chave).trim());
+      if (usuarios.ehMaster(u)) {
+        req.usuario = u;
+        return next();
+      }
+    }
+    const esperada = process.env.ADMIN_PASSWORD;
+    const senha = req.get('x-admin-pass') || (req.body && req.body.senha) || req.query.senha;
+    if (esperada && senha === esperada) return next();
+    res.status(403).json({ erro: 'Só o master pode criar, editar ou remover usuários.' });
+  } catch (err) {
+    res.status(500).json({ erro: err.message });
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Páginas
 // ---------------------------------------------------------------------------
@@ -129,7 +152,7 @@ app.get('/api/admin/usuarios', admin, async (_req, res) => {
   }
 });
 
-app.post('/api/admin/usuarios', admin, async (req, res) => {
+app.post('/api/admin/usuarios', master, async (req, res) => {
   try {
     const u = await usuarios.criar(req.body && req.body.nome, req.body && req.body.papel);
     res.json({ ok: true, usuario: u });
@@ -138,12 +161,22 @@ app.post('/api/admin/usuarios', admin, async (req, res) => {
   }
 });
 
-app.delete('/api/admin/usuarios/:id', admin, async (req, res) => {
+app.patch('/api/admin/usuarios/:id', master, async (req, res) => {
+  try {
+    const ok = await usuarios.definirPapel(req.params.id, String((req.body || {}).papel || ''));
+    if (!ok) return res.status(404).json({ erro: 'Usuário não encontrado.' });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(400).json({ erro: err.message });
+  }
+});
+
+app.delete('/api/admin/usuarios/:id', master, async (req, res) => {
   try {
     await usuarios.remover(req.params.id);
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ erro: err.message });
+    res.status(/único master/.test(err.message) ? 400 : 500).json({ erro: err.message });
   }
 });
 

@@ -56,7 +56,7 @@ test.before(async () => {
   const criar = async (nome, papel) => (await (await fetchReal(base + '/api/admin/usuarios', {
     method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-pass': 'senha-de-teste' }, body: JSON.stringify({ nome, papel }),
   })).json()).usuario.chave;
-  E.admin = await criar('Cauã Admin', 'admin');
+  E.admin = await criar('Cauã Admin', 'master');
   E.sdr = await criar('SDR Sem Ficha', 'sdr');
 });
 test.after(async () => {

@@ -125,7 +125,7 @@ const E = {};
 test('cria SDRs e um admin pelo painel (chave gerada pelo servidor)', async () => {
   const a = await api('POST', '/api/admin/usuarios', { admin: true, corpo: { nome: 'Ana SDR', papel: 'sdr' } });
   const b = await api('POST', '/api/admin/usuarios', { admin: true, corpo: { nome: 'Bia SDR', papel: 'sdr' } });
-  const c = await api('POST', '/api/admin/usuarios', { admin: true, corpo: { nome: 'Chefe', papel: 'admin' } });
+  const c = await api('POST', '/api/admin/usuarios', { admin: true, corpo: { nome: 'Chefe', papel: 'master' } });
   assert.equal(a.status, 200);
   E.ana = a.json.usuario.chave;
   E.bia = b.json.usuario.chave;
@@ -563,4 +563,55 @@ test('gestor: lista e baixa o .zip do dia de TODOS os SDRs, uma pasta por SDR, s
   assert.equal((await api('GET', `/api/equipe-reports?dia=${dia}`, { chave: Z.duda })).status, 401, 'SDR não vê a equipe');
   assert.equal((await baixar('POST', '/api/equipe-reports/zip', { chave: Z.duda, corpo: { dia } })).status, 401);
   assert.equal((await api('GET', `/api/equipe-reports?dia=${dia}`, { admin: true })).status, 200, 'admin (senha reserva) também');
+});
+
+// ---------------------------------------------------------------- Master / Gestor / Usuário
+test('só o master cria, edita e remove usuários; o gestor vê tudo mas não mexe em usuários', async () => {
+  assert.equal(E.chefe ? 'ok' : 'x', 'ok');
+  // gestor (E.gestor) e SDR (E.ana) não criam nem editam nem removem
+  for (const chave of [E.gestor, E.ana]) {
+    assert.equal((await api('POST', '/api/admin/usuarios', { chave, corpo: { nome: 'Intruso', papel: 'sdr' } })).status, chave === E.ana ? 403 : 403);
+  }
+  const novo = await api('POST', '/api/admin/usuarios', { chave: E.chefe, corpo: { nome: 'Criado pelo Master', papel: 'sdr' } });
+  assert.equal(novo.status, 200);
+  const id = novo.json.usuario.id;
+  assert.equal((await api('PATCH', `/api/admin/usuarios/${id}`, { chave: E.gestor, corpo: { papel: 'gestor' } })).status, 403);
+  assert.equal((await api('DELETE', `/api/admin/usuarios/${id}`, { chave: E.gestor })).status, 403);
+  assert.equal((await api('GET', '/api/admin/usuarios', { chave: E.gestor })).status, 200, 'gestor continua vendo a lista');
+  assert.equal((await api('GET', '/api/admin/stats', { chave: E.gestor })).status, 200);
+
+  // master troca o tipo de acesso
+  assert.equal((await api('PATCH', `/api/admin/usuarios/${id}`, { chave: E.chefe, corpo: { papel: 'gestor' } })).status, 200);
+  const lista = (await api('GET', '/api/admin/usuarios', { chave: E.chefe })).json.usuarios;
+  assert.equal(lista.find((u) => u.id === id).papel, 'gestor');
+  assert.equal((await api('PATCH', `/api/admin/usuarios/${id}`, { chave: E.chefe, corpo: { papel: 'admin' } })).status, 400, 'admin não existe mais');
+  assert.equal((await api('PATCH', '/api/admin/usuarios/naoexiste', { chave: E.chefe, corpo: { papel: 'sdr' } })).status, 404);
+  assert.equal((await api('DELETE', `/api/admin/usuarios/${id}`, { chave: E.chefe })).status, 200);
+
+  // a senha reserva equivale ao master (é ela que cria o primeiro)
+  assert.equal((await api('POST', '/api/admin/usuarios', { admin: true, corpo: { nome: 'Pela Senha', papel: 'sdr' } })).status, 200);
+});
+
+test('nunca fica sem master: o único master não muda de papel nem é removido', async () => {
+  const lista = (await api('GET', '/api/admin/usuarios', { chave: E.chefe })).json.usuarios;
+  const masters = lista.filter((u) => u.papel === 'master');
+  assert.equal(masters.length, 1);
+  const r1 = await api('PATCH', `/api/admin/usuarios/${masters[0].id}`, { chave: E.chefe, corpo: { papel: 'gestor' } });
+  assert.equal(r1.status, 400);
+  assert.match(r1.json.erro, /único master/);
+  assert.equal((await api('DELETE', `/api/admin/usuarios/${masters[0].id}`, { chave: E.chefe })).status, 400);
+  // com dois masters dá para rebaixar um
+  const outro = (await api('POST', '/api/admin/usuarios', { chave: E.chefe, corpo: { nome: 'Segundo Master', papel: 'master' } })).json.usuario;
+  assert.equal((await api('PATCH', `/api/admin/usuarios/${outro.id}`, { chave: E.chefe, corpo: { papel: 'sdr' } })).status, 200);
+});
+
+test('usuário antigo com papel "admin" vira gestor (não master) na leitura', () => {
+  const fs2 = require('fs');
+  const arq = require('path').join(DADOS, 'usuarios.json');
+  const j = JSON.parse(fs2.readFileSync(arq, 'utf8'));
+  j.usuarios.push({ id: 'velho1', nome: 'Admin Antigo', papel: 'admin', chave: 'pnx_velho', criadoEm: new Date().toISOString() });
+  fs2.writeFileSync(arq, JSON.stringify(j));
+  return api('GET', '/api/admin/usuarios', { chave: E.chefe }).then((r) => {
+    assert.equal(r.json.usuarios.find((u) => u.id === 'velho1').papel, 'gestor');
+  });
 });

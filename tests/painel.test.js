@@ -58,7 +58,7 @@ const reportNaTabela = (extra = {}) => ({
 });
 
 /** API base: /api/eu (papel configurável) e listas vazias — cada teste sobrescreve o que precisa. */
-function apiBase({ papel = 'admin', nome = 'Chefe', usuarios = [], closers = [], stats = statsVazio() } = {}) {
+function apiBase({ papel = 'master', nome = 'Chefe', usuarios = [], closers = [], stats = statsVazio() } = {}) {
   return criarApi({
     'GET /api/eu': () => ({ corpo: { ok: true, nome, id: '1', papel } }),
     'GET /api/admin/usuarios': () => ({ corpo: { usuarios } }),
@@ -120,7 +120,7 @@ test('o painel inicia sem erro de script e um SDR não dispara nenhuma rota de a
 });
 
 test('A12: nome com HTML vindo do servidor nunca vira elemento na tela', async () => {
-  const api = apiBase({ papel: 'admin', nome: '<img src=x onerror=alert(1)>' });
+  const api = apiBase({ papel: 'master', nome: '<img src=x onerror=alert(1)>' });
   const p = abrirPainel(api);
   await aberto(p);
   assert.equal(p.$('statusChave').querySelector('img'), null);
@@ -743,7 +743,7 @@ test('Gestor/admin: trocar para "Meus reports" volta para a lista própria', asy
 });
 
 test('Admin começa em "Meus reports"; SDR nem vê a escolha', async () => {
-  const adm = apiBase({ papel: 'admin', nome: 'Chefe' }).quando('GET /api/meus-reports', () => ({ corpo: { dia: '2026-09-30', total: 0, leads: 0, reports: [] } }));
+  const adm = apiBase({ papel: 'master', nome: 'Chefe' }).quando('GET /api/meus-reports', () => ({ corpo: { dia: '2026-09-30', total: 0, leads: 0, reports: [] } }));
   const p = abrirPainel(adm, { hash: '#dia' });
   await esperar(() => adm.contar('GET /api/meus-reports') >= 1, { motivo: 'lista própria do admin' });
   assert.ok(visivel(p.$('escopoMeusBox')));
@@ -765,7 +765,7 @@ test('Acessos: dá para criar Gestor, e a lista marca o papel', async () => {
   ] }).quando('POST /api/admin/usuarios', ({ corpo }) => ({ corpo: { usuario: { id: 'u9', nome: corpo.nome, papel: corpo.papel, chave: 'pnx_x' } } }));
   const p = abrirPainel(api, { hash: '#acessos' });
   await esperar(() => p.$('lista').textContent.includes('Líder'), { motivo: 'lista de acessos' });
-  assert.match(p.$('lista').textContent, /Líder\s*gestor/);
+  assert.equal(p.document.querySelector('[data-papel-de="u1"]').value, 'gestor');
   assert.equal(p.document.querySelector('[data-ficha-crm]'), null, 'não há mais caixa por usuário: a ficha é de todos');
   assert.ok([...p.$('papel').options].some((o) => o.value === 'gestor'));
   p.$('nome').value = 'Novo Gestor';
@@ -774,4 +774,36 @@ test('Acessos: dá para criar Gestor, e a lista marca o papel', async () => {
   await esperar(() => /Novo Gestor \(gestor\) criado/.test(p.$('statusCriar').textContent), { motivo: 'criado' });
   assert.deepEqual(api.corpos('POST /api/admin/usuarios'), [{ nome: 'Novo Gestor', papel: 'gestor' }]);
   p.fechar();
+});
+
+// ---------------------------------------------------------------- Master edita o tipo de acesso
+test('Master: troca o tipo de acesso na lista e cria acessos; Gestor só vê', async () => {
+  const usuarios = [
+    { id: 'u1', nome: 'Cauã', papel: 'master', chave: 'pnx_Master1234567890abcdefgh', criadoEm: '2026-09-01T10:00:00Z' },
+    { id: 'u2', nome: 'Bia', papel: 'sdr', chave: 'pnx_SdrSdr1234567890abcdefgh', criadoEm: '2026-09-01T10:00:00Z' },
+  ];
+  const api = apiBase({ papel: 'master', usuarios }).quando('PATCH /api/admin/usuarios/u2', () => ({ corpo: { ok: true } }));
+  const p = abrirPainel(api, { hash: '#acessos' });
+  await esperar(() => p.$('lista').textContent.includes('Bia'), { motivo: 'lista' });
+  assert.ok(visivel(p.$('cardCriar')));
+  assert.match(p.$('quem').textContent, /Master: /);
+  assert.ok([...p.$('papel').options].map((o) => o.value).join() === 'sdr,gestor,master');
+  const sel = p.document.querySelector('[data-papel-de="u2"]');
+  sel.value = 'gestor';
+  sel.dispatchEvent(new p.w.Event('change', { bubbles: true }));
+  await esperar(() => api.contar('PATCH /api/admin/usuarios/u2') === 1, { motivo: 'PATCH' });
+  assert.deepEqual(api.corpos('PATCH /api/admin/usuarios/u2'), [{ papel: 'gestor' }]);
+  await esperar(() => api.contar('GET /api/admin/usuarios') >= 2, { motivo: 'lista recarregada' });
+  await dormir(60);
+  p.fechar();
+
+  const g = apiBase({ papel: 'gestor', nome: 'Líder', usuarios });
+  const q = abrirPainel(g, { hash: '#acessos' });
+  await esperar(() => q.$('lista').textContent.includes('Bia'), { motivo: 'lista do gestor' });
+  assert.ok(!visivel(q.$('cardCriar')), 'gestor não cria usuários');
+  assert.ok(visivel(q.$('avisoSoMaster')));
+  assert.equal(q.document.querySelector('[data-papel-de]'), null, 'nem edita o tipo de acesso');
+  assert.equal(q.document.querySelector('[data-remover]'), null, 'nem remove');
+  assert.match(q.$('lista').textContent, /master/);
+  q.fechar();
 });

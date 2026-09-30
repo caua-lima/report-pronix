@@ -360,14 +360,15 @@
       </div>
 
       <div class="admin-area hidden">
-        <div class="card">
+        <div id="avisoSoMaster" class="hint hidden" style="margin:0 0 12px">Você é gestor: vê todos os acessos, mas só o <b>master</b> cria, edita ou remove usuários.</div>
+        <div id="cardCriar" class="card">
           <div class="head"><div class="t"><i data-ic="plus"></i>Criar acesso</div><div class="sub">— nome do SDR, sem e-mail</div></div>
           <div class="row">
             <input id="nome" class="grow" type="text" placeholder="Nome do SDR (ex.: João Pedro)" />
             <select id="papel" style="width:auto;min-width:190px">
               <option value="sdr">Usuário (só gera report)</option>
-              <option value="gestor">Gestor (tudo do admin + .zip de todos os SDRs)</option>
-              <option value="admin">Admin (vê tudo)</option>
+              <option value="gestor">Gestor (vê e faz tudo, menos mexer em usuários)</option>
+              <option value="master">Master (também cria, edita e remove usuários)</option>
             </select>
             <button id="criar" class="btn">Criar acesso</button>
           </div>
@@ -734,6 +735,8 @@
     const SO_ADMIN = ['acessos', 'numeros', 'arquivos', 'base', 'extensao'];
     let souAdmin = false;
     let souGestor = false;
+    let souMaster = false;
+    const podeMexerEmUsuarios = () => souMaster || Boolean(senhaAdmin); // a senha reserva equivale ao master
     let validacaoPendente = false; // a chave ainda está sendo conferida (a lista do dia espera: o papel muda o que ela mostra)
     // Guardado porque a chave é validada de forma assíncrona: quem abre direto
     // em #acessos ainda não é admin nesse instante e seria mandado para #report.
@@ -845,21 +848,41 @@
       if (!souAdmin && !senhaAdmin) return;
       try {
         const { usuarios } = await api('GET', '/api/admin/usuarios');
+        $('cardCriar').classList.toggle('hidden', !podeMexerEmUsuarios());
+        $('avisoSoMaster').classList.toggle('hidden', podeMexerEmUsuarios());
         $('vazio').style.display = usuarios.length ? 'none' : '';
         $('lista').innerHTML = usuarios.map((u) => `
           <tr>
-            <td><b>${esc(u.nome)}</b>${u.papel === 'admin' || u.papel === 'gestor' ? ` <span class="tag" style="color:var(--gold-ink);border-color:var(--primary)">${u.papel}</span>` : ''}</td>
+            <td><b>${esc(u.nome)}</b>${podeMexerEmUsuarios() ? `
+              <select class="mini-select" data-papel-de="${esc(u.id)}" title="Tipo de acesso de ${esc(u.nome)}">
+                ${[['sdr', 'Usuário'], ['gestor', 'Gestor'], ['master', 'Master']].map(([v, t]) => `<option value="${v}" ${u.papel === v ? 'selected' : ''}>${t}</option>`).join('')}
+              </select>` : u.papel !== 'sdr' ? ` <span class="tag" style="color:var(--gold-ink);border-color:var(--primary)">${u.papel}</span>` : ''}</td>
             <td><span class="chave" data-cheia="${esc(u.chave)}" data-mascara="${esc(mascarar(u.chave))}" title="Clique para mostrar ou ocultar" style="cursor:pointer">${esc(mascarar(u.chave))}</span></td>
             <td style="color:var(--muted);font-size:.8rem">${new Date(u.criadoEm).toLocaleDateString('pt-BR')}</td>
             <td><div class="acoes">
               <button class="mini" data-copiar="${esc(u.chave)}">Copiar chave</button>
-              <button class="mini del" data-remover="${esc(u.id)}" data-nome="${esc(u.nome)}">Remover</button>
+              ${podeMexerEmUsuarios() ? `<button class="mini del" data-remover="${esc(u.id)}" data-nome="${esc(u.nome)}">Remover</button>` : ''}
             </div></td>
           </tr>`).join('');
       } catch (e) {
         setStatus('statusCriar', e.message, { erro: true });
       }
     }
+
+    // Só o master troca o tipo de acesso de alguém.
+    $('lista').addEventListener('change', async (ev) => {
+      const s = ev.target.closest('[data-papel-de]');
+      if (!s) return;
+      s.disabled = true;
+      try {
+        await api('PATCH', '/api/admin/usuarios/' + s.dataset.papelDe, { papel: s.value });
+        toast('Tipo de acesso atualizado.');
+      } catch (e) {
+        setStatus('statusCriar', e.message, { erro: true });
+      } finally {
+        carregarUsuarios(); // volta ao valor real (também se o servidor recusou)
+      }
+    });
 
     $('lista').addEventListener('click', async (ev) => {
       const k = ev.target.closest('.chave');
@@ -889,7 +912,7 @@
       try {
         const { usuario } = await api('POST', '/api/admin/usuarios', { nome, papel });
         $('nome').value = '';
-        const tipo = usuario.papel === 'admin' ? 'admin' : usuario.papel === 'gestor' ? 'gestor' : 'usuário';
+        const tipo = usuario.papel === 'master' ? 'master' : usuario.papel === 'gestor' ? 'gestor' : 'usuário';
         setStatus('statusCriar', `Acesso de ${usuario.nome} (${tipo}) criado — copie a chave e envie para ele.`, { ok: true });
         carregarUsuarios();
       } catch (e) {
@@ -1804,11 +1827,12 @@
         const r = await fetchComTempo('/api/eu', { headers: hdr() }, 20000);
         const j = await r.json();
         if (!r.ok) throw new Error(j.erro || 'Chave inválida.');
+        souMaster = j.papel === 'master';
         souGestor = j.papel === 'gestor';
-        souAdmin = j.papel === 'admin' || souGestor; // gestor tem os mesmos acessos do admin
+        souAdmin = souMaster || souGestor; // master e gestor veem e fazem tudo; só o master mexe em usuários
         prepararEscopoMeus();
-        setStatus('statusChave', `Conectado como ${j.nome}${souGestor ? ' (gestor)' : souAdmin ? ' (admin)' : ''}.`, { ok: true });
-        $('quem').innerHTML = (souGestor ? 'Gestor: <b>' : souAdmin ? 'Admin: <b>' : 'SDR: <b>') + esc(j.nome) + '</b>';
+        setStatus('statusChave', `Conectado como ${j.nome}${souMaster ? ' (master)' : souGestor ? ' (gestor)' : ''}.`, { ok: true });
+        $('quem').innerHTML = (souMaster ? 'Master: <b>' : souGestor ? 'Gestor: <b>' : 'Usuário: <b>') + esc(j.nome) + '</b>';
         aplicarPapel();
         if (souAdmin) {
           // abrir() já chama pedirAdmin() para as abas de admin — não carrega duas vezes.
@@ -1819,6 +1843,7 @@
       } catch (e) {
         souAdmin = false;
         souGestor = false;
+        souMaster = false;
         aplicarPapel();
         setStatus('statusChave', e.message, { erro: true });
         $('quem').textContent = '';
