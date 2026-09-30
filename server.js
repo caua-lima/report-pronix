@@ -76,7 +76,7 @@ async function admin(req, res, next) {
     const chave = req.get('x-cr-key') || req.query.chave;
     if (chave) {
       const u = await usuarios.porChave(String(chave).trim());
-      if (u && u.papel === 'admin') {
+      if (usuarios.ehAdmin(u)) { // admin ou gestor
         req.usuario = u;
         return next();
       }
@@ -135,18 +135,6 @@ app.post('/api/admin/usuarios', admin, async (req, res) => {
     res.json({ ok: true, usuario: u });
   } catch (err) {
     res.status(400).json({ erro: err.message });
-  }
-});
-
-/** Liga/desliga a ficha do RD Station no WhatsApp para um usuário (aba Acessos). */
-app.patch('/api/admin/usuarios/:id', admin, async (req, res) => {
-  try {
-    if (typeof (req.body || {}).fichaCrm !== 'boolean') return res.status(400).json({ erro: 'Informe fichaCrm (true/false).' });
-    const ok = await usuarios.definirFichaCrm(req.params.id, req.body.fichaCrm);
-    if (!ok) return res.status(404).json({ erro: 'Usuário não encontrado.' });
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ erro: err.message });
   }
 });
 
@@ -296,7 +284,7 @@ app.get('/api/admin/reports/:id/pdf', admin, async (req, res) => {
 app.get('/api/reports/:id/pdf', auth, async (req, res) => {
   try {
     const r = await stats.buscarPorId(req.params.id);
-    const permitido = r && (req.usuario.papel === 'admin' || r.usuarioId === req.usuario.id);
+    const permitido = r && (usuarios.ehAdmin(req.usuario) || r.usuarioId === req.usuario.id);
     // Report de outra pessoa responde igual a "não existe" — não confirma que o id existe.
     if (!permitido) return res.status(404).json({ erro: 'Report não encontrado.' });
     const salvo = await pdfStorage.ler(r.id);
@@ -370,9 +358,6 @@ async function enviarZip(res, nomeZip, arquivos) {
 // ---------------------------------------------------------------------------
 app.post('/api/crm/lead', auth, async (req, res) => {
   try {
-    // Só para quem o admin liberou (aba Acessos → "Ficha RD"). Para os outros é como se o CRM não
-    // estivesse ligado: a extensão não mostra nada e o RD nem é consultado.
-    if (!req.usuario.fichaCrm) return res.json({ configurado: false });
     const { telefone, nome, contatoId } = req.body || {};
     res.json(await crm.consultarLead({ telefone, nome, contatoId }));
   } catch (err) {
@@ -383,11 +368,10 @@ app.post('/api/crm/lead', auth, async (req, res) => {
 /**
  * Resumo rápido da conversa aberta (botão no cartão do WhatsApp): cenário, onde parou, última
  * pergunta e próximo passo — para retomar um lead sem reler a conversa nem reouvir os áudios.
- * Liberado junto com a ficha do RD (aba Acessos). Conversa igual = resumo do cache, sem custo.
+ * Disponível para todo usuário com chave. Conversa igual = resumo do cache, sem custo.
  */
 app.post('/api/resumo-rapido', auth, async (req, res) => {
   try {
-    if (!req.usuario.fichaCrm) return res.status(403).json({ erro: 'Resumo rápido não liberado para este usuário.' });
     const { mensagens, nome } = req.body || {};
     const r = await gerarResumoRapido({ mensagens, nome });
     if (r.uso) {
@@ -443,6 +427,72 @@ app.get('/api/meus-reports', auth, async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ erro: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Reports do dia da EQUIPE (gestor e admin): todos os SDRs, o último report de cada lead,
+// um .zip com uma pasta por SDR.
+// ---------------------------------------------------------------------------
+async function reportsDaEquipe(dia) {
+  return diario.marcarUltimos(await stats.listar({ de: dia, ate: dia }));
+}
+
+app.get('/api/equipe-reports', admin, async (req, res) => {
+  try {
+    const dia = dataOk(req.query.dia) || stats.hojeStr();
+    const marcados = await reportsDaEquipe(dia);
+    res.json({
+      dia,
+      total: marcados.length,
+      leads: marcados.filter((r) => r.usar).length,
+      sdrs: new Set(marcados.map((r) => r.usuarioNome || '')).size,
+      reports: marcados.map((r) => ({
+        id: r.id,
+        lead: r.lead,
+        contato: r.contato || '',
+        usuarioNome: r.usuarioNome || '',
+        quando: r.quando,
+        origem: r.origem,
+        arquivo: r.arquivo,
+        usar: r.usar,
+        substituidoPor: r.substituidoPor,
+        geracoes: r.geracoes,
+      })),
+    });
+  } catch (err) {
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+app.post('/api/equipe-reports/zip', admin, async (req, res) => {
+  try {
+    const body = req.body || {};
+    const dia = dataOk(body.dia) || stats.hojeStr();
+    const marcados = await reportsDaEquipe(dia);
+    let escolhidos;
+    if (Array.isArray(body.ids)) {
+      const pedidos = new Set(body.ids.slice(0, TETO_ZIP).map(String));
+      escolhidos = marcados.filter((r) => pedidos.has(r.id));
+    } else {
+      escolhidos = marcados.filter((r) => r.usar);
+    }
+    if (!escolhidos.length) {
+      return res.status(400).json({ erro: marcados.length ? 'Marque pelo menos um report para baixar.' : 'Nenhum report gerado neste dia.' });
+    }
+    if (escolhidos.length > TETO_ZIP) return res.status(400).json({ erro: `Reports demais para um .zip (${escolhidos.length}).` });
+    const comPdf = await lerPdfs(escolhidos);
+    if (!comPdf.length) return res.status(404).json({ erro: 'O PDF desses reports não está guardado.' });
+
+    res.set('X-Reports-No-Zip', String(comPdf.length));
+    res.set('X-Reports-Sem-Pdf', String(escolhidos.length - comPdf.length));
+    await enviarZip(
+      res,
+      `Reports_Equipe_${dia.split('-').reverse().join('-')}.zip`,
+      comPdf.map(({ r, salvo }) => ({ nome: `${pastaSegura(r.usuarioNome)}/${salvo.arquivo || r.arquivo || r.id + '.pdf'}`, base64: salvo.base64 }))
+    );
+  } catch (err) {
+    if (!res.headersSent) res.status(500).json({ erro: err.message });
   }
 });
 
@@ -582,7 +632,7 @@ async function checarDuplicataETravar(req, res, reportKey) {
           lead: existente.lead,
           arquivo: existente.arquivo,
           // Só dá para reabrir o próprio report (admin abre qualquer um).
-          podeAbrir: req.usuario.papel === 'admin' || existente.usuarioId === req.usuario.id,
+          podeAbrir: usuarios.ehAdmin(req.usuario) || existente.usuarioId === req.usuario.id,
         },
       });
       return false;

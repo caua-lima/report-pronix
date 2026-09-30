@@ -125,12 +125,6 @@ test.before(async () => {
   E.sdr = await criar('SDR Teste', 'sdr');
   E.sdr2 = await criar('SDR Sem Ficha', 'sdr');
   E.admin = await criar('Admin Teste', 'admin');
-  const lista = await (await fetchReal(base + '/api/admin/usuarios', { headers: { 'x-admin-pass': 'senha-de-teste' } })).json();
-  E.idSdr = lista.usuarios.find((u) => u.nome === 'SDR Teste').id;
-  E.idSdr2 = lista.usuarios.find((u) => u.nome === 'SDR Sem Ficha').id;
-  await fetchReal(base + '/api/admin/usuarios/' + E.idSdr, {
-    method: 'PATCH', headers: { 'Content-Type': 'application/json', 'x-admin-pass': 'senha-de-teste' }, body: JSON.stringify({ fichaCrm: true }),
-  });
 });
 test.after(async () => {
   await new Promise((r) => servidor.close(r));
@@ -283,29 +277,14 @@ test('escolhe a negociação em aberto; se todas fecharam, a última', () => {
   assert.equal(crm.escolherNegociacao([]), null);
 });
 
-// ---------------------------------------------------------------- liberado para todos (o admin pode desligar)
-test('ficha liberada para todos: SDR e admin já vêm ligados', async () => {
-  const us = (await (await fetchReal(base + '/api/admin/usuarios', { headers: { 'x-admin-pass': 'senha-de-teste' } })).json()).usuarios;
-  assert.equal(us.find((u) => u.nome === 'Admin Teste').fichaCrm, true);
-  assert.equal(us.find((u) => u.nome === 'SDR Sem Ficha').fichaCrm, true, 'SDR sem escolha do admin: ligado');
-  const r = await post('/api/crm/lead', { telefone: '5571999998888' }, { chave: E.sdr2 });
-  assert.equal(r.json.encontrado, true);
-});
-
-test('o admin desliga e religa para alguém pela aba Acessos; desligado, o RD nem é consultado', async () => {
-  const patch = (id, corpo, headers = { 'x-admin-pass': 'senha-de-teste' }) =>
-    fetchReal(base + '/api/admin/usuarios/' + id, { method: 'PATCH', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(corpo) });
-  assert.equal((await patch(E.idSdr2, { fichaCrm: false }, { 'x-cr-key': E.sdr })).status, 401, 'SDR não mexe em ninguém');
-  assert.equal((await patch(E.idSdr2, { fichaCrm: 'sim' })).status, 400);
-  assert.equal((await patch('naoexiste', { fichaCrm: true })).status, 404);
-
-  assert.equal((await patch(E.idSdr2, { fichaCrm: false })).status, 200);
-  chamadasRd.length = 0;
-  assert.deepEqual((await post('/api/crm/lead', { telefone: '5511900001111' }, { chave: E.sdr2 })).json, { configurado: false });
-  assert.equal(chamadasRd.length, 0);
-
-  await patch(E.idSdr2, { fichaCrm: true });
+// ---------------------------------------------------------------- disponível para todos
+test('ficha disponível para todo usuário com chave (SDR ou admin), sem liberação', async () => {
   assert.equal((await post('/api/crm/lead', { telefone: '5571999998888' }, { chave: E.sdr2 })).json.encontrado, true);
+  assert.equal((await post('/api/crm/lead', { telefone: '5571999998888' }, { chave: E.admin })).json.encontrado, true);
+  const patch = await fetchReal(base + '/api/admin/usuarios/qualquer', {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json', 'x-admin-pass': 'senha-de-teste' }, body: JSON.stringify({ fichaCrm: false }),
+  });
+  assert.equal(patch.status, 404, 'não existe mais liberação por usuário');
 });
 
 // ---------------------------------------------------------------- contato salvo com nome no WhatsApp

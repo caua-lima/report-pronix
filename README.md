@@ -332,9 +332,8 @@ personalizados, outras anotações e o link para abrir no RD. Liga/desliga no po
 - **Acentos quebrados** que integrações gravam no RD ("EmpresÃ¡rio") são consertados, e campos
   repetidos ("Vende online?" x "Vende online") aparecem uma vez só. Campos de anúncio/origem
   ([AD]…, LP, UTM, criativo, conjunto) não entram na ficha.
-- **Liberado para todos os usuários.** Na aba **Acessos**, a caixa **Ficha RD** desliga (ou
-  religa) a ficha e o resumo rápido para uma pessoa. Desligado, o servidor responde como se o CRM
-  estivesse desligado e o RD nem é consultado.
+- **Disponível para todo usuário com chave** (SDR, gestor ou admin). Cada um pode esconder o
+  cartão no próprio popup da extensão.
 - **Resumo rápido da conversa** (botão no cartão): lê a conversa aberta, inclusive transcrevendo
   os áudios, e a IA devolve o **cenário**, **onde parou** (quem deve responder), a **última
   pergunta** e o **próximo passo** — para retomar um lead sem reler nem reouvir tudo.
@@ -374,6 +373,7 @@ popup da extensão.
   lead; com `ids`, exatamente esses, sempre restritos aos reports **da própria chave**
   naquele dia. Nome do arquivo: `Reports_<SDR>_<dd-mm-aaaa>.zip`; nomes repetidos dentro
   do .zip ganham " (2)". Cabeçalhos `X-Reports-No-Zip` e `X-Reports-Sem-Pdf`.
+- **Gestor:** papel criado na aba **Acessos** ("Gestor"). Tem todos os acessos do admin e, na aba **Reports do dia**, a opção **Todos os SDRs** (começa nela): lista os reports do dia da equipe inteira e baixa um .zip com **uma pasta por SDR**, só com o último report de cada lead (dá para marcar/desmarcar). Admin também tem a opção, começando em "Meus reports". Rotas: `GET /api/equipe-reports?dia=` e `POST /api/equipe-reports/zip` `{ dia, ids? }` (admin, gestor ou senha reserva). Arquivo: `Reports_Equipe_<dd-mm-aaaa>.zip`.
 - **Admin:** o .zip da aba **Arquivos** tem a opção **"só o último report de cada lead
   no dia"** marcada por padrão (`?ultimo=1` em `/api/admin/reports/pdf-zip`).
 

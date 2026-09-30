@@ -570,6 +570,8 @@ test('Reports do dia: trocar a data recarrega a lista daquele dia', async () => 
   const ultimo = api.pedidos.filter((x) => x.chave === 'GET /api/meus-reports').at(-1);
   assert.equal(ultimo.query.get('dia'), '2026-09-25');
   await esperar(() => p.$('listaMeus').querySelectorAll('tr').length === 4, { motivo: 'lista renderizada' });
+  await esperar(() => p.$('statusMeus').textContent.includes('report(s) gerado'), { motivo: 'última carga terminou' });
+  await dormir(40);
   p.fechar();
 });
 
@@ -689,20 +691,87 @@ test('report rico no painel: consciência baixa não aparece na tela', async () 
   p.fechar();
 });
 
-test('Acessos: a caixa "Ficha RD" liga e desliga a ficha do RD Station por usuário', async () => {
+// ---------------------------------------------------------------- papel Gestor
+const DIA_EQUIPE = {
+  dia: '2026-09-30', total: 3, leads: 2, sdrs: 2,
+  reports: [
+    { id: 'e1', lead: 'Rafael', contato: 'Rafael', usuarioNome: 'Ana SDR', quando: '2026-09-30T13:00:00.000Z', origem: 'extensao', usar: false, substituidoPor: 'e2', geracoes: 2 },
+    { id: 'e2', lead: 'Rafael', contato: 'Rafael', usuarioNome: 'Ana SDR', quando: '2026-09-30T15:00:00.000Z', origem: 'extensao', usar: true, substituidoPor: null, geracoes: 2 },
+    { id: 'e3', lead: 'Júlia', contato: 'Júlia', usuarioNome: 'Bia SDR', quando: '2026-09-30T16:00:00.000Z', origem: 'manual', usar: true, substituidoPor: null, geracoes: 1 },
+  ],
+};
+
+test('Gestor: vê as abas de admin e, em "Reports do dia", começa em "Todos os SDRs" com a coluna SDR', async () => {
+  const api = apiBase({ papel: 'gestor', nome: 'Líder' })
+    .quando('GET /api/equipe-reports', () => ({ corpo: DIA_EQUIPE }))
+    .quando('POST /api/equipe-reports/zip', () => ({
+      corpo: {},
+      headers: { 'content-disposition': 'attachment; filename="Reports_Equipe_30-09-2026.zip"', 'x-reports-no-zip': '2', 'x-reports-sem-pdf': '0' },
+    }));
+  const p = abrirPainel(api, { hash: '#dia' });
+  await aberto(p);
+  assert.match(p.$('quem').textContent, /Gestor: Líder/);
+  assert.ok(visivel(p.document.querySelector('.tab[data-aba="acessos"]')), 'gestor tem as abas do admin');
+  assert.ok(visivel(p.document.querySelector('.tab[data-aba="arquivos"]')));
+  await esperar(() => p.$('listaMeus').querySelectorAll('tr').length === 3, { motivo: 'lista da equipe' });
+  assert.ok(visivel(p.$('escopoMeusBox')));
+  assert.equal(p.$('escopoMeus').value, 'todos');
+  assert.ok(visivel(p.$('thSdrMeus')));
+  assert.match(p.$('listaMeus').textContent, /Bia SDR/);
+  assert.match(p.$('statusMeus').textContent, /3 report\(s\) gerado\(s\) por 2 SDR\(s\) · 2 lead\(s\) · o \.zip leva 2/);
+
+  p.$('baixarMeus').click();
+  await esperar(() => p.downloads.length === 1, { motivo: 'download do .zip da equipe' });
+  assert.deepEqual(api.corpos('POST /api/equipe-reports/zip'), [{ dia: '2026-09-30', ids: ['e2', 'e3'] }]);
+  assert.equal(p.downloads[0].nome, 'Reports_Equipe_30-09-2026.zip');
+  assert.equal(api.contar('GET /api/meus-reports'), 0);
+  p.fechar();
+});
+
+test('Gestor/admin: trocar para "Meus reports" volta para a lista própria', async () => {
+  const api = apiBase({ papel: 'gestor', nome: 'Líder' })
+    .quando('GET /api/equipe-reports', () => ({ corpo: DIA_EQUIPE }))
+    .quando('GET /api/meus-reports', () => ({ corpo: { dia: '2026-09-30', total: 0, leads: 0, reports: [] } }));
+  const p = abrirPainel(api, { hash: '#dia' });
+  await esperar(() => p.$('listaMeus').querySelectorAll('tr').length === 3, { motivo: 'lista da equipe' });
+  p.$('escopoMeus').value = 'meus';
+  p.$('escopoMeus').dispatchEvent(new p.w.Event('change', { bubbles: true }));
+  await esperar(() => api.contar('GET /api/meus-reports') === 1, { motivo: 'lista própria' });
+  await esperar(() => p.$('listaMeus').querySelectorAll('tr').length === 0, { motivo: 'lista vazia' });
+  assert.ok(!visivel(p.$('thSdrMeus')));
+  p.fechar();
+});
+
+test('Admin começa em "Meus reports"; SDR nem vê a escolha', async () => {
+  const adm = apiBase({ papel: 'admin', nome: 'Chefe' }).quando('GET /api/meus-reports', () => ({ corpo: { dia: '2026-09-30', total: 0, leads: 0, reports: [] } }));
+  const p = abrirPainel(adm, { hash: '#dia' });
+  await esperar(() => adm.contar('GET /api/meus-reports') >= 1, { motivo: 'lista própria do admin' });
+  assert.ok(visivel(p.$('escopoMeusBox')));
+  assert.equal(p.$('escopoMeus').value, 'meus');
+  p.fechar();
+
+  const sdr = apiBase({ papel: 'sdr', nome: 'Ana' }).quando('GET /api/meus-reports', () => ({ corpo: { dia: '2026-09-30', total: 0, leads: 0, reports: [] } }));
+  const q = abrirPainel(sdr, { hash: '#dia' });
+  await aberto(q);
+  await dormir(40);
+  assert.ok(!visivel(q.$('escopoMeusBox')));
+  assert.equal(sdr.contar('GET /api/equipe-reports'), 0);
+  q.fechar();
+});
+
+test('Acessos: dá para criar Gestor, e a lista marca o papel', async () => {
   const api = apiBase({ usuarios: [
-    { id: 'u1', nome: 'Cauã', papel: 'admin', chave: 'pnx_Admin1234567890abcdefgh', criadoEm: '2026-09-01T10:00:00Z', fichaCrm: true },
-    { id: 'u2', nome: 'Bia', papel: 'sdr', chave: 'pnx_SdrSdr1234567890abcdefgh', criadoEm: '2026-09-01T10:00:00Z', fichaCrm: false },
-  ] }).quando('PATCH /api/admin/usuarios/u2', () => ({ corpo: { ok: true } }));
+    { id: 'u1', nome: 'Líder', papel: 'gestor', chave: 'pnx_Gestor1234567890abcdefgh', criadoEm: '2026-09-01T10:00:00Z' },
+  ] }).quando('POST /api/admin/usuarios', ({ corpo }) => ({ corpo: { usuario: { id: 'u9', nome: corpo.nome, papel: corpo.papel, chave: 'pnx_x' } } }));
   const p = abrirPainel(api, { hash: '#acessos' });
-  await esperar(() => p.$('lista').textContent.includes('Bia'), { motivo: 'lista de acessos' });
-  const caixa = (id) => p.document.querySelector(`[data-ficha-crm="${id}"]`);
-  assert.equal(caixa('u1').checked, true);
-  assert.equal(caixa('u2').checked, false);
-  caixa('u2').checked = true;
-  caixa('u2').dispatchEvent(new p.w.Event('change', { bubbles: true }));
-  await esperar(() => api.contar('PATCH /api/admin/usuarios/u2') === 1, { motivo: 'PATCH' });
-  assert.deepEqual(api.corpos('PATCH /api/admin/usuarios/u2'), [{ fichaCrm: true }]);
-  await esperar(() => /Ficha do RD liberada/.test(p.$('toast').textContent), { motivo: 'aviso' });
+  await esperar(() => p.$('lista').textContent.includes('Líder'), { motivo: 'lista de acessos' });
+  assert.match(p.$('lista').textContent, /Líder\s*gestor/);
+  assert.equal(p.document.querySelector('[data-ficha-crm]'), null, 'não há mais caixa por usuário: a ficha é de todos');
+  assert.ok([...p.$('papel').options].some((o) => o.value === 'gestor'));
+  p.$('nome').value = 'Novo Gestor';
+  p.$('papel').value = 'gestor';
+  p.$('criar').click();
+  await esperar(() => /Novo Gestor \(gestor\) criado/.test(p.$('statusCriar').textContent), { motivo: 'criado' });
+  assert.deepEqual(api.corpos('POST /api/admin/usuarios'), [{ nome: 'Novo Gestor', papel: 'gestor' }]);
   p.fechar();
 });

@@ -58,11 +58,6 @@ test.before(async () => {
   })).json()).usuario.chave;
   E.admin = await criar('Cauã Admin', 'admin');
   E.sdr = await criar('SDR Sem Ficha', 'sdr');
-  // Todos vêm liberados; este o admin desligou na aba Acessos.
-  const us = (await (await fetchReal(base + '/api/admin/usuarios', { headers: { 'x-admin-pass': 'senha-de-teste' } })).json()).usuarios;
-  await fetchReal(base + '/api/admin/usuarios/' + us.find((u) => u.nome === 'SDR Sem Ficha').id, {
-    method: 'PATCH', headers: { 'Content-Type': 'application/json', 'x-admin-pass': 'senha-de-teste' }, body: JSON.stringify({ fichaCrm: false }),
-  });
 });
 test.after(async () => {
   await new Promise((r) => servidor.close(r));
@@ -82,9 +77,9 @@ const CONVERSA = [
   { from: 'eu', type: 'texto', content: 'Consegue investir a partir de R$3 mil?', timestamp: '2026-09-21T13:05:00.000Z' },
 ];
 
-test('resumo rápido: quem o admin desligou não usa', async () => {
-  const r = await post('/api/resumo-rapido', { mensagens: CONVERSA, nome: 'Marcos' }, E.sdr);
-  assert.equal(r.status, 403);
+test('resumo rápido: sem chave não usa', async () => {
+  const r = await post('/api/resumo-rapido', { mensagens: CONVERSA, nome: 'Marcos' }, 'chave-errada');
+  assert.equal(r.status, 401);
   assert.equal(chamadas.length, 0);
 });
 
@@ -125,4 +120,11 @@ test('resumo rápido: lead respondeu por último → "você deve responder"; sem
   const r = await post('/api/resumo-rapido', { mensagens: CONVERSA.concat([{ from: 'eles', type: 'texto', content: 'Consigo sim', timestamp: '2026-09-22T12:00:00.000Z' }]) }, E.admin);
   assert.equal(r.json.resumo.aguardando, 'voce');
   assert.equal((await post('/api/resumo-rapido', { mensagens: [] }, E.admin)).status, 400);
+});
+
+test('resumo rápido: disponível para SDR também', async () => {
+  const outra = CONVERSA.concat([{ from: 'eles', type: 'texto', content: 'Pode ser na quinta', timestamp: '2026-09-23T12:00:00.000Z' }]);
+  const r = await post('/api/resumo-rapido', { mensagens: outra, nome: 'Marcos' }, E.sdr);
+  assert.equal(r.status, 200);
+  assert.ok(r.json.resumo.peQueParou);
 });

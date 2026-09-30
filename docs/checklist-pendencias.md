@@ -15,7 +15,9 @@ Detalhes técnicos em [`auditoria-pronix.md`](auditoria-pronix.md) e [`plano-imp
 
 - [x] Contato salvo com nome: acha no RD sem digitar número (nome limpo de "PRONIX" etc.; número do painel "Dados do contato")
 - [x] Acentos quebrados da anotação consertados; campos repetidos e de anúncio/origem fora do cartão
-- [x] Ficha e resumo liberados para todos (30/09); aba Acessos → Ficha RD desliga para alguém
+- [x] Ficha e resumo disponíveis para todos os usuários (30/09), sem liberação por usuário
+- [x] Papel **Gestor** (tudo do admin + .zip do dia de todos os SDRs, uma pasta por SDR, na aba Reports do dia)
+- [ ] **Você:** criar o acesso do gestor na aba Acessos (papel "Gestor") e mandar a chave para ele
 - [x] Resumo rápido da conversa no cartão: cenário, onde parou, última pergunta, próximo passo
 - [ ] **Você:** enviar a extensão 1.8.0 à Chrome Web Store
 

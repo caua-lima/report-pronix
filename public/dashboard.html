@@ -323,8 +323,15 @@
     <section id="aba-dia" class="hidden">
       <div class="card">
         <div class="head"><div class="t"><i data-ic="download"></i>Reports do dia</div><div class="sub">— o .zip com os seus reports, para mandar ao líder no fim do dia</div></div>
-        <div class="hint" style="margin:0 0 12px">Gerou mais de um report do mesmo lead? O .zip leva só o <b>último</b> de cada um. Se precisar, marque ou desmarque na lista antes de baixar.</div>
+        <div class="hint" style="margin:0 0 12px">Gerou mais de um report do mesmo lead? O .zip leva só o <b>último</b> de cada um. Se precisar, marque ou desmarque na lista antes de baixar. Gestor e admin podem escolher <b>Todos os SDRs</b>: o .zip vem com uma pasta por SDR.</div>
         <div class="row">
+          <div id="escopoMeusBox" class="hidden" style="min-width:170px">
+            <label for="escopoMeus">Reports de</label>
+            <select id="escopoMeus">
+              <option value="meus">Meus reports</option>
+              <option value="todos">Todos os SDRs</option>
+            </select>
+          </div>
           <div style="flex:1;min-width:160px"><label for="diaMeus">Dia</label><input id="diaMeus" type="date" /></div>
           <button id="verMeus" class="btn sec"><i data-ic="refresh"></i>Atualizar</button>
           <button id="baixarMeus" class="btn"><i data-ic="download"></i>Baixar .zip do dia</button>
@@ -333,7 +340,7 @@
       </div>
       <div class="card">
         <table>
-          <thead><tr><th style="width:44px">No .zip</th><th>Lead</th><th>Horário</th><th>Origem</th><th></th></tr></thead>
+          <thead><tr><th style="width:44px">No .zip</th><th>Lead</th><th id="thSdrMeus" class="hidden">SDR</th><th>Horário</th><th>Origem</th><th></th></tr></thead>
           <tbody id="listaMeus"></tbody>
         </table>
         <div id="vazioMeus" class="hint">Nenhum report neste dia.</div>
@@ -359,6 +366,7 @@
             <input id="nome" class="grow" type="text" placeholder="Nome do SDR (ex.: João Pedro)" />
             <select id="papel" style="width:auto;min-width:190px">
               <option value="sdr">Usuário (só gera report)</option>
+              <option value="gestor">Gestor (tudo do admin + .zip de todos os SDRs)</option>
               <option value="admin">Admin (vê tudo)</option>
             </select>
             <button id="criar" class="btn">Criar acesso</button>
@@ -370,7 +378,7 @@
         <div class="card">
           <div class="head"><div class="t"><i data-ic="users"></i>Equipe</div></div>
           <table>
-            <thead><tr><th>Nome</th><th>Chave</th><th title="Ficha do lead do RD Station no WhatsApp">Ficha RD</th><th>Criado</th><th></th></tr></thead>
+            <thead><tr><th>Nome</th><th>Chave</th><th>Criado</th><th></th></tr></thead>
             <tbody id="lista"></tbody>
           </table>
           <div id="vazio" class="hint">Nenhum acesso criado ainda.</div>
@@ -725,6 +733,8 @@
     const ABAS = ['report', 'dia', 'acessos', 'numeros', 'arquivos', 'base', 'extensao'];
     const SO_ADMIN = ['acessos', 'numeros', 'arquivos', 'base', 'extensao'];
     let souAdmin = false;
+    let souGestor = false;
+    let validacaoPendente = false; // a chave ainda está sendo conferida (a lista do dia espera: o papel muda o que ela mostra)
     // Guardado porque a chave é validada de forma assíncrona: quem abre direto
     // em #acessos ainda não é admin nesse instante e seria mandado para #report.
     const abaPedida = (location.hash || '').replace('#', '') || 'report';
@@ -785,6 +795,7 @@
         await api('POST', '/api/admin/login', {});
         mostrarAdmin(true);
         aplicarPapel();
+        prepararEscopoMeus();
         await carregarAba(abaAtual());
         return true;
       } catch (e) {
@@ -837,9 +848,8 @@
         $('vazio').style.display = usuarios.length ? 'none' : '';
         $('lista').innerHTML = usuarios.map((u) => `
           <tr>
-            <td><b>${esc(u.nome)}</b>${u.papel === 'admin' ? ' <span class="tag" style="color:var(--gold-ink);border-color:var(--primary)">admin</span>' : ''}</td>
+            <td><b>${esc(u.nome)}</b>${u.papel === 'admin' || u.papel === 'gestor' ? ` <span class="tag" style="color:var(--gold-ink);border-color:var(--primary)">${u.papel}</span>` : ''}</td>
             <td><span class="chave" data-cheia="${esc(u.chave)}" data-mascara="${esc(mascarar(u.chave))}" title="Clique para mostrar ou ocultar" style="cursor:pointer">${esc(mascarar(u.chave))}</span></td>
-            <td><input type="checkbox" data-ficha-crm="${esc(u.id)}" ${u.fichaCrm ? 'checked' : ''} style="width:auto" title="Mostrar a ficha do RD Station no WhatsApp para ${esc(u.nome)}" /></td>
             <td style="color:var(--muted);font-size:.8rem">${new Date(u.criadoEm).toLocaleDateString('pt-BR')}</td>
             <td><div class="acoes">
               <button class="mini" data-copiar="${esc(u.chave)}">Copiar chave</button>
@@ -850,22 +860,6 @@
         setStatus('statusCriar', e.message, { erro: true });
       }
     }
-
-    // Ficha do RD Station no WhatsApp (e resumo rápido): liberada para todos; desmarcar desliga para a pessoa.
-    $('lista').addEventListener('change', async (ev) => {
-      const c = ev.target.closest('[data-ficha-crm]');
-      if (!c) return;
-      c.disabled = true;
-      try {
-        await api('PATCH', '/api/admin/usuarios/' + c.dataset.fichaCrm, { fichaCrm: c.checked });
-        toast(c.checked ? 'Ficha do RD liberada.' : 'Ficha do RD desligada.');
-      } catch (e) {
-        c.checked = !c.checked;
-        setStatus('statusCriar', e.message, { erro: true });
-      } finally {
-        c.disabled = false;
-      }
-    });
 
     $('lista').addEventListener('click', async (ev) => {
       const k = ev.target.closest('.chave');
@@ -895,7 +889,7 @@
       try {
         const { usuario } = await api('POST', '/api/admin/usuarios', { nome, papel });
         $('nome').value = '';
-        const tipo = usuario.papel === 'admin' ? 'admin' : 'usuário';
+        const tipo = usuario.papel === 'admin' ? 'admin' : usuario.papel === 'gestor' ? 'gestor' : 'usuário';
         setStatus('statusCriar', `Acesso de ${usuario.nome} (${tipo}) criado — copie a chave e envie para ele.`, { ok: true });
         carregarUsuarios();
       } catch (e) {
@@ -1805,13 +1799,16 @@
       const c = getChave();
       if (!c) { setStatus('statusChave', 'Cole a chave que o admin te passou.', { erro: true }); return false; }
       localStorage.setItem('crChave', c);
+      validacaoPendente = true;
       try {
         const r = await fetchComTempo('/api/eu', { headers: hdr() }, 20000);
         const j = await r.json();
         if (!r.ok) throw new Error(j.erro || 'Chave inválida.');
-        souAdmin = j.papel === 'admin';
-        setStatus('statusChave', `Conectado como ${j.nome}${souAdmin ? ' (admin)' : ''}.`, { ok: true });
-        $('quem').innerHTML = (souAdmin ? 'Admin: <b>' : 'SDR: <b>') + esc(j.nome) + '</b>';
+        souGestor = j.papel === 'gestor';
+        souAdmin = j.papel === 'admin' || souGestor; // gestor tem os mesmos acessos do admin
+        prepararEscopoMeus();
+        setStatus('statusChave', `Conectado como ${j.nome}${souGestor ? ' (gestor)' : souAdmin ? ' (admin)' : ''}.`, { ok: true });
+        $('quem').innerHTML = (souGestor ? 'Gestor: <b>' : souAdmin ? 'Admin: <b>' : 'SDR: <b>') + esc(j.nome) + '</b>';
         aplicarPapel();
         if (souAdmin) {
           // abrir() já chama pedirAdmin() para as abas de admin — não carrega duas vezes.
@@ -1821,10 +1818,14 @@
         return true;
       } catch (e) {
         souAdmin = false;
+        souGestor = false;
         aplicarPapel();
         setStatus('statusChave', e.message, { erro: true });
         $('quem').textContent = '';
         return false;
+      } finally {
+        validacaoPendente = false;
+        if (!$('aba-dia').classList.contains('hidden')) carregarMeus();
       }
     }
     $('validar').addEventListener('click', validarChave);
@@ -1835,6 +1836,23 @@
     // ---------- Aba: Reports do dia (todo usuário; o servidor só devolve os reports da própria chave) ----------
     const horaBR = (iso) => new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
     let meusDia = null; // dia que está na lista (é o que vai no .zip)
+    let meusEquipe = false; // a lista na tela é da equipe toda?
+
+    // Gestor e admin escolhem entre os próprios reports e os de todos os SDRs (gestor começa em "todos").
+    const podeVerEquipe = () => souAdmin || Boolean(senhaAdmin);
+    const verEquipe = () => podeVerEquipe() && $('escopoMeus').value === 'todos';
+    function prepararEscopoMeus() {
+      $('escopoMeusBox').classList.toggle('hidden', !podeVerEquipe());
+      if (souGestor && !prepararEscopoMeus.feito) $('escopoMeus').value = 'todos';
+      prepararEscopoMeus.feito = true;
+      if (!validacaoPendente && !$('aba-dia').classList.contains('hidden')) carregarMeus();
+    }
+    const hdrEquipe = (extra) => {
+      const h = Object.assign({}, extra || {});
+      if (getChave()) h['x-cr-key'] = getChave();
+      if (senhaAdmin) h['x-admin-pass'] = senhaAdmin;
+      return h;
+    };
 
     function resumoMeus() {
       const caixas = [...document.querySelectorAll('#listaMeus [data-meu]')];
@@ -1844,7 +1862,7 @@
     function mostrarResumoMeus(j) {
       const { marcados } = resumoMeus();
       setStatus('statusMeus',
-        `${j.total} report(s) gerado(s) · ${j.leads} lead(s) · o .zip leva ${marcados}` +
+        `${j.total} report(s) gerado(s)${j.sdrs != null ? ` por ${j.sdrs} SDR(s)` : ''} · ${j.leads} lead(s) · o .zip leva ${marcados}` +
         (j.total > j.leads ? ` (${j.total - j.leads} refeito(s) ficam de fora)` : '') + '.',
         { ok: true });
     }
@@ -1852,17 +1870,22 @@
 
     async function carregarMeus() {
       if (!$('diaMeus').value) $('diaMeus').value = hojeISO();
-      if (!getChave()) {
+      if (validacaoPendente) return; // carrega assim que a chave for conferida
+      const equipe = verEquipe();
+      if (!getChave() && !(equipe && senhaAdmin)) {
         setStatus('statusMeus', 'Cole a sua chave na aba "Gerar report" primeiro.', { erro: true });
         return;
       }
       const dia = $('diaMeus').value;
       setStatus('statusMeus', 'Carregando…', { loading: true });
       try {
-        const r = await fetchComTempo('/api/meus-reports?dia=' + encodeURIComponent(dia), { headers: hdr() }, 30000);
+        const rota = equipe ? '/api/equipe-reports?dia=' : '/api/meus-reports?dia=';
+        const r = await fetchComTempo(rota + encodeURIComponent(dia), { headers: hdrEquipe() }, 30000);
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(j.erro || 'Falha ao carregar os reports do dia.');
         meusDia = j.dia;
+        meusEquipe = equipe;
+        $('thSdrMeus').classList.toggle('hidden', !equipe);
         ultimoMeus = j;
         const porId = new Map(j.reports.map((x) => [x.id, x]));
         $('vazioMeus').style.display = j.reports.length ? 'none' : '';
@@ -1874,6 +1897,7 @@
           return `<tr class="${x.usar ? '' : 'substituido'}">
             <td><input type="checkbox" data-meu="${esc(x.id)}" ${x.usar ? 'checked' : ''} style="width:auto" /></td>
             <td>${esc(x.lead || x.contato || '—')}</td>
+            ${equipe ? `<td>${esc(x.usuarioNome || '—')}</td>` : ''}
             <td>${horaBR(x.quando)}</td>
             <td><span class="tag">${x.origem === 'manual' ? 'manual' : 'extensão'}</span></td>
             <td style="color:var(--muted);font-size:.82rem">${esc(nota)}</td>
@@ -1885,6 +1909,7 @@
       }
     }
     $('verMeus').addEventListener('click', carregarMeus);
+    $('escopoMeus').addEventListener('change', carregarMeus);
     $('diaMeus').addEventListener('change', carregarMeus);
     $('listaMeus').addEventListener('change', (ev) => {
       const c = ev.target.closest('[data-meu]');
@@ -1894,7 +1919,8 @@
     });
 
     $('baixarMeus').addEventListener('click', async () => {
-      if (!getChave()) { setStatus('statusMeus', 'Cole a sua chave na aba "Gerar report" primeiro.', { erro: true }); return; }
+      const equipe = meusDia ? meusEquipe : verEquipe(); // o .zip é do que está na tela
+      if (!getChave() && !(equipe && senhaAdmin)) { setStatus('statusMeus', 'Cole a sua chave na aba "Gerar report" primeiro.', { erro: true }); return; }
       const { caixas, marcados } = resumoMeus();
       const dia = meusDia || $('diaMeus').value || hojeISO();
       const corpo = { dia };
@@ -1907,8 +1933,8 @@
       btn.disabled = true;
       setStatus('statusMeus', 'Preparando o .zip…', { loading: true });
       try {
-        const r = await fetchComTempo('/api/meus-reports/zip', {
-          method: 'POST', headers: hdr({ 'Content-Type': 'application/json' }), body: JSON.stringify(corpo),
+        const r = await fetchComTempo(equipe ? '/api/equipe-reports/zip' : '/api/meus-reports/zip', {
+          method: 'POST', headers: hdrEquipe({ 'Content-Type': 'application/json' }), body: JSON.stringify(corpo),
         }, 120000);
         if (!r.ok) {
           const j = await r.json().catch(() => ({}));

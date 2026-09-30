@@ -8,13 +8,13 @@ const db = require('./db');
 
 const CHAVE_DB = 'usuarios';
 
-// Quem já existia antes dos papéis entra como sdr — nunca como admin.
-// fichaCrm: quem vê a ficha do RD Station no WhatsApp (e o resumo rápido). Liberado para todos;
-// o admin pode desligar para alguém na aba Acessos (aí fica false, e essa escolha é respeitada).
-const normalizar = (u) => {
-  const papel = u.papel === 'admin' ? 'admin' : 'sdr';
-  return { ...u, papel, fichaCrm: typeof u.fichaCrm === 'boolean' ? u.fichaCrm : true };
-};
+// Papéis: sdr (gera report), admin (vê tudo) e gestor (tudo do admin + o .zip do dia de todos os
+// SDRs na aba "Reports do dia"). Quem já existia antes dos papéis entra como sdr — nunca como admin.
+const PAPEIS = ['sdr', 'gestor', 'admin'];
+const papelValido = (p) => (PAPEIS.includes(p) ? p : 'sdr');
+const normalizar = (u) => ({ ...u, papel: papelValido(u.papel) });
+/** Admin e gestor têm os mesmos acessos de administração. */
+const ehAdmin = (u) => Boolean(u && (u.papel === 'admin' || u.papel === 'gestor'));
 
 async function ler() {
   const j = await db.getJson(CHAVE_DB, { usuarios: [] });
@@ -36,7 +36,7 @@ async function criar(nome, papel) {
   const usuario = {
     id: crypto.randomBytes(6).toString('hex'),
     nome: limpo,
-    papel: papel === 'admin' ? 'admin' : 'sdr',
+    papel: papelValido(papel),
     chave: 'pnx_' + crypto.randomBytes(18).toString('base64url'),
     criadoEm: new Date().toISOString(),
   };
@@ -53,19 +53,9 @@ async function remover(id) {
   return dados.usuarios.length < antes;
 }
 
-/** Liga/desliga a ficha do RD Station para um usuário. */
-async function definirFichaCrm(id, ligada) {
-  const dados = await ler();
-  const u = dados.usuarios.find((x) => x.id === id);
-  if (!u) return false;
-  u.fichaCrm = Boolean(ligada);
-  await db.setJson(CHAVE_DB, dados);
-  return true;
-}
-
 async function porChave(chave) {
   if (!chave) return null;
   return (await ler()).usuarios.find((u) => u.chave === chave) || null;
 }
 
-module.exports = { listar, criar, remover, porChave, definirFichaCrm };
+module.exports = { listar, criar, remover, porChave, ehAdmin, PAPEIS };

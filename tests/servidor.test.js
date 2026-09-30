@@ -528,3 +528,39 @@ test('palavras do lead: fala real que desanima o closer sai do report; a boa fic
   assert.match(chamadasAnthropic[0].system[0].text, /SÓ se forem MUITO BOAS para o closer/);
   assert.match(chamadasAnthropic[0].system[0].text, /PROIBIDO citar fala que possa desanimar o closer/);
 });
+
+// ---------------------------------------------------------------- papel Gestor: tudo do admin + .zip da equipe
+test('gestor: é criado pelo admin e tem os acessos do admin', async () => {
+  const r = await api('POST', '/api/admin/usuarios', { admin: true, corpo: { nome: 'Líder Gestor', papel: 'gestor' } });
+  assert.equal(r.json.usuario.papel, 'gestor');
+  E.gestor = r.json.usuario.chave;
+  assert.equal((await api('GET', '/api/eu', { chave: E.gestor })).json.papel, 'gestor');
+  assert.equal((await api('GET', '/api/admin/stats', { chave: E.gestor })).status, 200, 'gestor vê os números');
+  assert.equal((await api('GET', '/api/admin/usuarios', { chave: E.gestor })).status, 200, 'gestor vê os acessos');
+  assert.equal((await api('GET', '/api/admin/stats', { chave: E.ana })).status, 401, 'SDR continua sem');
+  const invalido = await api('POST', '/api/admin/usuarios', { admin: true, corpo: { nome: 'Papel Estranho', papel: 'dono' } });
+  assert.equal(invalido.json.usuario.papel, 'sdr', 'papel desconhecido vira sdr');
+});
+
+test('gestor: lista e baixa o .zip do dia de TODOS os SDRs, uma pasta por SDR, só o último de cada lead', async () => {
+  const dia = (await api('GET', '/api/meus-reports', { chave: Z.duda })).json.dia;
+  const lista = await api('GET', `/api/equipe-reports?dia=${dia}`, { chave: E.gestor });
+  assert.equal(lista.status, 200);
+  const nomes = new Set(lista.json.reports.map((x) => x.usuarioNome));
+  assert.ok(nomes.has('Duda Araújo') && nomes.has('Edu SDR'), 'reports de mais de um SDR');
+  assert.equal(lista.json.sdrs, nomes.size);
+  const rafaelDuda = lista.json.reports.filter((x) => x.usuarioNome === 'Duda Araújo' && x.contato === '+55 11 98888-7777');
+  assert.deepEqual(rafaelDuda.map((x) => x.usar), [false, false, true]);
+
+  const z = await baixar('POST', '/api/equipe-reports/zip', { chave: E.gestor, corpo: { dia } });
+  assert.equal(z.status, 200);
+  assert.match(z.headers.get('content-disposition'), /Reports_Equipe_\d{2}-\d{2}-\d{4}\.zip/);
+  const arquivos = listarZip(z.buf);
+  assert.ok(arquivos.some((n) => n.startsWith('Duda Araújo/') && /Rafael-v3/.test(n)));
+  assert.ok(!arquivos.some((n) => /Rafael-v1|Rafael-v2/.test(n)), 'refeitos ficam de fora');
+  assert.ok(arquivos.some((n) => n.startsWith('Edu SDR/')));
+
+  assert.equal((await api('GET', `/api/equipe-reports?dia=${dia}`, { chave: Z.duda })).status, 401, 'SDR não vê a equipe');
+  assert.equal((await baixar('POST', '/api/equipe-reports/zip', { chave: Z.duda, corpo: { dia } })).status, 401);
+  assert.equal((await api('GET', `/api/equipe-reports?dia=${dia}`, { admin: true })).status, 200, 'admin (senha reserva) também');
+});
