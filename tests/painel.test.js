@@ -766,7 +766,7 @@ test('Acessos: dá para criar Gestor, e a lista marca o papel', async () => {
   const p = abrirPainel(api, { hash: '#acessos' });
   await esperar(() => p.$('lista').textContent.includes('Líder'), { motivo: 'lista de acessos' });
   assert.equal(p.document.querySelector('[data-papel-de="u1"]').value, 'gestor');
-  assert.equal(p.document.querySelector('[data-ficha-crm]'), null, 'não há mais caixa por usuário: a ficha é de todos');
+  assert.ok(p.document.querySelector('[data-ficha-crm="u1"]'), 'há a caixa do popup do lead por usuário');
   assert.ok([...p.$('papel').options].some((o) => o.value === 'gestor'));
   p.$('nome').value = 'Novo Gestor';
   p.$('papel').value = 'gestor';
@@ -805,5 +805,30 @@ test('Master: troca o tipo de acesso na lista e cria acessos; Gestor só vê', a
   assert.equal(q.document.querySelector('[data-papel-de]'), null, 'nem edita o tipo de acesso');
   assert.equal(q.document.querySelector('[data-remover]'), null, 'nem remove');
   assert.match(q.$('lista').textContent, /master/);
+  q.fechar();
+});
+
+test('Acessos: o master liga/desliga o popup do lead por pessoa; o gestor vê mas não muda', async () => {
+  const usuarios = [
+    { id: 'u1', nome: 'Líder', papel: 'gestor', chave: 'pnx_Gestor1234567890abcdefgh', criadoEm: '2026-09-01T10:00:00Z', fichaCrm: false },
+    { id: 'u2', nome: 'Bia', papel: 'sdr', chave: 'pnx_SdrSdr1234567890abcdefgh', criadoEm: '2026-09-01T10:00:00Z', fichaCrm: true },
+  ];
+  const api = apiBase({ papel: 'master', usuarios }).quando('PATCH /api/admin/usuarios/u1', () => ({ corpo: { ok: true } }));
+  const p = abrirPainel(api, { hash: '#acessos' });
+  await esperar(() => p.$('lista').textContent.includes('Bia'), { motivo: 'lista' });
+  const caixa = (id) => p.document.querySelector('[data-ficha-crm="' + id + '"]');
+  assert.equal(caixa('u1').checked, false);
+  assert.equal(caixa('u2').checked, true);
+  caixa('u1').checked = true;
+  caixa('u1').dispatchEvent(new p.w.Event('change', { bubbles: true }));
+  await esperar(() => api.contar('PATCH /api/admin/usuarios/u1') === 1, { motivo: 'PATCH' });
+  assert.deepEqual(api.corpos('PATCH /api/admin/usuarios/u1'), [{ fichaCrm: true }]);
+  await esperar(() => /Popup do lead ligado/.test(p.$('toast').textContent), { motivo: 'aviso' });
+  await dormir(60);
+  p.fechar();
+
+  const q = abrirPainel(apiBase({ papel: 'gestor', nome: 'Líder', usuarios }), { hash: '#acessos' });
+  await esperar(() => q.$('lista').textContent.includes('Bia'), { motivo: 'lista do gestor' });
+  assert.equal(q.document.querySelector('[data-ficha-crm="u2"]').disabled, true);
   q.fechar();
 });

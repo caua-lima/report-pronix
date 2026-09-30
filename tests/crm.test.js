@@ -281,10 +281,6 @@ test('escolhe a negociação em aberto; se todas fecharam, a última', () => {
 test('ficha disponível para todo usuário com chave (SDR ou admin), sem liberação', async () => {
   assert.equal((await post('/api/crm/lead', { telefone: '5571999998888' }, { chave: E.sdr2 })).json.encontrado, true);
   assert.equal((await post('/api/crm/lead', { telefone: '5571999998888' }, { chave: E.admin })).json.encontrado, true);
-  const patch = await fetchReal(base + '/api/admin/usuarios/qualquer', {
-    method: 'PATCH', headers: { 'Content-Type': 'application/json', 'x-admin-pass': 'senha-de-teste' }, body: JSON.stringify({ fichaCrm: false }),
-  });
-  assert.equal(patch.status, 400, 'não existe mais liberação por usuário (só papel)');
 });
 
 // ---------------------------------------------------------------- contato salvo com nome no WhatsApp
@@ -331,4 +327,21 @@ test('nome salvo: tira etiquetas do time, números e emojis, mantendo os acentos
   assert.deepEqual(crm.consultasPorNome('Lead João Paulo Souza 22 🚀').consultas, ['Lead João Paulo Souza 22 🚀', 'João Paulo Souza', 'João Souza', 'João']);
   assert.deepEqual(crm.consultasPorNome('PRXC | Márcia Gonçalves').palavras, ['marcia', 'goncalves']);
   assert.deepEqual(crm.consultasPorNome('Ana').consultas, ['Ana']);
+});
+
+// ---------------------------------------------------------------- o master escolhe quem vê o popup do lead
+test('popup do lead: ligado por padrão; o master desliga e religa; quem não é master não muda', async () => {
+  const hdrs = (chave) => ({ 'Content-Type': 'application/json', 'x-cr-key': chave });
+  const us = (await (await fetchReal(base + '/api/admin/usuarios', { headers: { 'x-admin-pass': 'senha-de-teste' } })).json()).usuarios;
+  const alvo = us.find((u) => u.nome === 'SDR Sem Ficha');
+  assert.equal(alvo.fichaCrm, true, 'padrão: ligado');
+  const patch = (chave, corpo) => fetchReal(base + '/api/admin/usuarios/' + alvo.id, { method: 'PATCH', headers: hdrs(chave), body: JSON.stringify(corpo) });
+  assert.equal((await patch(E.sdr, { fichaCrm: false })).status, 403);
+  assert.equal((await patch(E.admin, { fichaCrm: false })).status, 200);
+  chamadasRd.length = 0;
+  assert.deepEqual((await post('/api/crm/lead', { telefone: '5571999998888' }, { chave: E.sdr2 })).json, { configurado: false });
+  assert.equal(chamadasRd.length, 0, 'desligado: o RD nem é consultado');
+  assert.equal((await post('/api/crm/lead', { telefone: '5571999998888' }, { chave: E.sdr })).json.encontrado, true, 'os outros continuam');
+  assert.equal((await patch(E.admin, { fichaCrm: true })).status, 200);
+  assert.equal((await post('/api/crm/lead', { telefone: '5571999998888' }, { chave: E.sdr2 })).json.encontrado, true);
 });

@@ -14,7 +14,9 @@ const PAPEIS = ['sdr', 'gestor', 'master'];
 // O antigo "admin" deixou de existir: vira gestor (vê tudo, não mexe em usuários) — nunca master
 // automaticamente. O master se define entrando com a ADMIN_PASSWORD e trocando o papel na aba Acessos.
 const papelValido = (p) => (p === 'admin' ? 'gestor' : PAPEIS.includes(p) ? p : 'sdr');
-const normalizar = (u) => ({ ...u, papel: papelValido(u.papel) });
+// fichaCrm: a ficha do lead (RD) e o resumo rápido aparecem para esta pessoa? Ligado por padrão;
+// o master desliga para quem não prospecta (ex.: gestor).
+const normalizar = (u) => ({ ...u, papel: papelValido(u.papel), fichaCrm: typeof u.fichaCrm === 'boolean' ? u.fichaCrm : true });
 /** Master e gestor veem e fazem tudo; só o master cria, edita e remove usuários. */
 const ehAdmin = (u) => Boolean(u && (u.papel === 'master' || u.papel === 'gestor'));
 const ehMaster = (u) => Boolean(u && u.papel === 'master');
@@ -62,6 +64,16 @@ async function definirPapel(id, papel) {
   return true;
 }
 
+/** Liga/desliga a ficha do lead (RD) e o resumo rápido para um usuário. */
+async function definirFichaCrm(id, ligada) {
+  const dados = await ler();
+  const u = dados.usuarios.find((x) => x.id === id);
+  if (!u) return false;
+  u.fichaCrm = Boolean(ligada);
+  await db.setJson(CHAVE_DB, dados);
+  return true;
+}
+
 async function remover(id) {
   const dados = await ler();
   const alvo = dados.usuarios.find((u) => u.id === id);
@@ -79,4 +91,4 @@ async function porChave(chave) {
   return (await ler()).usuarios.find((u) => u.chave === chave) || null;
 }
 
-module.exports = { listar, criar, remover, definirPapel, porChave, ehAdmin, ehMaster, PAPEIS };
+module.exports = { listar, criar, remover, definirPapel, definirFichaCrm, porChave, ehAdmin, ehMaster, PAPEIS };

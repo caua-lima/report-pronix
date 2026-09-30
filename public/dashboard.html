@@ -379,7 +379,7 @@
         <div class="card">
           <div class="head"><div class="t"><i data-ic="users"></i>Equipe</div></div>
           <table>
-            <thead><tr><th>Nome</th><th>Chave</th><th>Criado</th><th></th></tr></thead>
+            <thead><tr><th>Nome</th><th>Chave</th><th title="Mostrar a ficha do lead (RD) e o resumo rápido no WhatsApp">Popup do lead</th><th>Criado</th><th></th></tr></thead>
             <tbody id="lista"></tbody>
           </table>
           <div id="vazio" class="hint">Nenhum acesso criado ainda.</div>
@@ -858,6 +858,7 @@
                 ${[['sdr', 'Usuário'], ['gestor', 'Gestor'], ['master', 'Master']].map(([v, t]) => `<option value="${v}" ${u.papel === v ? 'selected' : ''}>${t}</option>`).join('')}
               </select>` : u.papel !== 'sdr' ? ` <span class="tag" style="color:var(--gold-ink);border-color:var(--primary)">${u.papel}</span>` : ''}</td>
             <td><span class="chave" data-cheia="${esc(u.chave)}" data-mascara="${esc(mascarar(u.chave))}" title="Clique para mostrar ou ocultar" style="cursor:pointer">${esc(mascarar(u.chave))}</span></td>
+            <td><input type="checkbox" data-ficha-crm="${esc(u.id)}" ${u.fichaCrm ? 'checked' : ''} ${podeMexerEmUsuarios() ? '' : 'disabled'} style="width:auto" title="Popup do lead (ficha do RD e resumo rápido) para ${esc(u.nome)}" /></td>
             <td style="color:var(--muted);font-size:.8rem">${new Date(u.criadoEm).toLocaleDateString('pt-BR')}</td>
             <td><div class="acoes">
               <button class="mini" data-copiar="${esc(u.chave)}">Copiar chave</button>
@@ -869,8 +870,22 @@
       }
     }
 
-    // Só o master troca o tipo de acesso de alguém.
+    // Só o master troca o tipo de acesso e escolhe quem vê o popup do lead.
     $('lista').addEventListener('change', async (ev) => {
+      const f = ev.target.closest('[data-ficha-crm]');
+      if (f) {
+        f.disabled = true;
+        try {
+          await api('PATCH', '/api/admin/usuarios/' + f.dataset.fichaCrm, { fichaCrm: f.checked });
+          toast(f.checked ? 'Popup do lead ligado.' : 'Popup do lead desligado.');
+        } catch (e) {
+          f.checked = !f.checked;
+          setStatus('statusCriar', e.message, { erro: true });
+        } finally {
+          f.disabled = false;
+        }
+        return;
+      }
       const s = ev.target.closest('[data-papel-de]');
       if (!s) return;
       s.disabled = true;

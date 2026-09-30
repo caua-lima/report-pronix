@@ -163,7 +163,10 @@ app.post('/api/admin/usuarios', master, async (req, res) => {
 
 app.patch('/api/admin/usuarios/:id', master, async (req, res) => {
   try {
-    const ok = await usuarios.definirPapel(req.params.id, String((req.body || {}).papel || ''));
+    const corpo = req.body || {};
+    let ok;
+    if (typeof corpo.fichaCrm === 'boolean') ok = await usuarios.definirFichaCrm(req.params.id, corpo.fichaCrm);
+    else ok = await usuarios.definirPapel(req.params.id, String(corpo.papel || ''));
     if (!ok) return res.status(404).json({ erro: 'Usuário não encontrado.' });
     res.json({ ok: true });
   } catch (err) {
@@ -391,6 +394,8 @@ async function enviarZip(res, nomeZip, arquivos) {
 // ---------------------------------------------------------------------------
 app.post('/api/crm/lead', auth, async (req, res) => {
   try {
+    // O master escolhe quem vê a ficha (aba Acessos). Desligado: a extensão não mostra nada e o RD nem é consultado.
+    if (!req.usuario.fichaCrm) return res.json({ configurado: false });
     const { telefone, nome, contatoId } = req.body || {};
     res.json(await crm.consultarLead({ telefone, nome, contatoId }));
   } catch (err) {
@@ -405,6 +410,7 @@ app.post('/api/crm/lead', auth, async (req, res) => {
  */
 app.post('/api/resumo-rapido', auth, async (req, res) => {
   try {
+    if (!req.usuario.fichaCrm) return res.status(403).json({ erro: 'Resumo rápido desligado para este usuário.' });
     const { mensagens, nome } = req.body || {};
     const r = await gerarResumoRapido({ mensagens, nome });
     if (r.uso) {
