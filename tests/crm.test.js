@@ -36,6 +36,8 @@ const MARCOS = {
 const OUTRO = { id: 'c9', name: 'Outra Pessoa', phones: [{ phone: '(11) 91234-5678' }], deals: [] };
 const ARMANDO = { id: 'c8', name: 'Armando Moretti Filho', phones: [{ phone: '(15) 99767-1347' }], deals: [{ id: 'd9', closed_at: null, win: null }], contact_custom_fields: [] };
 const ANA1 = { id: 'c2', name: 'Ana Souza', phones: [{ phone: '(21) 98888-1111' }], deals: [] };
+const DUP_A = { id: 'k1', name: 'Rafael Duplicado', phones: [{ phone: '(11) 96763-6300' }], deals: [{ id: 'e1', closed_at: null, win: null }] };
+const DUP_B = { id: 'k2', name: 'Rafael Duplicado', phones: [{ phone: '(11) 96763-6300' }], deals: [{ id: 'e2', closed_at: null, win: null }, { id: 'e3', closed_at: '2026-01-01T00:00:00Z', win: false }] };
 const ANA2 = { id: 'c3', name: 'Ana Lima', phones: [{ phone: '(31) 97777-2222' }], deals: [] };
 
 const chamadasRd = [];
@@ -57,6 +59,7 @@ global.fetch = async (url, opts) => {
     // (o servidor tem que conferir o telefone e não pegar a errada).
     if (phone === '(71) 99999-8888') return json({ contacts: [OUTRO], total: 1 });
     if (phone === '71999998888') return json({ contacts: [MARCOS], total: 1 });
+    if (phone === '(11) 96763-6300') return json({ contacts: [DUP_A, DUP_B], total: 2 });
     if (q === 'Ana') return json({ contacts: [ANA1, ANA2], total: 2 });
     if (q === 'Marcos Pereira') return json({ contacts: [MARCOS], total: 1 });
     if (q === 'Armando Moretti') return json({ contacts: [ARMANDO], total: 1 });
@@ -65,6 +68,9 @@ global.fetch = async (url, opts) => {
     return json({ contacts: [], total: 0 });
   }
   if (p === '/contacts/c2') return json(ANA1);
+  if (p === '/deals/e1') return json({ id: 'e1', name: 'Rafael antigo', created_at: '2026-08-01T10:00:00Z', updated_at: '2026-08-02T10:00:00Z', deal_stage: { name: 'MQL' }, deal_pipeline: { name: 'Funil MQL' }, user: { name: 'Cauã Lima' } });
+  if (p === '/deals/e2') return json({ id: 'e2', name: 'Rafael atual', created_at: '2026-09-20T10:00:00Z', updated_at: '2026-09-29T15:00:00Z', deal_stage: { name: 'Reunião Realizada' }, deal_pipeline: { name: 'Closers' }, user: { name: 'Vitor Santos' } });
+  if (p === '/deals/e3') return json({ id: 'e3', name: 'Rafael fechado', created_at: '2026-01-01T10:00:00Z', updated_at: '2026-10-01T10:00:00Z', closed_at: '2026-01-02T10:00:00Z', win: false, deal_stage: { name: 'Perdido' }, deal_pipeline: { name: 'Funil MQL' }, user: { name: 'Cauã Lima' } });
   if (p === '/deals/d9') {
     return json({
       id: 'd9', name: 'PRXC | Armando Moretti Filho', deal_stage: { name: 'Reunião Realizada' }, deal_pipeline: { name: 'Closers' }, user: { name: 'Vitor Santos' },
@@ -92,6 +98,7 @@ global.fetch = async (url, opts) => {
     return json({ activities: [{ id: 'a9', date: '2026-09-27T09:58:00-03:00', user_id: 'u1', deal_id: 'd9',
       text: 'ProfissÃ£o: EmpresÃ¡rio\nEstado: SÃ£o Paulo\nVende online: JÃ¡ vendo e quero aumentar meus resultados no Mercado Livre\nInvestimento: R$3.000 a R$5.000' }] });
   }
+  if (p === '/activities' && /^e\d$/.test(u.searchParams.get('deal_id'))) return json({ activities: [] });
   if (p === '/activities') {
     assert.equal(u.searchParams.get('deal_id'), 'd1');
     return json({
@@ -178,7 +185,7 @@ test('pelo telefone do WhatsApp: acha o lead certo (mesmo com o RD devolvendo ou
   ]);
   assert.deepEqual(f.anotacoes, [{ autor: 'Cauã Lima', quando: '29/09/2026 10:00', texto: 'Liguei & não atendeu' }]);
   assert.ok(chamadasRd.some((c) => c.startsWith('/api/v1/deals/d1')), 'usa a negociação EM ABERTO (d1), não a perdida (d0)');
-  assert.ok(!chamadasRd.some((c) => c.includes('d0')));
+  assert.ok(f.negociacoes.some((c) => c.id === 'd0' && !c.aberta), 'o card fechado aparece na lista, mas não é o escolhido');
 });
 
 test('mesma conversa de novo: vem do cache, sem consultar o RD (inclusive o número sem o 9)', async () => {
@@ -241,7 +248,7 @@ test('teste do admin: sem cache e com o passo a passo de quais formatos de telef
   const r = await post('/api/admin/crm/teste', { telefone: '5571999998888' }, { admin: true });
   assert.equal(r.json.encontrado, true);
   const t = r.json.diagnostico.tentativas;
-  assert.deepEqual(t, [
+  assert.deepEqual(t.slice(0, 2), [
     { variante: '(71) 99999-8888', resultados: 1, bateu: false },
     { variante: '71999998888', resultados: 1, bateu: true },
   ], 'começa pelo formato do card do RD; resultado com telefone diferente é descartado');
@@ -344,4 +351,40 @@ test('popup do lead: ligado por padrão; o master desliga e religa; quem não é
   assert.equal((await post('/api/crm/lead', { telefone: '5571999998888' }, { chave: E.sdr })).json.encontrado, true, 'os outros continuam');
   assert.equal((await patch(E.admin, { fichaCrm: true })).status, 200);
   assert.equal((await post('/api/crm/lead', { telefone: '5571999998888' }, { chave: E.sdr2 })).json.encontrado, true);
+});
+
+// ---------------------------------------------------------------- lead com cards duplicados
+const consultar = (corpo, chave) => post('/api/crm/lead', corpo, { chave });
+
+test('duplicado: junta os contatos do mesmo telefone e abre o card EM ABERTO com atividade mais recente', async () => {
+  chamadasRd.length = 0;
+  const r = await consultar({ telefone: '5511967636300' }, E.admin);
+  const f = r.json.ficha;
+  assert.equal(f.contatosComEsteTelefone, 2);
+  assert.equal(f.totalNegociacoes, 3, 'e1, e2 e e3: as dos DOIS contatos');
+  assert.equal(f.negociacao.etapa, 'Reunião Realizada');
+  assert.equal(f.negociacao.url, 'https://crm.rdstation.com/app/deals/e2', 'não o antigo (e1) nem o fechado (e3, mesmo sendo o mais recentemente mexido)');
+  assert.deepEqual(f.negociacoes.map((c) => [c.id, c.aberta, c.escolhida]), [['e3', false, false], ['e2', true, true], ['e1', true, false]]);
+});
+
+test('o SDR troca de card, o servidor lembra, e da próxima vez já abre o certo (para todos)', async () => {
+  const troca = await consultar({ telefone: '5511967636300', dealId: 'e1', lembrar: true }, E.admin);
+  assert.equal(troca.json.ficha.negociacao.url, 'https://crm.rdstation.com/app/deals/e1');
+  assert.equal(troca.json.ficha.negociacoes.find((c) => c.escolhida).id, 'e1');
+  // consulta normal depois (outra pessoa, outro formato do número): continua no card escolhido
+  const depois = await consultar({ telefone: '11967636300' }, E.sdr);
+  assert.equal(depois.json.ficha.negociacao.url, 'https://crm.rdstation.com/app/deals/e1');
+  // o card lembrado só vale se ainda existir entre os do lead
+  const invalido = await consultar({ telefone: '5511967636300', dealId: 'naoexiste', lembrar: true }, E.admin);
+  assert.equal(invalido.json.ficha.negociacao.url, 'https://crm.rdstation.com/app/deals/e2', 'id que não é do lead: usa o escolhido por padrão');
+});
+
+test('escolherCard: preferido, depois aberto mais recente, depois o mais recente de todos', () => {
+  const d = (id, extra) => ({ id, created_at: '2026-01-01T00:00:00Z', ...extra });
+  assert.equal(crm.escolherCard([d('a'), d('b', { updated_at: '2026-05-01T00:00:00Z' })]).id, 'b');
+  assert.equal(crm.escolherCard([d('a', { updated_at: '2026-09-01T00:00:00Z', closed_at: '2026-09-02T00:00:00Z' }), d('b')]).id, 'b', 'aberto vence fechado');
+  assert.equal(crm.escolherCard([d('a', { closed_at: 'x', win: true, updated_at: '2026-01-02T00:00:00Z' }), d('b', { closed_at: 'x', win: false, updated_at: '2026-03-01T00:00:00Z' })]).id, 'b', 'todos fechados: o mais recente');
+  assert.equal(crm.escolherCard([d('a'), d('b')], 'a').id, 'a');
+  assert.equal(crm.escolherCard([d('a'), d('b')], 'z').id, 'b', 'preferido que não existe é ignorado');
+  assert.equal(crm.escolherCard([]), null);
 });

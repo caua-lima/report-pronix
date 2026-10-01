@@ -10,6 +10,7 @@
 const db = require('./db');
 
 const BASE = 'https://crm.rdstation.com/api/v1';
+const CHAVE_CARDS = 'crm_cards'; // { chave do lead: id do card que o SDR escolheu }
 const TZ = process.env.TZ_RELATORIO || 'America/Sao_Paulo';
 
 const token = () => String(process.env.RDSTATION_CRM_TOKEN || '').trim();
@@ -191,17 +192,66 @@ function escolherNegociacao(deals) {
   return (abertas.length ? abertas : lista)[(abertas.length ? abertas : lista).length - 1];
 }
 
-async function montarFicha(contato) {
-  const idNeg = (() => {
-    const d = escolherNegociacao(contato.deals);
-    return d ? d.id || d._id : null;
-  })();
-  const [deal, atividades, users, rotulosContato] = await Promise.all([
-    idNeg ? rd(`/deals/${encodeURIComponent(idNeg)}`) : null,
+const idDe = (d) => String((d && (d.id || d._id)) || '');
+const estaAberta = (d) => !d.closed_at && d.win !== true && d.win !== false;
+const instante = (d) => Date.parse((d && (d.updated_at || d.created_at)) || '') || 0;
+
+/**
+ * Qual card abrir quando o lead tem vários (contato duplicado, inscrito de novo): o que o SDR já
+ * escolheu para este lead; senão, o em aberto com atividade mais recente; senão, o mais recente.
+ * @param {object[]} detalhes negociações com os detalhes do RD (updated_at, closed_at, win...)
+ */
+function escolherCard(detalhes, preferido) {
+  const lista = (detalhes || []).filter(Boolean);
+  if (!lista.length) return null;
+  if (preferido) {
+    const p = lista.find((d) => idDe(d) === String(preferido));
+    if (p) return p;
+  }
+  const abertas = lista.filter(estaAberta);
+  const base = abertas.length ? abertas : lista;
+  // Empate no horário: o que aparece depois na lista do RD (o mais novo).
+  return base.reduce((melhor, d) => (instante(d) >= instante(melhor) ? d : melhor), base[0]);
+}
+
+const MAX_CARDS = 8; // quantas negociações do lead olhar (cada uma é uma chamada ao RD)
+
+async function montarFicha(contato, extras = [], preferido = '') {
+  const todosContatos = [contato].concat(extras);
+  // Negociações de todos os contatos duplicados, sem repetir.
+  const vistos = new Set();
+  const dealsBrutos = [];
+  todosContatos.forEach((c) => (c.deals || []).forEach((d) => {
+    const id = idDe(d);
+    if (id && !vistos.has(id)) {
+      vistos.add(id);
+      dealsBrutos.push(d);
+    }
+  }));
+  const candidatos = dealsBrutos.slice(-MAX_CARDS);
+  const detalhes = (await Promise.all(candidatos.map((d) => rd(`/deals/${encodeURIComponent(idDe(d))}`).catch(() => null)))).map(
+    (det, i) => (det ? { ...candidatos[i], ...det } : candidatos[i])
+  );
+  const escolhido = escolherCard(detalhes, preferido);
+  const idNeg = escolhido ? idDe(escolhido) : null;
+  const deal = escolhido || null;
+  const [atividades, users, rotulosContato] = await Promise.all([
     idNeg ? rd('/activities', { deal_id: idNeg, limit: 50 }) : null,
     usuarios(),
     camposDoContato(),
   ]);
+  const nomeDe = new Map();
+  const cards = detalhes.map((d) => ({
+    id: idDe(d),
+    nome: consertarAcentos(d.name || ''),
+    etapa: (d.deal_stage && d.deal_stage.name) || '',
+    funil: (d.deal_pipeline && d.deal_pipeline.name) || '',
+    responsavel: (d.user && d.user.name) || '',
+    criadaEm: quandoBR(d.created_at),
+    aberta: estaAberta(d),
+    escolhida: idDe(d) === idNeg,
+  })).reverse(); // o mais novo primeiro
+  void nomeDe;
   const nomeUsuario = new Map(users.map((u) => [u.id, u.nome]));
 
   // Anotações, da mais nova para a mais antiga. A que tem "Campo: valor" em 2+ linhas é o formulário.
@@ -253,7 +303,9 @@ async function montarFicha(contato) {
           url: id && /^[A-Za-z0-9_-]+$/.test(String(id)) ? `https://crm.rdstation.com/app/deals/${id}` : '',
         }
       : null,
-    totalNegociacoes: (contato.deals || []).length,
+    totalNegociacoes: dealsBrutos.length,
+    negociacoes: cards,
+    contatosComEsteTelefone: todosContatos.length,
     formulario,
     campos,
     anotacoes,
@@ -337,12 +389,21 @@ async function consultarLead(busca = {}, opcoes = {}) {
   const telefone = soDigitos(busca.telefone);
   const nome = String(busca.nome || '').trim().slice(0, 80);
   const contatoId = /^[A-Za-z0-9_-]{1,40}$/.test(String(busca.contatoId || '')) ? String(busca.contatoId) : '';
+  const dealPedido = /^[A-Za-z0-9_-]{1,40}$/.test(String(busca.dealId || '')) ? String(busca.dealId) : '';
   const diag = { tentativas: [] };
 
-  const chave = contatoId ? `crm:id:${contatoId}` : telefone.length >= 8 ? `crm:tel:${final8(telefone)}` : nome ? `crm:nome:${nome.toLowerCase()}` : '';
-  if (!chave) return { configurado: true, encontrado: false };
+  const chaveBase = contatoId ? `id:${contatoId}` : telefone.length >= 8 ? `tel:${final8(telefone)}` : nome ? `nome:${nome.toLowerCase()}` : '';
+  if (!chaveBase) return { configurado: true, encontrado: false };
+  const chave = 'crm:' + chaveBase;
+  // O card que o SDR escolheu para este lead fica lembrado (vale para todos): da próxima vez abre o certo.
+  const lembrados = (await db.getJson(CHAVE_CARDS, {}).catch(() => ({}))) || {};
+  if (dealPedido && busca.lembrar) {
+    lembrados[chaveBase] = dealPedido;
+    await db.setJson(CHAVE_CARDS, lembrados).catch(() => {});
+  }
+  const preferido = dealPedido || lembrados[chaveBase] || '';
   const ttl = ttlFicha();
-  if (ttl && !opcoes.semCache) {
+  if (ttl && !opcoes.semCache && !dealPedido) {
     const guardado = await db.cacheGet(chave);
     if (guardado) {
       try {
@@ -357,22 +418,27 @@ async function consultarLead(busca = {}, opcoes = {}) {
   if (contatoId) {
     const r = await rd(`/contacts/${encodeURIComponent(contatoId)}`);
     const contato = r && (r.contact || r);
-    if (contato && contato.name !== undefined) resultado = { configurado: true, encontrado: true, buscaPor: 'id', ficha: await montarFicha(contato) };
+    if (contato && contato.name !== undefined) resultado = { configurado: true, encontrado: true, buscaPor: 'id', ficha: await montarFicha(contato, [], preferido) };
   } else {
     let contato = null;
     if (telefone.length >= 8) {
+      // Lead que se inscreveu mais de uma vez costuma ter mais de um contato com o mesmo telefone
+      // (às vezes escrito de outro jeito): junta todos, para as negociações de todos entrarem na escolha.
+      const iguais = [];
       for (const variante of variantesTelefone(telefone)) {
-        const r = await rd('/contacts', { phone: variante, limit: 5 });
+        const r = await rd('/contacts', { phone: variante, limit: 10 });
         const achados = (r && r.contacts) || [];
-        const certo = achados.find((c) => contatoTemTelefone(c, telefone));
-        diag.tentativas.push({ variante, resultados: achados.length, bateu: Boolean(certo) });
-        if (certo) {
-          contato = certo;
-          diag.encontradaCom = variante;
-          break;
-        }
+        const certos = achados.filter((c) => contatoTemTelefone(c, telefone));
+        diag.tentativas.push({ variante, resultados: achados.length, bateu: certos.length > 0 });
+        certos.forEach((c) => {
+          if (!iguais.some((x) => idDe(x) === idDe(c))) iguais.push(c);
+        });
+        if (certos.length && !diag.encontradaCom) diag.encontradaCom = variante;
       }
-      if (contato) resultado = { configurado: true, encontrado: true, buscaPor: 'telefone', ficha: await montarFicha(contato) };
+      if (iguais.length) {
+        contato = iguais[0];
+        resultado = { configurado: true, encontrado: true, buscaPor: 'telefone', ficha: await montarFicha(iguais[0], iguais.slice(1), preferido) };
+      }
     }
     // Sem telefone (contato salvo com nome) ou telefone não achado: tenta pelo nome.
     if (!contato && nome && !pareceTelefone(nome)) {
@@ -400,7 +466,7 @@ async function consultarLead(busca = {}, opcoes = {}) {
         }
       }
       if (contato) {
-        resultado = { configurado: true, encontrado: true, buscaPor: 'nome', ficha: await montarFicha(contato) };
+        resultado = { configurado: true, encontrado: true, buscaPor: 'nome', ficha: await montarFicha(contato, [], preferido) };
       } else if (candidatos) {
         resultado = { configurado: true, encontrado: false, buscaPor: 'nome', candidatos };
       }
@@ -423,4 +489,5 @@ module.exports = {
   palavrasDoNome,
   consultasPorNome,
   escolherNegociacao,
+  escolherCard,
 };

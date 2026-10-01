@@ -398,9 +398,9 @@ app.post('/api/crm/lead', auth, async (req, res) => {
   try {
     // O master escolhe quem vê a ficha (aba Acessos). Desligado: a extensão não mostra nada e o RD nem é consultado.
     if (!req.usuario.fichaCrm) return res.json({ configurado: false });
-    const { telefone, nome, contatoId } = req.body || {};
+    const { telefone, nome, contatoId, dealId, lembrar } = req.body || {};
     // "coach" avisa a extensão se este usuário vê o botão Coach da conversa.
-    res.json({ ...(await crm.consultarLead({ telefone, nome, contatoId })), coach: Boolean(req.usuario.coach) });
+    res.json({ ...(await crm.consultarLead({ telefone, nome, contatoId, dealId, lembrar: lembrar === true })), coach: Boolean(req.usuario.coach) });
   } catch (err) {
     res.status(502).json({ erro: err.message });
   }

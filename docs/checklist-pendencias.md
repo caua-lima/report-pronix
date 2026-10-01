@@ -11,6 +11,11 @@ Detalhes técnicos em [`auditoria-pronix.md`](auditoria-pronix.md) e [`plano-imp
 - [x] 117 testes automáticos (`npm test`), sem rede e sem custo
 - [x] Merge local na `main`
 
+## Novo em 01/10: card certo no RD (extensão 1.9.1 + servidor)
+
+- [x] Lead com contatos/cards duplicados: abre o em aberto mais recente de todos os contatos com o telefone; seletor no cartão para trocar, e a escolha fica lembrada
+- [ ] **Você:** enviar a extensão 1.9.1 à loja; no primeiro lead duplicado, confira se o card aberto é o certo e, se não for, escolha o certo uma vez
+
 ## Novo em 01/10: Coach da conversa (extensão 1.9.0 + servidor)
 
 - [x] Botão "Coach da conversa" no cartão: perfil do lead, como abordar, objeções com resposta e perguntas (Groq gratuito); aprende com "Funcionou"

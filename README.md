@@ -350,7 +350,12 @@ personalizados, outras anotações e o link para abrir no RD. Liga/desliga no po
   `POST /api/resumo-rapido` (`src/resumoRapido.js`); mesma conversa = resumo do cache (7 dias), sem
   custo. O custo entra no gasto do painel como "resumos rápidos", fora da lista de reports.
   Modelo: `ANTHROPIC_MODEL_RESUMO` (padrão: o mesmo dos reports).
-- **Qual negociação.** A em aberto mais recente do contato; se todas fecharam, a última.
+- **Qual negociação (card).** Lead que se inscreveu de novo costuma ter contatos duplicados e vários
+  cards. O servidor junta **todos os contatos com o mesmo telefone** e as negociações de todos
+  (até 8, buscando os detalhes de cada uma) e abre: 1º o card que o SDR já escolheu para aquele
+  lead; senão o **em aberto com atividade mais recente** (`updated_at`); senão o mais recente. O
+  cartão mostra um seletor "Este lead tem N cards": ao trocar, a escolha fica **lembrada no
+  servidor** (`crm_cards`, vale para todos) e o "Abrir no RD Station" passa a abrir esse card.
 - **Segurança.** O token (`RDSTATION_CRM_TOKEN`) fica só no servidor. A extensão manda só
   telefone/nome, por POST (fora de URL e de log). Tudo que vem do CRM entra no cartão como
   texto, nunca como HTML. O cartão fica fora do `#main`, então a leitura do report nunca o

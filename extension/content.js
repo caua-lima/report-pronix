@@ -1427,8 +1427,20 @@
       });
       corpo.appendChild(det);
     }
-    if (f.totalNegociacoes > 1) {
-      corpo.appendChild(elem('div', 'font-size:11px;color:#8b98a5;margin-top:6px', `Este contato tem ${f.totalNegociacoes} negociações — mostrando a em aberto.`));
+    if ((f.negociacoes || []).length > 1) {
+      // Lead com mais de um card (inscreveu de novo, contato duplicado): o SDR troca para o certo e o servidor lembra.
+      const sel = document.createElement('select');
+      sel.style.cssText = 'width:100%;margin-top:4px;background:#0d141c;color:#e6edf3;border:1px solid #26333f;border-radius:7px;padding:5px 6px;font-size:12px';
+      f.negociacoes.forEach((c) => {
+        const o = document.createElement('option');
+        o.value = c.id;
+        o.textContent = [c.etapa || c.nome || 'Card', c.funil, c.criadaEm, c.aberta ? '' : 'fechado'].filter(Boolean).join(' · ');
+        if (c.escolhida) o.selected = true;
+        sel.appendChild(o);
+      });
+      sel.addEventListener('change', () => consultarFicha({ ...estado.busca, dealId: sel.value, lembrar: true }));
+      corpo.appendChild(elem('div', 'font-size:11px;color:#8b98a5;margin-top:8px', `Este lead tem ${f.negociacoes.length} cards no RD — mostrando o que parece ser o certo. Trocou? Escolha aqui (fica lembrado):`));
+      corpo.appendChild(sel);
     }
     if (n && /^https:\/\/crm\.rdstation\.com\//.test(n.url || '')) {
       const a = elem('a', 'display:inline-block;margin-top:8px;color:#ffc400;font-weight:600;text-decoration:none', 'Abrir no RD Station ↗');

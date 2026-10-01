@@ -49,7 +49,7 @@ function crmFalso(responder, opcoes = {}) {
   const aoEnviar = async (original) => {
     const msg = JSON.parse(JSON.stringify(original));
     if (msg.action === 'crmLead') {
-      consultas.push({ telefone: msg.telefone || '', nome: msg.nome || '', contatoId: msg.contatoId || '' });
+      consultas.push({ telefone: msg.telefone || '', nome: msg.nome || '', contatoId: msg.contatoId || '', ...(msg.dealId ? { dealId: msg.dealId, lembrar: msg.lembrar === true } : {}) });
       return responder(msg);
     }
     if (msg.action === 'reportFetch') return { ok: true, dados: {}, arquivo: 'r.pdf', arquivoBase64: 'AAAA', mensagensRecebidas: msg.mensagens };
@@ -96,7 +96,7 @@ test('abre a conversa: o cartão mostra etapa, responsável e as respostas do fo
   const t = textoCartao(p);
   for (const esperado of ['Marcos Pereira', 'MQL · Funil MQL', 'Responsável: Cauã Lima', 'Lojista/Comerciante', 'Bahia',
     'Quero começar a vender no Mercado Livre', '+ de R$5.000', 'Anotado por Gustavo Dias · 28/09/2026 23:38',
-    'Outras anotações (1)', 'Este contato tem 2 negociações', 'Abrir no RD Station']) {
+    'Outras anotações (1)', 'Abrir no RD Station']) {
     assert.ok(t.includes(esperado), 'faltou no cartão: ' + esperado);
   }
   const link = cartao(p).querySelector('a');
@@ -458,5 +458,26 @@ test('coach: erro (ex.: limite gratuito) mostra a mensagem e "Tentar de novo" pe
   await esperar(() => /limite gratuito/.test(textoCartao(p)), { motivo: 'erro' });
   [...cartao(p).querySelectorAll('button')].filter((b) => b.textContent === 'Tentar de novo').pop().click();
   await esperar(() => /Perguntas para aprofundar/.test(textoCartao(p)), { motivo: 'coach na 2ª' });
+  p.fechar();
+});
+
+// ---------------------------------------------------------------- lead com mais de um card
+test('lead com vários cards: o cartão mostra o seletor e trocar manda o card escolhido para o servidor lembrar', async () => {
+  const f = { ...FICHA_MARCOS, negociacoes: [
+    { id: 'e2', nome: 'atual', etapa: 'Reunião Realizada', funil: 'Closers', responsavel: 'Vitor', criadaEm: '20/09/2026', aberta: true, escolhida: true },
+    { id: 'e1', nome: 'antigo', etapa: 'MQL', funil: 'Funil MQL', responsavel: 'Cauã', criadaEm: '01/08/2026', aberta: true, escolhida: false },
+  ] };
+  const srv = crmFalso((m) => ({ ok: true, configurado: true, encontrado: true, ficha: { ...f, negociacoes: f.negociacoes.map((c) => ({ ...c, escolhida: c.id === (m.dealId || 'e2') })) } }));
+  const p = abrir(srv);
+  await esperar(() => /Este lead tem 2 cards/.test(textoCartao(p)), { motivo: 'seletor' });
+  const sel = cartao(p).querySelector('select');
+  assert.deepEqual([...sel.options].map((o) => o.textContent), ['Reunião Realizada · Closers · 20/09/2026', 'MQL · Funil MQL · 01/08/2026']);
+  assert.equal(sel.value, 'e2');
+  sel.value = 'e1';
+  sel.dispatchEvent(new p.w.Event('change', { bubbles: true }));
+  await esperar(() => srv.consultas.length === 2, { motivo: 'consulta do card escolhido' });
+  assert.equal(srv.consultas[1].dealId, 'e1');
+  assert.equal(srv.consultas[1].lembrar, true);
+  await esperar(() => cartao(p).querySelector('select') && cartao(p).querySelector('select').value === 'e1', { motivo: 'seletor no card novo' });
   p.fechar();
 });

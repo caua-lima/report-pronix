@@ -52,6 +52,7 @@ Ao abrir a conversa de um lead no WhatsApp Web, aparece um cartão no canto de c
 - **Coach da conversa** (só para quem o master liberou): perfil do lead, como abordar, respostas para as objeções que apareceram e perguntas para aprofundar. Use o que fizer sentido e marque **Funcionou**: assim ele aprende o que dá certo com os seus leads.
 - **Resumo rápido da conversa**: botão no topo do cartão. Ele lê a conversa (e os áudios, no mudo) e mostra o cenário, **onde parou**, a última pergunta e o próximo passo. Ideal para retomar um lead de dias atrás sem reouvir os áudios. Enquanto ele lê, não troque de conversa.
 - Contato salvo com nome e a ficha não achou? Clique no nome no topo da conversa para abrir **Dados do contato**: a ficha lê o número de lá sozinha.
+- **Lead com mais de um card no RD** (inscreveu de novo): o cartão mostra uma lista "Este lead tem N cards". Se o aberto não for o certo, escolha o certo ali: fica lembrado e o "Abrir no RD Station" passa a abrir esse card.
 - **–** minimiza (fica minimizado nas próximas conversas até você abrir de novo); **×** fecha só nesta conversa.
 - **"Não achei este lead no RD Station"**: o número da conversa não está no contato do RD (ou o contato está salvo com outro nome). Digite o telefone ou o nome no campo do cartão e clique em **Buscar**.
 - **"Mais de um contato com esse nome"**: clique no certo.

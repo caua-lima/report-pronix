@@ -113,6 +113,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         telefone: String(msg.telefone || '').slice(0, 30),
         nome: String(msg.nome || '').slice(0, 80),
         contatoId: String(msg.contatoId || '').slice(0, 40),
+        dealId: String(msg.dealId || '').slice(0, 40),
+        lembrar: msg.lembrar === true,
       };
       const r = await chamar('/api/crm/lead', corpo, { timeoutMs: 20000 });
       if (!r.ok) return sendResponse({ ok: false, erro: r.erro });
