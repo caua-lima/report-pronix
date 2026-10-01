@@ -81,6 +81,23 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   // Ficha do lead no RD Station CRM (o token do CRM fica no servidor; aqui só vai telefone/nome).
   // Resumo rápido da conversa (botão do cartão): cenário, onde parou, última pergunta, próximo passo.
+  // Coach da conversa (Groq gratuito) e a marcação "funcionou" que o faz aprender.
+  if (msg && msg.action === 'coach') {
+    (async () => {
+      const r = await chamar('/api/coach', { mensagens: msg.mensagens, nome: msg.nome }, { timeoutMs: 65000 });
+      if (!r.ok) return sendResponse({ ok: false, erro: r.erro });
+      sendResponse({ ok: true, coach: r.data.coach, cache: r.data.cache });
+    })();
+    return true;
+  }
+  if (msg && msg.action === 'coachFeedback') {
+    (async () => {
+      const r = await chamar('/api/coach/feedback', { tipo: msg.tipo, texto: msg.texto, contexto: msg.contexto, util: msg.util }, { timeoutMs: 20000 });
+      sendResponse(r.ok ? { ok: true } : { ok: false, erro: r.erro });
+    })();
+    return true;
+  }
+
   if (msg && msg.action === 'resumoRapido') {
     (async () => {
       const r = await chamar('/api/resumo-rapido', { mensagens: msg.mensagens, nome: msg.nome }, { timeoutMs: 65000 });

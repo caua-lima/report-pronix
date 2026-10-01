@@ -832,3 +832,28 @@ test('Acessos: o master liga/desliga o popup do lead por pessoa; o gestor vê ma
   assert.equal(q.document.querySelector('[data-ficha-crm="u2"]').disabled, true);
   q.fechar();
 });
+
+test('Acessos: o master liga/desliga o Coach por pessoa; o gestor vê as caixas desabilitadas', async () => {
+  const usuarios = [
+    { id: 'u1', nome: 'Cauã', papel: 'master', chave: 'pnx_Master1234567890abcdefgh', criadoEm: '2026-09-01T10:00:00Z', fichaCrm: true, coach: true },
+    { id: 'u2', nome: 'Bia', papel: 'sdr', chave: 'pnx_SdrSdr1234567890abcdefgh', criadoEm: '2026-09-01T10:00:00Z', fichaCrm: true, coach: false },
+  ];
+  const api = apiBase({ papel: 'master', usuarios }).quando('PATCH /api/admin/usuarios/u2', () => ({ corpo: { ok: true } }));
+  const p = abrirPainel(api, { hash: '#acessos' });
+  await esperar(() => p.$('lista').textContent.includes('Bia'), { motivo: 'lista' });
+  const caixa = (id) => p.document.querySelector('[data-coach="' + id + '"]');
+  assert.equal(caixa('u1').checked, true);
+  assert.equal(caixa('u2').checked, false);
+  caixa('u2').checked = true;
+  caixa('u2').dispatchEvent(new p.w.Event('change', { bubbles: true }));
+  await esperar(() => api.contar('PATCH /api/admin/usuarios/u2') === 1, { motivo: 'PATCH' });
+  assert.deepEqual(api.corpos('PATCH /api/admin/usuarios/u2'), [{ coach: true }]);
+  await esperar(() => /Coach ligado/.test(p.$('toast').textContent), { motivo: 'aviso' });
+  await dormir(60);
+  p.fechar();
+
+  const q = abrirPainel(apiBase({ papel: 'gestor', nome: 'Líder', usuarios }), { hash: '#acessos' });
+  await esperar(() => q.$('lista').textContent.includes('Bia'), { motivo: 'lista do gestor' });
+  assert.equal(q.document.querySelector('[data-coach="u2"]').disabled, true);
+  q.fechar();
+});

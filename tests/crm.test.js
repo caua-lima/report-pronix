@@ -211,7 +211,7 @@ test('um único resultado pelo nome já vira a ficha', async () => {
 test('telefone que não está no RD: encontrado false (e tenta pelo nome se veio nome)', async () => {
   chamadasRd.length = 0;
   const r = await post('/api/crm/lead', { telefone: '5511900001111', nome: 'Desconhecido' }, { chave: E.sdr });
-  assert.deepEqual(r.json, { configurado: true, encontrado: false });
+  assert.deepEqual(r.json, { configurado: true, encontrado: false, coach: false });
   assert.ok(chamadasRd.some((c) => c.includes('q=Desconhecido')));
 });
 
@@ -233,7 +233,7 @@ test('sem RDSTATION_CRM_TOKEN: configurado false (a extensão não mostra nada)'
   delete process.env.RDSTATION_CRM_TOKEN;
   const r = await post('/api/crm/lead', { telefone: '5571999998888' }, { chave: E.sdr });
   process.env.RDSTATION_CRM_TOKEN = TOKEN;
-  assert.deepEqual(r.json, { configurado: false });
+  assert.deepEqual(r.json, { configurado: false, coach: false });
 });
 
 test('teste do admin: sem cache e com o passo a passo de quais formatos de telefone foram tentados', async () => {

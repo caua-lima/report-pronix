@@ -100,4 +100,38 @@ async function lerImagemGroq(buffer, mime = 'image/jpeg') {
   return texto;
 }
 
-module.exports = { transcreverGroq, lerImagemGroq };
+/**
+ * Chat de texto no Groq (plano gratuito: sem custo, com limite de chamadas). Devolve o texto da resposta;
+ * com json:true pede resposta em JSON. O modelo vem de GROQ_COACH_MODEL.
+ */
+async function chatGroq({ system, user, modelo, maxTokens = 900, json = true }) {
+  const key = process.env.GROQ_API_KEY;
+  if (!key) throw new Error('GROQ_API_KEY não configurada — é ela que mantém o coach sem custo.');
+  const model = modelo || 'llama-3.3-70b-versatile';
+  const r = await fetch(GROQ_CHAT_URL, {
+    signal: AbortSignal.timeout(Number(process.env.GROQ_TIMEOUT_MS) || 50000),
+    method: 'POST',
+    headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model,
+      temperature: 0.4,
+      max_tokens: maxTokens,
+      ...(json ? { response_format: { type: 'json_object' } } : {}),
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: user },
+      ],
+    }),
+  }).catch(erroDeRede('O coach demorou demais. Tente de novo.'));
+  if (r.status === 429) throw new Error('O limite gratuito do coach foi atingido por agora. Tente de novo em 1 minuto.');
+  if (!r.ok) {
+    const detalhe = await r.text().catch(() => '');
+    throw new Error(`Groq (coach) respondeu ${r.status}: ${detalhe.slice(0, 200)}`);
+  }
+  const j = await r.json().catch(() => ({}));
+  const t = ((j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content) || '').trim();
+  if (!t) throw new Error('O coach não devolveu texto.');
+  return t;
+}
+
+module.exports = { transcreverGroq, lerImagemGroq, chatGroq };

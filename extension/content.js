@@ -1044,9 +1044,11 @@
     }
     return achados.size === 1 ? [...achados.values()][0] : '';
   }
-  const ficha = { ligada: true, minimizada: false, chave: null, fechadaPara: null, seq: 0, timer: null, vigia: null, ultimoEstado: null };
+  const ficha = { ligada: true, minimizada: false, chave: null, fechadaPara: null, seq: 0, timer: null, vigia: null, ultimoEstado: null, coach: false };
   // Resumo rápido por conversa (só na memória desta aba): some ao recarregar o WhatsApp.
   const resumos = new Map();
+  const coaches = new Map(); // coach da conversa, por conversa (só na memória desta aba)
+  const marcados = new Set(); // sugestões já marcadas "funcionou"/"não ajudou" nesta aba
 
   /** Telefone da conversa aberta: o cabeçalho (contato não salvo mostra o número) ou o id do chat no data-id. */
   function telefoneDaConversa() {
@@ -1168,6 +1170,109 @@
     }
   }
 
+  /** Coach: lê a conversa (e os áudios, no mudo) e pede perfil, abordagem, objeções e perguntas. */
+  async function pedirCoach() {
+    const chave = ficha.chave;
+    if (!chave) return;
+    if (jobEmAndamento) {
+      coaches.set(chave, { tipo: 'erro', erro: 'Espere o report ou o resumo terminarem.' });
+      return redesenharFicha();
+    }
+    jobEmAndamento = true;
+    capturaAtiva = true;
+    coaches.set(chave, { tipo: 'carregando' });
+    redesenharFicha();
+    const badgeAntes = !!document.getElementById(BADGE_ID);
+    try {
+      const { mensagens, nome } = await coletarConversa('ficha', true);
+      const r = await new Promise((res) => chrome.runtime.sendMessage({ action: 'coach', mensagens, nome }, res));
+      if (!r || !r.ok) throw new Error((r && r.erro) || 'Não consegui gerar o coach.');
+      coaches.set(chave, { tipo: 'ok', dados: r.coach, contexto: nome || '' });
+    } catch (e) {
+      coaches.set(chave, { tipo: 'erro', erro: e.message || 'Não consegui gerar o coach.' });
+    } finally {
+      jobEmAndamento = false;
+      capturaAtiva = false;
+      restaurarAudios();
+      const b = document.getElementById(BADGE_ID);
+      if (b && !badgeAntes) b.remove();
+      if (ficha.chave === chave) redesenharFicha();
+    }
+  }
+
+  function enviarFeedbackCoach(tipo, textoSugestao, contexto, util, botaoEl) {
+    const id = tipo + '|' + textoSugestao;
+    if (marcados.has(id)) return;
+    marcados.add(id);
+    if (botaoEl) {
+      botaoEl.disabled = true;
+      botaoEl.textContent = util ? 'Anotado, vou lembrar' : 'Anotado';
+    }
+    try {
+      chrome.runtime.sendMessage({ action: 'coachFeedback', tipo, texto: textoSugestao, contexto, util }, () => {});
+    } catch (_) {
+      /* extensão recarregada: sem aprendizado desta vez */
+    }
+  }
+
+  function blocoCoach() {
+    const r = coaches.get(ficha.chave);
+    const caixa = elem('div', 'margin:2px 0 10px;padding:8px 10px;background:#0d141c;border:1px solid #26333f;border-radius:8px');
+    const titulo = (t) => elem('div', 'font-size:10.5px;color:#ffc400;font-weight:700;letter-spacing:.06em;margin-bottom:4px', t);
+    if (!r) {
+      caixa.appendChild(botaoFicha('Coach da conversa', pedirCoach, true));
+      caixa.appendChild(elem('div', 'font-size:11px;color:#8b98a5;margin-top:5px', 'Perfil do lead, como abordar, objeções e perguntas para a próxima mensagem.'));
+      return caixa;
+    }
+    if (r.tipo === 'carregando') {
+      caixa.appendChild(titulo('COACH'));
+      caixa.appendChild(elem('div', 'color:#8b98a5', 'Analisando a conversa e os áudios… não troque de conversa.'));
+      return caixa;
+    }
+    if (r.tipo === 'erro') {
+      caixa.appendChild(titulo('COACH'));
+      caixa.appendChild(elem('div', 'color:#ff6b6b;margin-bottom:6px', r.erro));
+      caixa.appendChild(botaoFicha('Tentar de novo', pedirCoach));
+      return caixa;
+    }
+    const d = r.dados || {};
+    caixa.appendChild(titulo('COACH'));
+    const util = (tipo, textoSug, contexto) => {
+      const b = botaoFicha(marcados.has(tipo + '|' + textoSug) ? 'Anotado' : 'Funcionou', () => enviarFeedbackCoach(tipo, textoSug, contexto, true, b));
+      b.style.cssText += ';margin-top:4px;padding:3px 7px;font-size:11px';
+      if (marcados.has(tipo + '|' + textoSug)) b.disabled = true;
+      return b;
+    };
+    if (d.perfil && d.perfil.tipo) {
+      caixa.appendChild(elem('div', 'font-size:11px;color:#8b98a5;text-transform:uppercase;letter-spacing:.03em', 'Perfil do lead'));
+      caixa.appendChild(elem('div', 'color:#ffc400;font-weight:700;text-transform:capitalize', d.perfil.tipo));
+      if (d.perfil.evidencia) caixa.appendChild(elem('div', 'font-size:12px;color:#c9ced6;margin-bottom:4px', d.perfil.evidencia));
+    }
+    if (d.comoAbordar) {
+      caixa.appendChild(elem('div', 'font-size:11px;color:#8b98a5;text-transform:uppercase;letter-spacing:.03em;margin-top:6px', 'Como abordar'));
+      caixa.appendChild(elem('div', '', d.comoAbordar));
+      caixa.appendChild(util('abordagem', d.comoAbordar, d.perfil && d.perfil.tipo));
+    }
+    (d.objecoes || []).forEach((o) => {
+      caixa.appendChild(elem('div', 'font-size:11px;color:#8b98a5;text-transform:uppercase;letter-spacing:.03em;margin-top:8px', 'Objeção: ' + o.objecao));
+      caixa.appendChild(elem('div', 'white-space:pre-wrap', o.resposta));
+      caixa.appendChild(util('objecao', o.resposta, o.objecao));
+    });
+    if ((d.perguntas || []).length) {
+      caixa.appendChild(elem('div', 'font-size:11px;color:#8b98a5;text-transform:uppercase;letter-spacing:.03em;margin-top:8px', 'Perguntas para aprofundar'));
+      d.perguntas.forEach((p) => {
+        caixa.appendChild(elem('div', 'margin-top:4px', '• ' + p));
+        caixa.appendChild(util('pergunta', p, d.perfil && d.perfil.tipo));
+      });
+    }
+    const rodape = elem('div', 'display:flex;align-items:center;gap:8px;margin-top:8px');
+    rodape.appendChild(elem('div', 'flex:1;font-size:11px;color:#8b98a5', 'Marque "Funcionou" no que usar: o coach aprende com isso.'));
+    const atualizar = botaoFicha('Atualizar', pedirCoach);
+    rodape.appendChild(atualizar);
+    caixa.appendChild(rodape);
+    return caixa;
+  }
+
   function blocoResumo() {
     const r = resumos.get(ficha.chave);
     const caixa = elem('div', 'margin:2px 0 10px;padding:8px 10px;background:#0d141c;border:1px solid #26333f;border-radius:8px');
@@ -1263,6 +1368,7 @@
     const corpo = elem('div', 'margin-top:8px');
     el.appendChild(corpo);
     if (estado.tipo !== 'carregando') corpo.appendChild(blocoResumo());
+    if (estado.tipo !== 'carregando' && ficha.coach) corpo.appendChild(blocoCoach());
 
     if (estado.tipo === 'carregando') {
       corpo.appendChild(elem('div', 'color:#8b98a5', 'Buscando no RD Station…'));
@@ -1347,6 +1453,7 @@
     }
     if (seq !== ficha.seq) return; // resposta de uma conversa que o SDR já deixou
     if (!r || !r.ok) return renderFicha({ tipo: 'erro', erro: (r && r.erro) || 'Não consegui consultar o RD Station.', busca });
+    ficha.coach = Boolean(r.coach); // o servidor diz se este usuário vê o Coach
     if (!r.configurado) return esconderFicha(); // CRM não ligado no servidor: não mostra nada
     if (r.encontrado && r.ficha) return renderFicha({ tipo: 'ok', ficha: r.ficha, busca });
     if (r.candidatos && r.candidatos.length) return renderFicha({ tipo: 'candidatos', candidatos: r.candidatos, busca });

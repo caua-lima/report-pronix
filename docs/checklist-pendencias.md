@@ -11,6 +11,13 @@ Detalhes técnicos em [`auditoria-pronix.md`](auditoria-pronix.md) e [`plano-imp
 - [x] 117 testes automáticos (`npm test`), sem rede e sem custo
 - [x] Merge local na `main`
 
+## Novo em 01/10: Coach da conversa (extensão 1.9.0 + servidor)
+
+- [x] Botão "Coach da conversa" no cartão: perfil do lead, como abordar, objeções com resposta e perguntas (Groq gratuito); aprende com "Funcionou"
+- [x] Só para quem o master ligar (aba Acessos → Coach); padrão: só o master
+- [ ] **Você:** conferir que `GROQ_API_KEY` está na Vercel (é a mesma da transcrição) e enviar a extensão 1.9.0 à loja
+- [ ] **Você:** testar em 2 ou 3 conversas reais; se as sugestões vierem genéricas, me mande um exemplo para ajustar o prompt ou trocar o modelo (`GROQ_COACH_MODEL`)
+
 ## Novo em 29/09: ficha automática + resumo rápido (extensão 1.8.0 + servidor)
 
 - [x] Contato salvo com nome: acha no RD sem digitar número (nome limpo de "PRONIX" etc.; número do painel "Dados do contato")

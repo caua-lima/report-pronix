@@ -34,9 +34,18 @@ const RESUMO_FALSO = {
   ultimaMensagem: '21/09 10:05',
 };
 
+const COACH_FALSO = {
+  perfil: { tipo: 'analítico', evidencia: 'Pediu números e prova de resultado.' },
+  comoAbordar: 'Seja objetivo e traga dados antes de falar de preço.',
+  objecoes: [{ objecao: 'Achou o investimento alto', resposta: 'Posso te mostrar quanto os clientes recuperam nos primeiros meses?' }],
+  perguntas: ['Quanto você fatura hoje por mês?', 'Quem mais participa da decisão?'],
+};
+
 function crmFalso(responder, opcoes = {}) {
   const consultas = [];
   const resumosPedidos = [];
+  const coachPedidos = [];
+  const feedbacks = [];
   const aoEnviar = async (original) => {
     const msg = JSON.parse(JSON.stringify(original));
     if (msg.action === 'crmLead') {
@@ -44,13 +53,21 @@ function crmFalso(responder, opcoes = {}) {
       return responder(msg);
     }
     if (msg.action === 'reportFetch') return { ok: true, dados: {}, arquivo: 'r.pdf', arquivoBase64: 'AAAA', mensagensRecebidas: msg.mensagens };
+    if (msg.action === 'coach') {
+      coachPedidos.push(msg);
+      return opcoes.coach ? opcoes.coach(msg) : { ok: true, coach: COACH_FALSO, cache: false };
+    }
+    if (msg.action === 'coachFeedback') {
+      feedbacks.push(msg);
+      return { ok: true };
+    }
     if (msg.action === 'resumoRapido') {
       resumosPedidos.push(msg);
       return opcoes.resumo ? opcoes.resumo(msg) : { ok: true, resumo: RESUMO_FALSO, cache: false };
     }
     return { ok: true };
   };
-  return { aoEnviar, consultas, resumosPedidos };
+  return { aoEnviar, consultas, resumosPedidos, coachPedidos, feedbacks };
 }
 
 const CONVERSA = [
@@ -272,7 +289,7 @@ test('o cartão encosta na borda da conversa (ao lado do painel do RD, não por 
 });
 
 // ---------------------------------------------------------------- resumo rápido da conversa
-const botao = (p, texto) => [...cartao(p).querySelectorAll('button')].find((b) => b.textContent === texto);
+const botao = (p, texto) => (cartao(p) ? [...cartao(p).querySelectorAll('button')].find((b) => b.textContent === texto) : undefined);
 
 test('resumo rápido: o botão lê a conversa e mostra cenário, onde parou, última pergunta e próximo passo', async () => {
   const srv = crmFalso(() => ({ ok: true, configurado: true, encontrado: true, ficha: FICHA_MARCOS }));
@@ -374,5 +391,72 @@ test('painel com vários números (grupo) ou número na lista de conversas: não
   p.document.body.appendChild(lista);
   await dormir(150);
   assert.equal(srv.consultas.length, 1, 'nenhuma consulta nova por número');
+  p.fechar();
+});
+
+// ---------------------------------------------------------------- Coach da conversa
+const comCoach = (r) => ({ ...r, coach: true });
+
+test('coach: só aparece o botão se o servidor liberou para este usuário', async () => {
+  const sem = crmFalso(() => ({ ok: true, configurado: true, encontrado: true, ficha: FICHA_MARCOS, coach: false }));
+  const p1 = abrir(sem);
+  await esperar(() => /Investimento/.test(textoCartao(p1)), { motivo: 'ficha' });
+  assert.ok(botao(p1, 'Resumo rápido da conversa'));
+  assert.equal(botao(p1, 'Coach da conversa'), undefined);
+  p1.fechar();
+
+  const com = crmFalso(() => comCoach({ ok: true, configurado: true, encontrado: true, ficha: FICHA_MARCOS }));
+  const p2 = abrir(com);
+  await esperar(() => /Investimento/.test(textoCartao(p2)), { motivo: 'ficha' });
+  assert.ok(botao(p2, 'Coach da conversa'));
+  p2.fechar();
+});
+
+test('coach: o botão mostra perfil, como abordar, objeção com resposta e perguntas', async () => {
+  const srv = crmFalso(() => comCoach({ ok: true, configurado: true, encontrado: true, ficha: FICHA_MARCOS }));
+  const p = abrir(srv);
+  await esperar(() => !!botao(p, 'Coach da conversa'), { motivo: 'botão do coach' });
+  botao(p, 'Coach da conversa').click();
+  await esperar(() => /Perguntas para aprofundar/.test(textoCartao(p)), { motivo: 'coach na tela' });
+  assert.deepEqual(srv.coachPedidos[0].mensagens.map((m) => m.content), ['Oi, tudo bem?', 'Tudo sim']);
+  const t = textoCartao(p);
+  for (const x of ['COACH', 'Perfil do lead', 'analítico', 'Pediu números e prova de resultado.', 'Como abordar', 'traga dados antes de falar de preço',
+    'Objeção: Achou o investimento alto', 'Posso te mostrar quanto os clientes recuperam', '• Quanto você fatura hoje por mês?', '• Quem mais participa da decisão?']) {
+    assert.ok(t.includes(x), 'faltou no cartão: ' + x);
+  }
+  assert.equal(p.document.getElementById('closer-report-badge'), null, 'o aviso de andamento some');
+  p.fechar();
+});
+
+test('coach aprende: "Funcionou" manda a sugestão ao servidor uma vez só', async () => {
+  const srv = crmFalso(() => comCoach({ ok: true, configurado: true, encontrado: true, ficha: FICHA_MARCOS }));
+  const p = abrir(srv);
+  await esperar(() => !!botao(p, 'Coach da conversa'), { motivo: 'botão' });
+  botao(p, 'Coach da conversa').click();
+  await esperar(() => /Perguntas para aprofundar/.test(textoCartao(p)), { motivo: 'coach' });
+  const funcionou = [...cartao(p).querySelectorAll('button')].filter((b) => b.textContent === 'Funcionou');
+  assert.equal(funcionou.length, 4, 'abordagem + 1 objeção + 2 perguntas');
+  funcionou[1].click(); // a objeção
+  funcionou[1].click(); // clique repetido não duplica
+  await esperar(() => srv.feedbacks.length === 1, { motivo: 'feedback' });
+  assert.deepEqual({ tipo: srv.feedbacks[0].tipo, texto: srv.feedbacks[0].texto, contexto: srv.feedbacks[0].contexto, util: srv.feedbacks[0].util },
+    { tipo: 'objecao', texto: 'Posso te mostrar quanto os clientes recuperam nos primeiros meses?', contexto: 'Achou o investimento alto', util: true });
+  assert.equal(funcionou[1].disabled, true);
+  await dormir(60);
+  assert.equal(srv.feedbacks.length, 1);
+  p.fechar();
+});
+
+test('coach: erro (ex.: limite gratuito) mostra a mensagem e "Tentar de novo" pede outra vez', async () => {
+  let vez = 0;
+  const srv = crmFalso(() => comCoach({ ok: true, configurado: true, encontrado: true, ficha: FICHA_MARCOS }), {
+    coach: () => (++vez === 1 ? { ok: false, erro: 'O limite gratuito do coach foi atingido por agora.' } : { ok: true, coach: COACH_FALSO }),
+  });
+  const p = abrir(srv);
+  await esperar(() => !!botao(p, 'Coach da conversa'), { motivo: 'botão' });
+  botao(p, 'Coach da conversa').click();
+  await esperar(() => /limite gratuito/.test(textoCartao(p)), { motivo: 'erro' });
+  [...cartao(p).querySelectorAll('button')].filter((b) => b.textContent === 'Tentar de novo').pop().click();
+  await esperar(() => /Perguntas para aprofundar/.test(textoCartao(p)), { motivo: 'coach na 2ª' });
   p.fechar();
 });

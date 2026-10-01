@@ -334,6 +334,16 @@ personalizados, outras anotações e o link para abrir no RD. Liga/desliga no po
   ([AD]…, LP, UTM, criativo, conjunto) não entram na ficha.
 - **Disponível para todo usuário com chave** (SDR, gestor ou admin). Cada um pode esconder o
   cartão no próprio popup da extensão.
+- **Coach da conversa** (botão no cartão, **custo zero**): lê a conversa e os áudios e, num modelo
+  gratuito do Groq (`GROQ_COACH_MODEL`, padrão `llama-3.3-70b-versatile`), devolve o **perfil do lead**
+  (analítico, cético, emocional, apressado, indeciso, curioso) com a evidência, **como abordar**,
+  **objeções** com resposta pronta e **3 perguntas de aprofundamento** (`src/coach.js`,
+  `POST /api/coach`). **Aprende sem treinar modelo:** o SDR marca "Funcionou" no que usar
+  (`POST /api/coach/feedback`); as sugestões marcadas entram como exemplos no prompt das próximas
+  conversas, e as "não ajudou" como o que evitar. Só para quem o master ligar (aba **Acessos** →
+  coluna **Coach**; padrão: só o master). Limites: o plano gratuito do Groq limita chamadas por minuto/dia
+  (o coach avisa "limite gratuito atingido") e o modelo é mais simples que o Claude. Mesma conversa =
+  cache de 24h.
 - **Resumo rápido da conversa** (botão no cartão): lê a conversa aberta, inclusive transcrevendo
   os áudios, e a IA devolve o **cenário**, **onde parou** (quem deve responder), a **última
   pergunta** e o **próximo passo** — para retomar um lead sem reler nem reouvir tudo.

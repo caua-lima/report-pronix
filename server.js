@@ -24,6 +24,7 @@ const base = require('./src/base');
 const diario = require('./src/diario');
 const crm = require('./src/crm');
 const { gerarResumoRapido } = require('./src/resumoRapido');
+const coachIa = require('./src/coach');
 const { normalizarConsciencia } = require('./src/consciencia');
 
 const QUALIDADES_VALIDAS = new Set(['eco', 'standard', 'premium']);
@@ -166,6 +167,7 @@ app.patch('/api/admin/usuarios/:id', master, async (req, res) => {
     const corpo = req.body || {};
     let ok;
     if (typeof corpo.fichaCrm === 'boolean') ok = await usuarios.definirFichaCrm(req.params.id, corpo.fichaCrm);
+    else if (typeof corpo.coach === 'boolean') ok = await usuarios.definirCoach(req.params.id, corpo.coach);
     else ok = await usuarios.definirPapel(req.params.id, String(corpo.papel || ''));
     if (!ok) return res.status(404).json({ erro: 'Usuário não encontrado.' });
     res.json({ ok: true });
@@ -397,9 +399,36 @@ app.post('/api/crm/lead', auth, async (req, res) => {
     // O master escolhe quem vê a ficha (aba Acessos). Desligado: a extensão não mostra nada e o RD nem é consultado.
     if (!req.usuario.fichaCrm) return res.json({ configurado: false });
     const { telefone, nome, contatoId } = req.body || {};
-    res.json(await crm.consultarLead({ telefone, nome, contatoId }));
+    // "coach" avisa a extensão se este usuário vê o botão Coach da conversa.
+    res.json({ ...(await crm.consultarLead({ telefone, nome, contatoId })), coach: Boolean(req.usuario.coach) });
   } catch (err) {
     res.status(502).json({ erro: err.message });
+  }
+});
+
+/**
+ * Coach da conversa (botão no cartão): perfil do lead, como abordar, objeções com resposta e perguntas de
+ * aprofundamento, no Groq gratuito. Só para quem o master ligou (padrão: só o master).
+ */
+app.post('/api/coach', auth, async (req, res) => {
+  try {
+    if (!req.usuario.coach) return res.status(403).json({ erro: 'Coach não liberado para este usuário.' });
+    const { mensagens, nome } = req.body || {};
+    res.json(await coachIa.gerarCoach({ mensagens, nome }));
+  } catch (err) {
+    res.status(/Nenhuma mensagem/.test(err.message) ? 400 : 502).json({ erro: err.message });
+  }
+});
+
+/** "Funcionou" / "não ajudou" numa sugestão do coach: é assim que ele aprende. */
+app.post('/api/coach/feedback', auth, async (req, res) => {
+  try {
+    if (!req.usuario.coach) return res.status(403).json({ erro: 'Coach não liberado para este usuário.' });
+    const { tipo, texto, contexto, util } = req.body || {};
+    await coachIa.registrarFeedback({ tipo, texto, contexto, util: util !== false, usuarioNome: req.usuario.nome });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(400).json({ erro: err.message });
   }
 });
 
