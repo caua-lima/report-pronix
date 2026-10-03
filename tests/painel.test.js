@@ -1101,3 +1101,27 @@ test('Base: mostra os seis campos, avisa quando é a recomendada e deixa voltar 
   await dormir(40);
   p.fechar();
 });
+
+test('Closers: um numerozinho mostra quantos estão cadastrados (na aba e no título) e acompanha a lista', async () => {
+  let lista = [{ id: 'c1', nome: 'Vitor', email: '' }, { id: 'c2', nome: 'Rafa', email: '' }];
+  const api = apiMaster()
+    .quando('GET /api/admin/closers', () => ({ corpo: { closers: lista } }))
+    .quando('POST /api/admin/closers', ({ corpo }) => { lista = lista.concat([{ id: 'c3', nome: corpo.nome, email: '' }]); return { corpo: { ok: true } }; });
+  const p = abrirPainel(api, { hash: '#closers' });
+  await esperar(() => p.$('nClosers').textContent === '2', { motivo: 'contagem' });
+  assert.equal(p.$('nClosersTab').textContent, '2');
+  assert.ok(visivel(p.$('nClosersTab')));
+  assert.equal(p.$('nClosers').title, '2 closers cadastrados');
+  p.$('closerNome').value = 'Zayra';
+  p.$('addCloser').click();
+  await esperar(() => p.$('nClosers').textContent === '3', { motivo: 'contagem atualizada' });
+  await dormir(60);
+  p.fechar();
+
+  // na aba Resultados o número também aparece (vem junto das linhas)
+  const q = abrirPainel(apiMaster(), { hash: '#resultados' });
+  await esperar(() => q.$('nClosersTab').textContent === '2', { motivo: 'contagem pelos resultados' });
+  assert.match(q.$('statusRes').textContent, /2 closer\(s\) cadastrado\(s\)/);
+  await dormir(40);
+  q.fechar();
+});

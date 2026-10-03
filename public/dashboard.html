@@ -207,6 +207,7 @@
     .chat-composer textarea { flex: 1; min-height: 44px; max-height: 160px; border: 0; background: transparent; padding: 6px; resize: vertical; box-shadow: none; }
     .chat-composer textarea:focus { outline: none; box-shadow: none; }
     @media (max-width: 640px) { .chat-composer { flex-wrap: wrap; } .chat-composer textarea { flex-basis: 100%; } }
+    .conta { display: inline-block; min-width: 20px; margin-left: 7px; padding: 1px 6px; border-radius: 10px; background: var(--ouro); color: #121214; font-size: .7rem; font-weight: 750; text-align: center; line-height: 1.5; }
     .sec-t { font-size: .82rem; font-weight: 700; margin: 18px 0 8px; color: var(--text); }
     .duas { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 0 24px; }
 
@@ -265,7 +266,7 @@
       <button class="tab so-admin hidden" data-aba="acessos"><i data-ic="key"></i>Acessos</button>
       <button class="tab so-admin hidden" data-aba="numeros"><i data-ic="chart"></i>Reports gerados</button>
       <button class="tab so-master hidden" data-aba="resultados"><i data-ic="target"></i>Resultados da reunião</button>
-      <button class="tab so-master hidden" data-aba="closers"><i data-ic="users"></i>Closers</button>
+      <button class="tab so-master hidden" data-aba="closers"><i data-ic="users"></i>Closers<span id="nClosersTab" class="conta hidden"></span></button>
       <button class="tab so-admin hidden" data-aba="arquivos"><i data-ic="download"></i>Arquivos</button>
       <button class="tab so-admin hidden" data-aba="base"><i data-ic="clipboard"></i>Base</button>
       <button class="tab so-admin hidden" data-aba="extensao"><i data-ic="package"></i>Extensão</button>
@@ -473,7 +474,7 @@
 
       <div class="admin-area hidden">
         <div class="card">
-          <div class="head"><div class="t"><i data-ic="users"></i>Closers</div><div class="sub">— quem conduz as reuniões. O SDR escolhe o closer de cada report na própria extensão</div></div>
+          <div class="head"><div class="t"><i data-ic="users"></i>Closers<span id="nClosers" class="conta hidden"></span></div><div class="sub">— quem conduz as reuniões. O SDR escolhe o closer de cada report na própria extensão</div></div>
           <div class="row">
             <input id="closerNome" type="text" placeholder="Nome do closer" style="flex:1;min-width:160px" />
             <input id="closerEmail" type="email" placeholder="e-mail (opcional)" style="flex:1;min-width:200px" />
@@ -1185,11 +1186,21 @@
       { v: 'em_followup', t: 'Em follow-up' },
     ];
 
+    /** O numerozinho ao lado de "Closers": quantos estão cadastrados. */
+    function mostrarContagemClosers(n) {
+      ['nClosers', 'nClosersTab'].forEach((id) => {
+        $(id).textContent = String(n);
+        $(id).title = n === 1 ? '1 closer cadastrado' : n + ' closers cadastrados';
+        $(id).classList.remove('hidden');
+      });
+    }
+
     async function carregarClosers() {
       if (!souAdmin && !senhaAdmin) return;
       try {
         const r = await api('GET', '/api/admin/closers');
         closersCache = r.closers || [];
+        mostrarContagemClosers(closersCache.length);
         $('vazioClosers').style.display = closersCache.length ? 'none' : '';
         $('listaClosers').innerHTML = closersCache.map((c) => `
           <tr>
@@ -1499,12 +1510,13 @@
         const q = new URLSearchParams({ de: $('resDe').value, ate: $('resAte').value, escopo: $('resEscopo').value });
         const j = await api('GET', '/api/master/resultados?' + q);
         closersRes = j.closers || [];
+        mostrarContagemClosers(closersRes.length);
         const linhas = (j.reports || []).filter((r) => !$('resPendentes').checked || !r.resultado);
         $('listaRes').innerHTML = linhas.map(linhaResultado).join('');
         $('vazioRes').style.display = linhas.length ? 'none' : '';
         const marcados = (j.reports || []).filter((r) => r.resultado).length;
         setStatus('statusRes', `${(j.reports || []).length} report(s) no período · ${marcados} com resultado marcado` +
-          (closersRes.length ? '.' : '. Cadastre os closers na aba Closers para poder escolher.'), {});
+          (closersRes.length ? ` · ${closersRes.length} closer(s) cadastrado(s).` : '. Cadastre os closers na aba Closers para poder escolher.'), {});
       } catch (e) {
         setStatus('statusRes', e.message, { erro: true });
       }
