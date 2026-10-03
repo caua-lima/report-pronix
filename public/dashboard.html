@@ -263,7 +263,7 @@
     <nav class="menu">
       <button class="tab on" data-aba="report"><i data-ic="file-text"></i>Gerar report</button>
       <button class="tab" data-aba="dia"><i data-ic="download"></i>Reports do dia</button>
-      <button class="tab so-admin hidden" data-aba="acessos"><i data-ic="key"></i>Acessos</button>
+      <button class="tab so-master hidden" data-aba="acessos"><i data-ic="key"></i>Acessos</button>
       <button class="tab so-admin hidden" data-aba="numeros"><i data-ic="chart"></i>Reports gerados</button>
       <button class="tab so-master hidden" data-aba="resultados"><i data-ic="target"></i>Resultados da reunião</button>
       <button class="tab so-master hidden" data-aba="closers"><i data-ic="users"></i>Closers<span id="nClosersTab" class="conta hidden"></span></button>
@@ -874,7 +874,7 @@
     // ---------- Menu ----------
     const ABAS = ['report', 'dia', 'acessos', 'numeros', 'resultados', 'closers', 'arquivos', 'base', 'extensao'];
     const SO_ADMIN = ['acessos', 'numeros', 'resultados', 'closers', 'arquivos', 'base', 'extensao'];
-    const SO_MASTER = ['resultados', 'closers']; // resultados das reuniões e lista de closers: só o master
+    const SO_MASTER = ['acessos', 'resultados', 'closers']; // acessos (chaves da equipe), resultados das reuniões e closers: só o master
     let souAdmin = false;
     let souGestor = false;
     let souMaster = false;

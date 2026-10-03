@@ -537,7 +537,7 @@ test('gestor: é criado pelo admin e tem os acessos do admin', async () => {
   E.gestor = r.json.usuario.chave;
   assert.equal((await api('GET', '/api/eu', { chave: E.gestor })).json.papel, 'gestor');
   assert.equal((await api('GET', '/api/admin/stats', { chave: E.gestor })).status, 200, 'gestor vê os números');
-  assert.equal((await api('GET', '/api/admin/usuarios', { chave: E.gestor })).status, 200, 'gestor vê os acessos');
+  assert.equal((await api('GET', '/api/admin/usuarios', { chave: E.gestor })).status, 403, 'acessos (as chaves da equipe) são só do master');
   assert.equal((await api('GET', '/api/admin/stats', { chave: E.ana })).status, 401, 'SDR continua sem');
   const invalido = await api('POST', '/api/admin/usuarios', { admin: true, corpo: { nome: 'Papel Estranho', papel: 'dono' } });
   assert.equal(invalido.json.usuario.papel, 'sdr', 'papel desconhecido vira sdr');
@@ -578,7 +578,7 @@ test('só o master cria, edita e remove usuários; o gestor vê tudo mas não me
   const id = novo.json.usuario.id;
   assert.equal((await api('PATCH', `/api/admin/usuarios/${id}`, { chave: E.gestor, corpo: { papel: 'gestor' } })).status, 403);
   assert.equal((await api('DELETE', `/api/admin/usuarios/${id}`, { chave: E.gestor })).status, 403);
-  assert.equal((await api('GET', '/api/admin/usuarios', { chave: E.gestor })).status, 200, 'gestor continua vendo a lista');
+  assert.equal((await api('GET', '/api/admin/usuarios', { chave: E.gestor })).status, 403, 'gestor não vê a lista de acessos');
   assert.equal((await api('GET', '/api/admin/stats', { chave: E.gestor })).status, 200);
 
   // master troca o tipo de acesso

@@ -151,7 +151,7 @@ app.get('/api/eu', auth, (req, res) => {
 // ---------------------------------------------------------------------------
 app.post('/api/admin/login', admin, (_req, res) => res.json({ ok: true }));
 
-app.get('/api/admin/usuarios', admin, async (_req, res) => {
+app.get('/api/admin/usuarios', master, async (_req, res) => {
   try {
     res.json({ usuarios: await usuarios.listar() });
   } catch (err) {

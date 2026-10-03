@@ -711,7 +711,8 @@ test('Gestor: vê as abas de admin e, em "Reports do dia", começa em "Todos os 
   const p = abrirPainel(api, { hash: '#dia' });
   await aberto(p);
   assert.match(p.$('quem').textContent, /Gestor: Líder/);
-  assert.ok(visivel(p.document.querySelector('.tab[data-aba="acessos"]')), 'gestor tem as abas do admin');
+  assert.ok(!visivel(p.document.querySelector('.tab[data-aba="acessos"]')), 'Acessos é só do master');
+  assert.ok(visivel(p.document.querySelector('.tab[data-aba="numeros"]')), 'gestor tem as outras abas do admin');
   assert.ok(visivel(p.document.querySelector('.tab[data-aba="arquivos"]')));
   await esperar(() => p.$('listaMeus').querySelectorAll('tr').length === 3, { motivo: 'lista da equipe' });
   assert.ok(visivel(p.$('escopoMeusBox')));
@@ -777,7 +778,7 @@ test('Acessos: dá para criar Gestor, e a lista marca o papel', async () => {
 });
 
 // ---------------------------------------------------------------- Master edita o tipo de acesso
-test('Master: troca o tipo de acesso na lista e cria acessos; Gestor só vê', async () => {
+test('Master: troca o tipo de acesso na lista e cria acessos; o Gestor não tem a aba Acessos', async () => {
   const usuarios = [
     { id: 'u1', nome: 'Cauã', papel: 'master', chave: 'pnx_Master1234567890abcdefgh', criadoEm: '2026-09-01T10:00:00Z' },
     { id: 'u2', nome: 'Bia', papel: 'sdr', chave: 'pnx_SdrSdr1234567890abcdefgh', criadoEm: '2026-09-01T10:00:00Z' },
@@ -799,16 +800,16 @@ test('Master: troca o tipo de acesso na lista e cria acessos; Gestor só vê', a
 
   const g = apiBase({ papel: 'gestor', nome: 'Líder', usuarios });
   const q = abrirPainel(g, { hash: '#acessos' });
-  await esperar(() => q.$('lista').textContent.includes('Bia'), { motivo: 'lista do gestor' });
-  assert.ok(!visivel(q.$('cardCriar')), 'gestor não cria usuários');
-  assert.ok(visivel(q.$('avisoSoMaster')));
-  assert.equal(q.document.querySelector('[data-papel-de]'), null, 'nem edita o tipo de acesso');
-  assert.equal(q.document.querySelector('[data-remover]'), null, 'nem remove');
-  assert.match(q.$('lista').textContent, /master/);
+  await aberto(q);
+  await dormir(60);
+  assert.ok(!visivel(q.document.querySelector('.tab[data-aba="acessos"]')), 'a aba Acessos é só do master');
+  assert.ok(!visivel(q.$('aba-acessos')), 'gestor não entra em Acessos nem pelo endereço');
+  assert.ok(visivel(q.$('aba-report')));
+  assert.equal(g.contar('GET /api/admin/usuarios'), 0, 'a lista de chaves nem é pedida');
   q.fechar();
 });
 
-test('Acessos: o master liga/desliga o popup do lead por pessoa; o gestor vê mas não muda', async () => {
+test('Acessos: o master liga/desliga o popup do lead por pessoa; o gestor não tem a aba', async () => {
   const usuarios = [
     { id: 'u1', nome: 'Líder', papel: 'gestor', chave: 'pnx_Gestor1234567890abcdefgh', criadoEm: '2026-09-01T10:00:00Z', fichaCrm: false },
     { id: 'u2', nome: 'Bia', papel: 'sdr', chave: 'pnx_SdrSdr1234567890abcdefgh', criadoEm: '2026-09-01T10:00:00Z', fichaCrm: true },
@@ -828,12 +829,14 @@ test('Acessos: o master liga/desliga o popup do lead por pessoa; o gestor vê ma
   p.fechar();
 
   const q = abrirPainel(apiBase({ papel: 'gestor', nome: 'Líder', usuarios }), { hash: '#acessos' });
-  await esperar(() => q.$('lista').textContent.includes('Bia'), { motivo: 'lista do gestor' });
-  assert.equal(q.document.querySelector('[data-ficha-crm="u2"]').disabled, true);
+  await aberto(q);
+  await dormir(60);
+  assert.ok(!visivel(q.$('aba-acessos')), 'gestor não entra em Acessos nem pelo endereço');
+  assert.ok(visivel(q.$('aba-report')));
   q.fechar();
 });
 
-test('Acessos: o master liga/desliga o Coach por pessoa; o gestor vê as caixas desabilitadas', async () => {
+test('Acessos: o master liga/desliga o Coach por pessoa; o gestor não tem a aba', async () => {
   const usuarios = [
     { id: 'u1', nome: 'Cauã', papel: 'master', chave: 'pnx_Master1234567890abcdefgh', criadoEm: '2026-09-01T10:00:00Z', fichaCrm: true, coach: true },
     { id: 'u2', nome: 'Bia', papel: 'sdr', chave: 'pnx_SdrSdr1234567890abcdefgh', criadoEm: '2026-09-01T10:00:00Z', fichaCrm: true, coach: false },
@@ -853,8 +856,10 @@ test('Acessos: o master liga/desliga o Coach por pessoa; o gestor vê as caixas 
   p.fechar();
 
   const q = abrirPainel(apiBase({ papel: 'gestor', nome: 'Líder', usuarios }), { hash: '#acessos' });
-  await esperar(() => q.$('lista').textContent.includes('Bia'), { motivo: 'lista do gestor' });
-  assert.equal(q.document.querySelector('[data-coach="u2"]').disabled, true);
+  await aberto(q);
+  await dormir(60);
+  assert.ok(!visivel(q.$('aba-acessos')), 'gestor não entra em Acessos nem pelo endereço');
+  assert.ok(visivel(q.$('aba-report')));
   q.fechar();
 });
 
