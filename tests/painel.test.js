@@ -1130,3 +1130,25 @@ test('Closers: um numerozinho mostra quantos estão cadastrados (na aba e no tí
   await dormir(40);
   q.fechar();
 });
+
+test('Acessos: o master liga/desliga a Automação do RD por pessoa (mover para Respondeu, etiqueta e agendamento)', async () => {
+  const usuarios = [
+    { id: 'u1', nome: 'Cauã', papel: 'master', chave: 'pnx_Master1234567890abcdefgh', criadoEm: '2026-09-01T10:00:00Z', fichaCrm: true, coach: true, automacao: true },
+    { id: 'u2', nome: 'Bia', papel: 'sdr', chave: 'pnx_SdrSdr1234567890abcdefgh', criadoEm: '2026-09-01T10:00:00Z', fichaCrm: true, coach: false, automacao: false },
+  ];
+  const api = apiBase({ papel: 'master', usuarios }).quando('PATCH /api/admin/usuarios/u2', () => ({ corpo: { ok: true } }));
+  const p = abrirPainel(api, { hash: '#acessos' });
+  await esperar(() => p.$('lista').textContent.includes('Bia'), { motivo: 'lista' });
+  assert.match(p.$('aba-acessos').textContent, /Automação RD/, 'coluna na tabela');
+  const caixa = (id) => p.document.querySelector('[data-automacao="' + id + '"]');
+  assert.equal(caixa('u1').checked, true);
+  assert.equal(caixa('u2').checked, false);
+  caixa('u2').checked = true;
+  caixa('u2').dispatchEvent(new p.w.Event('change', { bubbles: true }));
+  await esperar(() => api.contar('PATCH /api/admin/usuarios/u2') === 1, { motivo: 'PATCH' });
+  assert.deepEqual(api.corpos('PATCH /api/admin/usuarios/u2'), [{ automacao: true }]);
+  await esperar(() => /Automação do RD ligada/.test(p.$('toast').textContent), { motivo: 'aviso' });
+  await dormir(60);
+  assert.deepEqual(p.erros, []);
+  p.fechar();
+});

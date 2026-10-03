@@ -24,16 +24,22 @@ function ttlFicha() {
   return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
-/** Chamada à API do RD. Erro nunca carrega a URL (que tem o token). */
-async function rd(caminho, params = {}) {
+/**
+ * Chamada à API do RD. Erro nunca carrega a URL (que tem o token).
+ * Sem `corpo` é leitura (GET); com `corpo` é a única escrita que o sistema faz: mudar o card de etapa.
+ */
+async function rd(caminho, params = {}, { metodo = 'GET', corpo } = {}) {
   const q = new URLSearchParams({ token: token() });
   Object.entries(params).forEach(([k, v]) => {
     if (v !== undefined && v !== null && v !== '') q.set(k, String(v));
   });
+  const escrita = metodo !== 'GET';
   let r;
   try {
     r = await fetch(`${BASE}${caminho}?${q}`, {
-      headers: { Accept: 'application/json' },
+      method: metodo,
+      headers: escrita ? { Accept: 'application/json', 'Content-Type': 'application/json' } : { Accept: 'application/json' },
+      ...(escrita ? { body: JSON.stringify(corpo || {}) } : {}),
       signal: AbortSignal.timeout(Number(process.env.CRM_TIMEOUT_MS) || 8000),
     });
   } catch (e) {
@@ -43,11 +49,13 @@ async function rd(caminho, params = {}) {
     throw new Error('Não consegui falar com o RD Station CRM.');
   }
   if (r.status === 401 || r.status === 403) {
+    // Na escrita o RD só aceita quem é responsável pelo card (ou do mesmo time do dono do token).
+    if (escrita) throw new Error('O RD Station não deixou alterar este card: o token precisa ser de quem é responsável por ele (ou do mesmo time).');
     throw new Error('O RD Station CRM recusou o token (confira RDSTATION_CRM_TOKEN na Vercel).');
   }
   if (r.status === 429) throw new Error('O RD Station CRM limitou as consultas. Tente de novo em 1 minuto.');
   if (r.status === 404) return null;
-  if (!r.ok) throw new Error(`O RD Station CRM respondeu ${r.status}.`);
+  if (!r.ok) throw new Error(escrita ? `O RD Station recusou a mudança de etapa (${r.status}).` : `O RD Station CRM respondeu ${r.status}.`);
   return r.json().catch(() => null);
 }
 
@@ -379,6 +387,10 @@ const temTodasAsPalavras = (contato, palavras) => {
 const pareceTelefone = (s) => soDigitos(s).length >= 8 && !/[a-zA-ZÀ-ÿ]/.test(String(s || ''));
 const candidato = (c) => ({ id: c.id || c._id, nome: c.name || '', telefone: ((c.phones || [])[0] || {}).phone || '' });
 
+/** Identifica o lead da busca (já com telefone só em dígitos e nome limpo): é a chave do cache e do card lembrado. */
+const chaveDaBusca = ({ telefone, nome, contatoId }) =>
+  contatoId ? `id:${contatoId}` : telefone.length >= 8 ? `tel:${final8(telefone)}` : nome ? `nome:${nome.toLowerCase()}` : '';
+
 /**
  * @param {{telefone?: string, nome?: string, contatoId?: string}} busca
  * @param {{diagnostico?: boolean, semCache?: boolean}} opcoes
@@ -392,7 +404,7 @@ async function consultarLead(busca = {}, opcoes = {}) {
   const dealPedido = /^[A-Za-z0-9_-]{1,40}$/.test(String(busca.dealId || '')) ? String(busca.dealId) : '';
   const diag = { tentativas: [] };
 
-  const chaveBase = contatoId ? `id:${contatoId}` : telefone.length >= 8 ? `tel:${final8(telefone)}` : nome ? `nome:${nome.toLowerCase()}` : '';
+  const chaveBase = chaveDaBusca({ telefone, nome, contatoId });
   if (!chaveBase) return { configurado: true, encontrado: false };
   const chave = 'crm:' + chaveBase;
   // O card que o SDR escolheu para este lead fica lembrado (vale para todos): da próxima vez abre o certo.
@@ -478,8 +490,131 @@ async function consultarLead(busca = {}, opcoes = {}) {
   return opcoes.diagnostico ? { ...resultado, diagnostico: diag } : resultado;
 }
 
+// ---------------------------------------------------------------- etapas do funil (mover para "Respondeu")
+//
+// A única escrita no RD: quando o lead responde no WhatsApp, o card que ainda está ANTES de "Respondeu"
+// (ex.: "Contato iniciado") avança para "Respondeu". Nunca volta um card, nunca mexe em card fechado e
+// nunca troca de funil. CRM_MOVER_ETAPA=0 desliga; CRM_ETAPA_RESPONDEU troca o nome da etapa de destino.
+
+const moverLigado = () => !/^(0|false|nao|não|off)$/i.test(String(process.env.CRM_MOVER_ETAPA || '').trim());
+const nomeRespondeu = () => String(process.env.CRM_ETAPA_RESPONDEU || 'Respondeu').trim();
+const nomeQualificado = () => String(process.env.CRM_ETAPA_QUALIFICADO || 'Qualificado').trim();
+
+/** O card está na etapa "Qualificado" do funil? (é uma das origens da etiqueta no cartão do WhatsApp) */
+const ehEtapaQualificado = (etapa) => Boolean(etapa) && normalizarNome(etapa) === normalizarNome(nomeQualificado());
+
+/** Funis do RD com as etapas na ordem do funil: [{ id, nome, etapas: [{ id, nome, ordem }] }]. Cache de 1h. */
+async function funis() {
+  const guardado = await db.cacheGet('crm:funis');
+  if (guardado) {
+    try {
+      return JSON.parse(guardado);
+    } catch (_) {
+      /* refaz */
+    }
+  }
+  let r;
+  try {
+    r = await rd('/deal_pipelines', { limit: 200 });
+  } catch (e) {
+    // RD fora do ar ou plano sem acesso aos funis: não repete a consulta a cada conversa aberta.
+    await db.cacheSet('crm:funis', '[]', 120);
+    throw e;
+  }
+  const lista = Array.isArray(r) ? r : (r && (r.deal_pipelines || r.pipelines)) || [];
+  const saida = [];
+  for (const p of lista) {
+    let etapas = p.deal_stages;
+    if (!Array.isArray(etapas)) {
+      const det = await rd(`/deal_pipelines/${encodeURIComponent(idDe(p))}`).catch(() => null);
+      etapas = (det && det.deal_stages) || [];
+    }
+    const ordenadas = etapas
+      .map((e, i) => ({ id: idDe(e), nome: consertarAcentos(e.name || ''), o: Number.isFinite(Number(e.order)) ? Number(e.order) : i, i }))
+      .sort((a, b) => a.o - b.o || a.i - b.i)
+      .map((e, ordem) => ({ id: e.id, nome: e.nome, ordem }));
+    saida.push({ id: idDe(p), nome: consertarAcentos(p.name || ''), etapas: ordenadas });
+  }
+  // Lista vazia fica pouco tempo no cache: pode ter sido uma falha passageira do RD.
+  await db.cacheSet('crm:funis', JSON.stringify(saida), saida.some((f) => f.etapas.length) ? 3600 : 120);
+  return saida;
+}
+
+const mesmoNome = (a, b) => normalizarNome(a) === normalizarNome(b);
+
+/** Em que funil o card está: pelo id da etapa; sem id, pelo nome da etapa (e do funil, se houver mais de um). */
+function acharEtapa(lista, { etapaId, etapaNome, funilNome }) {
+  for (const f of lista) {
+    const e = etapaId && f.etapas.find((x) => x.id === String(etapaId));
+    if (e) return { funil: f, etapa: e };
+  }
+  if (!etapaNome) return null;
+  const candidatos = lista.filter((f) => f.etapas.some((x) => mesmoNome(x.nome, etapaNome)));
+  const f = candidatos.find((x) => funilNome && mesmoNome(x.nome, funilNome)) || (candidatos.length === 1 ? candidatos[0] : null);
+  return f ? { funil: f, etapa: f.etapas.find((x) => mesmoNome(x.nome, etapaNome)) } : null;
+}
+
+const etapaRespondeu = (funil) => funil.etapas.find((x) => mesmoNome(x.nome, nomeRespondeu())) || null;
+
+/** O card escolhido da ficha está em aberto e ANTES de "Respondeu"? É o que diz à extensão se vale tentar mover. */
+async function antesDeRespondeu(ficha) {
+  if (!moverLigado() || !ficha || !ficha.negociacao) return false;
+  const card = (ficha.negociacoes || []).find((c) => c.escolhida);
+  if (!card || !card.aberta) return false;
+  const onde = acharEtapa(await funis(), { etapaNome: ficha.negociacao.etapa, funilNome: ficha.negociacao.funil });
+  const alvo = onde && etapaRespondeu(onde.funil);
+  return Boolean(alvo && onde.etapa.ordem < alvo.ordem);
+}
+
+/**
+ * Move o card do lead para "Respondeu". Confere tudo de novo no RD na hora (a ficha pode estar em cache):
+ * o card tem de ser deste lead, estar em aberto e numa etapa anterior a "Respondeu" do MESMO funil.
+ * @param {{telefone?: string, nome?: string, contatoId?: string, dealId?: string}} busca
+ * @returns {Promise<{movido: boolean, de?: string, para?: string, motivo?: string}>}
+ */
+async function moverParaRespondeu(busca = {}, { usuarioNome = '' } = {}) {
+  if (!configurado()) return { movido: false, motivo: 'sem-crm' };
+  if (!moverLigado()) return { movido: false, motivo: 'desligado' };
+  const idOk = (v) => (/^[A-Za-z0-9_-]{1,40}$/.test(String(v || '')) ? String(v) : '');
+  const lead = await consultarLead({ telefone: busca.telefone, nome: busca.nome, contatoId: busca.contatoId });
+  const cards = (lead.ficha && lead.ficha.negociacoes) || [];
+  const pedido = idOk(busca.dealId);
+  const card = pedido ? cards.find((c) => c.id === pedido) : cards.find((c) => c.escolhida);
+  if (!card) return { movido: false, motivo: 'card-nao-e-do-lead' };
+
+  const deal = await rd(`/deals/${encodeURIComponent(card.id)}`);
+  if (!deal) return { movido: false, motivo: 'card-nao-encontrado' };
+  if (!estaAberta(deal)) return { movido: false, motivo: 'card-fechado' };
+  const atual = deal.deal_stage || {};
+  const onde = acharEtapa(await funis(), {
+    etapaId: idDe(atual), etapaNome: atual.name, funilNome: deal.deal_pipeline && deal.deal_pipeline.name,
+  });
+  if (!onde) return { movido: false, motivo: 'funil-desconhecido' };
+  const alvo = etapaRespondeu(onde.funil);
+  if (!alvo) return { movido: false, motivo: 'sem-etapa' };
+  if (onde.etapa.ordem >= alvo.ordem) return { movido: false, motivo: 'ja-adiante', etapa: onde.etapa.nome };
+
+  const resp = await rd(`/deals/${encodeURIComponent(card.id)}`, {}, { metodo: 'PUT', corpo: { deal_stage_id: alvo.id } });
+  if (!resp) throw new Error('O RD Station não achou o card para mudar de etapa.');
+  const nova = idDe(resp.deal_stage);
+  if (nova && nova !== alvo.id) throw new Error('O RD Station respondeu, mas o card não mudou de etapa.');
+
+  // A ficha em cache ainda diz a etapa antiga: a próxima consulta busca de novo.
+  const chave = chaveDaBusca({
+    telefone: soDigitos(busca.telefone), nome: String(busca.nome || '').trim().slice(0, 80), contatoId: idOk(busca.contatoId),
+  });
+  if (chave) await db.cacheDel('crm:' + chave);
+  await db
+    .push('crm_movimentos', { quando: new Date().toISOString(), card: card.id, de: onde.etapa.nome, para: alvo.nome, por: usuarioNome }, 500)
+    .catch(() => {});
+  return { movido: true, de: onde.etapa.nome, para: alvo.nome };
+}
+
 module.exports = {
   consultarLead,
+  antesDeRespondeu,
+  moverParaRespondeu,
+  ehEtapaQualificado,
   configurado,
   variantesTelefone,
   contatoTemTelefone,

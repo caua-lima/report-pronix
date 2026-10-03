@@ -11,6 +11,16 @@ Detalhes técnicos em [`auditoria-pronix.md`](auditoria-pronix.md) e [`plano-imp
 - [x] 117 testes automáticos (`npm test`), sem rede e sem custo
 - [x] Merge local na `main`
 
+## Novo em 03/10 (2): automação do cartão (extensão 1.11.0 + servidor)
+
+- [x] Lead respondeu → card vai de "Contato iniciado" para "Respondeu" no RD (única escrita no CRM; nunca volta card)
+- [x] Etiqueta "Qualificado" no cartão (etapa do RD, report gerado, agendamento ou à mão) lembrada por lead
+- [x] Dia e horário agendados lidos da conversa, sem IA (`extension/agenda.js`)
+- [x] Só para o master; liga para outros em Acessos → Automação RD
+- [ ] **Você:** `git push origin main` e enviar a extensão 1.11.0 à loja
+- [ ] **Você:** abrir uma conversa em que o lead respondeu e o card está em "Contato iniciado": o cartão deve mostrar "Movido para Respondeu no RD". Se aparecer "Não movi o card…", me mande a mensagem (o mais provável é o token do RD não ser do responsável pelos cards)
+- [ ] **Você:** conferir 3 ou 4 agendamentos lidos; se algum vier errado, me mande a frase que você escreveu
+
 ## Novo em 04/10: aprendizados das calls que fecharam (só servidor)
 
 - [x] 12 reuniões de closer analisadas: [analise-calls-vendas.md](analise-calls-vendas.md)

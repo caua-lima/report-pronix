@@ -22,6 +22,22 @@ async function esperar(cond, { ms = 20000, motivo = 'condição' } = {}) {
 }
 
 /**
+ * O content script e o que o manifest carrega junto dele, na mesma ordem (ex.: agenda.js antes do
+ * content.js) — assim o teste roda o que o Chrome roda, e esquecer um arquivo no manifest aparece aqui.
+ */
+function arquivosDoManifest(arquivo) {
+  const dir = path.dirname(arquivo);
+  try {
+    const manifest = JSON.parse(fs.readFileSync(path.join(RAIZ, dir, 'manifest.json'), 'utf8'));
+    const grupo = (manifest.content_scripts || []).find((c) => c.world !== 'MAIN' && (c.js || []).includes(path.basename(arquivo)));
+    if (grupo) return grupo.js.map((j) => path.join(dir, j));
+  } catch (_) {
+    /* arquivo fora da extensão: só ele */
+  }
+  return [arquivo];
+}
+
+/**
  * Cria a janela simulada, instala o "chrome" falso e executa o content script.
  * @param {{arquivo: string, url: string, aoEnviar?: Function, blobs?: Map}} o
  *   aoEnviar(msg) responde às mensagens ao service worker (transcreverAudio, reportFetch...)
@@ -85,7 +101,7 @@ function abrirPagina({ arquivo, url, aoEnviar, blobs = new Map(), intervaloRapid
     return { ok: true, arrayBuffer: async () => b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) };
   };
 
-  w.eval(fs.readFileSync(path.join(RAIZ, arquivo), 'utf8'));
+  for (const a of arquivosDoManifest(arquivo)) w.eval(fs.readFileSync(path.join(RAIZ, a), 'utf8'));
 
   return {
     w,

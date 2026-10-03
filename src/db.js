@@ -243,6 +243,16 @@ async function cacheSet(chave, valor, ttlSeg) {
   }
 }
 
+/** Apaga uma entrada do cache antes do prazo (o dado de origem mudou). Nunca lança. */
+async function cacheDel(chave) {
+  try {
+    if (usandoRedis) await redis(['DEL', `cache:${chave}`]);
+    else cacheLocal.delete(chave);
+  } catch (_) {
+    /* ignora */
+  }
+}
+
 module.exports = {
-  getJson, setJson, push, range, removerDaLista, atualizarNaLista, travar, destravar, cacheGet, cacheSet, usandoRedis,
+  getJson, setJson, push, range, removerDaLista, atualizarNaLista, travar, destravar, cacheGet, cacheSet, cacheDel, usandoRedis,
 };

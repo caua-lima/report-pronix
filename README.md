@@ -199,6 +199,8 @@ SDR — nada de e-mail real, é só nome + chave gerada.
 | `CR_DATA_DIR` | não | Pasta dos arquivos de dados no modo local (padrão `data/`). Os testes usam uma pasta temporária. |
 | `RDSTATION_CRM_TOKEN` | só para a ficha do lead | Token de acesso do RD Station CRM (API v1). Vazio = ficha desligada. De um usuário que vê todas as negociações. |
 | `CRM_CACHE_TTL_SEG` / `CRM_TIMEOUT_MS` | não (padrão `300` / `8000`) | Cache da ficha no servidor e tempo máximo de cada chamada ao RD. |
+| `CRM_MOVER_ETAPA` | não (padrão ligado) | `0` desliga a única escrita no RD (mover o card para "Respondeu"); as etiquetas do cartão continuam. |
+| `CRM_ETAPA_RESPONDEU` / `CRM_ETAPA_QUALIFICADO` | não (padrão `Respondeu` / `Qualificado`) | Nome das etapas do funil no RD, se o time renomear. |
 
 `SDR_NAME` no `.env.example` é só um nome de exibição de reserva para quando o PDF é
 gerado sem usuário autenticado (uso local avulso) — em uso normal, quem assina o
@@ -353,6 +355,26 @@ personalizados, outras anotações e o link para abrir no RD. Liga/desliga no po
   limite, o seguinte assume. O plano gratuito limita tokens por minuto (cerca de 8 mil por modelo),
   por isso o pedido vai enxuto; estourando em todos, o aviso é "limite gratuito atingido". Mesma
   conversa = cache de 24h.
+- **Automação do cartão** (aba **Acessos** → coluna **Automação RD**; padrão: só o master). Três coisas,
+  todas sem IA e sem custo:
+  1. **Mover para "Respondeu" no RD.** Com a conversa aberta, se há mensagem do lead depois de uma
+     mensagem sua e o card está em aberto e numa etapa ANTERIOR a "Respondeu" do mesmo funil (ex.:
+     "Contato iniciado"), o servidor avança o card (`POST /api/crm/respondeu` →
+     `PUT /deals/{id}` com `deal_stage_id`). É a **única escrita** que o sistema faz no RD: nunca
+     volta um card, não mexe em card fechado nem em funil sem essa etapa, confere tudo de novo no RD
+     na hora e registra cada movimento (`crm_movimentos`). O RD só aceita a mudança se o dono do
+     token for o responsável pelo card ou do mesmo time; se recusar, o cartão mostra o motivo.
+  2. **Etiqueta "Qualificado".** Entra sozinha quando o card está na etapa "Qualificado", quando um
+     report é gerado para o lead ou quando há reunião agendada, e **fica lembrada** mesmo que o card
+     mude de etapa depois (remarcou, sumiu). Dá para marcar e tirar à mão no cartão — a escolha
+     manual vale sobre a automática.
+  3. **Dia e horário agendados.** `extension/agenda.js` lê, no navegador, a última mensagem SUA que
+     marca dia e hora ("reunião agendada para quinta às 15h", "remarquei para 10/10 às 16h", ou o
+     lead escolhendo um dos horários que você ofereceu seguido do seu "Agendado!"). Oferta de opções
+     e duração ("2h por dia") não contam. Resumo rápido, Coach e report leem a conversa inteira com
+     os áudios transcritos, então agendamento dito em áudio entra quando um deles roda. O × apaga.
+  O texto da conversa não vai ao servidor para isso: vão só o pedido de mover, a etiqueta e a data
+  (`POST /api/lead/marca`, guardadas por lead em `lead_marcas` — `src/leads.js`).
 
 ## Inteligência comercial: perfil do lead, closer certo e o que funciona na prospecção
 

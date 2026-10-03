@@ -1,0 +1,256 @@
+'use strict';
+// Automação do cartão no WhatsApp Web (content.js + agenda.js REAIS em DOM simulado): mover o card para
+// "Respondeu" quando o lead responde, etiqueta "Qualificado" e o dia/horário agendado.
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const { abrirPagina, montarWhatsApp, esperar, dormir } = require('./helpers/dom');
+
+const fichaDoRd = (etapa) => ({
+  nome: 'Marcos Pereira', telefones: ['(71) 99999-8888'], emails: [],
+  negociacao: { nome: 'Marcos Pereira', etapa, funil: 'Funil SDR', responsavel: 'Cauã Lima', fonte: '', campanha: '', criadaEm: '', url: 'https://crm.rdstation.com/app/deals/d1' },
+  totalNegociacoes: 1,
+  negociacoes: [{ id: 'd1', nome: 'Marcos Pereira', etapa, funil: 'Funil SDR', responsavel: 'Cauã Lima', criadaEm: '28/09/2026', aberta: true, escolhida: true }],
+  formulario: null, campos: [], anotacoes: [],
+});
+const SEM_MARCA = { qualificado: false, agendadoPara: '', agendaFonteTs: -1 };
+
+/** Service worker + servidor falsos: guarda cada pedido e aplica a marca como o servidor faria. */
+function servidorFalso({ automacao = true, podeResponder = true, marca = SEM_MARCA, etapa = 'Contato iniciado', mover } = {}) {
+  const pedidos = { ficha: [], respondeu: [], marca: [], report: [] };
+  let atual = { ...marca };
+  const aoEnviar = async (original) => {
+    const msg = JSON.parse(JSON.stringify(original));
+    if (msg.action === 'crmLead') {
+      pedidos.ficha.push(msg);
+      return { ok: true, configurado: true, encontrado: true, ficha: fichaDoRd(etapa), coach: false, ...(automacao ? { automacao: true, podeResponder, marca: { ...atual } } : {}) };
+    }
+    if (msg.action === 'crmRespondeu') {
+      pedidos.respondeu.push(msg);
+      return mover ? mover(msg) : { ok: true, movido: true, de: 'Contato iniciado', para: 'Respondeu', motivo: '' };
+    }
+    if (msg.action === 'leadMarca') {
+      pedidos.marca.push(msg);
+      if (typeof msg.qualificado === 'boolean') atual.qualificado = msg.qualificado;
+      if (msg.limparAgenda) atual.agendadoPara = '';
+      else if (msg.agendadoPara) atual = { ...atual, qualificado: true, agendadoPara: msg.agendadoPara, agendaFonteTs: msg.fonteTs };
+      return { ok: true, marca: { ...atual } };
+    }
+    if (msg.action === 'reportFetch') {
+      pedidos.report.push(msg);
+      return { ok: true, dados: {}, arquivo: 'r.pdf', arquivoBase64: 'AAAA' };
+    }
+    return { ok: true };
+  };
+  return { aoEnviar, pedidos };
+}
+
+const RESPONDEU = [{ from: 'eu', texto: 'Oi Marcos, tudo bem?' }, { from: 'eles', texto: 'Tudo sim, pode falar' }];
+const SO_EU = [{ from: 'eu', texto: 'Oi Marcos, tudo bem?' }, { from: 'eu', texto: 'Consegue falar agora?' }];
+
+// Teste que falha no meio não pode deixar janela aberta (o vigia da ficha seguraria o processo para sempre).
+const abertas = [];
+test.afterEach(() => abertas.splice(0).forEach((p) => p.fechar()));
+
+function abrir(srv, conversa = RESPONDEU, { contato = '+55 71 99999-8888', storage = {} } = {}) {
+  const p = abrirPagina({ arquivo: 'extension/content.js', url: 'https://web.whatsapp.com/', aoEnviar: srv.aoEnviar, intervaloRapido: true, storage });
+  montarWhatsApp(p, conversa, { contato, idsSimples: true });
+  abertas.push(p);
+  return p;
+}
+const cartao = (p) => p.document.getElementById('cr-ficha-crm');
+const texto = (p) => (cartao(p) ? cartao(p).textContent : '');
+const etiquetas = (p) => (p.document.getElementById('cr-etiquetas') ? p.document.getElementById('cr-etiquetas').textContent : '');
+const botaoPorTitulo = (p, titulo) => [...cartao(p).querySelectorAll('button')].find((b) => b.title === titulo);
+const fichaNaTela = (p) => esperar(() => /Funil SDR/.test(texto(p)), { motivo: 'ficha na tela' });
+
+function chegarMensagemDoLead(p, textoMsg = 'Oi, vi sua mensagem') {
+  const el = p.document.createElement('div');
+  el.className = 'message-in';
+  el.setAttribute('data-id', 'A5NOVA000001');
+  el.innerHTML = '<div class="copyable-text" data-pre-plain-text="[10:05, 01/09/2026] Marcos: "><span class="selectable-text"></span></div>';
+  el.querySelector('.selectable-text').textContent = textoMsg;
+  p.document.getElementById('rolagem').appendChild(el);
+}
+
+// ---------------------------------------------------------------- mover para "Respondeu"
+test('lead respondeu e o card está antes de "Respondeu": pede para mover uma vez e o cartão mostra a etapa nova', async () => {
+  const srv = servidorFalso();
+  const p = abrir(srv);
+  await esperar(() => srv.pedidos.respondeu.length === 1, { motivo: 'pedido para mover' });
+  assert.deepEqual(srv.pedidos.respondeu[0], { action: 'crmRespondeu', telefone: '5571999998888', nome: '', contatoId: '', dealId: 'd1' });
+  await esperar(() => /Movido para "Respondeu" no RD\./.test(texto(p)), { motivo: 'aviso no cartão' });
+  assert.match(texto(p), /Respondeu · Funil SDR/, 'a etapa do cartão já é a nova');
+  assert.doesNotMatch(texto(p), /Contato iniciado/);
+  await dormir(120);
+  assert.equal(srv.pedidos.respondeu.length, 1, 'não pede de novo');
+  assert.deepEqual(srv.pedidos.ficha[0].conversa, { telefone: '5571999998888', nome: '+55 71 99999-8888' }, 'a ficha sabe de que conversa é');
+  p.fechar();
+});
+
+test('só eu falei: nada é movido; quando a resposta do lead chega, aí move', async () => {
+  const srv = servidorFalso();
+  const p = abrir(srv, SO_EU);
+  await fichaNaTela(p);
+  await dormir(120);
+  assert.equal(srv.pedidos.respondeu.length, 0, 'lead ainda não respondeu');
+  chegarMensagemDoLead(p);
+  await esperar(() => srv.pedidos.respondeu.length === 1, { motivo: 'move quando o lead responde' });
+  p.fechar();
+});
+
+test('não tenta mover: card já adiante, automação desligada para a chave, ou lead que só escreveu antes de mim', async () => {
+  const adiante = servidorFalso({ podeResponder: false, etapa: 'Qualificado' });
+  const p1 = abrir(adiante);
+  await fichaNaTela(p1);
+  const desligada = servidorFalso({ automacao: false });
+  const p2 = abrir(desligada);
+  await fichaNaTela(p2);
+  const leadPrimeiro = servidorFalso();
+  const p3 = abrir(leadPrimeiro, [{ from: 'eles', texto: 'Oi, quero saber mais' }, { from: 'eu', texto: 'Oi! Claro' }]);
+  await fichaNaTela(p3);
+  await dormir(150);
+  assert.equal(adiante.pedidos.respondeu.length, 0);
+  assert.equal(desligada.pedidos.respondeu.length, 0);
+  assert.equal(desligada.pedidos.marca.length, 0);
+  assert.equal(p2.document.getElementById('cr-etiquetas'), null, 'sem automação o cartão não tem etiquetas');
+  assert.equal(leadPrimeiro.pedidos.respondeu.length, 0);
+  p1.fechar();
+  p2.fechar();
+  p3.fechar();
+});
+
+test('o RD não deixou mover: o cartão diz o motivo e não fica insistindo', async () => {
+  const srv = servidorFalso({ mover: () => ({ ok: false, erro: 'O RD Station não deixou alterar este card.' }) });
+  const p = abrir(srv);
+  await esperar(() => /Não movi o card para "Respondeu": O RD Station não deixou alterar este card\./.test(texto(p)), { motivo: 'aviso de erro' });
+  assert.match(texto(p), /Contato iniciado · Funil SDR/, 'a etapa continua a que o RD tem');
+  chegarMensagemDoLead(p);
+  await dormir(150);
+  assert.equal(srv.pedidos.respondeu.length, 1);
+  p.fechar();
+});
+
+test('servidor diz que o card já estava adiante: nada muda na tela', async () => {
+  const srv = servidorFalso({ mover: () => ({ ok: true, movido: false, motivo: 'ja-adiante' }) });
+  const p = abrir(srv);
+  await esperar(() => srv.pedidos.respondeu.length === 1, { motivo: 'pedido' });
+  await dormir(80);
+  assert.match(texto(p), /Contato iniciado · Funil SDR/);
+  assert.doesNotMatch(texto(p), /Movido|Não movi/);
+  p.fechar();
+});
+
+// ---------------------------------------------------------------- etiqueta "Qualificado"
+test('etiqueta Qualificado: aparece quando o lead está marcado; dá para tirar e colocar à mão', async () => {
+  const srv = servidorFalso({ podeResponder: false, etapa: 'Ultima tentativa', marca: { ...SEM_MARCA, qualificado: true } });
+  const p = abrir(srv);
+  await esperar(() => /QUALIFICADO/.test(etiquetas(p)), { motivo: 'etiqueta' });
+  botaoPorTitulo(p, 'Tirar a etiqueta Qualificado').click();
+  await esperar(() => srv.pedidos.marca.length === 1, { motivo: 'pedido para tirar' });
+  assert.deepEqual(srv.pedidos.marca[0], { action: 'leadMarca', telefone: '5571999998888', nome: '+55 71 99999-8888', qualificado: false, manual: true });
+  await esperar(() => /\+ Qualificado/.test(etiquetas(p)) && !/QUALIFICADO/.test(etiquetas(p)), { motivo: 'sem a etiqueta' });
+  botaoPorTitulo(p, 'Marcar este lead como qualificado').click();
+  await esperar(() => srv.pedidos.marca.length === 2, { motivo: 'pedido para marcar' });
+  assert.equal(srv.pedidos.marca[1].qualificado, true);
+  assert.equal(srv.pedidos.marca[1].manual, true);
+  await esperar(() => /QUALIFICADO/.test(etiquetas(p)), { motivo: 'etiqueta de volta' });
+  p.fechar();
+});
+
+test('as etiquetas ficam à vista com o cartão minimizado', async () => {
+  const srv = servidorFalso({ podeResponder: false, marca: { qualificado: true, agendadoPara: '2031-03-15T15:00', agendaFonteTs: 5 } });
+  const p = abrir(srv, RESPONDEU, { storage: { fichaCrmMinimizada: true } });
+  await esperar(() => /QUALIFICADO/.test(etiquetas(p)), { motivo: 'etiquetas' });
+  assert.match(etiquetas(p), /Agendado: \S+, 15\/03 às 15:00/);
+  assert.doesNotMatch(texto(p), /Funil SDR/, 'o corpo da ficha segue minimizado');
+  p.fechar();
+});
+
+// ---------------------------------------------------------------- agendamento
+const DIA_CURTO = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
+const AGENDOU = [
+  { from: 'eu', texto: 'Oi Marcos, tudo bem?', hora: '09:00, 01/09/2026' },
+  { from: 'eles', texto: 'Tudo! Pode ser sim', hora: '09:30, 01/09/2026' },
+  { from: 'eu', texto: 'Perfeito! Sua reunião ficou agendada para 15/03/2031 às 15h com o nosso especialista.', hora: '10:00, 01/09/2026' },
+];
+const TS_AGENDOU = new Date(2026, 8, 1, 10, 0).getTime();
+
+test('agendamento dito na conversa: o cartão mostra o dia e a hora e o servidor guarda só a data', async () => {
+  const srv = servidorFalso({ podeResponder: false, etapa: 'Qualificado' });
+  const p = abrir(srv, AGENDOU);
+  await esperar(() => srv.pedidos.marca.length === 1, { motivo: 'agendamento enviado' });
+  assert.deepEqual(srv.pedidos.marca[0], {
+    action: 'leadMarca', telefone: '5571999998888', nome: '+55 71 99999-8888', agendadoPara: '2031-03-15T15:00', fonteTs: TS_AGENDOU,
+  }, 'vai o dia e a hora — nenhum texto da conversa');
+  const dia = DIA_CURTO[new Date(2031, 2, 15).getDay()];
+  await esperar(() => etiquetas(p).includes(`Agendado: ${dia}, 15/03 às 15:00`) && /QUALIFICADO/.test(etiquetas(p)), { motivo: 'etiquetas no cartão' });
+  await dormir(120);
+  assert.equal(srv.pedidos.marca.length, 1, 'a mesma mensagem não é enviada de novo');
+
+  // apagar: some do cartão e a mesma mensagem não o traz de volta
+  botaoPorTitulo(p, 'Apagar este agendamento').click();
+  await esperar(() => srv.pedidos.marca.length === 2, { motivo: 'pedido para apagar' });
+  assert.equal(srv.pedidos.marca[1].limparAgenda, true);
+  await esperar(() => !/Agendado/.test(etiquetas(p)), { motivo: 'agendamento fora do cartão' });
+  chegarMensagemDoLead(p, 'Combinado');
+  await dormir(150);
+  assert.equal(srv.pedidos.marca.length, 2);
+  assert.doesNotMatch(etiquetas(p), /Agendado/);
+  p.fechar();
+});
+
+test('agendamento já anotado para esta mensagem: não reenvia; reunião que já passou aparece como "Estava agendado"', async () => {
+  const srv = servidorFalso({ podeResponder: false, marca: { qualificado: true, agendadoPara: '2020-01-10T09:00', agendaFonteTs: TS_AGENDOU } });
+  const p = abrir(srv, AGENDOU);
+  const dia = DIA_CURTO[new Date(2020, 0, 10).getDay()];
+  await esperar(() => etiquetas(p).includes(`Estava agendado: ${dia}, 10/01 às 09:00`), { motivo: 'agendamento guardado' });
+  await dormir(150);
+  assert.equal(srv.pedidos.marca.length, 0);
+  p.fechar();
+});
+
+test('remarcou: uma mensagem mais nova troca o agendamento do cartão', async () => {
+  const srv = servidorFalso({ podeResponder: false, marca: { qualificado: true, agendadoPara: '2020-01-10T09:00', agendaFonteTs: TS_AGENDOU - 60000 } });
+  const p = abrir(srv, AGENDOU);
+  await esperar(() => srv.pedidos.marca.length === 1, { motivo: 'novo agendamento' });
+  assert.equal(srv.pedidos.marca[0].agendadoPara, '2031-03-15T15:00');
+  await esperar(() => /Agendado: \S+, 15\/03 às 15:00/.test(etiquetas(p)), { motivo: 'cartão atualizado' });
+  p.fechar();
+});
+
+test('contato salvo com nome: a etiqueta vale para a conversa (nome), mesmo sem telefone', async () => {
+  const srv = servidorFalso({ podeResponder: false });
+  const p = abrir(srv, RESPONDEU, { contato: 'Marcos PRONIX Pereira' });
+  await fichaNaTela(p);
+  assert.deepEqual(srv.pedidos.ficha[0].conversa, { telefone: '', nome: 'Marcos PRONIX Pereira' });
+  botaoPorTitulo(p, 'Marcar este lead como qualificado').click();
+  await esperar(() => srv.pedidos.marca.length === 1, { motivo: 'marca' });
+  assert.deepEqual(srv.pedidos.marca[0], { action: 'leadMarca', telefone: '', nome: 'Marcos PRONIX Pereira', qualificado: true, manual: true });
+  p.fechar();
+});
+
+// ---------------------------------------------------------------- report gerado = qualificado
+test('report gerado: o lead ganha a etiqueta Qualificado (e o agendamento lido na conversa inteira)', async () => {
+  const srv = servidorFalso({ podeResponder: false });
+  const p = abrir(srv, RESPONDEU);
+  await fichaNaTela(p);
+  assert.match(etiquetas(p), /\+ Qualificado/);
+  p.iniciar();
+  await esperar(() => srv.pedidos.marca.some((m) => m.origem === 'report'), { motivo: 'marca do report' });
+  assert.deepEqual(srv.pedidos.marca.find((m) => m.origem === 'report'), {
+    action: 'leadMarca', telefone: '5571999998888', nome: '+55 71 99999-8888', qualificado: true, origem: 'report',
+  });
+  await esperar(() => /QUALIFICADO/.test(etiquetas(p)), { motivo: 'etiqueta no cartão' });
+  assert.deepEqual(srv.pedidos.report[0].mensagens.map((m) => m.content), RESPONDEU.map((m) => m.texto), 'o report continua lendo só a conversa');
+
+  // sem a automação, gerar report não marca nada
+  const sem = servidorFalso({ automacao: false });
+  const q = abrir(sem, RESPONDEU);
+  await fichaNaTela(q);
+  q.iniciar();
+  await esperar(() => sem.pedidos.report.length === 1, { motivo: 'report sem automação' });
+  await dormir(100);
+  assert.equal(sem.pedidos.marca.length, 0);
+  p.fechar();
+  q.fechar();
+});

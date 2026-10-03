@@ -23,6 +23,7 @@ const db = require('./src/db');
 const base = require('./src/base');
 const diario = require('./src/diario');
 const crm = require('./src/crm');
+const leads = require('./src/leads');
 const { gerarResumoRapido } = require('./src/resumoRapido');
 const coachIa = require('./src/coach');
 const inteligencia = require('./src/inteligencia');
@@ -142,7 +143,7 @@ app.get('/api/eu', auth, (req, res) => {
   res.json({
     ok: true, nome: req.usuario.nome, id: req.usuario.id, papel: req.usuario.papel,
     // O que o master liberou para esta chave (a extensão mostra no popup).
-    coach: Boolean(req.usuario.coach), fichaCrm: Boolean(req.usuario.fichaCrm),
+    coach: Boolean(req.usuario.coach), fichaCrm: Boolean(req.usuario.fichaCrm), automacao: Boolean(req.usuario.automacao),
   });
 });
 
@@ -174,6 +175,7 @@ app.patch('/api/admin/usuarios/:id', master, async (req, res) => {
     let ok;
     if (typeof corpo.fichaCrm === 'boolean') ok = await usuarios.definirFichaCrm(req.params.id, corpo.fichaCrm);
     else if (typeof corpo.coach === 'boolean') ok = await usuarios.definirCoach(req.params.id, corpo.coach);
+    else if (typeof corpo.automacao === 'boolean') ok = await usuarios.definirAutomacao(req.params.id, corpo.automacao);
     else ok = await usuarios.definirPapel(req.params.id, String(corpo.papel || ''));
     if (!ok) return res.status(404).json({ erro: 'Usuário não encontrado.' });
     res.json({ ok: true });
@@ -528,11 +530,85 @@ app.post('/api/crm/lead', auth, async (req, res) => {
   try {
     // O master escolhe quem vê a ficha (aba Acessos). Desligado: a extensão não mostra nada e o RD nem é consultado.
     if (!req.usuario.fichaCrm) return res.json({ configurado: false, coach: Boolean(req.usuario.coach) });
-    const { telefone, nome, contatoId, dealId, lembrar } = req.body || {};
+    const { telefone, nome, contatoId, dealId, lembrar, conversa } = req.body || {};
+    const r = await crm.consultarLead({ telefone, nome, contatoId, dealId, lembrar: lembrar === true });
     // "coach" avisa a extensão se este usuário vê o botão Coach da conversa.
-    res.json({ ...(await crm.consultarLead({ telefone, nome, contatoId, dealId, lembrar: lembrar === true })), coach: Boolean(req.usuario.coach) });
+    const extra = { coach: Boolean(req.usuario.coach) };
+    if (req.usuario.automacao) Object.assign(extra, await automacaoDoLead(r, conversaDoPedido(conversa, { telefone, nome }), req.usuario));
+    res.json({ ...r, ...extra });
   } catch (err) {
     res.status(502).json({ erro: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Automação do cartão (só para quem o master ligou em Acessos; padrão: só o master):
+//  - mover o card para "Respondeu" no RD quando o lead responde no WhatsApp;
+//  - etiqueta "Qualificado" e o dia/horário agendado, lembrados por lead (src/leads.js).
+// ---------------------------------------------------------------------------
+
+/** De que conversa do WhatsApp se trata (telefone e nome do cabeçalho) — a busca no RD pode ter sido por outro dado. */
+function conversaDoPedido(conversa, reserva = {}) {
+  const c = conversa && typeof conversa === 'object' ? conversa : reserva;
+  return { telefone: String(c.telefone || '').slice(0, 30), nome: String(c.nome || '').slice(0, 80) };
+}
+
+/** O que a extensão precisa para as etiquetas e para saber se vale tentar mover o card. Falha aqui nunca derruba a ficha. */
+async function automacaoDoLead(r, conversa, usuario) {
+  const saida = { automacao: true };
+  try {
+    let marca = await leads.ler(conversa);
+    const etapa = (r.ficha && r.ficha.negociacao && r.ficha.negociacao.etapa) || '';
+    // Card na etapa "Qualificado": a etiqueta fica lembrada mesmo que depois ele mude de etapa (remarcou, sumiu).
+    if (crm.ehEtapaQualificado(etapa) && !(marca && (marca.qualificado || marca.manual))) {
+      marca = await leads.marcar(conversa, { qualificado: true, origem: 'rd', por: usuario.nome });
+    }
+    saida.marca = leads.publica(marca);
+  } catch (err) {
+    console.error('Falha ao ler a marca do lead:', err.message);
+  }
+  saida.podeResponder = r.encontrado ? await crm.antesDeRespondeu(r.ficha).catch(() => false) : false;
+  return saida;
+}
+
+const semAutomacao = (req, res) => {
+  if (req.usuario.automacao) return false;
+  res.status(403).json({ erro: 'Automação do cartão não liberada para este usuário.' });
+  return true;
+};
+
+/** O lead respondeu no WhatsApp: avança o card para "Respondeu" (só se ainda estiver antes dela). */
+app.post('/api/crm/respondeu', auth, async (req, res) => {
+  try {
+    if (semAutomacao(req, res)) return;
+    if (!req.usuario.fichaCrm) return res.status(403).json({ erro: 'Ficha do lead desligada para este usuário.' });
+    const { telefone, nome, contatoId, dealId } = req.body || {};
+    res.json(await crm.moverParaRespondeu({ telefone, nome, contatoId, dealId }, { usuarioNome: req.usuario.nome }));
+  } catch (err) {
+    res.status(502).json({ erro: err.message });
+  }
+});
+
+/** Etiqueta "Qualificado" (marcar/desmarcar à mão ou leitura automática) e o agendamento lido na conversa. */
+app.post('/api/lead/marca', auth, async (req, res) => {
+  try {
+    if (semAutomacao(req, res)) return;
+    const b = req.body || {};
+    const conversa = conversaDoPedido({ telefone: b.telefone, nome: b.nome });
+    const campos = { por: req.usuario.nome };
+    if (typeof b.qualificado === 'boolean') Object.assign(campos, { qualificado: b.qualificado, manual: b.manual === true, origem: b.origem });
+    if (b.limparAgenda === true) campos.limparAgenda = true;
+    else if (b.agendadoPara !== undefined) {
+      if (!leads.QUANDO_OK.test(String(b.agendadoPara))) return res.status(400).json({ erro: 'Data do agendamento inválida.' });
+      // Quem tem reunião marcada passou pela qualificação: a etiqueta entra junto (se ninguém a tirou à mão).
+      Object.assign(campos, { agendadoPara: b.agendadoPara, fonteTs: b.fonteTs });
+      if (campos.qualificado === undefined) Object.assign(campos, { qualificado: true, origem: 'agenda' });
+    }
+    const marca = await leads.marcar(conversa, campos);
+    if (!marca) return res.status(400).json({ erro: 'Conversa sem telefone nem nome.' });
+    res.json({ ok: true, marca: leads.publica(marca) });
+  } catch (err) {
+    res.status(500).json({ erro: err.message });
   }
 });
 

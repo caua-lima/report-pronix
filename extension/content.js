@@ -955,6 +955,8 @@
     jobEmAndamento = true;
     capturaAtiva = true;
     try {
+      // De qual conversa é este report (o SDR pode trocar de conversa enquanto a IA escreve).
+      const conversaDoJob = conversaAbertaAgora();
       mostrarBadge({
         texto:
           '<b>Lendo a conversa…</b><br>Capturando e transcrevendo áudios pode demorar um pouco. ' +
@@ -1053,6 +1055,12 @@
         arquivoBase64: resp.arquivoBase64,
       });
       anexarEscolhaDeCloser(resp);
+      // Report gerado = lead qualificado: a etiqueta entra no cartão. E a leitura completa (com os áudios
+      // transcritos) pode trazer o agendamento que não estava em texto.
+      if (ficha.automacao && conversaDoJob) {
+        enviarMarca(conversaDoJob, { qualificado: true, origem: 'report' });
+        anotarAgendamento(mensagens, conversaDoJob);
+      }
     } catch (e) {
       mostrarBadge({ texto: escHtml(e.message), cor: '#ff6b6b' });
     } finally {
@@ -1101,7 +1109,14 @@
     }
     return achados.size === 1 ? [...achados.values()][0] : '';
   }
-  const ficha = { ligada: true, minimizada: false, chave: null, fechadaPara: null, seq: 0, timer: null, vigia: null, ultimoEstado: null, coach: false };
+  const ficha = {
+    ligada: true, minimizada: false, chave: null, fechadaPara: null, seq: 0, timer: null, vigia: null, ultimoEstado: null, coach: false,
+    automacao: false, // o master ligou a automação para esta chave (mover para "Respondeu", etiqueta e agendamento)
+    conversa: null, // { telefone, nome } da conversa aberta: é por ela que o servidor lembra a etiqueta
+  };
+  // Leitura do agendamento e do "lead respondeu" (agenda.js, carregado antes deste arquivo).
+  const agendaLib = (typeof globalThis !== 'undefined' && globalThis.__crAgenda) || null;
+  const auto = { assinatura: '', tentados: new Set() };
   // Resumo rápido por conversa (só na memória desta aba): some ao recarregar o WhatsApp.
   const resumos = new Map();
   const coaches = new Map(); // coach da conversa, por conversa (só na memória desta aba)
@@ -1210,7 +1225,9 @@
     redesenharFicha();
     const badgeAntes = !!document.getElementById(BADGE_ID);
     try {
+      const conversa = ficha.conversa;
       const { mensagens, nome } = await coletarConversa('ficha', true);
+      anotarAgendamento(mensagens, conversa); // a leitura completa (com áudios) pode trazer o agendamento
       const r = await new Promise((res) => chrome.runtime.sendMessage({ action: 'resumoRapido', mensagens, nome }, res));
       if (!r || !r.ok) throw new Error((r && r.erro) || 'Não consegui gerar o resumo.');
       resumos.set(chave, { tipo: 'ok', dados: r.resumo });
@@ -1241,7 +1258,9 @@
     redesenharFicha();
     const badgeAntes = !!document.getElementById(BADGE_ID);
     try {
+      const conversa = ficha.conversa;
       const { mensagens, nome } = await coletarConversa('ficha', true);
+      anotarAgendamento(mensagens, conversa);
       const r = await new Promise((res) => chrome.runtime.sendMessage({ action: 'coach', mensagens, nome }, res));
       if (!r || !r.ok) throw new Error((r && r.erro) || 'Não consegui gerar o coach.');
       coaches.set(chave, { tipo: 'ok', dados: r.coach, contexto: nome || '' });
@@ -1393,6 +1412,143 @@
     return caixa;
   }
 
+  // ---------------------------------------------------------------------------
+  // Automação do cartão (só para quem o master ligou em Acessos): o card avança para "Respondeu" no RD
+  // quando o lead responde, e o cartão mostra a etiqueta "Qualificado" e o dia/horário agendado.
+  // A leitura é local e leve (mensagens que já estão na tela); para o servidor vai só o resultado.
+  // ---------------------------------------------------------------------------
+  const chaveDaConversa = (c) => (c ? c.telefone || c.nome : '');
+
+  /** Mensagens que já estão na tela, sem rolar a conversa nem tocar áudio. */
+  function mensagensVisiveis(els) {
+    const out = [];
+    for (const el of els) {
+      try {
+        const m = ehAudio(el) ? null : extrairMensagem(el);
+        // Áudio, foto ou figurinha também contam como "alguém falou" — só não têm texto para ler.
+        out.push(m || { from: ehDeMim(el) ? 'eu' : 'eles', type: 'outro', content: '', timestamp: null });
+      } catch (_) {
+        /* mensagem que não deu para ler: fica de fora */
+      }
+    }
+    return out;
+  }
+
+  /** Guarda a etiqueta/agendamento no servidor e atualiza o cartão se a conversa aberta ainda for a mesma. */
+  function enviarMarca(conversa, campos) {
+    if (!conversa) return;
+    try {
+      chrome.runtime.sendMessage({ action: 'leadMarca', telefone: conversa.telefone, nome: conversa.nome, ...campos }, (r) => {
+        if (chrome.runtime.lastError || !r || !r.ok || !r.marca) return;
+        if (ficha.chave === chaveDaConversa(conversa) && ficha.ultimoEstado) {
+          ficha.ultimoEstado.marca = r.marca;
+          redesenharFicha();
+        }
+      });
+    } catch (_) {
+      /* extensão recarregada: fica para a próxima vez que a conversa abrir */
+    }
+  }
+
+  /** Achou na conversa um agendamento mais novo que o anotado? Mostra na hora e guarda. */
+  function anotarAgendamento(mensagens, conversa) {
+    if (!ficha.automacao || !agendaLib || !conversa) return;
+    const achado = agendaLib.detectarAgendamento(mensagens, new Date());
+    if (!achado) return;
+    const est = ficha.chave === chaveDaConversa(conversa) ? ficha.ultimoEstado : null;
+    const marca = (est && est.marca) || {};
+    // A mensagem de onde saiu (ou uma mais nova) já foi anotada — ou o usuário apagou o agendamento dela.
+    if ((typeof marca.agendaFonteTs === 'number' ? marca.agendaFonteTs : -1) >= achado.fonteTs) return;
+    if (est && est.tipo !== 'carregando') {
+      est.marca = { ...marca, agendadoPara: achado.quando, agendaFonteTs: achado.fonteTs };
+      redesenharFicha();
+    }
+    enviarMarca(conversa, { agendadoPara: achado.quando, fonteTs: achado.fonteTs });
+  }
+
+  /** Lead respondeu e o card ainda está antes de "Respondeu": pede ao servidor para avançar no RD (uma vez por card). */
+  function avancarParaRespondeu(est, mensagens) {
+    if (est.tipo !== 'ok' || !est.podeResponder || !agendaLib || !agendaLib.leadRespondeu(mensagens)) return;
+    const card = ((est.ficha && est.ficha.negociacoes) || []).find((c) => c.escolhida);
+    if (!card || !card.id || auto.tentados.has(card.id)) return;
+    auto.tentados.add(card.id);
+    const b = est.busca || {};
+    try {
+      chrome.runtime.sendMessage({ action: 'crmRespondeu', telefone: b.telefone || '', nome: b.nome || '', contatoId: b.contatoId || '', dealId: card.id }, (r) => {
+        if (chrome.runtime.lastError || !r) return;
+        est.podeResponder = false;
+        if (r.ok && r.movido) {
+          if (est.ficha.negociacao) est.ficha.negociacao.etapa = r.para;
+          card.etapa = r.para;
+          est.aviso = { texto: `Movido para "${r.para}" no RD.` };
+        } else if (!r.ok) {
+          est.aviso = { erro: true, texto: 'Não movi o card para "Respondeu": ' + (r.erro || 'o servidor não respondeu.') };
+        } else {
+          return; // o card já estava adiante (ou o funil não tem essa etapa): nada a mostrar
+        }
+        if (ficha.ultimoEstado === est) redesenharFicha();
+      });
+    } catch (_) {
+      /* extensão recarregada */
+    }
+  }
+
+  /** Roda a cada tique do vigia, mas só trabalha quando as mensagens na tela mudaram. */
+  function automatizar() {
+    const est = ficha.ultimoEstado;
+    if (!ficha.automacao || !agendaLib || !est || est.tipo === 'carregando' || jobEmAndamento) return;
+    const els = acharMensagens(document.querySelector('#main') || document);
+    const ultimo = els.length ? els[els.length - 1] : null;
+    const assinatura = [ficha.seq, els.length, ultimo ? ultimo.getAttribute('data-id') || (ultimo.textContent || '').length : ''].join('|');
+    if (assinatura === auto.assinatura) return;
+    auto.assinatura = assinatura;
+    const mensagens = mensagensVisiveis(els);
+    avancarParaRespondeu(est, mensagens);
+    anotarAgendamento(mensagens, ficha.conversa);
+  }
+
+  /** Linha de etiquetas no topo do cartão: "Qualificado" (liga/desliga à mão) e o agendamento. */
+  function blocoEtiquetas(estado) {
+    if (!ficha.automacao || estado.tipo === 'carregando') return null;
+    const marca = estado.marca || {};
+    const conversa = ficha.conversa;
+    const linha = elem('div', 'display:flex;flex-wrap:wrap;align-items:center;gap:5px;margin-top:7px');
+    linha.id = 'cr-etiquetas';
+    const base = 'border-radius:999px;padding:2px 9px;font-size:10.5px;font-weight:700;line-height:1.5;letter-spacing:.04em;font-family:inherit';
+    const tirar = (titulo, aoClicar) => {
+      const b = elem('button', 'cursor:pointer;border:0;background:transparent;color:#8b98a5;font-size:13px;line-height:1;padding:0 2px;font-family:inherit', '×');
+      b.type = 'button';
+      b.title = titulo;
+      b.setAttribute('aria-label', titulo);
+      b.addEventListener('click', aoClicar);
+      return b;
+    };
+    // Mostra na hora e guarda no servidor (que devolve a marca final).
+    const mudar = (campos, local) => {
+      estado.marca = { ...marca, ...local };
+      redesenharFicha();
+      enviarMarca(conversa, campos);
+    };
+    if (marca.qualificado) {
+      linha.appendChild(elem('span', `${base};border:1px solid #25d366;background:rgba(37,211,102,.14);color:#25d366`, 'QUALIFICADO'));
+      linha.appendChild(tirar('Tirar a etiqueta Qualificado', () => mudar({ qualificado: false, manual: true }, { qualificado: false })));
+    } else {
+      const b = elem('button', `${base};cursor:pointer;border:1px dashed #3a4a5a;background:transparent;color:#8b98a5`, '+ Qualificado');
+      b.type = 'button';
+      b.title = 'Marcar este lead como qualificado';
+      b.addEventListener('click', () => mudar({ qualificado: true, manual: true }, { qualificado: true }));
+      linha.appendChild(b);
+    }
+    const ag = marca.agendadoPara && agendaLib ? agendaLib.descrever(marca.agendadoPara, new Date()) : null;
+    if (ag) {
+      const cor = ag.passou ? '#f0ad4e' : '#ffc400';
+      linha.appendChild(elem('span', `${base};border:1px solid ${cor};background:rgba(255,196,0,.1);color:${cor}`, (ag.passou ? 'Estava agendado: ' : 'Agendado: ') + ag.texto));
+      linha.appendChild(tirar('Apagar este agendamento', () => mudar({ limparAgenda: true }, { agendadoPara: '' })));
+    }
+    if (estado.aviso) linha.appendChild(elem('div', `flex-basis:100%;font-size:11px;color:${estado.aviso.erro ? '#ff6b6b' : '#25d366'}`, estado.aviso.texto));
+    return linha;
+  }
+
   function renderFicha(estado) {
     if (!ficha.ligada || (ficha.fechadaPara && ficha.fechadaPara === ficha.chave)) return;
     ficha.ultimoEstado = estado;
@@ -1440,6 +1596,9 @@
         btnX
       )
     );
+    // As etiquetas ficam à vista mesmo com o cartão minimizado.
+    const etiquetas = blocoEtiquetas(estado);
+    if (etiquetas) el.appendChild(etiquetas);
     if (ficha.minimizada) return;
 
     const corpo = elem('div', 'margin-top:8px');
@@ -1534,7 +1693,7 @@
     renderFicha({ tipo: 'carregando', busca });
     let r;
     try {
-      r = await new Promise((res) => chrome.runtime.sendMessage({ action: 'crmLead', ...busca }, res));
+      r = await new Promise((res) => chrome.runtime.sendMessage({ action: 'crmLead', ...busca, ...(ficha.conversa ? { conversa: ficha.conversa } : {}) }, res));
     } catch (_) {
       // Extensão atualizada/recarregada: este script ficou órfão. Para de vigiar em silêncio.
       clearInterval(ficha.vigia);
@@ -1544,12 +1703,25 @@
     if (seq !== ficha.seq) return; // resposta de uma conversa que o SDR já deixou
     if (r && typeof r.coach === 'boolean') ficha.coach = r.coach; // o servidor diz se este usuário vê o Coach
     if (!r || !r.ok) return renderFicha({ tipo: 'erro', erro: (r && r.erro) || 'Não consegui consultar o RD Station.', busca });
+    // Automação (mover para "Respondeu", etiqueta e agendamento): o servidor diz se o master ligou para esta chave.
+    ficha.automacao = r.automacao === true;
+    const extras = ficha.automacao ? { marca: r.marca || null, podeResponder: r.podeResponder === true } : {};
     // Sem ficha do RD para este usuário (CRM desligado no servidor ou popup do lead desligado):
     // quem tem o Coach continua vendo o cartão, só com o resumo e o coach.
-    if (!r.configurado) return ficha.coach ? renderFicha({ tipo: 'sem-crm', busca }) : esconderFicha();
-    if (r.encontrado && r.ficha) return renderFicha({ tipo: 'ok', ficha: r.ficha, busca });
-    if (r.candidatos && r.candidatos.length) return renderFicha({ tipo: 'candidatos', candidatos: r.candidatos, busca });
-    renderFicha({ tipo: 'nao-encontrado', busca });
+    if (!r.configurado) return ficha.coach ? renderFicha({ tipo: 'sem-crm', busca, ...extras }) : esconderFicha();
+    if (r.encontrado && r.ficha) return renderFicha({ tipo: 'ok', ficha: r.ficha, busca, ...extras });
+    if (r.candidatos && r.candidatos.length) return renderFicha({ tipo: 'candidatos', candidatos: r.candidatos, busca, ...extras });
+    renderFicha({ tipo: 'nao-encontrado', busca, ...extras });
+  }
+
+  /** A conversa aberta neste instante, sem esperar o próximo tique do vigia (null com a ficha desligada). */
+  function conversaAbertaAgora() {
+    try {
+      verificarConversa();
+    } catch (_) {
+      /* falha de leitura do DOM: fica com a última conversa conhecida */
+    }
+    return ficha.conversa;
   }
 
   /** A cada 1,5s: a conversa aberta mudou? Então busca a ficha do novo lead. */
@@ -1557,6 +1729,7 @@
     if (!ficha.ligada) return;
     if (!document.querySelector('#main')) {
       ficha.chave = null;
+      ficha.conversa = null;
       esconderFicha();
       return;
     }
@@ -1578,8 +1751,11 @@
     }
     posicionarFicha();
     const chave = telefone || nome;
-    if (!chave || chave === ficha.chave) return;
+    if (!chave) return;
+    if (chave === ficha.chave) return automatizar();
     ficha.chave = chave;
+    ficha.conversa = { telefone, nome };
+    ficha.ultimoEstado = null; // o que estava na tela era da conversa anterior
     ficha.fechadaPara = null;
     clearTimeout(ficha.timer);
     ficha.timer = setTimeout(() => consultarFicha({ telefone, nome: telefone && nome.replace(/\D/g, '') === telefone ? '' : nome }), 700);

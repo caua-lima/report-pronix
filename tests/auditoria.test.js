@@ -263,3 +263,44 @@ test('manifest: versão e descrição dentro do limite da Chrome Web Store', () 
   assert.ok(m.description.length <= 132, `descrição com ${m.description.length} caracteres`);
   assert.match(m.version, /^\d+\.\d+\.\d+$/);
 });
+
+// ---------------------------------------------------------------- automação do cartão
+test('automação: o service worker manda só a etiqueta e a data do agendamento — nunca texto de conversa', async () => {
+  const marca = { qualificado: true, agendadoPara: '2026-10-08T15:00', agendaFonteTs: 5 };
+  const { chamadas, enviar } = carregarBackground({ chave: 'k' }, { corpo: { ok: true, marca } });
+  const r = await enviar({
+    action: 'leadMarca', telefone: '5571999998888', nome: 'Marcos', agendadoPara: '2026-10-08T15:00', fonteTs: 5,
+    mensagens: [{ content: 'texto da conversa' }], server: 'https://evil.example',
+  });
+  assert.deepEqual(JSON.parse(JSON.stringify(r)), { ok: true, marca });
+  assert.equal(chamadas[0].url, 'https://report-closer.vercel.app/api/lead/marca');
+  assert.deepEqual(JSON.parse(chamadas[0].opts.body), { telefone: '5571999998888', nome: 'Marcos', agendadoPara: '2026-10-08T15:00', fonteTs: 5 });
+
+  await enviar({ action: 'leadMarca', telefone: '5571999998888', qualificado: false, manual: true });
+  assert.deepEqual(JSON.parse(chamadas[1].opts.body), { telefone: '5571999998888', nome: '', qualificado: false, manual: true, origem: '' });
+  await enviar({ action: 'leadMarca', nome: 'Marcos', limparAgenda: true, agendadoPara: '2026-10-08T15:00' });
+  assert.deepEqual(JSON.parse(chamadas[2].opts.body), { telefone: '', nome: 'Marcos', limparAgenda: true });
+});
+
+test('automação: "lead respondeu" vai para a rota de mover o card, só com a identificação do lead e do card', async () => {
+  const { chamadas, enviar } = carregarBackground({ chave: 'k' }, { corpo: { movido: true, de: 'Contato iniciado', para: 'Respondeu' } });
+  const r = await enviar({ action: 'crmRespondeu', telefone: '5571999998888', nome: '', contatoId: '', dealId: 'd1', mensagens: [{ content: 'x' }] });
+  assert.deepEqual(JSON.parse(JSON.stringify(r)), { ok: true, movido: true, de: 'Contato iniciado', para: 'Respondeu', motivo: '' });
+  assert.equal(chamadas[0].url, 'https://report-closer.vercel.app/api/crm/respondeu');
+  assert.equal(chamadas[0].opts.method, 'POST');
+  assert.deepEqual(JSON.parse(chamadas[0].opts.body), { telefone: '5571999998888', nome: '', contatoId: '', dealId: 'd1' });
+
+  // a consulta da ficha leva de que conversa é (para o servidor lembrar a etiqueta do lead certo)
+  await enviar({ action: 'crmLead', telefone: '71988887777', conversa: { telefone: '5571999998888', nome: 'Marcos', outro: 'x' } });
+  assert.deepEqual(JSON.parse(chamadas[1].opts.body).conversa, { telefone: '5571999998888', nome: 'Marcos' });
+});
+
+test('manifest e popup carregam o leitor de agendamento ANTES do content.js do WhatsApp', () => {
+  const m = JSON.parse(ler('extension/manifest.json'));
+  const grupo = m.content_scripts.find((c) => (c.js || []).includes('content.js'));
+  assert.deepEqual(grupo.js, ['agenda.js', 'content.js']);
+  assert.match(ler('extension/popup.js'), /arquivos: \['agenda\.js', 'content\.js'\]/, 'a injeção pelo popup segue a mesma ordem');
+  // o leitor de agendamento não fala com a rede nem com o servidor
+  const agenda = ler('extension/agenda.js');
+  assert.ok(!/fetch\(|chrome\.|XMLHttpRequest|sendMessage/.test(agenda));
+});

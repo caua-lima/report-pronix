@@ -23,6 +23,7 @@ function mostrarInfoExt(eu) {
   const partes = [];
   if (versao) partes.push('Extensão v' + versao);
   if (eu && typeof eu.coach === 'boolean') partes.push('Coach: ' + (eu.coach ? 'liberado' : 'não liberado'));
+  if (eu && eu.automacao === true) partes.push('Automação do RD: ligada');
   if (eu && eu.fichaCrm === false) partes.push('Ficha do lead: desligada pelo master');
   el.textContent = partes.join(' · ');
 }
@@ -115,14 +116,15 @@ async function abaAtiva() {
 }
 
 // Qual site está aberto: cada um tem seu content script e sua leitura de DOM.
+// "arquivos" = o que injetar se a página ainda não tiver o script, na mesma ordem do manifest.
 const PLATAFORMAS = [
-  { regex: /^https:\/\/web\.whatsapp\.com\//, arquivo: 'content.js', nome: 'WhatsApp Web' },
-  { regex: /^https:\/\/www\.instagram\.com\/direct\//, arquivo: 'content-instagram.js', nome: 'Instagram Direct' },
+  { regex: /^https:\/\/web\.whatsapp\.com\//, arquivos: ['agenda.js', 'content.js'], nome: 'WhatsApp Web' },
+  { regex: /^https:\/\/www\.instagram\.com\/direct\//, arquivos: ['content-instagram.js'], nome: 'Instagram Direct' },
 ];
 const plataformaDaAba = (url) => PLATAFORMAS.find((p) => p.regex.test(url || ''));
 
 // Envia "start" ao content script; injeta-o se ainda não estiver presente.
-async function enviarStart(tabId, server, arquivoContentScript) {
+async function enviarStart(tabId, server, arquivosContentScript) {
   const enviar = () =>
     new Promise((resolve) => {
       chrome.tabs.sendMessage(tabId, { action: 'start', server }, (resp) => {
@@ -134,7 +136,7 @@ async function enviarStart(tabId, server, arquivoContentScript) {
   let resp = await enviar();
   if (resp && resp.__semScript) {
     try {
-      await chrome.scripting.executeScript({ target: { tabId }, files: [arquivoContentScript] });
+      await chrome.scripting.executeScript({ target: { tabId }, files: arquivosContentScript });
     } catch (_) {
       throw new Error('Não consegui acessar a página. Recarregue-a (F5) e tente de novo.');
     }
@@ -193,7 +195,7 @@ async function gerar() {
     }
     const server = getServer();
     setStatus('Iniciando…', { loading: true });
-    await enviarStart(tab.id, server, plataforma.arquivo);
+    await enviarStart(tab.id, server, plataforma.arquivos);
     setStatus(
       '<b>Report iniciado!</b> Acompanhe o aviso no canto inferior direito da tela. ' +
         'Você pode fechar este popup, mas não troque de conversa até o report ficar pronto.',

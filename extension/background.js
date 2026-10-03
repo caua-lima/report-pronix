@@ -90,6 +90,35 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
+  // O lead respondeu: o servidor avança o card para "Respondeu" no RD (só se ainda estiver antes dessa etapa).
+  if (msg && msg.action === 'crmRespondeu') {
+    (async () => {
+      const corpo = {
+        telefone: String(msg.telefone || '').slice(0, 30),
+        nome: String(msg.nome || '').slice(0, 80),
+        contatoId: String(msg.contatoId || '').slice(0, 40),
+        dealId: String(msg.dealId || '').slice(0, 40),
+      };
+      const r = await chamar('/api/crm/respondeu', corpo, { timeoutMs: 25000 });
+      if (!r.ok) return sendResponse({ ok: false, erro: r.erro });
+      sendResponse({ ok: true, movido: r.data.movido === true, de: r.data.de || '', para: r.data.para || '', motivo: r.data.motivo || '' });
+    })();
+    return true;
+  }
+
+  // Etiqueta "Qualificado" e o dia/horário agendado do lead (vai só a data lida — nunca o texto da conversa).
+  if (msg && msg.action === 'leadMarca') {
+    (async () => {
+      const corpo = { telefone: String(msg.telefone || '').slice(0, 30), nome: String(msg.nome || '').slice(0, 80) };
+      if (typeof msg.qualificado === 'boolean') Object.assign(corpo, { qualificado: msg.qualificado, manual: msg.manual === true, origem: String(msg.origem || '').slice(0, 20) });
+      if (msg.limparAgenda === true) corpo.limparAgenda = true;
+      else if (msg.agendadoPara) Object.assign(corpo, { agendadoPara: String(msg.agendadoPara).slice(0, 16), fonteTs: Number(msg.fonteTs) || 0 });
+      const r = await chamar('/api/lead/marca', corpo, { timeoutMs: 20000 });
+      sendResponse(r.ok ? { ok: true, marca: r.data.marca || null } : { ok: false, erro: r.erro });
+    })();
+    return true;
+  }
+
   // O SDR marca o closer da reunião no aviso final do report.
   if (msg && msg.action === 'definirCloser') {
     (async () => {
@@ -136,6 +165,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         dealId: String(msg.dealId || '').slice(0, 40),
         lembrar: msg.lembrar === true,
       };
+      // A conversa aberta (cabeçalho do WhatsApp): é por ela que o servidor lembra a etiqueta e o agendamento.
+      if (msg.conversa && typeof msg.conversa === 'object') {
+        corpo.conversa = { telefone: String(msg.conversa.telefone || '').slice(0, 30), nome: String(msg.conversa.nome || '').slice(0, 80) };
+      }
       const r = await chamar('/api/crm/lead', corpo, { timeoutMs: 20000 });
       if (!r.ok) return sendResponse({ ok: false, erro: r.erro });
       sendResponse({ ok: true, ...r.data });
