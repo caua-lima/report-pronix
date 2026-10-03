@@ -9,37 +9,37 @@ const PERFIS = [
     chave: 'dominante',
     rotulo: 'Dominante',
     sinais: 'respostas curtas e diretas, vai ao ponto, quer saber resultado, prazo e preço logo, toma a frente da conversa, decide rápido, pouca paciência para rodeio',
-    conduzir: 'ser objetivo, falar de resultado e prazo, dar opções para ELE escolher, não enrolar nem contar história longa',
+    conduzir: 'responder direto ao que ele perguntou (inclusive valor), fazer a conta na hora, dar opções para ELE escolher e não enrolar: ele mesmo puxa o fechamento',
   },
   {
     chave: 'analitico',
     rotulo: 'Analítico',
     sinais: 'pede números, detalhes e passo a passo, pergunta "como funciona exatamente", compara opções, quer entender o método antes de avançar, respostas organizadas',
-    conduzir: 'trazer dados, processo e cases com número, responder com precisão, não pressionar: ele decide quando a conta fecha',
+    conduzir: 'falar de lucro e retorno (não de faturamento), mostrar o processo de validação de produto com estoque pequeno, deixar que leia o contrato e a garantia: ele decide quando a conta fecha',
   },
   {
     chave: 'cetico',
     rotulo: 'Cético',
     sinais: 'desconfia, pede prova e garantia, cita experiência ruim com curso/mentoria/golpe, questiona promessas, "isso funciona mesmo?"',
-    conduzir: 'abrir com prova social verificável e garantia, reconhecer a cautela como inteligência, nunca prometer demais',
+    conduzir: 'dizer a garantia exatamente como está no contrato, admitir o que pode dar errado e por quê, mostrar casos de quem começou sem nada e nunca prometer demais; se já pagou outra mentoria, responder ao que falhou lá',
   },
   {
     chave: 'relacional',
     rotulo: 'Relacional',
     sinais: 'conta a história pessoal, fala de família, sonho e sentimento, áudios longos, busca conexão e confiança na pessoa, responde com calor',
-    conduzir: 'criar conexão antes do método, ligar a solução ao sonho/família que ele citou, mostrar acompanhamento próximo',
+    conduzir: 'criar conexão verdadeira antes do método, ligar a solução ao motivo pessoal que ele citou, mostrar que o acompanhamento é feito por gente, não por robô',
   },
   {
     chave: 'cauteloso',
     rotulo: 'Cauteloso',
     sinais: 'hesita, pede tempo, quer consultar sócio/cônjuge, medo de errar ou perder dinheiro, "vou ver", respostas com ressalva',
-    conduzir: 'dar segurança (garantia, passo a passo, risco controlado), envolver o outro decisor, fechar pequenos compromissos',
+    conduzir: 'dar segurança com passo a passo e risco controlado, propor uma forma de pagamento que ele sustente mesmo no pior cenário, começar pelo que ele já tem e envolver quem decide junto',
   },
   {
     chave: 'entusiasta',
     rotulo: 'Entusiasta',
     sinais: 'animado, responde rápido, muitos emojis/exclamações, já se imagina vendendo, quer começar logo, topa as coisas com facilidade',
-    conduzir: 'aproveitar o embalo, ancorar em plano concreto e próximo passo com data, checar viabilidade para o entusiasmo virar compromisso',
+    conduzir: 'aproveitar o embalo, ancorar em plano concreto e próximo passo com data, e conferir valor total, cartão e limite antes de fechar para o entusiasmo virar compromisso',
   },
 ];
 

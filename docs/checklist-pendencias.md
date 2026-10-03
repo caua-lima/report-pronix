@@ -11,6 +11,15 @@ Detalhes técnicos em [`auditoria-pronix.md`](auditoria-pronix.md) e [`plano-imp
 - [x] 117 testes automáticos (`npm test`), sem rede e sem custo
 - [x] Merge local na `main`
 
+## Novo em 04/10: aprendizados das calls que fecharam (só servidor)
+
+- [x] 12 reuniões de closer analisadas: [analise-calls-vendas.md](analise-calls-vendas.md)
+- [x] Base v3, perfis (como conduzir) e coach (o que falta levantar) atualizados com isso
+- [x] Resultados da reunião e inteligência só com os reports do master; escolha de closer no aviso final só para o master
+- [x] Aba Acessos só para o master; número com a quantidade de closers
+- [ ] **Você:** ler a seção 7 da análise (garantia dita diferente do contrato, prazos de Full, preço de tabela variando)
+- [ ] **Você:** cadastrar os closers na aba Closers
+
 ## Novo em 03/10: inteligência comercial (extensão 1.10.0 + servidor)
 
 - [x] Coach reforçado: fila de modelos gratuitos (o `llama-3.3-70b` saiu da tabela do plano gratuito do Groq), não depende mais da ficha do RD, popup mostra "Coach: liberado"

@@ -7,7 +7,10 @@
 // Campo que ninguém escreveu ainda vem com o texto recomendado de src/baseInicial.js.
 
 const db = require('./db');
-const { VERSAO, PADRAO } = require('./baseInicial');
+const crypto = require('crypto');
+const { VERSAO, PADRAO, PADROES_ANTIGOS } = require('./baseInicial');
+
+const digital = (t) => crypto.createHash('sha256').update(String(t || '')).digest('hex').slice(0, 16);
 
 const CHAVE_DB = 'base';
 const CAMPOS = ['empresa', 'oferta', 'perfil', 'script', 'qualificacao', 'objecoes'];
@@ -20,7 +23,18 @@ async function ler() {
   // Nada gravado: vale a base recomendada (sem escrever no banco).
   if (!b || typeof b !== 'object') return { ...PADRAO, atualizadoEm: null, versao: VERSAO, recomendada: true, temAnterior: false };
 
-  // Base da versão anterior (4 campos): passa para a recomendada UMA vez, guardando o que havia
+  // Base que já estava numa versão recomendada mais antiga (2 em diante): o campo que ninguém editou
+  // recebe o texto novo; o que o master escreveu fica como está.
+  if (Number(b.versao) >= 2 && Number(b.versao) < VERSAO) {
+    const nova = { ...b, versao: VERSAO, atualizadoEm: new Date().toISOString() };
+    CAMPOS.forEach((c) => {
+      if (!texto(b[c]) || PADROES_ANTIGOS.has(digital(b[c]))) nova[c] = PADRAO[c];
+    });
+    await db.setJson(CHAVE_DB, nova);
+    return ler();
+  }
+
+  // Base da primeira versão (4 campos): passa para a recomendada UMA vez, guardando o que havia
   // em "anterior" — o master restaura pela aba Base se preferir o texto antigo.
   if ((Number(b.versao) || 1) < VERSAO) {
     const anterior = {};

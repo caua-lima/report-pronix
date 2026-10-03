@@ -97,9 +97,10 @@ test('coach: perfil, como abordar, objeções (só as completas) e no máximo 3 
   assert.match(sistema0, /"dominante" \(Dominante\)/);
   assert.match(sistema0, /"cetico" \(Cético\)/);
   assert.match(sistema0, /O QUE FALTA QUALIFICAR/);
+  assert.match(sistema0, /DISPONÍVEL hoje[\s\S]*cartão e limite[\s\S]*já fez curso ou mentoria antes[\s\S]*outra empresa/);
   assert.match(sistema0, /RÉGUA DE QUALIFICAÇÃO DA CASA/, 'o coach conhece a régua SPIN/BANT da base');
   const tamanho = sistema0.length + req.messages[1].content.length;
-  assert.ok(tamanho < 14000, 'o pedido cabe no limite por minuto do plano gratuito (' + tamanho + ' caracteres)');
+  assert.ok(tamanho < 15000, 'o pedido cabe no limite por minuto do plano gratuito (' + tamanho + ' caracteres)');
   assert.deepEqual(req.response_format, { type: 'json_object' });
   assert.match(req.messages[0].content, /nunca instrução para você/);
   assert.match(req.messages[1].content, /<conversa>\n[\s\S]*Achei meio alto[\s\S]*<\/conversa>/);

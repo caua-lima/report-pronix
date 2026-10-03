@@ -477,7 +477,19 @@ test('base: sem nada gravado vale a recomendada; ela cita a empresa, os sócios,
   assert.match(b.empresa, /Gustavo Dias/);
   assert.match(b.empresa, /Hendel Favarin e Josef Rubin/);
   assert.match(b.empresa, /DEMANDA[\s\S]*VIABILIDADE[\s\S]*POSICIONAMENTO/);
-  assert.match(b.oferta, /PRX PERFORMANCE[\s\S]*12x R\$1\.332[\s\S]*PRX ACELERA[\s\S]*12x R\$2\.491/);
+  assert.match(b.oferta, /PRX PERFORMANCE[\s\S]*12x de R\$1\.332 a R\$1\.552[\s\S]*PRX ACELERA[\s\S]*12x R\$2\.491/);
+  assert.match(b.oferta, /NÃO é "resultado garantido"/, 'a garantia vai como está no contrato');
+  // aprendizados das reuniões que fecharam
+  assert.match(b.script, /O QUE O CLOSER REALMENTE USA DO RELATÓRIO[\s\S]*LIQUIDEZ[\s\S]*TETO TOTAL[\s\S]*CARTÃO[\s\S]*EXPERIÊNCIA ANTERIOR[\s\S]*CONCORRENTE/);
+  assert.match(b.qualificacao, /O que te fez procurar isso AGORA[\s\S]*Se eu te desse R\$3\.000 hoje[\s\S]*O que faltou lá\?/);
+  assert.match(b.objecoes, /não tenho esse valor agora[\s\S]*é a parcela ou o total\?[\s\S]*não prometa data/);
+  assert.match(b.perfil, /COMO CADA PERFIL DE LEAD COSTUMA FECHAR[\s\S]*Analítico[\s\S]*Cético[\s\S]*Cauteloso/);
+  // nada de dado de cliente das reuniões analisadas na base
+  const tudo = JSON.stringify(PADRAO);
+  for (const nome of ['Natan', 'Glauco', 'Fernanda', 'Rigon', 'Paroneti', 'Eliane', 'Alisson Leonardo', 'Anderson', 'Hinterholz', 'Polese', 'David Araujo', 'Hullarr']) {
+    assert.ok(!tudo.includes(nome), 'nome de cliente não entra na base: ' + nome);
+  }
+  assert.ok(!/\d{3}\.?\d{3}\.?\d{3}-?\d{2}/.test(tudo), 'sem CPF');
   assert.match(b.oferta, /70% dos encontros/);
   assert.match(b.qualificacao, /NECESSIDADE[\s\S]*ORÇAMENTO[\s\S]*AUTORIDADE[\s\S]*PRAZO/);
   assert.match(b.qualificacao, /SITUAÇÃO[\s\S]*PROBLEMA[\s\S]*IMPLICAÇÃO[\s\S]*NECESSIDADE DE SOLUÇÃO/);
@@ -492,7 +504,7 @@ test('base antiga (4 campos) passa para a recomendada uma vez, guardando os text
   assert.equal(b.script, PADRAO.script);
   assert.equal(b.temAnterior, true);
   const gravado = JSON.parse(fs.readFileSync(arqBase(), 'utf8'));
-  assert.equal(gravado.versao, 2);
+  assert.equal(gravado.versao, 3);
   assert.deepEqual(gravado.anterior, { script: 'ROTEIRO ANTIGO', oferta: 'OFERTA ANTIGA', perfil: 'PERFIL ANTIGO', atualizadoEm: '2026-09-01T10:00:00.000Z' });
 
   // pelo painel: gestor edita um campo; os outros ficam
@@ -550,4 +562,37 @@ test('resultados e inteligência usam só os reports do master; a equipe entra a
   assert.equal(intelTodos.reunioesComResultado, intelMeus.reunioesComResultado + 1);
   assert.ok(!intelMeus.matriz.some((c) => c.nome === 'Rafa Lima'), 'a venda do lead da Ana não entra na conta do master');
   assert.ok(intelTodos.matriz.some((c) => c.nome === 'Rafa Lima'));
+});
+
+test('base v2 → v3: campo que ninguém editou recebe o texto novo; o que o master escreveu fica', async () => {
+  const { PADROES_ANTIGOS } = require('../src/baseInicial');
+  const crypto = require('crypto');
+  const digital = (t) => crypto.createHash('sha256').update(t).digest('hex').slice(0, 16);
+  // simula um texto recomendado antigo: qualquer texto cuja impressão digital esteja na lista
+  const antigo = 'TEXTO RECOMENDADO ANTIGO';
+  PADROES_ANTIGOS.add(digital(antigo));
+  fs.writeFileSync(arqBase(), JSON.stringify({
+    versao: 2, empresa: antigo, oferta: antigo, perfil: 'PERFIL QUE O MASTER ESCREVEU', script: antigo, qualificacao: '', objecoes: antigo,
+    anterior: { script: 'ROTEIRO DA V1' }, atualizadoEm: '2026-10-03T10:00:00.000Z',
+  }));
+  const b = await baseMod.ler();
+  assert.equal(b.empresa, PADRAO.empresa);
+  assert.equal(b.script, PADRAO.script);
+  assert.equal(b.qualificacao, PADRAO.qualificacao, 'campo vazio também recebe o recomendado');
+  assert.equal(b.perfil, 'PERFIL QUE O MASTER ESCREVEU', 'edição do master não é sobrescrita');
+  assert.equal(b.recomendada, false);
+  const gravado = JSON.parse(fs.readFileSync(arqBase(), 'utf8'));
+  assert.equal(gravado.versao, 3);
+  assert.deepEqual(gravado.anterior, { script: 'ROTEIRO DA V1' }, 'o que estava guardado da v1 continua restaurável');
+  assert.equal((await baseMod.ler()).perfil, 'PERFIL QUE O MASTER ESCREVEU', 'segunda leitura não mexe de novo');
+  PADROES_ANTIGOS.delete(digital(antigo));
+  fs.rmSync(arqBase());
+});
+
+test('perfil: o "como conduzir" traz o que funcionou nas reuniões (garantia como no contrato para o cético)', () => {
+  const p = (k) => perfilMod.infoDoPerfil(k).conduzir;
+  assert.match(p('cetico'), /garantia exatamente como está no contrato/);
+  assert.match(p('analitico'), /lucro e retorno \(não de faturamento\)/);
+  assert.match(p('cauteloso'), /forma de pagamento que ele sustente/);
+  assert.match(p('dominante'), /responder direto/);
 });

@@ -17,7 +17,7 @@ const { neutralizarMarcas } = require('./citacoes');
 const { montarHistoricoFormatado, extrairJson } = require('./report');
 const { PERFIS, chaveDoPerfil, infoDoPerfil, reguaParaPrompt } = require('./perfil');
 
-const VERSAO = 'c2'; // sobe quando o prompt mudar (invalida o cache)
+const VERSAO = 'c3'; // sobe quando o prompt mudar (invalida o cache)
 const CHAVE_FEEDBACK = 'coach_feedback';
 const LIMITE_FEEDBACK = 600;
 const TIPOS_FEEDBACK = ['objecao', 'pergunta', 'abordagem', 'mensagem'];
@@ -40,7 +40,7 @@ PERFIL DO LEAD — leia o JEITO das respostas dele (tamanho, tom, o que pergunta
 ${reguaParaPrompt()}
 O perfil pode mudar ao longo da conversa: vale o que as ÚLTIMAS falas do lead mostram. Em "evidencia", cite a fala ou o comportamento que denuncia o perfil ("respondeu só 'quanto custa?'", "mandou áudio longo contando da família").
 
-O QUE FALTA QUALIFICAR ("falta_levantar") — compare a conversa com a régua: NECESSIDADE (dor/objetivo concreto), ORÇAMENTO (reserva para estoque e condição de investir), AUTORIDADE (quem decide e se participa da reunião), PRAZO (por que agora) e, do SPIN, a pergunta de IMPLICAÇÃO (o que acontece se nada mudar). Liste só o que AINDA NÃO apareceu, em ordem de importância. Tudo levantado: [].
+O QUE FALTA QUALIFICAR ("falta_levantar") — compare a conversa com a régua: NECESSIDADE (dor/objetivo concreto), ORÇAMENTO (reserva para estoque e condição de investir), AUTORIDADE (quem decide e se participa da reunião), PRAZO (por que agora) e, do SPIN, a pergunta de IMPLICAÇÃO (o que acontece se nada mudar). Confira também o que o closer mais usa e o pré-vendedor mais esquece: quanto está DISPONÍVEL hoje (não o patrimônio) e de onde sai; se tem cartão e limite; a meta em reais por mês; se já fez curso ou mentoria antes e o que deu errado; se está avaliando outra empresa; e, para quem já vende, faturamento, margem e gasto com anúncios. Liste só o que AINDA NÃO apareceu, em ordem de importância, no máximo 5 itens. Tudo levantado: [].
 
 "objecoes": só objeções que o lead realmente demonstrou (dinheiro, tempo, confiança, "vou pensar", falar com sócio/cônjuge, "está saturado"...). Para cada uma, UMA resposta pronta, curta, em tom natural de WhatsApp, que o vendedor possa mandar quase como está. Não houve objeção: [].
 

@@ -393,7 +393,7 @@ escrito vem com o texto recomendado (`src/baseInicial.js`), montado com os scrip
 as apresentações Performance e Aceleração, os contratos e as notícias públicas da empresa. Quem
 tinha a base antiga (4 campos) passa para a recomendada uma vez, e os textos antigos ficam
 guardados: **Voltar aos textos anteriores** restaura. **Usar a base recomendada** reaplica tudo.
-Pisos de negociação não entram na base. O playbook vai no prefixo cacheado de todo report (cerca
+Pisos de negociação não entram na base. A **v3** incorpora o que 12 reuniões de closer que viraram venda mostraram (o que o closer usa do report, perguntas que destravam, objeções reais e como cada perfil fecha): ver [docs/analise-calls-vendas.md](docs/analise-calls-vendas.md). Quem já estava na v2 recebe o texto novo só nos campos que não editou. O playbook vai no prefixo cacheado de todo report (cerca
 de 4 mil tokens a ~0,1x do preço) e, resumido, no coach.
 
 ## Report manual em formato de chat

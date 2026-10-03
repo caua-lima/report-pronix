@@ -16,7 +16,7 @@ const LLM_PROVIDER = (process.env.LLM_PROVIDER || 'anthropic').toLowerCase();
 // idênticos já gerados (ex.: mudança de tom, de campos obrigatórios). Compõe
 // a reportKey em src/idempotencia.js — sem isso, um prompt novo poderia ser
 // confundido com o antigo e nunca rodar de novo pra mesma conversa.
-const PROMPT_VERSAO = 'v5';
+const PROMPT_VERSAO = 'v6';
 
 // Modo de qualidade só troca o MODELO da Anthropic — nunca inferido sozinho:
 // "standard" é o comportamento de sempre (ANTHROPIC_MODEL), então nenhum
