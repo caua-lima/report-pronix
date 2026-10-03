@@ -117,6 +117,7 @@ async function api(metodo, rota, { chave, admin, corpo } = {}) {
 }
 let n = 0;
 /** Gera um report de um lead novo (conversa diferente a cada vez, para não cair na idempotência). */
+const gerar0 = (...a) => gerar(...a);
 async function gerar(chave, nome, leitura = {}) {
   leituraDaIa = leitura;
   const r = await api('POST', '/api/report-direto', {
@@ -165,7 +166,7 @@ test('preparo: master, gestor, dois SDRs e a lista de closers (só o master mexe
 // ---------------------------------------------------------------- report com perfil e análise
 test('report: a IA recebe a régua de consciência, de perfil e de análise; o perfil vira linha do resumo e a análise não vai para o SDR', async () => {
   chamadasAnthropic.length = 0;
-  const r = await gerar(E.ana, 'Marcos');
+  const r = await gerar(E.master, 'Marcos');
   assert.equal(r.status, 200);
   E.r1 = r.json.id;
   assert.match(E.r1, /^[0-9a-f]{10}$/);
@@ -208,12 +209,12 @@ test('perfil: aceita apelidos e acentos; desconhecido fica de fora; não duplica
 });
 
 // ---------------------------------------------------------------- o SDR escolhe o closer
-test('o SDR marca o closer do próprio report; de outra pessoa não; closer inexistente é recusado', async () => {
-  const ok = await api('POST', `/api/reports/${E.r1}/closer`, { chave: E.ana, corpo: { closerId: E.vitor } });
+test('quem gerou marca o closer do próprio report; de outra pessoa não; closer inexistente é recusado', async () => {
+  const ok = await api('POST', `/api/reports/${E.r1}/closer`, { chave: E.master, corpo: { closerId: E.vitor } });
   assert.deepEqual(ok.json, { ok: true, closerNome: 'Vitor Santos' });
   assert.equal((await api('POST', `/api/reports/${E.r1}/closer`, { chave: E.bia, corpo: { closerId: E.rafa } })).status, 404, 'report de outra SDR');
-  assert.equal((await api('POST', `/api/reports/${E.r1}/closer`, { chave: E.ana, corpo: { closerId: 'naoexiste' } })).status, 400);
-  assert.equal((await api('POST', '/api/reports/naoexiste/closer', { chave: E.ana, corpo: { closerId: E.vitor } })).status, 404);
+  assert.equal((await api('POST', `/api/reports/${E.r1}/closer`, { chave: E.master, corpo: { closerId: 'naoexiste' } })).status, 400);
+  assert.equal((await api('POST', '/api/reports/naoexiste/closer', { chave: E.master, corpo: { closerId: E.vitor } })).status, 404);
   assert.equal((await api('POST', `/api/reports/${E.r1}/closer`, { chave: E.gestor, corpo: { closerId: E.vitor } })).status, 200, 'gestor marca de qualquer um');
 });
 
@@ -230,7 +231,7 @@ test('resultados da reunião: só o master vê; traz perfil, consciência e clos
   assert.equal(linha.consciencia, 'solucao');
   assert.equal(linha.conscienciaPorque, 'Disse que procura um passo a passo para começar.');
   assert.equal(linha.closerNome, 'Vitor Santos');
-  assert.equal(linha.usuarioNome, 'Ana SDR');
+  assert.equal(linha.usuarioNome, 'Cauã Master');
   assert.deepEqual(lista.json.closers.map((c) => c.nome), ['Vitor Santos', 'Rafa Lima']);
 
   const salvar = (corpo) => api('PATCH', `/api/admin/reports/${E.r1}/resultado`, { chave: E.master, corpo });
@@ -247,8 +248,8 @@ test('resultados da reunião: só o master vê; traz perfil, consciência e clos
 });
 
 test('resultados: do mesmo lead gerado duas vezes no dia, aparece só o último', async () => {
-  const a = await gerar(E.bia, 'Lead Repetido');
-  const b = await gerar(E.bia, 'Lead Repetido');
+  const a = await gerar(E.master, 'Lead Repetido');
+  const b = await gerar(E.master, 'Lead Repetido');
   const ids = (await api('GET', '/api/master/resultados', { chave: E.master })).json.reports.map((x) => x.id);
   assert.ok(ids.includes(b.json.id) && !ids.includes(a.json.id));
 });
@@ -256,7 +257,7 @@ test('resultados: do mesmo lead gerado duas vezes no dia, aparece só o último'
 // ---------------------------------------------------------------- a IA aprende o nível de consciência
 test('corrigir o nível de consciência ensina a IA: a correção entra no prompt dos próximos reports', async () => {
   chamadasAnthropic.length = 0;
-  await gerar(E.ana, 'Antes da correção');
+  await gerar(E.master, 'Antes da correção');
   assert.ok(!chamadasAnthropic[0].system[0].text.includes('CALIBRAGEM DO NÍVEL DE CONSCIÊNCIA'));
 
   const r = await api('PATCH', `/api/admin/reports/${E.r1}/resultado`, {
@@ -267,7 +268,7 @@ test('corrigir o nível de consciência ensina a IA: a correção entra no promp
   await api('PATCH', `/api/admin/reports/${E.r1}/resultado`, { chave: E.master, corpo: { conscienciaReal: 'problema' } });
 
   chamadasAnthropic.length = 0;
-  await gerar(E.ana, 'Depois da correção');
+  await gerar(E.master, 'Depois da correção');
   const system = chamadasAnthropic[0].system[0].text;
   assert.match(system, /CALIBRAGEM DO NÍVEL DE CONSCIÊNCIA/);
   assert.match(system, /Evidência: "Disse que procura um passo a passo para começar\." → a IA classificou "solucao" \(Consciente da solução\); o certo é "problema" \(Consciente do problema\)\. Motivo: Só falou da dor/);
@@ -367,18 +368,18 @@ test('painel: matriz closer × perfil, conversão por perfil e por consciência,
 test('com histórico, o report já vem com o closer indicado para o perfil do lead', async () => {
   // 3 reuniões de lead analítico com o Vitor, todas com venda
   for (let i = 0; i < 3; i++) {
-    const r = await gerar(E.ana, 'Analítico ' + i);
-    await api('POST', `/api/reports/${r.json.id}/closer`, { chave: E.ana, corpo: { closerId: E.vitor } });
+    const r = await gerar(E.master, 'Analítico ' + i);
+    await api('POST', `/api/reports/${r.json.id}/closer`, { chave: E.master, corpo: { closerId: E.vitor } });
     await api('PATCH', `/api/admin/reports/${r.json.id}/resultado`, { chave: E.master, corpo: { resultado: 'venda_call' } });
   }
-  const novo = await gerar(E.bia, 'Lead novo analítico');
+  const novo = await gerar(E.master, 'Lead novo analítico');
   assert.deepEqual(novo.json.sugestaoCloser, { closerId: E.vitor, nome: 'Vitor Santos' });
   assert.equal(novo.json.motivoSugestao, 'Vitor Santos fechou 3 de 4 reuniões com lead analítico.');
 
-  const outro = await gerar(E.bia, 'Lead novo cético', { perfil: { tipo: 'cetico', evidencia: 'e', conduzir: 'c' } });
+  const outro = await gerar(E.master, 'Lead novo cético', { perfil: { tipo: 'cetico', evidencia: 'e', conduzir: 'c' } });
   assert.equal(outro.json.sugestaoCloser, null, 'perfil sem histórico: sem indicação');
 
-  const sug = await api('GET', '/api/closers?perfil=analitico', { chave: E.bia });
+  const sug = await api('GET', '/api/closers?perfil=analitico', { chave: E.master });
   assert.deepEqual(sug.json.sugestao, { closerId: E.vitor, nome: 'Vitor Santos' });
 
   const intel = await api('GET', '/api/master/inteligencia', { chave: E.master });
@@ -392,7 +393,7 @@ test('insights: recusa com poucas reuniões; com dados, manda SÓ números e per
   assert.equal(cedo.status, 400);
   assert.match(cedo.json.erro, /pelo menos 5 reuniões/);
 
-  const r = await gerar(E.bia, 'Quinto lead');
+  const r = await gerar(E.master, 'Quinto lead');
   await api('PATCH', `/api/admin/reports/${r.json.id}/resultado`, { chave: E.master, corpo: { resultado: 'no_show' } });
 
   chamadasGroq.length = 0;
@@ -525,4 +526,28 @@ test('/api/eu diz o que o master liberou para a chave (a extensão mostra no pop
   assert.equal(m.json.fichaCrm, true);
   const s = await api('GET', '/api/eu', { chave: E.ana });
   assert.equal(s.json.coach, false);
+});
+
+// ---------------------------------------------------------------- por enquanto, só os leads do master
+test('resultados e inteligência usam só os reports do master; a equipe entra apenas com escopo=todos', async () => {
+  const daAna = await gerar0(E.ana, 'Lead da Ana');
+  assert.deepEqual(daAna.json.closers, [], 'SDR não recebe a escolha de closer no aviso final');
+  assert.equal(daAna.json.sugestaoCloser, null);
+  // a Ana ainda consegue marcar pelo próprio report (rota), mas isso não entra nos dados do master
+  await api('POST', `/api/reports/${daAna.json.id}/closer`, { chave: E.ana, corpo: { closerId: E.rafa } });
+  await api('PATCH', `/api/admin/reports/${daAna.json.id}/resultado`, { chave: E.master, corpo: { resultado: 'venda_call' } });
+
+  const meus = (await api('GET', '/api/master/resultados', { chave: E.master })).json.reports;
+  assert.ok(meus.length > 0 && meus.every((r) => r.usuarioNome === 'Cauã Master'));
+  assert.ok(!meus.some((r) => r.id === daAna.json.id));
+  const todos = (await api('GET', '/api/master/resultados?escopo=todos', { chave: E.master })).json.reports;
+  assert.ok(todos.some((r) => r.id === daAna.json.id));
+  // pela senha reserva não existe "meus": vem a equipe
+  assert.ok((await api('GET', '/api/master/resultados', { admin: true })).json.reports.some((r) => r.id === daAna.json.id));
+
+  const intelMeus = (await api('GET', '/api/master/inteligencia', { chave: E.master })).json;
+  const intelTodos = (await api('GET', '/api/master/inteligencia?escopo=todos', { chave: E.master })).json;
+  assert.equal(intelTodos.reunioesComResultado, intelMeus.reunioesComResultado + 1);
+  assert.ok(!intelMeus.matriz.some((c) => c.nome === 'Rafa Lima'), 'a venda do lead da Ana não entra na conta do master');
+  assert.ok(intelTodos.matriz.some((c) => c.nome === 'Rafa Lima'));
 });

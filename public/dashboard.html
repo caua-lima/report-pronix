@@ -389,7 +389,7 @@
         <div class="card">
           <div class="head"><div class="t"><i data-ic="target"></i>Resultados da reunião</div><div class="sub">— marque no fim do dia o que deu cada reunião</div></div>
           <div class="hint" style="margin:0 0 12px">
-            Cada linha é um report (do mesmo lead, só o último). Marque o <b>closer</b> e o <b>resultado</b>; se a IA errou o
+            Por padrão aparecem <b>só os seus reports</b> (troque em "Reports de" quando quiser a equipe toda). Cada linha é um report (do mesmo lead, só o último). Marque o <b>closer</b> e o <b>resultado</b>; se a IA errou o
             <b>perfil</b> ou o <b>nível de consciência</b>, corrija na linha: a correção do nível vira exemplo e os próximos reports saem mais certos.
             É com estes dados que a aba mostra qual closer fecha com qual tipo de lead.
           </div>
@@ -402,6 +402,12 @@
           <div class="row" style="margin-top:12px">
             <div style="flex:1;min-width:140px"><label for="resDe">De</label><input id="resDe" type="date" /></div>
             <div style="flex:1;min-width:140px"><label for="resAte">Até</label><input id="resAte" type="date" /></div>
+            <div style="min-width:150px"><label for="resEscopo">Reports de</label>
+              <select id="resEscopo">
+                <option value="meus">Só os meus</option>
+                <option value="todos">Toda a equipe</option>
+              </select>
+            </div>
             <label style="display:flex;align-items:center;gap:6px;margin:0"><input id="resPendentes" type="checkbox" style="width:auto" /> Só sem resultado</label>
             <button id="resVer" class="btn sec"><i data-ic="refresh"></i>Atualizar</button>
           </div>
@@ -1490,7 +1496,7 @@
       if (!$('resDe').value) usarPresetRes(0);
       setStatus('statusRes', 'Carregando…', { loading: true });
       try {
-        const q = new URLSearchParams({ de: $('resDe').value, ate: $('resAte').value });
+        const q = new URLSearchParams({ de: $('resDe').value, ate: $('resAte').value, escopo: $('resEscopo').value });
         const j = await api('GET', '/api/master/resultados?' + q);
         closersRes = j.closers || [];
         const linhas = (j.reports || []).filter((r) => !$('resPendentes').checked || !r.resultado);
@@ -1543,6 +1549,7 @@
       carregarResultados();
     }));
     $('resPendentes').addEventListener('change', carregarResultados);
+    $('resEscopo').addEventListener('change', carregarResultados);
     $('resVer').addEventListener('click', carregarResultados);
 
     const celula = (v) => (v && v.total ? `<b>${v.vendas}/${v.total}</b> <span style="color:var(--muted)">${pct(v.taxa)}</span>` : '<span style="color:var(--muted)">—</span>');
@@ -1563,7 +1570,7 @@
     async function carregarInteligencia() {
       if (!podeMexerEmUsuarios()) return;
       try {
-        const p = await api('GET', '/api/master/inteligencia');
+        const p = await api('GET', '/api/master/inteligencia?escopo=' + $('resEscopo').value);
         $('intelResumo').textContent =
           `${p.reunioesComResultado} reunião(ões) com resultado marcado · ${p.vendas} venda(s)` +
           (p.semCloser ? ` · ${p.semCloser} sem closer marcado (não entram no cruzamento)` : '') +
@@ -1602,7 +1609,7 @@
       $('gerarInsights').disabled = true;
       setStatus('statusInsights', 'Lendo os números…', { loading: true });
       try {
-        const j = await api('POST', '/api/master/insights', {});
+        const j = await api('POST', '/api/master/insights?escopo=' + $('resEscopo').value, {});
         mostrarInsights(j.insights);
         setStatus('statusInsights', 'Insights gerados (sem custo).', { ok: true });
       } catch (e) {

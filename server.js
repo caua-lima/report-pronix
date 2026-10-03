@@ -196,17 +196,28 @@ app.delete('/api/admin/usuarios/:id', master, async (req, res) => {
 // só o master adiciona e remove da lista.
 // ---------------------------------------------------------------------------
 /** Sugestão de closer para um perfil de lead, com base no histórico de resultados (sem IA). */
-async function sugestaoDeCloser(perfil) {
+async function sugestaoDeCloser(perfil, usuarioId) {
   const lista = await closers.listar();
   if (!lista.length) return { closers: [], sugestao: null, motivo: '' };
-  const s = inteligencia.sugerirCloser(await stats.listar(), perfil, lista);
+  const s = inteligencia.sugerirCloser(await reportsDoEscopo(usuarioId), perfil, lista);
   return { closers: lista.map((c) => ({ id: c.id, nome: c.nome })), sugestao: s.sugestao, motivo: s.motivo };
 }
+
+/**
+ * Reports que entram em "Resultados da reunião" e na inteligência. Por enquanto o master levanta os
+ * dados só com os leads DELE: com usuarioId, ficam só os reports desse usuário; sem (escopo "todos"
+ * ou entrada pela senha reserva), a equipe inteira.
+ */
+async function reportsDoEscopo(usuarioId, filtro) {
+  const todos = await stats.listar(filtro);
+  return usuarioId ? todos.filter((r) => r.usuarioId === usuarioId) : todos;
+}
+const donoDoEscopo = (req) => (req.usuario && req.query.escopo !== 'todos' ? req.usuario.id : null);
 
 /** Lista de closers (só id e nome) para quem gera report; com ?perfil= vem a sugestão. */
 app.get('/api/closers', auth, async (req, res) => {
   try {
-    res.json(await sugestaoDeCloser(String(req.query.perfil || '')));
+    res.json(await sugestaoDeCloser(String(req.query.perfil || ''), req.usuario.id));
   } catch (err) {
     res.status(500).json({ erro: err.message });
   }
@@ -241,7 +252,7 @@ app.get('/api/master/resultados', master, async (req, res) => {
     const filtro = filtroDaQuery(req.query);
     // Do mesmo lead gerado mais de uma vez no dia, só o último (é o que foi para o closer).
     const linhas = diario
-      .marcarUltimos(await stats.listar(filtro))
+      .marcarUltimos(await reportsDoEscopo(donoDoEscopo(req), filtro))
       .filter((r) => r.usar)
       .reverse()
       .slice(0, 300)
@@ -258,9 +269,9 @@ app.get('/api/master/resultados', master, async (req, res) => {
   }
 });
 
-app.get('/api/master/inteligencia', master, async (_req, res) => {
+app.get('/api/master/inteligencia', master, async (req, res) => {
   try {
-    const painel = inteligencia.painel(await stats.listar(), await closers.listar());
+    const painel = inteligencia.painel(await reportsDoEscopo(donoDoEscopo(req)), await closers.listar());
     res.json({ ...painel, insights: await inteligencia.ultimosInsights(), calibragens: (await aprendizado.ajustes()).length });
   } catch (err) {
     res.status(500).json({ erro: err.message });
@@ -268,9 +279,9 @@ app.get('/api/master/inteligencia', master, async (_req, res) => {
 });
 
 /** Texto de insights escrito pela IA gratuita (Groq) em cima dos números — sem custo. */
-app.post('/api/master/insights', master, async (_req, res) => {
+app.post('/api/master/insights', master, async (req, res) => {
   try {
-    res.json({ insights: await inteligencia.gerarInsights(await stats.listar(), await closers.listar()) });
+    res.json({ insights: await inteligencia.gerarInsights(await reportsDoEscopo(donoDoEscopo(req)), await closers.listar()) });
   } catch (err) {
     res.status(/Marque o resultado/.test(err.message) ? 400 : 502).json({ erro: err.message });
   }
@@ -797,7 +808,10 @@ async function responderReport(req, res, dados, nome, origem, reportKey, captura
     .salvar(id, base64, arquivo)
     .catch((err) => console.error('Falha ao salvar o PDF do report:', err.message));
   // Para a extensão oferecer o closer logo no aviso final (com a sugestão pelo perfil do lead).
-  const escolha = await sugestaoDeCloser(leitura.perfil).catch(() => ({ closers: [], sugestao: null, motivo: '' }));
+  const semEscolha = { closers: [], sugestao: null, motivo: '' };
+  const escolha = usuarios.ehMaster(req.usuario)
+    ? await sugestaoDeCloser(leitura.perfil, req.usuario.id).catch(() => semEscolha)
+    : semEscolha;
   res.json({ dados, arquivo, arquivoBase64: base64, id, closers: escolha.closers, sugestaoCloser: escolha.sugestao, motivoSugestao: escolha.motivo });
 }
 
