@@ -81,6 +81,26 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   // Ficha do lead no RD Station CRM (o token do CRM fica no servidor; aqui só vai telefone/nome).
   // Resumo rápido da conversa (botão do cartão): cenário, onde parou, última pergunta, próximo passo.
+  // O que o master liberou para esta chave (hoje: o Coach).
+  if (msg && msg.action === 'permissoes') {
+    (async () => {
+      const r = await chamar('/api/eu', null, { metodo: 'GET', timeoutMs: 20000 });
+      sendResponse(r.ok ? { ok: true, coach: Boolean(r.data.coach), papel: r.data.papel || '' } : { ok: false, erro: r.erro });
+    })();
+    return true;
+  }
+
+  // O SDR marca o closer da reunião no aviso final do report.
+  if (msg && msg.action === 'definirCloser') {
+    (async () => {
+      const id = String(msg.reportId || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40);
+      if (!id) return sendResponse({ ok: false, erro: 'Report sem identificação.' });
+      const r = await chamar('/api/reports/' + id + '/closer', { closerId: String(msg.closerId || '').slice(0, 40) }, { timeoutMs: 20000 });
+      sendResponse(r.ok ? { ok: true, closerNome: r.data.closerNome || '' } : { ok: false, erro: r.erro });
+    })();
+    return true;
+  }
+
   // Coach da conversa (Groq gratuito) e a marcação "funcionou" que o faz aprender.
   if (msg && msg.action === 'coach') {
     (async () => {
@@ -142,6 +162,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         dados: r.data.dados,
         arquivo: r.data.arquivo,
         arquivoBase64: r.data.arquivoBase64,
+        // Para escolher o closer no aviso final (com a indicação pelo perfil do lead).
+        id: r.data.id || '',
+        closers: Array.isArray(r.data.closers) ? r.data.closers : [],
+        sugestaoCloser: r.data.sugestaoCloser || null,
+        motivoSugestao: r.data.motivoSugestao || '',
       });
     })();
     return true;

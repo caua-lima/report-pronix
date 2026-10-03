@@ -160,7 +160,7 @@ test('A16: abrir Números carrega só closers e números; cada aba carrega o que
 
   p.document.querySelector('.tab[data-aba="base"]').click();
   await esperar(() => api.contar('GET /api/admin/base') === 1, { motivo: 'aba base' });
-  await esperar(() => /Nada cadastrado|Última atualização/.test(p.$('statusBase').textContent), { motivo: 'base carregada' });
+  await esperar(() => /Base carregada|base recomendada|Última atualização/.test(p.$('statusBase').textContent), { motivo: 'base carregada' });
   assert.equal(api.contar('GET /api/admin/usuarios'), 1);
   assert.deepEqual(p.erros, []);
   p.fechar();
@@ -856,4 +856,248 @@ test('Acessos: o master liga/desliga o Coach por pessoa; o gestor vê as caixas 
   await esperar(() => q.$('lista').textContent.includes('Bia'), { motivo: 'lista do gestor' });
   assert.equal(q.document.querySelector('[data-coach="u2"]').disabled, true);
   q.fechar();
+});
+
+// ---------------------------------------------------------------- conversa em formato de chat
+const bolhas = (p) => [...p.document.querySelectorAll('#chatThread .bolha')].map((b) => ({
+  lado: b.classList.contains('eu') ? 'eu' : b.classList.contains('lead') ? 'lead' : 'solto',
+  texto: b.querySelector('.bolha-txt').textContent,
+  topo: b.querySelector('.bolha-topo span').textContent,
+}));
+const escrever = (p, texto) => { p.$('chatMsg').value = texto; };
+
+test('chat: escrever e adicionar vira bolha do lado certo; a caixa de texto continua sendo o que vai para a IA', async () => {
+  const p = abrirPainel(apiBase({ papel: 'sdr', nome: 'Ana' }));
+  await aberto(p);
+  assert.ok(visivel(p.$('chatVazio')));
+  escrever(p, 'Quero vender no Mercado Livre');
+  p.$('chatEnviar').click();
+  p.$('quemAudio').value = 'VENDEDOR';
+  escrever(p, 'Legal! Você já vende ou está começando?');
+  p.$('chatMsg').dispatchEvent(new p.w.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+  assert.equal(p.$('texto').value, 'LEAD: Quero vender no Mercado Livre\nVENDEDOR: Legal! Você já vende ou está começando?\n');
+  assert.deepEqual(bolhas(p), [
+    { lado: 'lead', texto: 'Quero vender no Mercado Livre', topo: 'Lead' },
+    { lado: 'eu', texto: 'Legal! Você já vende ou está começando?', topo: 'Eu' },
+  ]);
+  assert.equal(p.$('chatMsg').value, '', 'a caixa limpa depois de adicionar');
+  assert.ok(!visivel(p.$('chatVazio')));
+
+  // Shift+Enter não envia
+  escrever(p, 'linha 1');
+  p.$('chatMsg').dispatchEvent(new p.w.KeyboardEvent('keydown', { key: 'Enter', shiftKey: true, bubbles: true, cancelable: true }));
+  assert.equal(bolhas(p).length, 2);
+  escrever(p, '');
+  assert.deepEqual(p.erros, []);
+  p.fechar();
+});
+
+test('chat: conversa colada inteira entra como está; áudio transcrito aparece marcado; o × tira a fala', async () => {
+  const api = apiBase({ papel: 'sdr', nome: 'Ana' }).quando('POST /api/transcrever', () => ({ corpo: { texto: 'tenho uns 5 mil guardados' } }));
+  const p = abrirPainel(api);
+  await aberto(p);
+  escrever(p, 'VENDEDOR: Oi, tudo bem?\nLEAD: Tudo sim\nLEAD: <img src=x onerror=alert(1)>');
+  p.$('chatEnviar').click();
+  soltarArquivos(p, 'audio', [new p.w.File([new Uint8Array([1, 2])], 'voz.ogg', { type: 'audio/ogg' })]);
+  await esperar(() => bolhas(p).length === 4, { motivo: 'áudio virou bolha' });
+  assert.deepEqual(bolhas(p).map((b) => [b.lado, b.topo]), [['eu', 'Eu'], ['lead', 'Lead'], ['lead', 'Lead'], ['lead', 'Lead · áudio']]);
+  assert.equal(bolhas(p)[2].texto, '<img src=x onerror=alert(1)>', 'texto do lead nunca vira HTML');
+  assert.equal(p.document.querySelector('#chatThread img'), null);
+  assert.equal(bolhas(p)[3].texto, 'tenho uns 5 mil guardados');
+
+  p.document.querySelectorAll('#chatThread .bolha-x')[1].click(); // tira "Tudo sim"
+  assert.deepEqual(bolhas(p).map((b) => b.texto), ['Oi, tudo bem?', '<img src=x onerror=alert(1)>', 'tenho uns 5 mil guardados']);
+  assert.ok(!p.$('texto').value.includes('Tudo sim'));
+
+  // editar pelo texto atualiza as bolhas
+  p.$('texto').value = 'LEAD: só isto';
+  p.$('texto').dispatchEvent(new p.w.Event('input', { bubbles: true }));
+  assert.deepEqual(bolhas(p).map((b) => b.texto), ['só isto']);
+  assert.deepEqual(p.erros, []);
+  p.fechar();
+});
+
+test('chat: um lugar só para anexar — arquivo de texto entra na conversa; PDF/Word avisam e não vão para a transcrição', async () => {
+  const api = apiBase({ papel: 'sdr', nome: 'Ana' });
+  const p = abrirPainel(api);
+  await aberto(p);
+  soltarArquivos(p, 'audio', [
+    new p.w.File(['LEAD: vim pelo anúncio\r\nVENDEDOR: que bom!'], 'conversa.txt', { type: 'text/plain' }),
+    new p.w.File([new Uint8Array([37, 80, 68, 70])], 'proposta.pdf', { type: 'application/pdf' }),
+  ]);
+  await esperar(() => bolhas(p).length === 2, { motivo: 'texto do arquivo na conversa' });
+  assert.equal(p.$('texto').value, 'LEAD: vim pelo anúncio\nVENDEDOR: que bom!\n');
+  assert.match(p.$('files').textContent, /proposta\.pdf.*não leio este formato/);
+  assert.match(p.$('files').textContent, /conversa\.txt.*adicionado/);
+  assert.equal(api.contar('POST /api/transcrever'), 0, 'PDF não é mandado como áudio');
+  await esperar(() => !p.$('gerar').disabled, { motivo: 'leituras terminaram' });
+  p.fechar();
+});
+
+test('chat: o que ficou digitado e não foi adicionado também entra no report', async () => {
+  const api = apiBase({ papel: 'sdr', nome: 'Ana' }).quando('POST /api/report-texto', () => ({
+    corpo: { dados: { lead: 'Marcos', resumo: [], secoes: [{ titulo: 'T', itens: ['i'] }], citacoes: [] }, arquivo: 'r.pdf', arquivoBase64: 'AAAA' },
+  }));
+  const p = abrirPainel(api);
+  await aberto(p);
+  escrever(p, 'LEAD: primeira');
+  p.$('chatEnviar').click();
+  escrever(p, 'esqueci de adicionar');
+  p.$('gerar').click();
+  await esperar(() => api.contar('POST /api/report-texto') === 1, { motivo: 'report pedido' });
+  assert.equal(api.corpos('POST /api/report-texto')[0].texto, 'LEAD: primeira\nLEAD: esqueci de adicionar');
+  await esperar(() => /Report gerado/.test(p.$('status').textContent), { motivo: 'report na tela' });
+  p.fechar();
+
+  const vazio = abrirPainel(apiBase({ papel: 'sdr', nome: 'Ana' }));
+  await aberto(vazio);
+  vazio.$('gerar').click();
+  assert.match(vazio.$('status').textContent, /Monte a conversa/);
+  vazio.fechar();
+});
+
+// ---------------------------------------------------------------- Resultados da reunião e Closers (só o master)
+const LINHAS_RES = {
+  closers: [{ id: 'c1', nome: 'Vitor' }, { id: 'c2', nome: 'Rafa' }],
+  reports: [
+    { id: 'x1', lead: 'Marcos', usuarioNome: 'Ana SDR', dia: '2026-10-02', closerId: 'c1', closerNome: 'Vitor', resultado: '', obsReuniao: '',
+      perfil: 'analitico', perfilReal: '', perfilEvidencia: 'Pediu números.', consciencia: 'solucao', conscienciaReal: '', conscienciaPorque: 'Procura passo a passo.', versao: 3 },
+    { id: 'x2', lead: '<b>Lead</b>', usuarioNome: 'Bia SDR', dia: '2026-10-02', closerId: '', closerNome: '', resultado: 'venda_call', obsReuniao: 'Fechou Performance',
+      perfil: 'relacional', perfilReal: 'cetico', perfilEvidencia: '', consciencia: '', conscienciaReal: '', conscienciaPorque: '', versao: 0 },
+  ],
+};
+const INTEL = {
+  minAmostra: 3, reunioesComResultado: 6, vendas: 4, semCloser: 1, calibragens: 2,
+  perfis: [{ chave: 'analitico', rotulo: 'Analítico' }, { chave: 'relacional', rotulo: 'Relacional' }],
+  matriz: [{ closerId: 'c1', nome: 'Vitor', total: 4, vendas: 3, taxa: 0.75, perfis: { analitico: { total: 4, vendas: 3, taxa: 0.75 } } }],
+  porPerfil: [{ chave: 'analitico', rotulo: 'Analítico', total: 4, vendas: 3, taxa: 0.75 }],
+  porConsciencia: [{ chave: 'produto', rotulo: 'Consciente da nossa entrega', total: 2, vendas: 2, taxa: 1 }],
+  prospeccao: {
+    comAnalise: 6, vendas: 4, semVenda: 2, suficiente: true,
+    criterios: [{ chave: 'spin.implicacao', rotulo: 'Perguntas de implicação (SPIN)', ganhou: 0.75, perdeu: 0, diferenca: 0.75 }],
+    perguntasQueFecharam: [{ pergunta: 'Se nada mudar, como fica?' }, { pergunta: 'Se nada mudar, como fica?' }],
+  },
+  melhorCloserPorPerfil: [
+    { perfil: 'analitico', rotulo: 'Analítico', sugestao: { closerId: 'c1', nome: 'Vitor' }, motivo: 'Vitor fechou 3 de 4 reuniões com lead analítico.' },
+    { perfil: 'relacional', rotulo: 'Relacional', sugestao: null, motivo: 'Ainda sem dados suficientes.' },
+  ],
+  insights: null,
+};
+const apiMaster = (extra = {}) =>
+  apiBase({ papel: 'master', nome: 'Cauã', ...extra })
+    .quando('GET /api/master/resultados', () => ({ corpo: LINHAS_RES }))
+    .quando('GET /api/master/inteligencia', () => ({ corpo: INTEL }));
+
+test('Resultados da reunião: o master vê a aba, marca closer/resultado/anotação e corrige o nível (que ensina a IA)', async () => {
+  const api = apiMaster().quando('PATCH /api/admin/reports/x1/resultado', ({ corpo }) => ({ corpo: { ok: true, versao: corpo.versao + 1 } }));
+  const p = abrirPainel(api, { hash: '#resultados' });
+  await esperar(() => p.$('listaRes').querySelectorAll('tr').length === 2, { motivo: 'linhas' });
+  assert.ok(visivel(p.document.querySelector('.tab[data-aba="resultados"]')));
+  assert.ok(visivel(p.document.querySelector('.tab[data-aba="closers"]')));
+  const q = api.pedidos.find((x) => x.chave === 'GET /api/master/resultados').query;
+  assert.equal(q.get('de'), q.get('ate'), 'começa em "Hoje"');
+
+  const linha = p.document.querySelector('tr[data-res="x1"]');
+  const campo = (nome) => linha.querySelector(`[data-res-campo="${nome}"]`);
+  assert.equal(campo('perfilReal').options[0].textContent, 'IA: Analítico');
+  assert.equal(campo('perfilReal').title, 'Pediu números.');
+  assert.equal(campo('conscienciaReal').options[0].textContent, 'IA: 3 · Consciente da solução');
+  assert.equal(campo('closerId').value, 'c1');
+  assert.deepEqual([...campo('resultado').options].map((o) => o.value), ['', 'venda_call', 'venda_fup', 'pix_compromisso', 'sem_venda', 'no_show', 'em_followup']);
+  assert.equal(p.document.querySelector('tr[data-res="x2"] [data-res-campo="perfilReal"]').value, 'cetico', 'correção já feita aparece selecionada');
+  assert.equal(p.document.querySelector('#listaRes b b'), null, 'nome do lead não vira HTML');
+
+  const mudar = (nome, valor) => { campo(nome).value = valor; campo(nome).dispatchEvent(new p.w.Event('change', { bubbles: true })); };
+  mudar('resultado', 'sem_venda');
+  mudar('obsReuniao', 'Travou no sócio');
+  mudar('conscienciaReal', 'problema');
+  await esperar(() => api.contar('PATCH /api/admin/reports/x1/resultado') === 3, { motivo: 'três salvamentos' });
+  assert.deepEqual(api.corpos('PATCH /api/admin/reports/x1/resultado'), [
+    { resultado: 'sem_venda', versao: 3 },
+    { obsReuniao: 'Travou no sócio', versao: 4 },
+    { conscienciaReal: 'problema', versao: 5 },
+  ], 'um campo por vez, em fila, cada um com a versão que o anterior devolveu');
+  await esperar(() => /A IA vai usar esta correção/.test(p.$('toast').textContent), { motivo: 'aviso do aprendizado' });
+  await dormir(60);
+  assert.deepEqual(p.erros, []);
+  p.fechar();
+});
+
+test('Resultados: a inteligência mostra o closer indicado por perfil, a matriz e o que difere na prospecção; insights sob demanda', async () => {
+  const api = apiMaster().quando('POST /api/master/insights', () => ({
+    corpo: { insights: { closerPorPerfil: ['Vitor com analítico.'], prospeccaoQueFunciona: [], perguntasParaOPadrao: ['<i>Se nada mudar?</i>'], melhoriasNoScript: [], atencao: ['Amostra pequena.'], geradoEm: '2026-10-02T20:00:00.000Z', baseadoEm: 6 } },
+  }));
+  const p = abrirPainel(api, { hash: '#resultados' });
+  await esperar(() => /Vitor fechou 3 de 4/.test(p.$('intelMelhor').textContent), { motivo: 'indicação' });
+  assert.match(p.$('intelResumo').textContent, /6 reunião\(ões\) com resultado marcado · 4 venda\(s\) · 1 sem closer marcado.*2 correção\(ões\) de consciência/);
+  assert.match(p.$('intelMelhor').textContent, /Relacional\s*sem dados ainda/);
+  assert.match(p.$('intelMatriz').textContent, /Vitor\s*3\/4\s*75%/);
+  assert.match(p.$('intelConsc').textContent, /Consciente da nossa entrega\s*2\/2\s*100%/);
+  assert.match(p.$('intelProsp').textContent, /Perguntas de implicação \(SPIN\)\s*75%\s*0%/);
+  assert.equal(p.$('intelPerguntas').querySelectorAll('li').length, 1, 'pergunta repetida aparece uma vez');
+
+  p.$('gerarInsights').click();
+  await esperar(() => /Insights gerados \(sem custo\)/.test(p.$('statusInsights').textContent), { motivo: 'insights' });
+  assert.match(p.$('insightsBox').textContent, /Perguntas para a qualificação padrão\s*<i>Se nada mudar\?<\/i>/);
+  assert.equal(p.$('insightsBox').querySelector('i[data-ic], li i'), null, 'texto da IA não vira HTML');
+  assert.match(p.$('insightsBox').textContent, /confira antes de mudar o script/);
+  await dormir(40);
+  p.fechar();
+});
+
+test('Gestor não vê "Resultados da reunião" nem "Closers" (nem pelo endereço); SDR também não', async () => {
+  const g = apiBase({ papel: 'gestor', nome: 'Líder' });
+  const p = abrirPainel(g, { hash: '#resultados' });
+  await aberto(p);
+  await dormir(60);
+  assert.ok(!visivel(p.document.querySelector('.tab[data-aba="resultados"]')));
+  assert.ok(!visivel(p.document.querySelector('.tab[data-aba="closers"]')));
+  assert.ok(visivel(p.document.querySelector('.tab[data-aba="numeros"]')), 'as outras abas de admin continuam');
+  assert.ok(!visivel(p.$('aba-resultados')));
+  assert.ok(visivel(p.$('aba-report')));
+  assert.equal(g.contar('GET /api/master/resultados'), 0);
+  p.document.querySelector('.tab[data-aba="closers"]').click();
+  assert.ok(!visivel(p.$('aba-closers')));
+  p.fechar();
+});
+
+test('Closers: aba própria do master para adicionar e remover', async () => {
+  let lista = [{ id: 'c1', nome: 'Vitor', email: 'v@x.com' }];
+  const api = apiMaster()
+    .quando('GET /api/admin/closers', () => ({ corpo: { closers: lista } }))
+    .quando('POST /api/admin/closers', ({ corpo }) => { lista = lista.concat([{ id: 'c9', nome: corpo.nome, email: corpo.email }]); return { corpo: { ok: true } }; })
+    .quando('DELETE /api/admin/closers/c1', () => { lista = lista.filter((c) => c.id !== 'c1'); return { corpo: { ok: true } }; });
+  const p = abrirPainel(api, { hash: '#closers' });
+  await esperar(() => p.$('listaClosers').textContent.includes('Vitor'), { motivo: 'lista de closers' });
+  assert.ok(visivel(p.$('aba-closers')));
+  assert.equal(p.$('aba-numeros').querySelector('#closerNome'), null, 'o cadastro saiu de "Reports gerados"');
+  p.$('closerNome').value = 'Rafa';
+  p.$('addCloser').click();
+  await esperar(() => p.$('listaClosers').textContent.includes('Rafa'), { motivo: 'closer novo' });
+  assert.deepEqual(api.corpos('POST /api/admin/closers'), [{ nome: 'Rafa', email: '' }]);
+  p.document.querySelector('[data-remover-closer="c1"]').click();
+  await esperar(() => !p.$('listaClosers').textContent.includes('Vitor'), { motivo: 'closer removido' });
+  await dormir(60);
+  p.fechar();
+});
+
+test('Base: mostra os seis campos, avisa quando é a recomendada e deixa voltar aos textos anteriores', async () => {
+  const cheia = { empresa: 'E', qualificacao: 'Q', script: 'S', oferta: 'O', objecoes: 'OB', perfil: 'P', recomendada: true, temAnterior: true, atualizadoEm: '2026-10-01T10:00:00Z' };
+  const api = apiBase()
+    .quando('GET /api/admin/base', () => ({ corpo: cheia }))
+    .quando('POST /api/admin/base/restaurar', () => ({ corpo: { base: { ...cheia, script: 'ANTIGO', recomendada: false } } }))
+    .quando('POST /api/admin/base', ({ corpo }) => ({ corpo: { ok: true, base: corpo } }));
+  const p = abrirPainel(api, { hash: '#base' });
+  await esperar(() => p.$('bEmpresa').value === 'E', { motivo: 'base carregada' });
+  assert.equal(p.$('bQualificacao').value, 'Q');
+  assert.match(p.$('statusBase').textContent, /base recomendada/);
+  assert.ok(visivel(p.$('baseRestaurar')));
+  p.$('baseRestaurar').click();
+  await esperar(() => p.$('bScript').value === 'ANTIGO', { motivo: 'restaurada' });
+  p.$('bEmpresa').value = 'Nova';
+  p.$('salvarBase').click();
+  await esperar(() => api.contar('POST /api/admin/base') === 1, { motivo: 'salvar' });
+  assert.deepEqual(Object.keys(api.corpos('POST /api/admin/base')[0]).sort(), ['empresa', 'objecoes', 'oferta', 'perfil', 'qualificacao', 'script']);
+  await dormir(40);
+  p.fechar();
 });

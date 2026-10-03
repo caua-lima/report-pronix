@@ -25,6 +25,8 @@ const diario = require('./src/diario');
 const crm = require('./src/crm');
 const { gerarResumoRapido } = require('./src/resumoRapido');
 const coachIa = require('./src/coach');
+const inteligencia = require('./src/inteligencia');
+const aprendizado = require('./src/aprendizado');
 const { normalizarConsciencia } = require('./src/consciencia');
 
 const QUALIDADES_VALIDAS = new Set(['eco', 'standard', 'premium']);
@@ -137,7 +139,11 @@ app.get('/api/status', (_req, res) => {
 
 /** Quem sou eu (valida a chave e devolve nome e papel). */
 app.get('/api/eu', auth, (req, res) => {
-  res.json({ ok: true, nome: req.usuario.nome, id: req.usuario.id, papel: req.usuario.papel });
+  res.json({
+    ok: true, nome: req.usuario.nome, id: req.usuario.id, papel: req.usuario.papel,
+    // O que o master liberou para esta chave (a extensão mostra no popup).
+    coach: Boolean(req.usuario.coach), fichaCrm: Boolean(req.usuario.fichaCrm),
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -186,7 +192,92 @@ app.delete('/api/admin/usuarios/:id', master, async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// Admin: closers (roster pra marcar quem fez cada call — sem login, só nome+e-mail)
+// Closers: quem conduz a reunião. O SDR escolhe o closer de cada report na própria extensão;
+// só o master adiciona e remove da lista.
+// ---------------------------------------------------------------------------
+/** Sugestão de closer para um perfil de lead, com base no histórico de resultados (sem IA). */
+async function sugestaoDeCloser(perfil) {
+  const lista = await closers.listar();
+  if (!lista.length) return { closers: [], sugestao: null, motivo: '' };
+  const s = inteligencia.sugerirCloser(await stats.listar(), perfil, lista);
+  return { closers: lista.map((c) => ({ id: c.id, nome: c.nome })), sugestao: s.sugestao, motivo: s.motivo };
+}
+
+/** Lista de closers (só id e nome) para quem gera report; com ?perfil= vem a sugestão. */
+app.get('/api/closers', auth, async (req, res) => {
+  try {
+    res.json(await sugestaoDeCloser(String(req.query.perfil || '')));
+  } catch (err) {
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+/** O SDR marca o closer do PRÓPRIO report (gestor/master marcam de qualquer um). */
+app.post('/api/reports/:id/closer', auth, async (req, res) => {
+  try {
+    const r = await stats.buscarPorId(req.params.id);
+    if (!r || (r.usuarioId !== req.usuario.id && !usuarios.ehAdmin(req.usuario))) {
+      return res.status(404).json({ erro: 'Report não encontrado.' });
+    }
+    const id = String((req.body || {}).closerId || '');
+    const closer = id ? await closers.porId(id) : null;
+    if (id && !closer) return res.status(400).json({ erro: 'Closer não encontrado.' });
+    await stats.atualizarResultado(r.id, {
+      closerId: closer ? closer.id : '',
+      closerNome: closer ? closer.nome : '',
+      closerEmail: closer ? closer.email : '',
+    });
+    res.json({ ok: true, closerNome: closer ? closer.nome : '' });
+  } catch (err) {
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Master: resultados da reunião e inteligência (closer × perfil, prospecção que funciona)
+// ---------------------------------------------------------------------------
+app.get('/api/master/resultados', master, async (req, res) => {
+  try {
+    const filtro = filtroDaQuery(req.query);
+    // Do mesmo lead gerado mais de uma vez no dia, só o último (é o que foi para o closer).
+    const linhas = diario
+      .marcarUltimos(await stats.listar(filtro))
+      .filter((r) => r.usar)
+      .reverse()
+      .slice(0, 300)
+      .map((r) => ({
+        id: r.id, lead: r.lead, contato: r.contato, usuarioNome: r.usuarioNome, quando: r.quando, dia: r.dia,
+        closerId: r.closerId || '', closerNome: r.closerNome || '', resultado: r.resultado || '', obsReuniao: r.obsReuniao || '',
+        perfil: r.perfil || '', perfilReal: r.perfilReal || '', perfilEvidencia: r.perfilEvidencia || '',
+        consciencia: r.consciencia || '', conscienciaReal: r.conscienciaReal || '', conscienciaPorque: r.conscienciaPorque || '',
+        versao: Number(r.versao) || 0,
+      }));
+    res.json({ reports: linhas, closers: (await closers.listar()).map((c) => ({ id: c.id, nome: c.nome })) });
+  } catch (err) {
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+app.get('/api/master/inteligencia', master, async (_req, res) => {
+  try {
+    const painel = inteligencia.painel(await stats.listar(), await closers.listar());
+    res.json({ ...painel, insights: await inteligencia.ultimosInsights(), calibragens: (await aprendizado.ajustes()).length });
+  } catch (err) {
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+/** Texto de insights escrito pela IA gratuita (Groq) em cima dos números — sem custo. */
+app.post('/api/master/insights', master, async (_req, res) => {
+  try {
+    res.json({ insights: await inteligencia.gerarInsights(await stats.listar(), await closers.listar()) });
+  } catch (err) {
+    res.status(/Marque o resultado/.test(err.message) ? 400 : 502).json({ erro: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Admin: closers (lista completa, com e-mail)
 // ---------------------------------------------------------------------------
 app.get('/api/admin/closers', admin, async (_req, res) => {
   try {
@@ -196,7 +287,7 @@ app.get('/api/admin/closers', admin, async (_req, res) => {
   }
 });
 
-app.post('/api/admin/closers', admin, async (req, res) => {
+app.post('/api/admin/closers', master, async (req, res) => {
   try {
     const c = await closers.criar(req.body && req.body.nome, req.body && req.body.email);
     res.json({ ok: true, closer: c });
@@ -205,7 +296,7 @@ app.post('/api/admin/closers', admin, async (req, res) => {
   }
 });
 
-app.delete('/api/admin/closers/:id', admin, async (req, res) => {
+app.delete('/api/admin/closers/:id', master, async (req, res) => {
   try {
     await closers.remover(req.params.id);
     res.json({ ok: true });
@@ -231,6 +322,24 @@ app.post('/api/admin/base', admin, async (req, res) => {
   }
 });
 
+/** Volta um campo (body.campo) ou a base inteira para o texto recomendado. */
+app.post('/api/admin/base/recomendada', admin, async (req, res) => {
+  try {
+    res.json({ ok: true, base: await base.usarRecomendada(String((req.body || {}).campo || '')) });
+  } catch (err) {
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+/** Devolve os textos que existiam antes da base recomendada entrar. */
+app.post('/api/admin/base/restaurar', admin, async (_req, res) => {
+  try {
+    res.json({ ok: true, base: await base.restaurarAnterior() });
+  } catch (err) {
+    res.status(400).json({ erro: err.message });
+  }
+});
+
 /** Tira um report do histórico (testes que sujam os números). */
 app.delete('/api/admin/reports/:id', admin, async (req, res) => {
   try {
@@ -253,9 +362,10 @@ app.patch('/api/admin/reports/:id/resultado', admin, async (req, res) => {
     // Só entra no que veio no pedido: mudar um campo não apaga os outros. Se vier
     // "versao", o servidor recusa (409) quando o report já foi alterado por outra pessoa.
     const campos = {};
-    ['leadEmail', 'resultado', 'dataReuniao', 'dataFechamento'].forEach((k) => {
+    ['leadEmail', 'resultado', 'dataReuniao', 'dataFechamento', 'obsReuniao', 'perfilReal', 'conscienciaReal'].forEach((k) => {
       if (tem(k)) campos[k] = body[k];
     });
+    const antes = tem('conscienciaReal') ? await stats.buscarPorId(req.params.id) : null;
     if (tem('closerId')) {
       let closer = null;
       if (body.closerId) {
@@ -270,6 +380,15 @@ app.patch('/api/admin/reports/:id/resultado', admin, async (req, res) => {
       versaoEsperada: tem('versao') ? body.versao : undefined,
     });
     if (!feito) return res.status(404).json({ erro: 'Report não encontrado.' });
+    // Corrigir o nível de consciência ensina a IA: a correção entra como exemplo nos próximos reports.
+    if (antes && body.conscienciaReal && body.conscienciaReal !== antes.conscienciaReal) {
+      await aprendizado
+        .registrarAjusteConsciencia({
+          reportId: antes.id, de: antes.consciencia, para: body.conscienciaReal,
+          evidencia: antes.conscienciaPorque, nota: body.notaConsciencia,
+        })
+        .catch((err) => console.error('Falha ao guardar a calibragem:', err.message));
+    }
     res.json({ ok: true, versao: feito.versao });
   } catch (err) {
     if (err.codigo === 'CONFLITO') return res.status(409).json({ erro: err.message, atual: err.atual });
@@ -397,7 +516,7 @@ async function enviarZip(res, nomeZip, arquivos) {
 app.post('/api/crm/lead', auth, async (req, res) => {
   try {
     // O master escolhe quem vê a ficha (aba Acessos). Desligado: a extensão não mostra nada e o RD nem é consultado.
-    if (!req.usuario.fichaCrm) return res.json({ configurado: false });
+    if (!req.usuario.fichaCrm) return res.json({ configurado: false, coach: Boolean(req.usuario.coach) });
     const { telefone, nome, contatoId, dealId, lembrar } = req.body || {};
     // "coach" avisa a extensão se este usuário vê o botão Coach da conversa.
     res.json({ ...(await crm.consultarLead({ telefone, nome, contatoId, dealId, lembrar: lembrar === true })), coach: Boolean(req.usuario.coach) });
@@ -640,6 +759,15 @@ async function responderReport(req, res, dados, nome, origem, reportKey, captura
   delete dados.uso; // consumo é assunto do admin: não vai junto do report.
   const meta = dados._meta || {};
   delete dados._meta; // métricas internas de qualidade: também não vão pro cliente.
+  // Análise da prospecção (BANT/SPIN/perguntas-chave) é da gestão: fica no histórico, não no report.
+  const leitura = {
+    perfil: (dados.perfil && dados.perfil.tipo) || '',
+    perfilEvidencia: (dados.perfil && dados.perfil.evidencia) || '',
+    consciencia: (dados.consciencia && dados.consciencia.nivel) || '',
+    conscienciaPorque: (dados.consciencia && dados.consciencia.porque) || '',
+    analise: dados.analise || null,
+  };
+  delete dados.analise;
   const buffer = await gerarPdfBuffer(dados);
   const arquivo = nomeArquivoPdf(dados.lead || nome);
   // Gera o id aqui (não dentro de stats.registrar) pra poder salvar o PDF sob
@@ -662,12 +790,15 @@ async function responderReport(req, res, dados, nome, origem, reportKey, captura
       qualidade: (uso && uso.qualidade) || 'standard',
       captura,
       citacoesRemovidas: meta.citacoesRemovidas || 0,
+      leitura,
     })
     .catch((err) => console.error('Falha ao registrar o report:', err.message));
   await pdfStorage
     .salvar(id, base64, arquivo)
     .catch((err) => console.error('Falha ao salvar o PDF do report:', err.message));
-  res.json({ dados, arquivo, arquivoBase64: base64 });
+  // Para a extensão oferecer o closer logo no aviso final (com a sugestão pelo perfil do lead).
+  const escolha = await sugestaoDeCloser(leitura.perfil).catch(() => ({ closers: [], sugestao: null, motivo: '' }));
+  res.json({ dados, arquivo, arquivoBase64: base64, id, closers: escolha.closers, sugestaoCloser: escolha.sugestao, motivoSugestao: escolha.motivo });
 }
 
 // Report_Nome_Data.pdf — "Nome" é o lead, que é de quem o report fala.

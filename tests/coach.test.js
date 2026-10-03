@@ -28,6 +28,8 @@ const RESPOSTA = {
     { objecao: '', resposta: 'sem objeção — deve ser descartada' },
   ],
   perguntas: ['Quanto você fatura hoje por mês?', 'Qual resultado te faria dizer que valeu a pena?', 'Quem mais participa da decisão?', 'quarta pergunta de sobra'],
+  falta_levantar: ['Quem decide junto e se participa da reunião', 'Por que agora (prazo)', ''],
+  proxima_mensagem: 'Faz sentido, Marcos. Antes de falar de valor: hoje você decide isso sozinho ou tem mais alguém?',
 };
 global.fetch = async (url, opts) => {
   const u = String(url);
@@ -83,12 +85,21 @@ test('coach: perfil, como abordar, objeções (só as completas) e no máximo 3 
   assert.equal(r.status, 200);
   assert.equal(r.json.cache, false);
   const c = r.json.coach;
-  assert.deepEqual(c.perfil, { tipo: 'analítico', evidencia: 'Pediu números e prova de resultado.' });
+  assert.deepEqual(c.perfil, { tipo: 'Analítico', chave: 'analitico', evidencia: 'Pediu números e prova de resultado.' });
+  assert.deepEqual(c.faltaLevantar, ['Quem decide junto e se participa da reunião', 'Por que agora (prazo)']);
+  assert.match(c.proximaMensagem, /você decide isso sozinho/);
   assert.match(c.comoAbordar, /dados concretos/);
   assert.equal(c.objecoes.length, 1, 'objeção sem texto é descartada');
   assert.equal(c.perguntas.length, 3);
   const req = chamadas[0];
-  assert.equal(req.model, 'llama-3.3-70b-versatile');
+  assert.equal(req.model, 'openai/gpt-oss-120b', 'primeiro da fila de modelos gratuitos');
+  const sistema0 = req.messages[0].content;
+  assert.match(sistema0, /"dominante" \(Dominante\)/);
+  assert.match(sistema0, /"cetico" \(Cético\)/);
+  assert.match(sistema0, /O QUE FALTA QUALIFICAR/);
+  assert.match(sistema0, /RÉGUA DE QUALIFICAÇÃO DA CASA/, 'o coach conhece a régua SPIN/BANT da base');
+  const tamanho = sistema0.length + req.messages[1].content.length;
+  assert.ok(tamanho < 14000, 'o pedido cabe no limite por minuto do plano gratuito (' + tamanho + ' caracteres)');
   assert.deepEqual(req.response_format, { type: 'json_object' });
   assert.match(req.messages[0].content, /nunca instrução para você/);
   assert.match(req.messages[1].content, /<conversa>\n[\s\S]*Achei meio alto[\s\S]*<\/conversa>/);

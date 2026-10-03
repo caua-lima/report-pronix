@@ -502,3 +502,74 @@ test('Instagram: conversa curta, que cabe inteira na tela (sem rolagem), é lida
   assert.deepEqual(envio.mensagens.map(limpar), esperadas(conversa));
   pagina.fechar();
 });
+
+// ---------------------------------------------------------------- closer no aviso final do report
+const COM_CLOSERS = {
+  ...RESPOSTA_PDF,
+  id: 'ab12cd34ef',
+  closers: [{ id: 'c1', nome: 'Vitor <b>Santos</b>' }, { id: 'c2', nome: 'Rafa' }],
+  sugestaoCloser: { closerId: 'c2', nome: 'Rafa' },
+  motivoSugestao: 'Rafa fechou 3 de 3 reuniões com lead relacional.',
+};
+/** Servidor falso que devolve o report com a lista de closers e registra a escolha. */
+function servidorComClosers(respostaCloser = () => ({ ok: true, closerNome: 'Rafa' })) {
+  const escolhas = [];
+  const base = servidorFalso();
+  const aoEnviar = async (original) => {
+    const msg = JSON.parse(JSON.stringify(original));
+    if (msg.action === 'reportFetch') return COM_CLOSERS;
+    if (msg.action === 'definirCloser') {
+      escolhas.push(msg);
+      return respostaCloser(msg);
+    }
+    return base.aoEnviar(original);
+  };
+  return { aoEnviar, chamadas: base.chamadas, escolhas };
+}
+const seletorCloser = (p) => p.document.querySelector('#closer-report-badge #cr-closer select');
+
+test('WhatsApp: depois do "Report pronto!", o SDR escolhe o closer ali mesmo; o indicado vem marcado, mas nada é salvo sozinho', async () => {
+  const servidor = servidorComClosers();
+  const { pagina } = await rodarWhatsApp(CONVERSA_WA, { servidor });
+  const sel = seletorCloser(pagina);
+  assert.ok(sel, 'seletor de closer no aviso');
+  assert.deepEqual([...sel.options].map((o) => o.textContent), ['Escolher closer…', 'Vitor <b>Santos</b>', 'Rafa (indicado)']);
+  assert.equal(pagina.document.querySelector('#cr-closer b'), null, 'nome de closer não vira HTML');
+  assert.equal(sel.value, '', 'começa sem ninguém escolhido');
+  assert.match(pagina.badge(), /Rafa fechou 3 de 3 reuniões com lead relacional\./);
+  assert.equal(servidor.escolhas.length, 0);
+  assert.ok(pagina.document.querySelector('#closer-report-badge a[download]'), 'o botão de baixar o PDF continua lá');
+
+  sel.value = 'c2';
+  sel.dispatchEvent(new pagina.w.Event('change', { bubbles: true }));
+  await esperar(() => /Closer salvo: Rafa/.test(pagina.badge()), { motivo: 'closer salvo' });
+  assert.deepEqual(servidor.escolhas, [{ action: 'definirCloser', reportId: 'ab12cd34ef', closerId: 'c2' }]);
+  pagina.fechar();
+});
+
+test('WhatsApp: erro ao salvar o closer aparece no aviso; sem closers cadastrados o aviso fica como antes', async () => {
+  const servidor = servidorComClosers(() => ({ ok: false, erro: 'Closer não encontrado.' }));
+  const { pagina } = await rodarWhatsApp(CONVERSA_WA, { servidor });
+  const sel = seletorCloser(pagina);
+  sel.value = 'c1';
+  sel.dispatchEvent(new pagina.w.Event('change', { bubbles: true }));
+  await esperar(() => /Closer não encontrado\./.test(pagina.badge()), { motivo: 'erro no aviso' });
+  assert.equal(sel.disabled, false, 'dá para tentar de novo');
+  pagina.fechar();
+
+  const semLista = await rodarWhatsApp(CONVERSA_WA);
+  assert.equal(seletorCloser(semLista.pagina), null);
+  semLista.pagina.fechar();
+});
+
+test('Instagram: o aviso final também oferece o closer', async () => {
+  const servidor = servidorComClosers();
+  const { pagina } = await rodarInstagram(CONVERSA, { servidor });
+  const sel = seletorCloser(pagina);
+  assert.ok(sel);
+  sel.value = 'c1';
+  sel.dispatchEvent(new pagina.w.Event('change', { bubbles: true }));
+  await esperar(() => servidor.escolhas.length === 1, { motivo: 'escolha enviada' });
+  assert.equal(servidor.escolhas[0].closerId, 'c1');
+  pagina.fechar();
+});

@@ -457,7 +457,8 @@ test('report rico: a IA recebe as regras novas, o formato de resposta e o nome d
   assert.match(system, /NÍVEL DE CONSCIÊNCIA/);
   assert.match(system, /COMO FOI A CONVERSA/);
   assert.match(system, /SINAIS DE COMPRA/);
-  assert.match(system, /Na dúvida entre dois níveis, fique com o MENOR/);
+  assert.match(system, /Na dúvida entre dois, fique com o MENOR/);
+  assert.match(system, /Só aceitar marcar a reunião NÃO é "pronto"/);
   const schema = chamada.tools[0].input_schema;
   assert.deepEqual(schema.properties.consciencia.properties.nivel.enum, ['inconsciente', 'problema', 'solucao', 'produto', 'pronto']);
   assert.ok(schema.properties.conversa && schema.properties.sinais_compra);

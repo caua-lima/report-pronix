@@ -68,27 +68,33 @@ REGRAS:
 async function lerImagemGroq(buffer, mime = 'image/jpeg') {
   const key = process.env.GROQ_API_KEY;
   if (!key) throw new Error('GROQ_API_KEY não configurada — é ela que faz a leitura de imagem sair de graça.');
-  const model = process.env.GROQ_VISION_MODEL || 'qwen/qwen3.6-27b';
   const dataUrl = `data:${mime};base64,${buffer.toString('base64')}`;
-
-  const r = await fetch(GROQ_CHAT_URL, {
-    signal: AbortSignal.timeout(Number(process.env.GROQ_TIMEOUT_MS) || 50000),
-    method: 'POST',
-    headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model,
-      temperature: 0, // transcrição: queremos o que está escrito, não criatividade
-      messages: [
-        {
-          role: 'user',
-          content: [
-            { type: 'text', text: PROMPT_IMAGEM },
-            { type: 'image_url', image_url: { url: dataUrl } },
-          ],
-        },
-      ],
-    }),
-  }).catch(erroDeRede('A leitura da imagem demorou demais. Tente de novo.'));
+  // O Groq troca os modelos de tempos em tempos: se o configurado saiu do ar, tenta o seguinte.
+  const modelos = filaDeModelos(process.env.GROQ_VISION_MODEL, ['qwen/qwen3.6-27b', 'qwen/qwen3.8-27b']);
+  let r;
+  for (let i = 0; i < modelos.length; i++) {
+    r = await fetch(GROQ_CHAT_URL, {
+      signal: AbortSignal.timeout(Number(process.env.GROQ_TIMEOUT_MS) || 50000),
+      method: 'POST',
+      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: modelos[i],
+        temperature: 0, // transcrição: queremos o que está escrito, não criatividade
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: PROMPT_IMAGEM },
+              { type: 'image_url', image_url: { url: dataUrl } },
+            ],
+          },
+        ],
+      }),
+    }).catch(erroDeRede('A leitura da imagem demorou demais. Tente de novo.'));
+    if (r.ok || i === modelos.length - 1) break;
+    const detalhe = await r.clone().text().catch(() => '');
+    if (!modeloIndisponivel(r.status, detalhe)) break;
+  }
 
   if (!r.ok) {
     const detalhe = await r.text().catch(() => '');
@@ -100,38 +106,77 @@ async function lerImagemGroq(buffer, mime = 'image/jpeg') {
   return texto;
 }
 
+/** Modelo configurado primeiro, depois os padrões, sem repetir. */
+function filaDeModelos(configurado, padroes) {
+  return [...new Set([String(configurado || '').trim(), ...padroes].filter(Boolean))];
+}
+
+/** O erro é do MODELO (saiu do ar, não existe, não está no plano)? Aí vale tentar o próximo da fila. */
+function modeloIndisponivel(status, detalhe) {
+  if (status === 404) return true;
+  return (status === 400 || status === 403) && /model|decommission|deprecat|not (found|supported|available)|does not exist/i.test(String(detalhe || ''));
+}
+
+// Modelos de texto do plano gratuito do Groq, do melhor para o reserva. O plano gratuito limita
+// tokens por minuto (cerca de 8 mil por modelo): por isso quem chama mantém o pedido enxuto.
+const MODELOS_CHAT = ['openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'llama-3.3-70b-versatile', 'llama-3.1-8b-instant'];
+
 /**
- * Chat de texto no Groq (plano gratuito: sem custo, com limite de chamadas). Devolve o texto da resposta;
- * com json:true pede resposta em JSON. O modelo vem de GROQ_COACH_MODEL.
+ * Chat de texto no Groq (plano gratuito: sem custo, com limite de chamadas). Devolve o texto da resposta.
+ * Tenta a fila de modelos: se um saiu do ar ou bateu no limite, passa para o seguinte.
  */
 async function chatGroq({ system, user, modelo, maxTokens = 900, json = true }) {
   const key = process.env.GROQ_API_KEY;
   if (!key) throw new Error('GROQ_API_KEY não configurada — é ela que mantém o coach sem custo.');
-  const model = modelo || 'llama-3.3-70b-versatile';
-  const r = await fetch(GROQ_CHAT_URL, {
-    signal: AbortSignal.timeout(Number(process.env.GROQ_TIMEOUT_MS) || 50000),
-    method: 'POST',
-    headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model,
-      temperature: 0.4,
-      max_tokens: maxTokens,
-      ...(json ? { response_format: { type: 'json_object' } } : {}),
-      messages: [
-        { role: 'system', content: system },
-        { role: 'user', content: user },
-      ],
-    }),
-  }).catch(erroDeRede('O coach demorou demais. Tente de novo.'));
-  if (r.status === 429) throw new Error('O limite gratuito do coach foi atingido por agora. Tente de novo em 1 minuto.');
-  if (!r.ok) {
-    const detalhe = await r.text().catch(() => '');
-    throw new Error(`Groq (coach) respondeu ${r.status}: ${detalhe.slice(0, 200)}`);
+  const modelos = filaDeModelos(modelo, MODELOS_CHAT);
+  let ultimoErro = null;
+  let limite = false;
+
+  for (const model of modelos) {
+    const raciocina = /gpt-oss/.test(model); // modelos que "pensam" gastam parte da saída pensando
+    // 1ª tentativa com resposta em JSON; se o modelo recusar o parâmetro, tenta sem ele.
+    for (const comExtras of [true, false]) {
+      const corpo = {
+        model,
+        temperature: 0.4,
+        max_tokens: raciocina ? maxTokens + 600 : maxTokens,
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: user },
+        ],
+      };
+      if (comExtras && json) corpo.response_format = { type: 'json_object' };
+      if (comExtras && raciocina) corpo.reasoning_effort = 'low';
+      const r = await fetch(GROQ_CHAT_URL, {
+        signal: AbortSignal.timeout(Number(process.env.GROQ_TIMEOUT_MS) || 50000),
+        method: 'POST',
+        headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(corpo),
+      }).catch(erroDeRede('A IA gratuita demorou demais. Tente de novo.'));
+
+      if (r.ok) {
+        const j = await r.json().catch(() => ({}));
+        const t = ((j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content) || '').trim();
+        if (t) return t;
+        ultimoErro = new Error('A IA gratuita não devolveu texto.');
+        break; // próximo modelo
+      }
+      const detalhe = await r.text().catch(() => '');
+      if (r.status === 401) throw new Error('GROQ_API_KEY inválida. Confira a variável na Vercel.');
+      if (r.status === 429 || r.status === 413) {
+        // Limite por minuto/dia deste modelo (ou pedido grande demais para ele): tenta o próximo.
+        limite = true;
+        ultimoErro = new Error(`Groq respondeu ${r.status} em ${model}`);
+        break;
+      }
+      ultimoErro = new Error(`Groq respondeu ${r.status} em ${model}: ${detalhe.slice(0, 200)}`);
+      if (modeloIndisponivel(r.status, detalhe)) break; // próximo modelo
+      if (r.status === 400 && comExtras) continue; // parâmetro não aceito: de novo, sem os extras
+      break;
+    }
   }
-  const j = await r.json().catch(() => ({}));
-  const t = ((j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content) || '').trim();
-  if (!t) throw new Error('O coach não devolveu texto.');
-  return t;
+  if (limite) throw new Error('O limite gratuito da IA foi atingido por agora. Tente de novo em 1 minuto.');
+  throw ultimoErro || new Error('A IA gratuita não respondeu.');
 }
 
-module.exports = { transcreverGroq, lerImagemGroq, chatGroq };
+module.exports = { transcreverGroq, lerImagemGroq, chatGroq, filaDeModelos, modeloIndisponivel, MODELOS_CHAT };

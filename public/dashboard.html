@@ -189,6 +189,27 @@
     @media (prefers-color-scheme: dark) { .chip.on { background: var(--ouro); color: #121214; border-color: var(--ouro); } .chip.on::before { color: #121214; } }
 
     /* ---------- Áudios ---------- */
+    /* Conversa em formato de chat */
+    .chat-thread { border: 1px solid var(--border); border-radius: var(--r); background: var(--card-2); padding: 12px; min-height: 150px; max-height: 420px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+    .chat-vazio { margin: auto; text-align: center; color: var(--muted); padding: 18px 8px; }
+    .chat-vazio .ic { font-size: 24px; }
+    .chat-vazio .big { font-weight: 650; margin-top: 6px; color: var(--text-2); }
+    .chat-vazio .small { font-size: .8rem; margin-top: 4px; }
+    .bolha { max-width: 82%; border: 1px solid var(--border); border-radius: 12px; padding: 7px 10px 8px; background: var(--card); align-self: flex-start; }
+    .bolha.eu { align-self: flex-end; background: color-mix(in srgb, var(--ouro) 14%, var(--card)); border-color: color-mix(in srgb, var(--ouro) 40%, var(--border)); }
+    .bolha.solto { align-self: stretch; max-width: 100%; border-style: dashed; }
+    .bolha-topo { display: flex; justify-content: space-between; gap: 10px; font-size: .68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin-bottom: 2px; }
+    .bolha-x { border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 1rem; line-height: 1; padding: 0 2px; }
+    .bolha-x:hover { color: var(--danger); }
+    .bolha-txt { white-space: pre-wrap; overflow-wrap: anywhere; font-size: .9rem; }
+    .chat-composer { display: flex; gap: 8px; align-items: flex-end; margin-top: 10px; border: 1.5px solid var(--border-forte); border-radius: var(--r); padding: 8px; background: var(--card); }
+    .chat-composer.drag { border-color: var(--ouro); box-shadow: 0 0 0 3px var(--ring); }
+    .chat-composer textarea { flex: 1; min-height: 44px; max-height: 160px; border: 0; background: transparent; padding: 6px; resize: vertical; box-shadow: none; }
+    .chat-composer textarea:focus { outline: none; box-shadow: none; }
+    @media (max-width: 640px) { .chat-composer { flex-wrap: wrap; } .chat-composer textarea { flex-basis: 100%; } }
+    .sec-t { font-size: .82rem; font-weight: 700; margin: 18px 0 8px; color: var(--text); }
+    .duas { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 0 24px; }
+
     .dropzone { border: 1.5px dashed var(--border-forte); border-radius: var(--r); padding: 28px 18px; text-align: center; cursor: pointer; transition: all .15s; background: var(--card-2); margin-bottom: 14px; }
     .dropzone:hover, .dropzone.drag { border-color: var(--ouro); background: color-mix(in srgb, var(--ouro) 5%, var(--card-2)); }
     .dropzone.drag { box-shadow: 0 0 0 3px var(--ring); }
@@ -243,6 +264,8 @@
       <button class="tab" data-aba="dia"><i data-ic="download"></i>Reports do dia</button>
       <button class="tab so-admin hidden" data-aba="acessos"><i data-ic="key"></i>Acessos</button>
       <button class="tab so-admin hidden" data-aba="numeros"><i data-ic="chart"></i>Reports gerados</button>
+      <button class="tab so-master hidden" data-aba="resultados"><i data-ic="target"></i>Resultados da reunião</button>
+      <button class="tab so-master hidden" data-aba="closers"><i data-ic="users"></i>Closers</button>
       <button class="tab so-admin hidden" data-aba="arquivos"><i data-ic="download"></i>Arquivos</button>
       <button class="tab so-admin hidden" data-aba="base"><i data-ic="clipboard"></i>Base</button>
       <button class="tab so-admin hidden" data-aba="extensao"><i data-ic="package"></i>Extensão</button>
@@ -262,38 +285,42 @@
       </div>
 
       <div class="card">
-        <div class="head"><div class="t"><i data-ic="message"></i>Conversa</div><div class="sub">— jogue os áudios e cole o texto; tudo vira o report</div></div>
+        <div class="head"><div class="t"><i data-ic="message"></i>Conversa</div><div class="sub">— monte como num chat: escreva, cole ou anexe áudios, prints e arquivos; tudo vira o report</div></div>
 
-        <div class="row" style="margin-bottom:8px;align-items:center;gap:8px">
-          <label for="quemAudio" style="margin:0">Quem gravou os áudios?</label>
-          <select id="quemAudio" class="mini-select">
+        <label for="nomeLead">Nome do lead</label>
+        <input id="nomeLead" type="text" placeholder="Ex.: Jô, Márcia Gonçalves… (vira o título e o nome do PDF)" />
+
+        <div id="chatThread" class="chat-thread" style="margin-top:14px">
+          <div id="chatVazio" class="chat-vazio">
+            <i class="ic" data-ic="message"></i>
+            <div class="big">A conversa aparece aqui</div>
+            <div class="small">Escreva abaixo, cole a conversa inteira, ou arraste áudios, prints e arquivos de texto. O Ctrl+V cola print direto.</div>
+          </div>
+        </div>
+        <div id="files" class="files"></div>
+        <div id="filesImg" class="files"></div>
+        <div id="statusAudio" class="status" style="margin-top:0"></div>
+        <div id="statusImg" class="status" style="margin-top:0"></div>
+
+        <div id="dropzone" class="chat-composer">
+          <select id="quemAudio" class="mini-select" title="Quem falou (vale para o que você escrever e para os áudios anexados)">
             <option value="LEAD">Lead</option>
             <option value="VENDEDOR">Eu (vendedor)</option>
           </select>
+          <textarea id="chatMsg" rows="2" placeholder="Escreva uma mensagem ou cole a conversa inteira… (Enter adiciona, Shift+Enter quebra a linha)"></textarea>
+          <button id="chatAnexar" type="button" class="btn sec" title="Anexar áudio, print ou arquivo de texto"><i data-ic="plus"></i>Anexar</button>
+          <button id="chatEnviar" type="button" class="btn">Adicionar</button>
         </div>
-        <div id="dropzone" class="dropzone">
-          <i class="ic" data-ic="headphones"></i>
-          <div class="big">Arraste os áudios aqui</div>
-          <div class="small">ou clique para selecionar · vários de uma vez · o texto entra no fim da conversa abaixo (mova a linha se a ordem importar)</div>
-        </div>
-        <input id="audio" type="file" accept="audio/*,.ogg,.opus,.m4a,.mp3,.aac,.wav" multiple class="hidden" />
-        <div id="files" class="files"></div>
-        <div id="statusAudio" class="status" style="margin-top:0"></div>
-
-        <div id="dropzoneImg" class="dropzone" style="margin-top:14px">
-          <i class="ic" data-ic="image"></i>
-          <div class="big">Ou cole um print da conversa</div>
-          <div class="small">Ctrl+V cola direto · também dá pra arrastar ou clicar · vários prints de uma vez · leitura da imagem é gratuita</div>
-        </div>
+        <div class="hint" style="margin:6px 0 0">Aceita áudio (transcrito), print/foto (lido como conversa, grátis) e arquivo de texto (.txt, .md, .csv). PDF e Word ainda não: copie o texto e cole.</div>
+        <input id="audio" type="file" accept="audio/*,image/*,text/*,.ogg,.opus,.m4a,.mp3,.aac,.wav,.txt,.md,.csv,.json,.srt,.vtt,.log" multiple class="hidden" />
+        <div id="dropzoneImg" class="hidden"></div>
         <input id="imagem" type="file" accept="image/*" multiple class="hidden" />
-        <div id="filesImg" class="files"></div>
-        <div id="statusImg" class="status" style="margin-top:0"></div>
 
-        <label for="nomeLead" style="margin-top:14px">Nome do lead</label>
-        <input id="nomeLead" type="text" placeholder="Ex.: Jô, Márcia Gonçalves… (vira o título e o nome do PDF)" />
-
-        <label for="texto" style="margin-top:14px">Cole a conversa aqui (o texto dos áudios entra sozinho)</label>
-        <textarea id="texto" placeholder="Cole a conversa inteira aqui…"></textarea>
+        <details id="chatTextoBox" style="margin-top:12px">
+          <summary style="cursor:pointer;color:var(--text-2);font-size:.85rem">Ver ou editar a conversa como texto</summary>
+          <label for="texto" style="margin-top:10px">Conversa (é exatamente isto que vai para a IA)</label>
+          <textarea id="texto" placeholder="Cole a conversa inteira aqui…"></textarea>
+        </details>
         <div id="estimativaCusto" class="hint" style="margin-top:6px"></div>
       </div>
 
@@ -344,6 +371,115 @@
           <tbody id="listaMeus"></tbody>
         </table>
         <div id="vazioMeus" class="hint">Nenhum report neste dia.</div>
+      </div>
+    </section>
+
+    <!-- ================= ABA: RESULTADOS DA REUNIÃO (só o master) ================= -->
+    <section id="aba-resultados" class="hidden">
+      <div class="card admin-login hidden">
+        <div class="head"><div class="t"><i data-ic="lock"></i>Área do master</div><div class="sub">— entre com a sua chave de master na aba "Gerar report"</div></div>
+        <div class="row">
+          <input class="grow senha-admin" type="password" placeholder="Senha de admin (ADMIN_PASSWORD)" />
+          <button class="btn sec entrar-admin">Entrar com a senha</button>
+        </div>
+        <div class="status status-admin"></div>
+      </div>
+
+      <div class="admin-area hidden">
+        <div class="card">
+          <div class="head"><div class="t"><i data-ic="target"></i>Resultados da reunião</div><div class="sub">— marque no fim do dia o que deu cada reunião</div></div>
+          <div class="hint" style="margin:0 0 12px">
+            Cada linha é um report (do mesmo lead, só o último). Marque o <b>closer</b> e o <b>resultado</b>; se a IA errou o
+            <b>perfil</b> ou o <b>nível de consciência</b>, corrija na linha: a correção do nível vira exemplo e os próximos reports saem mais certos.
+            É com estes dados que a aba mostra qual closer fecha com qual tipo de lead.
+          </div>
+          <div class="periodos">
+            <button class="chip on" data-res-dias="0">Hoje</button>
+            <button class="chip" data-res-dias="1">Desde ontem</button>
+            <button class="chip" data-res-dias="6">Últimos 7 dias</button>
+            <button class="chip" data-res-dias="29">Últimos 30 dias</button>
+          </div>
+          <div class="row" style="margin-top:12px">
+            <div style="flex:1;min-width:140px"><label for="resDe">De</label><input id="resDe" type="date" /></div>
+            <div style="flex:1;min-width:140px"><label for="resAte">Até</label><input id="resAte" type="date" /></div>
+            <label style="display:flex;align-items:center;gap:6px;margin:0"><input id="resPendentes" type="checkbox" style="width:auto" /> Só sem resultado</label>
+            <button id="resVer" class="btn sec"><i data-ic="refresh"></i>Atualizar</button>
+          </div>
+          <div id="statusRes" class="status"></div>
+        </div>
+
+        <div class="card">
+          <table>
+            <thead><tr><th>Lead</th><th>Perfil</th><th>Consciência</th><th>Closer</th><th>Resultado</th><th>O que deu a reunião</th></tr></thead>
+            <tbody id="listaRes"></tbody>
+          </table>
+          <div id="vazioRes" class="hint">Nenhum report neste período.</div>
+        </div>
+
+        <div class="card">
+          <div class="head"><div class="t"><i data-ic="chart"></i>Inteligência</div><div class="sub">— o que o histórico mostra (conta feita em cima dos resultados, sem IA)</div></div>
+          <div id="intelResumo" class="hint" style="margin:0 0 12px"></div>
+
+          <h3 class="sec-t">Qual closer para cada tipo de lead</h3>
+          <table><thead><tr><th>Perfil do lead</th><th>Closer indicado</th><th>Por quê</th></tr></thead><tbody id="intelMelhor"></tbody></table>
+
+          <h3 class="sec-t">Closer × perfil <span style="font-weight:400;color:var(--muted)">(vendas / reuniões)</span></h3>
+          <div id="intelMatriz" style="overflow-x:auto"></div>
+
+          <div class="duas">
+            <div>
+              <h3 class="sec-t">Conversão por perfil</h3>
+              <table><tbody id="intelPerfil"></tbody></table>
+            </div>
+            <div>
+              <h3 class="sec-t">Conversão por nível de consciência</h3>
+              <table><tbody id="intelConsc"></tbody></table>
+            </div>
+          </div>
+
+          <h3 class="sec-t">O que a prospecção das reuniões que fecharam tem de diferente</h3>
+          <div id="intelProspAviso" class="hint" style="margin:0 0 8px"></div>
+          <table><thead><tr><th>Na conversa do pré-vendedor</th><th>Nas que fecharam</th><th>Nas que não fecharam</th></tr></thead><tbody id="intelProsp"></tbody></table>
+
+          <h3 class="sec-t">Perguntas-chave das reuniões que fecharam</h3>
+          <div id="intelPerguntas" class="hint" style="margin:0"></div>
+        </div>
+
+        <div class="card">
+          <div class="head"><div class="t"><i data-ic="zap"></i>Insights</div><div class="sub">— IA gratuita lê os números e sugere melhorias no script e perguntas para o padrão</div></div>
+          <button id="gerarInsights" class="btn">Gerar insights</button>
+          <div id="statusInsights" class="status"></div>
+          <div id="insightsBox"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= ABA: CLOSERS (só o master) ================= -->
+    <section id="aba-closers" class="hidden">
+      <div class="card admin-login hidden">
+        <div class="head"><div class="t"><i data-ic="lock"></i>Área do master</div><div class="sub">— entre com a sua chave de master na aba "Gerar report"</div></div>
+        <div class="row">
+          <input class="grow senha-admin" type="password" placeholder="Senha de admin (ADMIN_PASSWORD)" />
+          <button class="btn sec entrar-admin">Entrar com a senha</button>
+        </div>
+        <div class="status status-admin"></div>
+      </div>
+
+      <div class="admin-area hidden">
+        <div class="card">
+          <div class="head"><div class="t"><i data-ic="users"></i>Closers</div><div class="sub">— quem conduz as reuniões. O SDR escolhe o closer de cada report na própria extensão</div></div>
+          <div class="row">
+            <input id="closerNome" type="text" placeholder="Nome do closer" style="flex:1;min-width:160px" />
+            <input id="closerEmail" type="email" placeholder="e-mail (opcional)" style="flex:1;min-width:200px" />
+            <button id="addCloser" class="btn"><i data-ic="plus"></i>Adicionar</button>
+          </div>
+          <div id="statusCloser" class="status"></div>
+          <table style="margin-top:10px">
+            <thead><tr><th>Nome</th><th>E-mail</th><th></th></tr></thead>
+            <tbody id="listaClosers"></tbody>
+          </table>
+          <div id="vazioClosers" class="hint">Nenhum closer cadastrado ainda.</div>
+        </div>
       </div>
     </section>
 
@@ -422,22 +558,6 @@
             <button id="aplicar" class="btn">Ver</button>
           </div>
           <div id="statusFiltro" class="status"></div>
-        </div>
-
-        <!-- Closers: roster pra marcar quem fez cada call (sem login, só nome+e-mail) -->
-        <div class="card">
-          <div class="head"><div class="t"><i data-ic="users"></i>Closers</div><div class="sub">— cadastre uma vez, depois é só escolher na tabela de reports</div></div>
-          <div class="row">
-            <input id="closerNome" type="text" placeholder="Nome do closer" style="flex:1;min-width:160px" />
-            <input id="closerEmail" type="email" placeholder="e-mail (pra puxar depois)" style="flex:1;min-width:200px" />
-            <button id="addCloser" class="btn"><i data-ic="plus"></i>Adicionar</button>
-          </div>
-          <div id="statusCloser" class="status"></div>
-          <table style="margin-top:10px">
-            <thead><tr><th>Nome</th><th>E-mail</th><th></th></tr></thead>
-            <tbody id="listaClosers"></tbody>
-          </table>
-          <div id="vazioClosers" class="hint">Nenhum closer cadastrado ainda.</div>
         </div>
 
         <!-- Números do período filtrado -->
@@ -592,7 +712,17 @@
         </div>
 
         <div class="card">
-          <label for="bScript"><i data-ic="target"></i> Script de qualificação <span style="font-weight:400;color:var(--muted)">— o que o SDR deve levantar</span></label>
+          <label for="bEmpresa"><i data-ic="users"></i> A empresa <span style="font-weight:400;color:var(--muted)">— quem é a PRONIX, as pessoas, as provas e o método</span></label>
+          <textarea id="bEmpresa" style="min-height:150px"></textarea>
+        </div>
+
+        <div class="card">
+          <label for="bQualificacao"><i data-ic="filter"></i> Régua de qualificação <span style="font-weight:400;color:var(--muted)">— SPIN e BANT na pré-venda (é por ela que a IA avalia a prospecção e que o coach sugere perguntas)</span></label>
+          <textarea id="bQualificacao" style="min-height:150px"></textarea>
+        </div>
+
+        <div class="card">
+          <label for="bScript"><i data-ic="target"></i> Roteiro <span style="font-weight:400;color:var(--muted)">— o que o SDR levanta e o que o closer faz na reunião</span></label>
           <textarea id="bScript" style="min-height:150px" placeholder="Ex.: 1) Entender o momento do negócio…&#10;2) Levantar faturamento/estoque…&#10;3) Confirmar quem decide…"></textarea>
         </div>
 
@@ -612,6 +742,10 @@
         </div>
 
         <button id="salvarBase" class="btn btn-block">Salvar base</button>
+        <div class="acoes" style="margin-top:10px">
+          <button id="baseRecomendada" class="btn sec">Usar a base recomendada</button>
+          <button id="baseRestaurar" class="btn sec hidden">Voltar aos textos anteriores</button>
+        </div>
         <div id="statusBase" class="status"></div>
       </div>
     </section>
@@ -731,12 +865,14 @@
     }
 
     // ---------- Menu ----------
-    const ABAS = ['report', 'dia', 'acessos', 'numeros', 'arquivos', 'base', 'extensao'];
-    const SO_ADMIN = ['acessos', 'numeros', 'arquivos', 'base', 'extensao'];
+    const ABAS = ['report', 'dia', 'acessos', 'numeros', 'resultados', 'closers', 'arquivos', 'base', 'extensao'];
+    const SO_ADMIN = ['acessos', 'numeros', 'resultados', 'closers', 'arquivos', 'base', 'extensao'];
+    const SO_MASTER = ['resultados', 'closers']; // resultados das reuniões e lista de closers: só o master
     let souAdmin = false;
     let souGestor = false;
     let souMaster = false;
     const podeMexerEmUsuarios = () => souMaster || Boolean(senhaAdmin); // a senha reserva equivale ao master
+    let papelConhecido = false; // a chave já foi conferida (antes disso não dá para saber se é master)
     let validacaoPendente = false; // a chave ainda está sendo conferida (a lista do dia espera: o papel muda o que ela mostra)
     // Guardado porque a chave é validada de forma assíncrona: quem abre direto
     // em #acessos ainda não é admin nesse instante e seria mandado para #report.
@@ -747,6 +883,8 @@
       // O SDR não passa das abas dele nem digitando o endereço na mão.
       // (Isto é só a tela: quem barra de verdade é o servidor.)
       if (SO_ADMIN.includes(aba) && !souAdmin && !senhaAdmin) aba = 'report';
+      // Se a chave ainda está sendo conferida, o master ainda não é conhecido: abre e o servidor decide.
+      if (SO_MASTER.includes(aba) && papelConhecido && !podeMexerEmUsuarios()) aba = 'report';
       ABAS.forEach((a) => $('aba-' + a).classList.toggle('hidden', a !== aba));
       document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('on', t.dataset.aba === aba));
       location.hash = aba;
@@ -758,7 +896,10 @@
     function aplicarPapel() {
       const liberado = souAdmin || Boolean(senhaAdmin);
       document.querySelectorAll('.tab.so-admin').forEach((t) => t.classList.toggle('hidden', !liberado));
-      if (!liberado && SO_ADMIN.includes((location.hash || '').replace('#', ''))) abrir('report');
+      document.querySelectorAll('.tab.so-master').forEach((t) => t.classList.toggle('hidden', !podeMexerEmUsuarios()));
+      const naAba = (location.hash || '').replace('#', '');
+      if (!liberado && SO_ADMIN.includes(naAba)) abrir('report');
+      else if (!podeMexerEmUsuarios() && SO_MASTER.includes(naAba)) abrir('report');
     }
     document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () => abrir(t.dataset.aba)));
 
@@ -819,6 +960,8 @@
         await carregarClosers(); // as linhas da tabela oferecem os closers no select
         return carregarStats();
       }
+      if (aba === 'resultados') return carregarResultados();
+      if (aba === 'closers') return carregarClosers();
       if (aba === 'arquivos') return carregarArquivos();
       if (aba === 'base') return carregarBase();
     }
@@ -953,16 +1096,19 @@
     $('nome').addEventListener('keydown', (e) => { if (e.key === 'Enter') criar(); });
 
     // ---------- Aba: Base de conhecimento ----------
-    const CAMPOS_BASE = { script: 'bScript', oferta: 'bOferta', objecoes: 'bObjecoes', perfil: 'bPerfil' };
+    const CAMPOS_BASE = { empresa: 'bEmpresa', qualificacao: 'bQualificacao', script: 'bScript', oferta: 'bOferta', objecoes: 'bObjecoes', perfil: 'bPerfil' };
+    function mostrarBase(b) {
+      Object.entries(CAMPOS_BASE).forEach(([campo, id]) => { $(id).value = b[campo] || ''; });
+      $('baseRestaurar').classList.toggle('hidden', !b.temAnterior);
+      setStatus('statusBase', b.recomendada
+        ? 'Em uso: a base recomendada (montada com os scripts, as apresentações e os contratos). Edite o que quiser e salve.'
+        : b.atualizadoEm ? 'Última atualização: ' + quando(b.atualizadoEm) + '.' : 'Base carregada.', {});
+    }
 
     async function carregarBase() {
       if (!souAdmin && !senhaAdmin) return;
       try {
-        const b = await api('GET', '/api/admin/base');
-        Object.entries(CAMPOS_BASE).forEach(([campo, id]) => { $(id).value = b[campo] || ''; });
-        setStatus('statusBase', b.atualizadoEm
-          ? 'Última atualização: ' + quando(b.atualizadoEm) + '.'
-          : 'Nada cadastrado ainda — o report sai normalmente sem isto.', {});
+        mostrarBase(await api('GET', '/api/admin/base'));
       } catch (e) {
         setStatus('statusBase', e.message, { erro: true });
       }
@@ -980,6 +1126,25 @@
         setStatus('statusBase', e.message, { erro: true });
       } finally {
         $('salvarBase').disabled = false;
+      }
+    });
+
+    $('baseRecomendada').addEventListener('click', async () => {
+      if (!confirm('Trocar TODOS os campos pelo texto recomendado? O que está escrito agora é substituído.')) return;
+      try {
+        mostrarBase((await api('POST', '/api/admin/base/recomendada', {})).base);
+        toast('Base recomendada aplicada.');
+      } catch (e) {
+        setStatus('statusBase', e.message, { erro: true });
+      }
+    });
+    $('baseRestaurar').addEventListener('click', async () => {
+      if (!confirm('Voltar roteiro, oferta, objeções e perfil para os textos que existiam antes da base recomendada?')) return;
+      try {
+        mostrarBase((await api('POST', '/api/admin/base/restaurar', {})).base);
+        toast('Textos anteriores restaurados.');
+      } catch (e) {
+        setStatus('statusBase', e.message, { erro: true });
       }
     });
 
@@ -1009,6 +1174,9 @@
       { v: 'venda_call', t: 'Venda em call' },
       { v: 'venda_fup', t: 'Venda em FUP' },
       { v: 'pix_compromisso', t: 'Pix compromisso' },
+      { v: 'sem_venda', t: 'Não fechou' },
+      { v: 'no_show', t: 'No-show' },
+      { v: 'em_followup', t: 'Em follow-up' },
     ];
 
     async function carregarClosers() {
@@ -1271,6 +1439,179 @@
       }
     }
 
+    // ---------- Aba: Resultados da reunião (só o master) ----------
+    const PERFIS_LEAD = [
+      ['dominante', 'Dominante'], ['analitico', 'Analítico'], ['cetico', 'Cético'],
+      ['relacional', 'Relacional'], ['cauteloso', 'Cauteloso'], ['entusiasta', 'Entusiasta'],
+    ];
+    const NIVEIS_CONSC = [
+      ['inconsciente', '1 · Inconsciente'], ['problema', '2 · Consciente do problema'], ['solucao', '3 · Consciente da solução'],
+      ['produto', '4 · Consciente da entrega'], ['pronto', '5 · Pronto para decidir'],
+    ];
+    const rotuloDe = (lista, v) => (lista.find((x) => x[0] === v) || [])[1] || '';
+    const pct = (v) => Math.round((Number(v) || 0) * 100) + '%';
+    let closersRes = [];
+
+    /** Select com a leitura da IA como 1ª opção ("IA: Analítico") e as correções possíveis abaixo. */
+    function selectLeitura(r, campo, lista, daIa, dica) {
+      const ia = rotuloDe(lista, daIa);
+      const atual = r[campo] || '';
+      return `<select class="mini-select" style="max-width:170px" data-res-campo="${campo}" title="${esc(dica || '')}">
+        <option value="" ${atual ? '' : 'selected'}>${ia ? 'IA: ' + esc(ia) : '—'}</option>
+        ${lista.map(([v, t]) => `<option value="${v}" ${v === atual ? 'selected' : ''}>${esc(t)}</option>`).join('')}
+      </select>`;
+    }
+
+    function linhaResultado(r) {
+      return `<tr data-res="${esc(r.id)}" data-versao="${r.versao}">
+        <td><b>${esc(r.lead || r.contato || 'Lead')}</b><div style="color:var(--muted);font-size:.74rem">${esc(r.usuarioNome || '')} · ${esc(diaBR(r.dia || ''))}</div></td>
+        <td>${selectLeitura(r, 'perfilReal', PERFIS_LEAD, r.perfil, r.perfilEvidencia)}</td>
+        <td>${selectLeitura(r, 'conscienciaReal', NIVEIS_CONSC, r.consciencia, r.conscienciaPorque)}</td>
+        <td><select class="mini-select" data-res-campo="closerId">
+          <option value="">—</option>
+          ${closersRes.map((c) => `<option value="${esc(c.id)}" ${c.id === r.closerId ? 'selected' : ''}>${esc(c.nome)}</option>`).join('')}
+          ${r.closerId && !closersRes.some((c) => c.id === r.closerId) ? `<option value="${esc(r.closerId)}" selected>${esc(r.closerNome || 'removido')}</option>` : ''}
+        </select></td>
+        <td><select class="mini-select" data-res-campo="resultado">
+          ${RESULTADOS_OPCOES.map((o) => `<option value="${o.v}" ${o.v === (r.resultado || '') ? 'selected' : ''}>${o.t}</option>`).join('')}
+        </select></td>
+        <td><input type="text" data-res-campo="obsReuniao" value="${esc(r.obsReuniao || '')}" placeholder="Ex.: fechou Performance; travou no sócio…" style="min-width:180px;padding:5px 8px;font-size:.8rem" /></td>
+      </tr>`;
+    }
+
+    function usarPresetRes(dias) {
+      document.querySelectorAll('[data-res-dias]').forEach((c) => c.classList.toggle('on', Number(c.dataset.resDias) === dias));
+      $('resDe').value = menosDias(dias);
+      $('resAte').value = hojeISO();
+    }
+
+    async function carregarResultados() {
+      if (!podeMexerEmUsuarios()) return;
+      if (!$('resDe').value) usarPresetRes(0);
+      setStatus('statusRes', 'Carregando…', { loading: true });
+      try {
+        const q = new URLSearchParams({ de: $('resDe').value, ate: $('resAte').value });
+        const j = await api('GET', '/api/master/resultados?' + q);
+        closersRes = j.closers || [];
+        const linhas = (j.reports || []).filter((r) => !$('resPendentes').checked || !r.resultado);
+        $('listaRes').innerHTML = linhas.map(linhaResultado).join('');
+        $('vazioRes').style.display = linhas.length ? 'none' : '';
+        const marcados = (j.reports || []).filter((r) => r.resultado).length;
+        setStatus('statusRes', `${(j.reports || []).length} report(s) no período · ${marcados} com resultado marcado` +
+          (closersRes.length ? '.' : '. Cadastre os closers na aba Closers para poder escolher.'), {});
+      } catch (e) {
+        setStatus('statusRes', e.message, { erro: true });
+      }
+      carregarInteligencia();
+    }
+
+    // Uma fila por linha: duas mudanças seguidas esperam a versão nova voltar antes de enviar.
+    const filaRes = new Map();
+    function salvarCampoRes(campo) {
+      const linha = campo.closest('tr[data-res]');
+      if (!linha) return;
+      const id = linha.dataset.res;
+      const proxima = (filaRes.get(id) || Promise.resolve()).then(async () => {
+        try {
+          const r = await api('PATCH', '/api/admin/reports/' + id + '/resultado', {
+            [campo.dataset.resCampo]: campo.value,
+            versao: Number(linha.dataset.versao || 0),
+          });
+          linha.dataset.versao = r.versao;
+          toast(campo.dataset.resCampo === 'conscienciaReal' && campo.value ? 'Salvo. A IA vai usar esta correção.' : 'Salvo.');
+          carregarInteligencia();
+        } catch (e) {
+          if (e.status === 409) {
+            toast('Outra pessoa alterou este report — tela atualizada.');
+            carregarResultados();
+          } else {
+            setStatus('statusRes', e.message, { erro: true });
+          }
+        }
+      });
+      filaRes.set(id, proxima.catch(() => {}));
+    }
+    $('listaRes').addEventListener('change', (ev) => {
+      const campo = ev.target.closest('[data-res-campo]');
+      if (campo) salvarCampoRes(campo);
+    });
+    document.querySelectorAll('[data-res-dias]').forEach((c) =>
+      c.addEventListener('click', () => { usarPresetRes(Number(c.dataset.resDias)); carregarResultados(); })
+    );
+    ['resDe', 'resAte'].forEach((id) => $(id).addEventListener('change', () => {
+      document.querySelectorAll('[data-res-dias]').forEach((c) => c.classList.remove('on'));
+      carregarResultados();
+    }));
+    $('resPendentes').addEventListener('change', carregarResultados);
+    $('resVer').addEventListener('click', carregarResultados);
+
+    const celula = (v) => (v && v.total ? `<b>${v.vendas}/${v.total}</b> <span style="color:var(--muted)">${pct(v.taxa)}</span>` : '<span style="color:var(--muted)">—</span>');
+    const listaHtml = (itens) => (itens && itens.length ? '<ul style="margin:6px 0 12px 18px">' + itens.map((x) => `<li>${esc(x)}</li>`).join('') + '</ul>' : '');
+
+    function mostrarInsights(i) {
+      if (!i) { $('insightsBox').innerHTML = ''; return; }
+      const bloco = (t, itens) => (itens && itens.length ? `<h3 class="sec-t">${t}</h3>${listaHtml(itens)}` : '');
+      $('insightsBox').innerHTML =
+        `<div class="hint" style="margin:10px 0 0">Gerado em ${esc(quando(i.geradoEm))}, com ${i.baseadoEm} reunião(ões) com resultado. É leitura de IA em cima dos números: confira antes de mudar o script.</div>` +
+        bloco('Closer por perfil', i.closerPorPerfil) +
+        bloco('Prospecção que funciona', i.prospeccaoQueFunciona) +
+        bloco('Perguntas para a qualificação padrão', i.perguntasParaOPadrao) +
+        bloco('Melhorias no script', i.melhoriasNoScript) +
+        bloco('Atenção', i.atencao);
+    }
+
+    async function carregarInteligencia() {
+      if (!podeMexerEmUsuarios()) return;
+      try {
+        const p = await api('GET', '/api/master/inteligencia');
+        $('intelResumo').textContent =
+          `${p.reunioesComResultado} reunião(ões) com resultado marcado · ${p.vendas} venda(s)` +
+          (p.semCloser ? ` · ${p.semCloser} sem closer marcado (não entram no cruzamento)` : '') +
+          ` · ${p.calibragens || 0} correção(ões) de consciência ensinadas à IA. ` +
+          `A indicação de closer só aparece com ${p.minAmostra} ou mais reuniões daquele closer com aquele perfil.`;
+        $('intelMelhor').innerHTML = (p.melhorCloserPorPerfil || []).map((m) =>
+          `<tr><td><b>${esc(m.rotulo)}</b></td><td>${m.sugestao ? esc(m.sugestao.nome) : '<span style="color:var(--muted)">sem dados ainda</span>'}</td><td style="color:var(--text-2)">${esc(m.motivo || '')}</td></tr>`
+        ).join('');
+        $('intelMatriz').innerHTML = (p.matriz || []).length
+          ? `<table><thead><tr><th>Closer</th>${p.perfis.map((x) => `<th>${esc(x.rotulo)}</th>`).join('')}<th>Total</th></tr></thead><tbody>` +
+            p.matriz.map((c) => `<tr><td><b>${esc(c.nome)}</b></td>${p.perfis.map((x) => `<td>${celula(c.perfis[x.chave])}</td>`).join('')}<td>${celula(c)}</td></tr>`).join('') +
+            '</tbody></table>'
+          : '<div class="hint" style="margin:0">Marque o closer e o resultado das reuniões para este quadro aparecer.</div>';
+        const linhasConv = (lista) => (lista || []).length
+          ? lista.map((x) => `<tr><td>${esc(x.rotulo)}</td><td>${celula(x)}</td></tr>`).join('')
+          : '<tr><td style="color:var(--muted)">sem dados ainda</td></tr>';
+        $('intelPerfil').innerHTML = linhasConv(p.porPerfil);
+        $('intelConsc').innerHTML = linhasConv(p.porConsciencia);
+        const pr = p.prospeccao || { criterios: [] };
+        $('intelProspAviso').textContent = pr.suficiente
+          ? `Com base em ${pr.comAnalise} reunião(ões): ${pr.vendas} fecharam e ${pr.semVenda} não. Quanto maior a diferença entre as colunas, mais aquele ponto pesa.`
+          : `Ainda é pouco para concluir (${pr.comAnalise || 0} reunião(ões) com análise; precisa de 5, com pelo menos uma venda e uma não-venda). Os números abaixo são só indício.`;
+        $('intelProsp').innerHTML = pr.criterios.map((c) =>
+          `<tr><td>${esc(c.rotulo)}</td><td><b>${pct(c.ganhou)}</b></td><td>${pct(c.perdeu)}</td></tr>`).join('');
+        const perguntas = (pr.perguntasQueFecharam || []).map((x) => x.pergunta);
+        $('intelPerguntas').innerHTML = perguntas.length
+          ? listaHtml([...new Set(perguntas)].slice(-12))
+          : 'Aparecem aqui as perguntas do pré-vendedor que mais fizeram o lead se abrir, nas reuniões que viraram venda.';
+        mostrarInsights(p.insights);
+      } catch (e) {
+        $('intelResumo').textContent = e.message;
+      }
+    }
+
+    $('gerarInsights').addEventListener('click', async () => {
+      $('gerarInsights').disabled = true;
+      setStatus('statusInsights', 'Lendo os números…', { loading: true });
+      try {
+        const j = await api('POST', '/api/master/insights', {});
+        mostrarInsights(j.insights);
+        setStatus('statusInsights', 'Insights gerados (sem custo).', { ok: true });
+      } catch (e) {
+        setStatus('statusInsights', e.message, { erro: true });
+      } finally {
+        $('gerarInsights').disabled = false;
+      }
+    });
+
     // ---------- Aba: Arquivos (PDFs salvos, só admin) ----------
     function usarPresetArq(dias) {
       document.querySelectorAll('#aba-arquivos .chip').forEach((c) => c.classList.toggle('on', Number(c.dataset.diasArq) === dias));
@@ -1414,6 +1755,7 @@
       const ta = $('texto');
       ta.value = (ta.value.trim() ? ta.value.replace(/\s*$/, '') + '\n' : '') + linha + '\n';
       ta.scrollTop = ta.scrollHeight;
+      renderChat();
       // Mudar .value por código não dispara "input": agenda a estimativa de custo à mão.
       clearTimeout(estimativaTimer);
       estimativaTimer = setTimeout(atualizarEstimativaCusto, 700);
@@ -1464,12 +1806,141 @@
       setStatus('statusAudio', `${ok} de ${lista.length} áudio(s) na conversa.`, { ok: ok > 0, erro: ok === 0 });
       atualizarEstimativaCusto();
     }
+    // ---------- Conversa em formato de chat ----------
+    // A caixa de texto (#texto) continua sendo a fonte da verdade — é o que vai para a IA. O chat é a
+    // forma de montar e de enxergar: cada fala vira uma bolha, e tudo que se anexa cai na mesma conversa.
+    const PREFIXO_FALA = /^\s*(VENDEDOR|LEAD|EU|CLIENTE)\s*(\([^)]*\))?\s*:\s*/i;
+
+    /** Quebra o texto em bolhas: linha com "VENDEDOR:"/"LEAD:" abre uma fala; as seguintes sem prefixo continuam nela. */
+    function falasDoTexto(texto) {
+      const falas = [];
+      String(texto || '').split('\n').forEach((linha, i) => {
+        if (!linha.trim()) return;
+        const m = linha.match(PREFIXO_FALA);
+        if (m) {
+          const quem = /^(VENDEDOR|EU)$/i.test(m[1]) ? 'eu' : 'lead';
+          falas.push({ quem, marca: (m[2] || '').replace(/[()]/g, ''), texto: linha.slice(m[0].length), linhas: [i] });
+        } else if (falas.length) {
+          const ultima = falas[falas.length - 1];
+          ultima.texto += '\n' + linha;
+          ultima.linhas.push(i);
+        } else {
+          falas.push({ quem: 'solto', marca: '', texto: linha, linhas: [i] });
+        }
+      });
+      return falas;
+    }
+
+    function renderChat() {
+      const fio = $('chatThread');
+      const falas = falasDoTexto($('texto').value);
+      fio.querySelectorAll('.bolha').forEach((b) => b.remove());
+      $('chatVazio').classList.toggle('hidden', falas.length > 0);
+      falas.forEach((f) => {
+        const b = document.createElement('div');
+        b.className = 'bolha ' + (f.quem === 'eu' ? 'eu' : f.quem === 'lead' ? 'lead' : 'solto');
+        b.dataset.linhas = f.linhas.join(',');
+        const rotulo = f.quem === 'eu' ? 'Eu' : f.quem === 'lead' ? 'Lead' : 'Texto colado';
+        b.innerHTML =
+          `<div class="bolha-topo"><span>${rotulo}${f.marca ? ' · ' + esc(f.marca) : ''}</span>` +
+          '<button type="button" class="bolha-x" title="Tirar esta fala da conversa">×</button></div>' +
+          `<div class="bolha-txt">${esc(f.texto)}</div>`;
+        fio.appendChild(b);
+      });
+      fio.scrollTop = fio.scrollHeight;
+    }
+
+    $('chatThread').addEventListener('click', (ev) => {
+      const x = ev.target.closest('.bolha-x');
+      if (!x) return;
+      const fora = new Set(x.closest('.bolha').dataset.linhas.split(',').map(Number));
+      $('texto').value = $('texto').value.split('\n').filter((_, i) => !fora.has(i)).join('\n');
+      $('texto').dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
+    /** O que foi escrito na caixa do chat entra na conversa: conversa colada inteira vai como está; fala solta ganha o "LEAD:"/"VENDEDOR:". */
+    function adicionarMensagem() {
+      const bruto = $('chatMsg').value.replace(/\s+$/, '');
+      if (!bruto.trim()) return;
+      const linhas = bruto.split('\n').filter((l) => l.trim());
+      const jaTemPrefixo = linhas.some((l) => PREFIXO_FALA.test(l));
+      const conversaColada = jaTemPrefixo || linhas.length > 3;
+      const quem = $('quemAudio').value === 'VENDEDOR' ? 'VENDEDOR' : 'LEAD';
+      appendConversa(conversaColada ? bruto : `${quem}: ${linhas.join(' ')}`);
+      $('chatMsg').value = '';
+      $('chatMsg').focus();
+    }
+    $('chatEnviar').addEventListener('click', adicionarMensagem);
+    $('chatMsg').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+        e.preventDefault();
+        adicionarMensagem();
+      }
+    });
+    $('chatAnexar').addEventListener('click', () => $('audio').click());
+
+    const EXT_TEXTO = /\.(txt|md|csv|json|srt|vtt|log)$/i;
+    const EXT_SEM_LEITURA = /\.(pdf|docx?|xlsx?|pptx?|odt|rtf)$/i;
+    const ehImagem = (f) => /^image\//.test(f.type || '') || /\.(png|jpe?g|webp|gif|bmp|heic)$/i.test(f.name || '');
+    const ehTexto = (f) => /^text\//.test(f.type || '') || EXT_TEXTO.test(f.name || '');
+
+    function lerComoTexto(file) {
+      return new Promise((resolve, reject) => {
+        const rd = new FileReader();
+        rd.onload = () => resolve(String(rd.result || ''));
+        rd.onerror = () => reject(new Error('não consegui ler o arquivo'));
+        rd.readAsText(file);
+      });
+    }
+
+    /** Lê arquivo de texto e joga o conteúdo na conversa. */
+    async function lerTextosInterno(files) {
+      for (const f of files) {
+        const row = fileRow(f.name);
+        row.querySelector('.st').textContent = 'lendo…';
+        try {
+          if (f.size > 1024 * 1024) throw new Error('arquivo de texto grande demais (máx. 1 MB)');
+          const t = (await lerComoTexto(f)).replace(/\r\n/g, '\n').trim();
+          if (!t) throw new Error('arquivo vazio');
+          appendConversa(t);
+          row.className = 'file-row ok';
+          row.innerHTML = `<i class="ic" data-ic="check" style="color:var(--ouro-tinta)"></i><span class="nm">${esc(f.name)}</span><span class="st">adicionado</span>`;
+        } catch (err) {
+          row.className = 'file-row err';
+          row.innerHTML = `<i class="ic" data-ic="alert" style="color:var(--danger)"></i><span class="nm">${esc(f.name)}</span><span class="st">${esc(err.message)}</span>`;
+        }
+        aplicarIcones(row);
+      }
+    }
+
+    /** Um lugar só para anexar: separa por tipo e manda cada arquivo para a leitura certa. */
+    function receberArquivos(files) {
+      const lista = [...(files || [])].filter((f) => f && f.size);
+      if (!lista.length) return;
+      const naoLidos = lista.filter((f) => EXT_SEM_LEITURA.test(f.name || ''));
+      const resto = lista.filter((f) => !naoLidos.includes(f));
+      const imagens = resto.filter(ehImagem);
+      const textos = resto.filter((f) => !ehImagem(f) && ehTexto(f));
+      const audios = resto.filter((f) => !ehImagem(f) && !ehTexto(f)); // o que não é imagem nem texto é tratado como áudio
+      naoLidos.forEach((f) => {
+        const row = fileRow(f.name);
+        row.className = 'file-row err';
+        row.innerHTML = `<i class="ic" data-ic="alert" style="color:var(--danger)"></i><span class="nm">${esc(f.name)}</span><span class="st">não leio este formato: copie o texto e cole na conversa</span>`;
+        aplicarIcones(row);
+      });
+      if (audios.length) transcreverFiles(audios);
+      if (imagens.length) lerImagens(imagens);
+      if (textos.length) comTarefa(() => lerTextosInterno(textos));
+    }
+
+    // A caixa do chat é também a área de soltar arquivos (qualquer tipo aceito).
     const dz = $('dropzone');
-    dz.addEventListener('click', () => $('audio').click());
     dz.addEventListener('dragover', (e) => { e.preventDefault(); dz.classList.add('drag'); });
     dz.addEventListener('dragleave', () => dz.classList.remove('drag'));
-    dz.addEventListener('drop', (e) => { e.preventDefault(); dz.classList.remove('drag'); transcreverFiles(e.dataTransfer.files); });
-    $('audio').addEventListener('change', () => { transcreverFiles($('audio').files); $('audio').value = ''; });
+    dz.addEventListener('drop', (e) => { e.preventDefault(); dz.classList.remove('drag'); receberArquivos(e.dataTransfer.files); });
+    $('chatThread').addEventListener('dragover', (e) => e.preventDefault());
+    $('chatThread').addEventListener('drop', (e) => { e.preventDefault(); receberArquivos(e.dataTransfer.files); });
+    $('audio').addEventListener('change', () => { receberArquivos($('audio').files); $('audio').value = ''; });
 
     // ---------- Print da conversa -> texto (Groq com visão, plano gratuito) ----------
 
@@ -1607,7 +2078,6 @@
     }
 
     const dzImg = $('dropzoneImg');
-    dzImg.addEventListener('click', () => $('imagem').click());
     dzImg.addEventListener('dragover', (e) => { e.preventDefault(); dzImg.classList.add('drag'); });
     dzImg.addEventListener('dragleave', () => dzImg.classList.remove('drag'));
     dzImg.addEventListener('drop', (e) => { e.preventDefault(); dzImg.classList.remove('drag'); lerImagens(e.dataTransfer.files); });
@@ -1625,7 +2095,7 @@
 
     ['dragover', 'drop'].forEach((ev) => window.addEventListener(ev, (e) => {
       const dentro = (z) => e.target === z || z.contains(e.target);
-      if (!dentro(dz) && !dentro(dzImg)) e.preventDefault();
+      if (!dentro(dz) && !dentro(dzImg) && !dentro($('chatThread'))) e.preventDefault();
     }));
 
     // Report gerado, mantido em memória para poder ser editado e regerar o PDF.
@@ -1786,14 +2256,16 @@
         return;
       }
       const texto = $('texto').value.trim();
-      if (!texto) { setStatus('status', 'Cole a conversa (ou jogue os áudios) antes de gerar.', { erro: true }); return; }
+      if ($('chatMsg').value.trim()) adicionarMensagem(); // o que ficou digitado e não foi adicionado também entra
+      const textoFinal = $('texto').value.trim();
+      if (!textoFinal) { setStatus('status', 'Monte a conversa (escreva, cole ou anexe os áudios) antes de gerar.', { erro: true }); return; }
       esconderDuplicado();
       gerandoAgora = true; atualizarBotaoGerar(); $('resultado').classList.add('hidden');
       setStatus('status', 'Gerando report…', { loading: true });
       try {
         const r = await fetchComTempo('/api/report-texto', {
           method: 'POST', headers: hdr({ 'Content-Type': 'application/json' }),
-          body: JSON.stringify({ texto, nome: $('nomeLead').value.trim(), forcarNovo: !!forcarNovo }),
+          body: JSON.stringify({ texto: textoFinal, nome: $('nomeLead').value.trim(), forcarNovo: !!forcarNovo }),
         });
         const data = await r.json();
         if (!r.ok) throw new Error(data.erro || 'Erro ao gerar o report.');
@@ -1844,6 +2316,7 @@
       }
     }
     $('texto').addEventListener('input', () => {
+      renderChat();
       clearTimeout(estimativaTimer);
       estimativaTimer = setTimeout(atualizarEstimativaCusto, 700);
     });
@@ -1858,6 +2331,7 @@
         const j = await r.json();
         if (!r.ok) throw new Error(j.erro || 'Chave inválida.');
         souMaster = j.papel === 'master';
+        papelConhecido = true;
         souGestor = j.papel === 'gestor';
         souAdmin = souMaster || souGestor; // master e gestor veem e fazem tudo; só o master mexe em usuários
         prepararEscopoMeus();
@@ -1874,6 +2348,7 @@
         souAdmin = false;
         souGestor = false;
         souMaster = false;
+        papelConhecido = true;
         aplicarPapel();
         setStatus('statusChave', e.message, { erro: true });
         $('quem').textContent = '';

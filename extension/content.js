@@ -817,6 +817,62 @@
     }
   }
 
+
+  /**
+   * Depois do "Report pronto!": o SDR escolhe o closer da reunião ali mesmo. A lista e a indicação
+   * (qual closer costuma fechar com este perfil de lead) vêm do servidor junto do report.
+   */
+  function anexarEscolhaDeCloser(resp) {
+    const el = document.getElementById(BADGE_ID);
+    const lista = (resp && Array.isArray(resp.closers) && resp.closers) || [];
+    if (!el || !resp || !resp.id || !lista.length) return;
+    const alvo = el.querySelector('div[style*="flex:1"]') || el;
+    const caixa = document.createElement('div');
+    caixa.id = 'cr-closer';
+    caixa.style.cssText = 'margin-top:10px;padding-top:8px;border-top:1px solid #26333f';
+    const rotulo = document.createElement('div');
+    rotulo.style.cssText = 'font-size:11px;color:#8b98a5;margin-bottom:4px';
+    rotulo.textContent = 'Closer desta reunião';
+    const sel = document.createElement('select');
+    sel.style.cssText = 'width:100%;background:#0d141c;color:#e6edf3;border:1px solid #26333f;border-radius:7px;padding:6px;font-size:12.5px';
+    const sugerido = resp.sugestaoCloser && resp.sugestaoCloser.closerId;
+    const opcao = (valor, texto) => {
+      const o = document.createElement('option');
+      o.value = valor;
+      o.textContent = texto;
+      sel.appendChild(o);
+    };
+    opcao('', 'Escolher closer…');
+    lista.forEach((c) => opcao(c.id, c.id === sugerido ? c.nome + ' (indicado)' : c.nome));
+    const nota = document.createElement('div');
+    nota.style.cssText = 'font-size:11px;color:#8b98a5;margin-top:4px';
+    nota.textContent = sugerido ? resp.motivoSugestao || '' : '';
+    sel.addEventListener('change', () => {
+      sel.disabled = true;
+      nota.style.color = '#8b98a5';
+      nota.textContent = 'Salvando…';
+      const fim = (r) => {
+        sel.disabled = false;
+        if (r && r.ok) {
+          nota.style.color = '#25d366';
+          nota.textContent = sel.value ? 'Closer salvo: ' + (r.closerNome || '') : 'Closer removido.';
+        } else {
+          nota.style.color = '#ff6b6b';
+          nota.textContent = (r && r.erro) || 'Não consegui salvar o closer.';
+        }
+      };
+      try {
+        chrome.runtime.sendMessage({ action: 'definirCloser', reportId: resp.id, closerId: sel.value }, fim);
+      } catch (_) {
+        fim({ ok: false, erro: 'Recarregue a página (F5) e escolha o closer pelo site.' });
+      }
+    });
+    caixa.appendChild(rotulo);
+    caixa.appendChild(sel);
+    caixa.appendChild(nota);
+    alvo.appendChild(caixa);
+  }
+
   // ---------------------------------------------------------------------------
   // Orquestração do report (roda em segundo plano, sobrevive ao fechar o popup)
   // ---------------------------------------------------------------------------
@@ -996,6 +1052,7 @@
         server,
         arquivoBase64: resp.arquivoBase64,
       });
+      anexarEscolhaDeCloser(resp);
     } catch (e) {
       mostrarBadge({ texto: escHtml(e.message), cor: '#ff6b6b' });
     } finally {
@@ -1221,7 +1278,7 @@
     const titulo = (t) => elem('div', 'font-size:10.5px;color:#ffc400;font-weight:700;letter-spacing:.06em;margin-bottom:4px', t);
     if (!r) {
       caixa.appendChild(botaoFicha('Coach da conversa', pedirCoach, true));
-      caixa.appendChild(elem('div', 'font-size:11px;color:#8b98a5;margin-top:5px', 'Perfil do lead, como abordar, objeções e perguntas para a próxima mensagem.'));
+      caixa.appendChild(elem('div', 'font-size:11px;color:#8b98a5;margin-top:5px', 'Perfil do lead, o que falta levantar, objeções, perguntas e a próxima mensagem.'));
       return caixa;
     }
     if (r.tipo === 'carregando') {
@@ -1253,6 +1310,10 @@
       caixa.appendChild(elem('div', '', d.comoAbordar));
       caixa.appendChild(util('abordagem', d.comoAbordar, d.perfil && d.perfil.tipo));
     }
+    if ((d.faltaLevantar || []).length) {
+      caixa.appendChild(elem('div', 'font-size:11px;color:#8b98a5;text-transform:uppercase;letter-spacing:.03em;margin-top:8px', 'Ainda falta levantar'));
+      d.faltaLevantar.forEach((f) => caixa.appendChild(elem('div', 'margin-top:2px', '• ' + f)));
+    }
     (d.objecoes || []).forEach((o) => {
       caixa.appendChild(elem('div', 'font-size:11px;color:#8b98a5;text-transform:uppercase;letter-spacing:.03em;margin-top:8px', 'Objeção: ' + o.objecao));
       caixa.appendChild(elem('div', 'white-space:pre-wrap', o.resposta));
@@ -1264,6 +1325,21 @@
         caixa.appendChild(elem('div', 'margin-top:4px', '• ' + p));
         caixa.appendChild(util('pergunta', p, d.perfil && d.perfil.tipo));
       });
+    }
+    if (d.proximaMensagem) {
+      caixa.appendChild(elem('div', 'font-size:11px;color:#8b98a5;text-transform:uppercase;letter-spacing:.03em;margin-top:8px', 'Próxima mensagem'));
+      caixa.appendChild(elem('div', 'white-space:pre-wrap;background:#16212e;border:1px solid #26333f;border-radius:7px;padding:6px 8px;margin-top:2px', d.proximaMensagem));
+      const copiar = botaoFicha('Copiar', async () => {
+        try {
+          await navigator.clipboard.writeText(d.proximaMensagem);
+          copiar.textContent = 'Copiado';
+        } catch (_) {
+          copiar.textContent = 'Selecione e copie';
+        }
+      });
+      copiar.style.cssText += ';margin:4px 6px 0 0;padding:3px 7px;font-size:11px';
+      caixa.appendChild(copiar);
+      caixa.appendChild(util('mensagem', d.proximaMensagem, d.perfil && d.perfil.tipo));
     }
     const rodape = elem('div', 'display:flex;align-items:center;gap:8px;margin-top:8px');
     rodape.appendChild(elem('div', 'flex:1;font-size:11px;color:#8b98a5', 'Marque "Funcionou" no que usar: o coach aprende com isso.'));
@@ -1336,7 +1412,8 @@
     el.textContent = '';
     posicionarFicha();
 
-    const titulo = estado.ficha ? estado.ficha.nome || 'Lead' : 'Ficha do lead';
+    const semCrm = estado.tipo === 'sem-crm';
+    const titulo = estado.ficha ? estado.ficha.nome || 'Lead' : semCrm ? nomeDoContato() || 'Conversa' : 'Ficha do lead';
     const btnMin = botaoFicha(ficha.minimizada ? '+' : '–', () => {
       ficha.minimizada = !ficha.minimizada;
       try {
@@ -1357,7 +1434,7 @@
         'div',
         'display:flex;align-items:center;gap:6px',
         elem('div', 'flex:1;min-width:0',
-          elem('div', 'font-size:10.5px;color:#ffc400;font-weight:700;letter-spacing:.06em', 'RD STATION'),
+          elem('div', 'font-size:10.5px;color:#ffc400;font-weight:700;letter-spacing:.06em', semCrm ? 'PRONIX' : 'RD STATION'),
           elem('div', 'font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis', titulo)),
         btnMin,
         btnX
@@ -1374,6 +1451,7 @@
       corpo.appendChild(elem('div', 'color:#8b98a5', 'Buscando no RD Station…'));
       return;
     }
+    if (semCrm) return;
     if (estado.tipo === 'erro') {
       corpo.appendChild(elem('div', 'color:#ff6b6b', estado.erro));
       corpo.appendChild(elem('div', 'margin-top:8px', botaoFicha('Tentar de novo', () => consultarFicha(estado.busca))));
@@ -1464,9 +1542,11 @@
       return;
     }
     if (seq !== ficha.seq) return; // resposta de uma conversa que o SDR já deixou
+    if (r && typeof r.coach === 'boolean') ficha.coach = r.coach; // o servidor diz se este usuário vê o Coach
     if (!r || !r.ok) return renderFicha({ tipo: 'erro', erro: (r && r.erro) || 'Não consegui consultar o RD Station.', busca });
-    ficha.coach = Boolean(r.coach); // o servidor diz se este usuário vê o Coach
-    if (!r.configurado) return esconderFicha(); // CRM não ligado no servidor: não mostra nada
+    // Sem ficha do RD para este usuário (CRM desligado no servidor ou popup do lead desligado):
+    // quem tem o Coach continua vendo o cartão, só com o resumo e o coach.
+    if (!r.configurado) return ficha.coach ? renderFicha({ tipo: 'sem-crm', busca }) : esconderFicha();
     if (r.encontrado && r.ficha) return renderFicha({ tipo: 'ok', ficha: r.ficha, busca });
     if (r.candidatos && r.candidatos.length) return renderFicha({ tipo: 'candidatos', candidatos: r.candidatos, busca });
     renderFicha({ tipo: 'nao-encontrado', busca });
@@ -1509,6 +1589,17 @@
     chrome.storage.local.get({ fichaCrm: true, fichaCrmMinimizada: false }, (c) => {
       ficha.ligada = c.fichaCrm !== false;
       ficha.minimizada = !!c.fichaCrmMinimizada;
+      // O Coach não depende da ficha do RD: a permissão vem da chave (e o cartão se redesenha se já estiver na tela).
+      try {
+        chrome.runtime.sendMessage({ action: 'permissoes' }, (r) => {
+          if (chrome.runtime.lastError || !r || !r.ok || typeof r.coach !== 'boolean') return;
+          const antes = ficha.coach;
+          ficha.coach = Boolean(r.coach);
+          if (ficha.coach !== antes && ficha.ultimoEstado && document.getElementById(FICHA_ID)) renderFicha(ficha.ultimoEstado);
+        });
+      } catch (_) {
+        /* sem a permissão o cartão segue como a ficha disser */
+      }
       ficha.vigia = setInterval(() => {
         try {
           verificarConversa();

@@ -7,6 +7,8 @@ const base = require('./base');
 const { normalizarConversa, normalizarTextoLivre } = require('./conversation-normalizer');
 const { verificarCitacoes, neutralizarMarcas, citacaoDesanimadora } = require('./citacoes');
 const { normalizarConsciencia } = require('./consciencia');
+const { normalizarPerfil, infoDoPerfil, reguaParaPrompt } = require('./perfil');
+const aprendizado = require('./aprendizado');
 
 const LLM_PROVIDER = (process.env.LLM_PROVIDER || 'anthropic').toLowerCase();
 
@@ -14,7 +16,7 @@ const LLM_PROVIDER = (process.env.LLM_PROVIDER || 'anthropic').toLowerCase();
 // idênticos já gerados (ex.: mudança de tom, de campos obrigatórios). Compõe
 // a reportKey em src/idempotencia.js — sem isso, um prompt novo poderia ser
 // confundido com o antigo e nunca rodar de novo pra mesma conversa.
-const PROMPT_VERSAO = 'v4';
+const PROMPT_VERSAO = 'v5';
 
 // Modo de qualidade só troca o MODELO da Anthropic — nunca inferido sozinho:
 // "standard" é o comportamento de sempre (ANTHROPIC_MODEL), então nenhum
@@ -74,13 +76,26 @@ const EXEMPLO_PEQUENO = {
   ],
   consciencia: {
     nivel: 'produto',
-    porque: 'Já entendeu como funciona o acompanhamento e topou o investimento na hora — chega sabendo o que quer.',
+    porque: 'Depois de ouvir como funciona o acompanhamento, respondeu que "era exatamente o que faltava" — reagiu à nossa entrega, não só à ideia de vender online.',
+  },
+  perfil: {
+    tipo: 'dominante',
+    evidencia: 'Respostas curtas e diretas, foi logo aos números (104 vendas em 15 dias) e fechou o investimento com um "OK".',
+    conduzir: 'Ir direto ao plano de execução e aos prazos; ele decide rápido quando vê o caminho.',
   },
   conversa: [
-    'O SDR abriu perguntando como estava a operação; Vitor contou da loja física de moto peças e das 104 vendas nos primeiros 15 dias no Mercado Livre.',
+    'Vitor chegou pelo anúncio e o SDR abriu perguntando como estava a operação; Vitor contou da loja física de moto peças e que começou no Mercado Livre há 15 dias.',
+    'Quando o SDR perguntou o que ele já tinha conseguido, Vitor trouxe o número: 104 vendas nesses 15 dias, ainda sem Full e trocando o CNAE.',
+    'O SDR perguntou o que ele busca com isso e Vitor disse que quer sair do CLT com renda previsível.',
     'O SDR explicou que o programa monta a estrutura de catálogo e Full com acompanhamento semanal; Vitor respondeu que era exatamente o que faltava.',
-    'Ao ouvir o valor mínimo de R$3 mil, Vitor respondeu "OK" e já aceitou marcar a reunião.',
+    'Ao ouvir o investimento mínimo de R$3 mil, Vitor respondeu "OK", disse que decide sozinho e aceitou marcar a reunião.',
   ],
+  analise: {
+    bant: { orcamento: 'sim', autoridade: 'sim', necessidade: 'sim', prazo: 'parcial' },
+    spin: { situacao: true, problema: true, implicacao: false, necessidade: true },
+    perguntas_chave: ['O que você já conseguiu vender nesses primeiros dias?', 'O que você busca com o Mercado Livre?'],
+    abordagem: 'Abriu pela operação do lead, puxou o número de vendas e só então apresentou a entrega e o investimento.',
+  },
   sinais_compra: [
     'Aceitou o investimento mínimo de R$3 mil sem pedir desconto',
     'Já tem tração: 104 vendas em 15 dias',
@@ -135,7 +150,18 @@ const EXEMPLO_GRANDE = {
   ],
   consciencia: {
     nivel: 'solucao',
-    porque: 'Já decidiu pelo Mercado Livre como canal para escoar o estoque — procura o caminho certo para executar.',
+    porque: 'Disse que precisa começar no Mercado Livre e que isso já está decidido — procura quem mostre o caminho para executar.',
+  },
+  perfil: {
+    tipo: 'analitico',
+    evidencia: 'Trouxe os números da operação (R$2M/mês, R$100 mil parados) e quis entender como linha e preço ficam separados do atacado.',
+    conduzir: 'Mostrar o processo e a conta fechando, com exemplo de precificação separada; ela avança quando entende o como.',
+  },
+  analise: {
+    bant: { orcamento: 'sim', autoridade: 'parcial', necessidade: 'sim', prazo: 'sim' },
+    spin: { situacao: true, problema: true, implicacao: false, necessidade: true },
+    perguntas_chave: ['Como é a operação de vocês hoje?'],
+    abordagem: 'Partiu da decisão que ela já tinha tomado e resolveu a preocupação com o atacado antes de marcar a reunião.',
   },
   conversa: [
     'Márcia abriu dizendo que precisa começar no Mercado Livre e que isso já está decidido com o sócio.',
@@ -198,15 +224,40 @@ LEITURA DA CONVERSA — regras de fidelidade:
 
 O CORPO É OBRIGATÓRIO — este é o coração do handoff, o que o closer realmente lê para conduzir a call. O relatório NUNCA pode ser só o resumo + a abertura + as citações: TEM que ter no MÍNIMO 2 seções de análise, e uma delas é SEMPRE "O que o closer deve bater" (ações concretas para a reunião, lista numerada). As outras saem da conversa: "Perfil e momento", "Dor e objetivo", "Como fechar essa call". A abertura NÃO substitui as seções — ela é só a fala de início; o corpo analítico continua obrigatório mesmo quando a conversa é curta (aí as seções ficam curtas, mas existem).
 
-NÍVEL DE CONSCIÊNCIA (campo "consciencia") — classifique o lead na escala de consciência, SÓ pelo que ele disse ou demonstrou na conversa:
-- "inconsciente": ainda não demonstrou perceber o problema.
-- "problema": sabe que tem a dor (vende pouco, depende do CLT, estoque parado...), mas ainda não sabe como resolver.
-- "solucao": sabe que precisa de uma solução do tipo que oferecemos (estrutura, método, acompanhamento para vender online) e está buscando.
-- "produto": já entende o que a nossa entrega faz por ele — ouviu a explicação do pré-vendedor e reagiu bem, ou perguntou como funciona.
-- "pronto": quer entrar — perguntou de valores, condições ou início, confirmou o investimento ou pediu o próximo passo.
-Na dúvida entre dois níveis, fique com o MENOR: o closer precisa confiar nesse selo. Em "porque", UMA frase curta com a evidência, em tom de venda ("Já perguntou como funciona o acompanhamento e confirmou o investimento — chega decidido"). O relatório só mostra o selo do nível "solucao" para cima; abaixo disso ele fica fora do PDF. Então nunca escreva nada negativo aqui.
+NÍVEL DE CONSCIÊNCIA (campo "consciencia") — o closer decide COMO abrir a reunião por este selo, então ele precisa estar certo. Julgue SÓ pelas falas do LEAD (texto e áudio transcrito). O que o VENDEDOR disse não sobe o nível de ninguém.
 
-COMO FOI A CONVERSA (campo "conversa") — 3 a 5 frases em ordem cronológica, contando o desenrolar para o closer chegar sabendo o que já foi dito. Terceira pessoa e com os nomes: o pré-vendedor pelo NOME DELE (informado abaixo, junto da conversa) e o lead pelo nome. Ex.: "Cauã abriu perguntando sobre a operação; Marcos contou que vende peças de moto há 2 anos." / "Cauã explicou que a entrega é X, Y e Z; Marcos respondeu que faz sentido para o momento dele." Registre o que o PRÉ-VENDEDOR apresentou (a entrega, o método, o próximo passo, a reunião marcada) e como o LEAD reagiu. Use só o que está na conversa: nada de entrega, benefício, preço ou data que não foi dito. Mesmo tom de venda do resto — o desenrolar mostra um lead engajado, nunca uma conversa difícil. Nos exemplos, "o SDR" está no lugar do nome do pré-vendedor; no seu relatório use o nome.
+COMO CLASSIFICAR — teste de cima para baixo e pare no PRIMEIRO nível cuja PROVA EXIGIDA aparece numa fala do lead:
+5. "pronto" — PROVA: o lead puxou ou aceitou um passo concreto de COMPRA. Vale: perguntou preço, formas de pagamento, quando começa ou como entra; OU confirmou que tem/consegue o valor de investimento que o vendedor citou E demonstrou querer começar. Só aceitar marcar a reunião NÃO é "pronto".
+4. "produto" — PROVA: o lead reagiu com CONTEÚDO à explicação da NOSSA entrega (mentoria, acompanhamento, método, especialista na conta): perguntou como funciona algo dela, comentou um ponto específico ou disse que era o que faltava. Exige que a entrega tenha sido explicada E que a resposta dele fale dela. "Ok", "entendi", "legal" depois da explicação NÃO provam nada.
+3. "solucao" — PROVA: o lead disse que procura AJUDA de um tipo (curso, mentoria, consultoria, alguém que ensine, um passo a passo, acompanhamento) ou que já tentou sozinho/com outra empresa e quer direção. Querer "vender no Mercado Livre" sem falar em buscar ajuda ainda NÃO é "solucao".
+2. "problema" — PROVA: o lead contou uma dor ou um objetivo (renda, sair do CLT, vende pouco, estoque parado, quer escalar) sem dizer que tipo de ajuda procura.
+1. "inconsciente" — nenhuma dor ou objetivo nas falas dele: só curiosidade, respostas ao formulário ou "quero saber mais".
+
+ARMADILHAS (são os erros que mais acontecem):
+- Empolgação, emoji e simpatia NÃO são consciência. Lead animado sem prova fica no nível da prova que existe.
+- Já vender no Mercado Livre NÃO torna o lead "solucao": ele pode vender e não saber que precisa de método.
+- Resposta curta a uma pergunta do vendedor ("sim", "ok", "pode ser") só conta quando confirma um FATO citado na pergunta (ex.: o valor do investimento). Não conta como interesse na entrega.
+- Promessa de terceiro ("minha esposa quer muito") não é fala do lead sobre ele mesmo.
+- Sem a prova do nível, DESÇA um degrau. Na dúvida entre dois, fique com o MENOR.
+Em "porque", UMA frase curta que CITA a prova — a fala ou o fato exato do lead que definiu o nível — em tom de venda ("Perguntou como funciona o acompanhamento e confirmou os R$3 mil — chega decidido"). Sem prova citada, o nível está errado. O relatório só mostra o selo do nível "solucao" para cima; abaixo disso ele fica fora do PDF. Então nunca escreva nada negativo aqui.
+
+PERFIL DO LEAD (campo "perfil") — como este lead se comunica e decide, lido pelo JEITO das respostas dele (tamanho, tom, o que pergunta, o que conta nos áudios). Escolha UM:
+${reguaParaPrompt()}
+Em "evidencia", o comportamento observado NESTA conversa (não a definição do perfil). Em "conduzir", UMA frase para o closer conduzir a reunião com este lead, em tom de plano de ação. Conversa curta demais para ler o perfil: escolha o mais provável pelas falas que existem e diga isso na evidência.
+
+COMO FOI A CONVERSA (campo "conversa") — 4 a 6 frases em ordem cronológica: é a narração que faz o closer entrar na reunião como se tivesse lido a conversa inteira. Terceira pessoa e com os nomes: o pré-vendedor pelo NOME DELE (informado abaixo, junto da conversa) e o lead pelo nome. Cubra, nesta ordem, o que existir:
+1. COMO COMEÇOU: de onde o lead veio ou como a conversa abriu.
+2. AS PERGUNTAS QUE DESTRAVARAM: o que o pré-vendedor perguntou e o que o lead revelou — com o número, o nicho, o tempo, a dor nas palavras dele.
+3. O QUE FOI APRESENTADO: o que o pré-vendedor explicou da entrega/método e como o lead reagiu a isso.
+4. INVESTIMENTO E DECISÃO: como o assunto apareceu e o que o lead respondeu (valor confirmado, quem decide junto).
+5. COMO TERMINOU: o próximo passo combinado (reunião, quem participa, o que ficou de mandar).
+Cada frase carrega um FATO da conversa e liga pergunta a resposta ("Cauã perguntou quanto ele fatura; Marcos contou que são R$40 mil por mês em moto peças"). PROIBIDO frase genérica ("conversaram sobre o negócio", "o lead demonstrou interesse", "falaram de valores"). Não repita as linhas do resumo com outras palavras: aqui entra o DESENROLAR. Use só o que está na conversa: nada de entrega, benefício, preço ou data que não foi dito. Mesmo tom de venda do resto — o desenrolar mostra um lead engajado, nunca uma conversa difícil. Nos exemplos, "o SDR" está no lugar do nome do pré-vendedor; no seu relatório use o nome.
+
+ANÁLISE DA PROSPECÇÃO (campo "analise") — uso interno da gestão, NÃO aparece no relatório do closer. Aqui vale a verdade nua, sem o tom de venda:
+- "bant": para cada critério, "sim" (ficou claro na conversa), "parcial" (apareceu mas incompleto) ou "nao" (não foi levantado). orcamento = capacidade/valor de investimento; autoridade = quem decide e se participa; necessidade = dor ou objetivo concreto; prazo = urgência ou quando quer começar.
+- "spin": true quando o pré-vendedor fez pelo menos uma pergunta daquele tipo E o lead respondeu. situacao = contexto atual; problema = dor/dificuldade; implicacao = o que acontece se nada mudar, o custo de continuar igual; necessidade = o que muda/melhora ao resolver.
+- "perguntas_chave": até 3 perguntas do PRÉ-VENDEDOR (copiadas ou quase) que mais fizeram o lead se abrir — as que renderam número, dor, decisão. [] se nenhuma se destacou.
+- "abordagem": UMA frase descrevendo como o pré-vendedor conduziu (por onde abriu, em que ordem, o que fez o lead avançar).
 
 SINAIS DE COMPRA (campo "sinais_compra") — 1 a 4 sinais concretos e curtos de que o lead quer avançar, cada um com a prova da conversa ("Aceitou o investimento de R$3 mil sem pedir desconto"; "Pediu para a esposa entrar na reunião"). Só o que aconteceu. Se não houver nenhum sinal claro, devolva [].
 
@@ -219,7 +270,9 @@ Preencha pela ferramenta "gerar_relatorio":
 - "citacoes": 0 a 2 FALAS EXATAS/verbatim do LEAD (copiadas literalmente das linhas do LEAD, inclusive áudios), e SÓ se forem MUITO BOAS para o closer: sinal de compra, decisão tomada, urgência, entusiasmo, consciência do que quer ("era exatamente isso que eu procurava", "quero começar logo", "o investimento eu tenho"). PROIBIDO citar fala que possa desanimar o closer: preço caro, dúvida, medo, desconfiança, "vou pensar", falta de dinheiro ou de tempo, reclamação, dor contada em tom negativo. Na dúvida, deixe de fora. Sem paráfrase, sem falas do vendedor; [] é a resposta certa quando não houver fala muito boa.
 - "abertura": um EXTRA além do relatório completo — a fala com que o CLOSER começa a reunião, para ler quase como está. NÃO é o relatório; o corpo (as seções) continua obrigatório do mesmo jeito. Estilo do handoff: cumprimenta o lead pelo nome, diz que o pré-vendedor repassou o contexto, resume a situação real (se está começando do zero ou já vende, o que vende/quer, a motivação) e TERMINA confirmando com o lead ("é isso mesmo?"). 2 a 4 frases, primeira pessoa, tom cordial. Use SOMENTE o que apareceu na conversa. Não fale de preço nem de proposta. Se souber o nome do pré-vendedor, cite-o; senão, diga "meu time".
 - "consciencia": { "nivel", "porque" } conforme a seção NÍVEL DE CONSCIÊNCIA.
-- "conversa": 3 a 5 frases do desenrolar, com o nome do pré-vendedor e do lead (seção COMO FOI A CONVERSA).
+- "perfil": { "tipo", "evidencia", "conduzir" } conforme a seção PERFIL DO LEAD.
+- "conversa": 4 a 6 frases do desenrolar, com o nome do pré-vendedor e do lead (seção COMO FOI A CONVERSA).
+- "analise": { "bant", "spin", "perguntas_chave", "abordagem" } conforme a seção ANÁLISE DA PROSPECÇÃO.
 - "sinais_compra": 1 a 4 sinais concretos de compra, ou [].
 - "frase_impacto": uma frase única e afiada de fechamento (pode parafrasear).`;
 
@@ -304,6 +357,28 @@ function extrairJson(texto) {
   throw new Error('A LLM não retornou um JSON válido.');
 }
 
+const NIVEL_BANT = new Set(['sim', 'parcial', 'nao']);
+
+/** Análise interna da prospecção (BANT/SPIN/perguntas-chave). null quando a IA não mandou. */
+function normalizarAnalise(a) {
+  if (!a || typeof a !== 'object') return null;
+  const nivel = (v) => {
+    const k = String(v || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+    return NIVEL_BANT.has(k) ? k : 'nao';
+  };
+  const b = a.bant && typeof a.bant === 'object' ? a.bant : {};
+  const s = a.spin && typeof a.spin === 'object' ? a.spin : {};
+  return {
+    bant: { orcamento: nivel(b.orcamento), autoridade: nivel(b.autoridade), necessidade: nivel(b.necessidade), prazo: nivel(b.prazo) },
+    spin: { situacao: s.situacao === true, problema: s.problema === true, implicacao: s.implicacao === true, necessidade: s.necessidade === true },
+    perguntasChave: (Array.isArray(a.perguntas_chave) ? a.perguntas_chave : Array.isArray(a.perguntasChave) ? a.perguntasChave : [])
+      .map((x) => String(x == null ? '' : x).replace(/\s+/g, ' ').trim().slice(0, 200))
+      .filter(Boolean)
+      .slice(0, 3),
+    abordagem: typeof a.abordagem === 'string' ? a.abordagem.replace(/\s+/g, ' ').trim().slice(0, 300) : '',
+  };
+}
+
 /** Normaliza a saída flexível: valida resumo/seções e descarta vazios. */
 function normalizarDados(dados) {
   const out = {};
@@ -343,6 +418,8 @@ function normalizarDados(dados) {
     Array.isArray(v) ? v.map((x) => String(x == null ? '' : x).trim()).filter(Boolean).slice(0, max) : [];
   out.conversa = listaDeTextos(dados.conversa, 6);
   out.sinais_compra = listaDeTextos(dados.sinais_compra, 5);
+  out.perfil = normalizarPerfil(dados.perfil);
+  out.analise = normalizarAnalise(dados.analise);
 
   return out;
 }
@@ -404,11 +481,50 @@ const REPORT_TOOL = {
         },
         required: ['nivel', 'porque'],
       },
+      perfil: {
+        type: 'object',
+        description: 'Perfil comportamental do lead, lido pelo jeito das respostas dele.',
+        properties: {
+          tipo: { type: 'string', enum: ['dominante', 'analitico', 'cetico', 'relacional', 'cauteloso', 'entusiasta'] },
+          evidencia: { type: 'string', description: 'O comportamento observado nesta conversa que indica o perfil.' },
+          conduzir: { type: 'string', description: 'Uma frase para o closer conduzir a reunião com este lead.' },
+        },
+        required: ['tipo', 'evidencia', 'conduzir'],
+      },
       conversa: {
         type: 'array',
         items: { type: 'string' },
         description:
-          'Como foi a conversa: 3 a 5 frases em ordem cronológica, em terceira pessoa, com o nome do pré-vendedor e do lead ("Cauã explicou que a entrega é..."). Só o que foi dito.',
+          'Como foi a conversa: 4 a 6 frases em ordem cronológica, em terceira pessoa, com o nome do pré-vendedor e do lead, ligando pergunta a resposta ("Cauã perguntou X; Marcos contou Y"). Só o que foi dito.',
+      },
+      analise: {
+        type: 'object',
+        description: 'Análise interna da prospecção (não vai para o closer).',
+        properties: {
+          bant: {
+            type: 'object',
+            properties: {
+              orcamento: { type: 'string', enum: ['sim', 'parcial', 'nao'] },
+              autoridade: { type: 'string', enum: ['sim', 'parcial', 'nao'] },
+              necessidade: { type: 'string', enum: ['sim', 'parcial', 'nao'] },
+              prazo: { type: 'string', enum: ['sim', 'parcial', 'nao'] },
+            },
+            required: ['orcamento', 'autoridade', 'necessidade', 'prazo'],
+          },
+          spin: {
+            type: 'object',
+            properties: {
+              situacao: { type: 'boolean' },
+              problema: { type: 'boolean' },
+              implicacao: { type: 'boolean' },
+              necessidade: { type: 'boolean' },
+            },
+            required: ['situacao', 'problema', 'implicacao', 'necessidade'],
+          },
+          perguntas_chave: { type: 'array', items: { type: 'string' }, description: 'Até 3 perguntas do pré-vendedor que mais fizeram o lead se abrir.' },
+          abordagem: { type: 'string', description: 'Uma frase: como o pré-vendedor conduziu a conversa.' },
+        },
+        required: ['bant', 'spin', 'perguntas_chave', 'abordagem'],
       },
       sinais_compra: {
         type: 'array',
@@ -417,7 +533,7 @@ const REPORT_TOOL = {
       },
       frase_impacto: { type: 'string' },
     },
-    required: ['lead', 'resumo', 'secoes', 'abertura', 'consciencia', 'conversa'],
+    required: ['lead', 'resumo', 'secoes', 'abertura', 'consciencia', 'perfil', 'conversa', 'analise'],
   },
 };
 
@@ -646,6 +762,19 @@ function escolherNomeDoLead(daLLM, doContato) {
 }
 
 /**
+ * O perfil entra no resumo como uma linha a mais, já com o "como conduzir" — é o que o closer usa.
+ * Não duplica se a IA já escreveu uma linha "Perfil".
+ */
+function aplicarPerfilNoResumo(dados) {
+  const info = dados.perfil && infoDoPerfil(dados.perfil.tipo);
+  if (!info) return;
+  const jaTem = (dados.resumo || []).some((r) => /^perfil( do lead)?$/i.test(String(r.rotulo || '').trim()));
+  if (jaTem) return;
+  const dica = dados.perfil.conduzir || dados.perfil.evidencia;
+  dados.resumo = (dados.resumo || []).concat([{ rotulo: 'Perfil', valor: dica ? `${info.rotulo} — ${dica}` : info.rotulo }]);
+}
+
+/**
  * System completo (prompt + exemplos + playbook). Tudo aqui é FIXO entre reports,
  * então vira o prefixo cacheado: a conversa (que muda) fica no user prompt.
  */
@@ -658,7 +787,14 @@ async function montarSystem() {
     console.error('[report] não consegui ler a base de conhecimento:', err.message);
   }
   const comPlaybook = playbook ? `${SYSTEM_PROMPT}\n\n---\n\n${playbook}` : SYSTEM_PROMPT;
-  return comPlaybook + BLOCO_EXEMPLOS;
+  // O que o gestor já corrigiu no nível de consciência vira régua para os próximos reports.
+  let calibragem = '';
+  try {
+    calibragem = await aprendizado.blocoConscienciaParaPrompt();
+  } catch (err) {
+    console.error('[report] não consegui ler a calibragem:', err.message);
+  }
+  return comPlaybook + (calibragem ? `\n\n---\n\n${calibragem}` : '') + BLOCO_EXEMPLOS;
 }
 
 async function processarComLLM(userPrompt, nome, qualidade) {
@@ -693,6 +829,7 @@ async function processarComLLM(userPrompt, nome, qualidade) {
   const uso = dados.uso;
   delete dados.uso;
   dados.lead = escolherNomeDoLead(dados.lead, nome);
+  aplicarPerfilNoResumo(dados);
   // O servidor registra o consumo e tira este campo antes de devolver o report.
   dados.uso = { ...uso, qualidade: qualidadeFinal };
   return dados;
@@ -731,6 +868,8 @@ module.exports = {
   dadosDeTexto,
   PROMPT_VERSAO,
   normalizarDados,
+  normalizarAnalise,
+  aplicarPerfilNoResumo,
   chamarFerramenta,
   montarHistoricoFormatado,
   extrairJson,

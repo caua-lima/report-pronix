@@ -698,6 +698,62 @@
     }
   }
 
+
+  /**
+   * Depois do "Report pronto!": o SDR escolhe o closer da reunião ali mesmo. A lista e a indicação
+   * (qual closer costuma fechar com este perfil de lead) vêm do servidor junto do report.
+   */
+  function anexarEscolhaDeCloser(resp) {
+    const el = document.getElementById(BADGE_ID);
+    const lista = (resp && Array.isArray(resp.closers) && resp.closers) || [];
+    if (!el || !resp || !resp.id || !lista.length) return;
+    const alvo = el.querySelector('div[style*="flex:1"]') || el;
+    const caixa = document.createElement('div');
+    caixa.id = 'cr-closer';
+    caixa.style.cssText = 'margin-top:10px;padding-top:8px;border-top:1px solid #26333f';
+    const rotulo = document.createElement('div');
+    rotulo.style.cssText = 'font-size:11px;color:#8b98a5;margin-bottom:4px';
+    rotulo.textContent = 'Closer desta reunião';
+    const sel = document.createElement('select');
+    sel.style.cssText = 'width:100%;background:#0d141c;color:#e6edf3;border:1px solid #26333f;border-radius:7px;padding:6px;font-size:12.5px';
+    const sugerido = resp.sugestaoCloser && resp.sugestaoCloser.closerId;
+    const opcao = (valor, texto) => {
+      const o = document.createElement('option');
+      o.value = valor;
+      o.textContent = texto;
+      sel.appendChild(o);
+    };
+    opcao('', 'Escolher closer…');
+    lista.forEach((c) => opcao(c.id, c.id === sugerido ? c.nome + ' (indicado)' : c.nome));
+    const nota = document.createElement('div');
+    nota.style.cssText = 'font-size:11px;color:#8b98a5;margin-top:4px';
+    nota.textContent = sugerido ? resp.motivoSugestao || '' : '';
+    sel.addEventListener('change', () => {
+      sel.disabled = true;
+      nota.style.color = '#8b98a5';
+      nota.textContent = 'Salvando…';
+      const fim = (r) => {
+        sel.disabled = false;
+        if (r && r.ok) {
+          nota.style.color = '#ffc400';
+          nota.textContent = sel.value ? 'Closer salvo: ' + (r.closerNome || '') : 'Closer removido.';
+        } else {
+          nota.style.color = '#ff6b6b';
+          nota.textContent = (r && r.erro) || 'Não consegui salvar o closer.';
+        }
+      };
+      try {
+        chrome.runtime.sendMessage({ action: 'definirCloser', reportId: resp.id, closerId: sel.value }, fim);
+      } catch (_) {
+        fim({ ok: false, erro: 'Recarregue a página (F5) e escolha o closer pelo site.' });
+      }
+    });
+    caixa.appendChild(rotulo);
+    caixa.appendChild(sel);
+    caixa.appendChild(nota);
+    alvo.appendChild(caixa);
+  }
+
   // ---------------------------------------------------------------------------
   // Orquestração (mesmo contrato de mensagens do content.js do WhatsApp — o
   // popup e o background.js não precisam saber qual plataforma está aberta)
@@ -873,6 +929,7 @@
       arquivo: resp.arquivo,
       arquivoBase64: resp.arquivoBase64,
     });
+    anexarEscolhaDeCloser(resp);
     jobEmAndamento = false;
   }
 

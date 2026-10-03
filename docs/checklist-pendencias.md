@@ -11,6 +11,23 @@ Detalhes técnicos em [`auditoria-pronix.md`](auditoria-pronix.md) e [`plano-imp
 - [x] 117 testes automáticos (`npm test`), sem rede e sem custo
 - [x] Merge local na `main`
 
+## Novo em 03/10: inteligência comercial (extensão 1.10.0 + servidor)
+
+- [x] Coach reforçado: fila de modelos gratuitos (o `llama-3.3-70b` saiu da tabela do plano gratuito do Groq), não depende mais da ficha do RD, popup mostra "Coach: liberado"
+- [x] Coach: perfis dominante/analítico/cético/relacional/cauteloso/entusiasta, o que falta levantar, próxima mensagem
+- [x] Report v5: nível de consciência com prova obrigatória, perfil do lead no resumo, narração mais rica, análise BANT/SPIN guardada
+- [x] Closer escolhido na extensão (aviso final), com indicação pelo histórico
+- [x] Abas do master: **Resultados da reunião** (com inteligência e insights) e **Closers**
+- [x] A IA aprende o nível de consciência com as correções do master (sem custo)
+- [x] Base de conhecimento v2 (6 campos, com o material dos scripts, apresentações, contratos e notícias)
+- [x] Report manual em formato de chat
+- [ ] **Você:** `git push origin main` e enviar a extensão 1.10.0 à loja
+- [ ] **Você:** mandar a lista de closers (ou cadastrar na aba Closers)
+- [ ] **Você:** abrir o popup da extensão e conferir "Extensão v1.10.0 · Coach: liberado"; se o coach der erro, me mande a mensagem exata
+- [ ] **Você:** conferir a aba Base (o texto recomendado entrou no lugar do antigo; "Voltar aos textos anteriores" desfaz)
+- [ ] **Você:** gerar 2 ou 3 reports reais e conferir nível de consciência, perfil e a narração; corrigir na aba Resultados o que vier errado
+- [ ] Ainda não lê PDF/Word no chat manual (só áudio, print e texto)
+
 ## Novo em 01/10: card certo no RD (extensão 1.9.1 + servidor)
 
 - [x] Lead com contatos/cards duplicados: abre o em aberto mais recente de todos os contatos com o telefone; seletor no cartão para trocar, e a escolha fica lembrada

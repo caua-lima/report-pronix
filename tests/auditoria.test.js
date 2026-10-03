@@ -233,6 +233,7 @@ test('A17: appendConversa agenda a estimativa de custo (mudar .value não dispar
     $: () => ta,
     estimativaTimer: null,
     atualizarEstimativaCusto: () => {},
+    renderChat: () => {},
     clearTimeout: () => {},
     setTimeout: (fn, ms) => { timers.push(ms); return 1; },
   };

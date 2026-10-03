@@ -9,6 +9,23 @@ const DEFAULT_SERVER = 'https://report-closer.vercel.app';
 // Sobe a cada mensagem: quem terminou um trabalho em segundo plano (validar a chave) confere se
 // ninguém escreveu nada depois dele antes de escrever por cima.
 let statusVersao = 0;
+
+/** Versão instalada e o que o master liberou para esta chave — para conferir de relance se está tudo certo. */
+function mostrarInfoExt(eu) {
+  const el = $('infoExt');
+  if (!el) return;
+  let versao = '';
+  try {
+    versao = chrome.runtime.getManifest().version;
+  } catch (_) {
+    /* fora da extensão (testes) */
+  }
+  const partes = [];
+  if (versao) partes.push('Extensão v' + versao);
+  if (eu && typeof eu.coach === 'boolean') partes.push('Coach: ' + (eu.coach ? 'liberado' : 'não liberado'));
+  if (eu && eu.fichaCrm === false) partes.push('Ficha do lead: desligada pelo master');
+  el.textContent = partes.join(' · ');
+}
 function setStatus(txt, { erro = false, loading = false, html = false } = {}) {
   statusVersao++;
   const el = $('status');
@@ -150,6 +167,7 @@ async function testarConexao() {
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.erro || 'Chave inválida.');
     $('sdrNome').textContent = j.nome;
+    mostrarInfoExt(j);
     const dono = await impressaoDaChave(chave);
     chrome.storage.local.get({ ultimoReport: null }, ({ ultimoReport }) => {
       if (ultimoReport && ultimoReport.dono !== dono) {

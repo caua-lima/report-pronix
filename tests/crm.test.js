@@ -346,7 +346,7 @@ test('popup do lead: ligado por padrão; o master desliga e religa; quem não é
   assert.equal((await patch(E.sdr, { fichaCrm: false })).status, 403);
   assert.equal((await patch(E.admin, { fichaCrm: false })).status, 200);
   chamadasRd.length = 0;
-  assert.deepEqual((await post('/api/crm/lead', { telefone: '5571999998888' }, { chave: E.sdr2 })).json, { configurado: false });
+  assert.deepEqual((await post('/api/crm/lead', { telefone: '5571999998888' }, { chave: E.sdr2 })).json, { configurado: false, coach: false });
   assert.equal(chamadasRd.length, 0, 'desligado: o RD nem é consultado');
   assert.equal((await post('/api/crm/lead', { telefone: '5571999998888' }, { chave: E.sdr })).json.encontrado, true, 'os outros continuam');
   assert.equal((await patch(E.admin, { fichaCrm: true })).status, 200);

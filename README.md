@@ -181,7 +181,9 @@ SDR — nada de e-mail real, é só nome + chave gerada.
 | `OLLAMA_MODEL` / `OLLAMA_URL` | só se `LLM_PROVIDER=ollama` | Modelo e endpoint do Ollama local (custo zero). |
 | `GROQ_API_KEY` | sim, em produção (Vercel) | Transcrição de áudio via API do Groq (Whisper). Sem ela, cai no faster-whisper local. |
 | `GROQ_MODEL` | não (padrão `whisper-large-v3-turbo`) | Modelo de transcrição do Groq. |
-| `GROQ_VISION_MODEL` | não (padrão `qwen/qwen3.6-27b`) | Modelo com visão que lê o print da conversa no modo manual. |
+| `GROQ_VISION_MODEL` | não (padrão `qwen/qwen3.6-27b`, reserva `qwen/qwen3.8-27b`) | Modelo com visão que lê o print da conversa no modo manual. Se o configurado sair do ar, o reserva assume. |
+| `GROQ_COACH_MODEL` | não | Modelo de texto gratuito do Groq a tentar primeiro no coach e nos insights (padrão: fila `openai/gpt-oss-120b`, `openai/gpt-oss-20b`, `llama-3.3-70b-versatile`, `llama-3.1-8b-instant`). |
+| `MASTER_NOME` | não (padrão `Cauã Lima`) | Nome do usuário promovido a master enquanto não houver nenhum. |
 | `MAX_IMAGEM_BYTES` | não (padrão `4194304`) | Teto do print enviado para leitura (o dashboard já reduz antes). |
 | `PYTHON_BIN` / `WHISPER_MODEL_SIZE` | só localmente, sem `GROQ_API_KEY` | Transcrição local via `faster-whisper` (`pip install faster-whisper`). |
 | `KV_REST_API_URL` / `KV_REST_API_TOKEN` | sim, na Vercel | Credenciais do Vercel KV/Upstash Redis. Vazias = grava em `data/*.json`. |
@@ -335,15 +337,72 @@ personalizados, outras anotações e o link para abrir no RD. Liga/desliga no po
 - **Disponível para todo usuário com chave** (SDR, gestor ou admin). Cada um pode esconder o
   cartão no próprio popup da extensão.
 - **Coach da conversa** (botão no cartão, **custo zero**): lê a conversa e os áudios e, num modelo
-  gratuito do Groq (`GROQ_COACH_MODEL`, padrão `llama-3.3-70b-versatile`), devolve o **perfil do lead**
-  (analítico, cético, emocional, apressado, indeciso, curioso) com a evidência, **como abordar**,
-  **objeções** com resposta pronta e **3 perguntas de aprofundamento** (`src/coach.js`,
-  `POST /api/coach`). **Aprende sem treinar modelo:** o SDR marca "Funcionou" no que usar
-  (`POST /api/coach/feedback`); as sugestões marcadas entram como exemplos no prompt das próximas
-  conversas, e as "não ajudou" como o que evitar. Só para quem o master ligar (aba **Acessos** →
-  coluna **Coach**; padrão: só o master). Limites: o plano gratuito do Groq limita chamadas por minuto/dia
-  (o coach avisa "limite gratuito atingido") e o modelo é mais simples que o Claude. Mesma conversa =
-  cache de 24h.
+  gratuito do Groq, devolve o **perfil do lead** (dominante, analítico, cético, relacional, cauteloso
+  ou entusiasta — a mesma régua do report, `src/perfil.js`) com a evidência, **como abordar**, **o
+  que ainda falta levantar** (BANT e a pergunta de implicação do SPIN), **objeções** com resposta
+  pronta, **3 perguntas de aprofundamento** e a **próxima mensagem** pronta para copiar
+  (`src/coach.js`, `POST /api/coach`). Usa a régua de qualificação e as objeções da aba **Base**.
+  **Aprende sem treinar modelo:** o SDR marca "Funcionou" no que usar (`POST /api/coach/feedback`);
+  as sugestões marcadas entram como exemplos no prompt das próximas conversas, e as "não ajudou"
+  como o que evitar. Só para quem o master ligar (aba **Acessos** → coluna **Coach**; padrão: só o
+  master). **Não depende da ficha do RD:** a permissão vem da chave (`/api/eu`), e o cartão aparece
+  só com resumo e coach quando o CRM está desligado. O popup da extensão mostra a versão instalada e
+  "Coach: liberado / não liberado".
+  **Modelos:** fila `openai/gpt-oss-120b` → `openai/gpt-oss-20b` → `llama-3.3-70b-versatile` →
+  `llama-3.1-8b-instant` (`GROQ_COACH_MODEL` põe outro na frente). Se um saiu do ar ou bateu no
+  limite, o seguinte assume. O plano gratuito limita tokens por minuto (cerca de 8 mil por modelo),
+  por isso o pedido vai enxuto; estourando em todos, o aviso é "limite gratuito atingido". Mesma
+  conversa = cache de 24h.
+
+## Inteligência comercial: perfil do lead, closer certo e o que funciona na prospecção
+
+- **Leitura de cada report** (prompt `v5`, `src/report.js`): além do handoff, a IA devolve o
+  **perfil do lead** (vira a linha "Perfil" do resumo, com o "como conduzir"), o **nível de
+  consciência** com prova obrigatória (teste de cima para baixo; sem a prova do nível, desce um
+  degrau) e uma **análise interna da prospecção** — BANT (orçamento, autoridade, necessidade,
+  prazo), SPIN (situação, problema, implicação, necessidade), as perguntas-chave do pré-vendedor e
+  a abordagem. A análise fica no histórico (`stats`), não vai para o PDF nem para quem gerou.
+- **Closer na extensão:** o aviso "Report pronto!" traz a lista de closers; o SDR escolhe ali
+  (`POST /api/reports/:id/closer`, só o próprio report). Quando há histórico, o closer indicado
+  para aquele perfil vem marcado "(indicado)" com o motivo — nada é salvo sozinho.
+- **Aba Closers** (só o master): adicionar e remover. `GET /api/closers` (qualquer chave) devolve
+  só id e nome.
+- **Aba Resultados da reunião** (só o master): por report, closer, resultado (venda em call, venda em
+  FUP, pix compromisso, não fechou, no-show, em follow-up), anotação do que deu, e a correção do
+  perfil e do nível de consciência quando a IA errou. `GET /api/master/resultados`.
+- **A IA aprende o nível de consciência, sem custo:** cada correção vira um exemplo ("com esta
+  evidência a IA disse X, o certo é Y") guardado em `aprendizado_consciencia` e incluído no prompt
+  dos próximos reports (os 8 mais recentes, `src/aprendizado.js`). Não há treino de modelo.
+- **Inteligência** (`src/inteligencia.js`, `GET /api/master/inteligencia`): tudo é conta em cima
+  dos reports com resultado marcado, sem IA — matriz closer × perfil, conversão por perfil e por
+  nível de consciência, e o que difere na prospecção das reuniões que fecharam (cada critério de
+  BANT/SPIN: % nas que fecharam vs. nas que não) com as perguntas-chave. **A indicação de closer
+  só aparece com 3 ou mais reuniões daquele closer com aquele perfil** (taxa suavizada, para 1 de 1
+  não passar na frente de 8 de 10) e ignora closer que saiu da lista. A correção do master vale no
+  lugar da leitura da IA.
+- **Insights** (`POST /api/master/insights`): texto escrito pela IA gratuita (Groq) em cima dos
+  números e das perguntas — closer por perfil, prospecção que funciona, perguntas para a
+  qualificação padrão, melhorias no script e limites da amostra. A fala dos leads não é enviada.
+  Exige 5 reuniões com resultado.
+
+## Base de conhecimento
+
+Seis campos na aba **Base**: a empresa, oferta e valores, perfil de cliente, roteiro (o que o SDR
+levanta e o que o closer faz), régua de qualificação (SPIN e BANT) e objeções/dores. Campo nunca
+escrito vem com o texto recomendado (`src/baseInicial.js`), montado com os scripts de diagnóstico,
+as apresentações Performance e Aceleração, os contratos e as notícias públicas da empresa. Quem
+tinha a base antiga (4 campos) passa para a recomendada uma vez, e os textos antigos ficam
+guardados: **Voltar aos textos anteriores** restaura. **Usar a base recomendada** reaplica tudo.
+Pisos de negociação não entram na base. O playbook vai no prefixo cacheado de todo report (cerca
+de 4 mil tokens a ~0,1x do preço) e, resumido, no coach.
+
+## Report manual em formato de chat
+
+A aba **Gerar report** monta a conversa como um chat: escreva e adicione fala por fala (escolhendo
+Lead ou Eu), cole a conversa inteira, ou anexe/arraste áudios (transcritos), prints (lidos como
+conversa) e arquivos de texto (.txt, .md, .csv). Cada fala vira uma bolha que dá para remover; a
+conversa em texto continua editável em "Ver ou editar a conversa como texto" e é exatamente o que
+vai para a IA. PDF e Word ainda não são lidos (o painel avisa).
 - **Resumo rápido da conversa** (botão no cartão): lê a conversa aberta, inclusive transcrevendo
   os áudios, e a IA devolve o **cenário**, **onde parou** (quem deve responder), a **última
   pergunta** e o **próximo passo** — para retomar um lead sem reler nem reouvir tudo.

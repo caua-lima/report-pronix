@@ -7,6 +7,8 @@ const crypto = require('crypto');
 const db = require('./db');
 const pdfStorage = require('./pdfStorage');
 const { custoUSD } = require('./precos');
+const { chaveDoPerfil } = require('./perfil');
+const { chaveDoNivel } = require('./consciencia');
 
 const CHAVE_DB = 'reports';
 const LIMITE = 5000;
@@ -23,7 +25,7 @@ const LIMITE_CONSUMO = 20000;
  *   PDF sob a mesma chave em src/pdfStorage.js), passa aqui; senão gera um novo.
  */
 async function registrar({
-  id, usuarioId, usuarioNome, lead, contato, origem, uso, reportKey, arquivo, qualidade, captura, citacoesRemovidas,
+  id, usuarioId, usuarioNome, lead, contato, origem, uso, reportKey, arquivo, qualidade, captura, citacoesRemovidas, leitura,
 }) {
   const quando = new Date().toISOString();
   const u = uso || {};
@@ -71,6 +73,18 @@ async function registrar({
       // extensão. null = veio do modo manual ou de uma extensão antiga.
       captura: captura || null,
       citacoesRemovidas: citacoesRemovidas || 0,
+      // Leitura da IA sobre o lead e a prospecção (perfil, nível de consciência, BANT/SPIN, perguntas-chave).
+      // É o que alimenta a aba "Resultados da reunião": qual closer fecha com qual perfil, o que funciona.
+      // Não guarda a conversa — só a classificação e as perguntas do pré-vendedor.
+      perfil: (leitura && leitura.perfil) || '',
+      perfilEvidencia: (leitura && leitura.perfilEvidencia) || '',
+      consciencia: (leitura && leitura.consciencia) || '',
+      conscienciaPorque: (leitura && leitura.conscienciaPorque) || '',
+      analise: (leitura && leitura.analise) || null,
+      // Correções do master (vazio = vale a leitura da IA) e a anotação do que deu a reunião.
+      perfilReal: '',
+      conscienciaReal: '',
+      obsReuniao: '',
       modelo: u.modelo || '',
       entrada: u.entrada || 0,
       saida: u.saida || 0,
@@ -190,7 +204,7 @@ async function resumo({ de, ate, sdr } = {}) {
       pixCompromisso: 0,
     };
     c.total++;
-    if (r.resultado) c.vendas++;
+    if (ehVenda(r.resultado)) c.vendas++;
     if (r.resultado === 'venda_call') c.vendaCall++;
     if (r.resultado === 'venda_fup') c.vendaFup++;
     if (r.resultado === 'pix_compromisso') c.pixCompromisso++;
@@ -308,7 +322,10 @@ async function buscarPorId(id) {
   return todos.find((r) => r.id === id) || null;
 }
 
-const RESULTADOS_VALIDOS = new Set(['', 'venda_call', 'venda_fup', 'pix_compromisso']);
+// '' = ainda não marcado. Os três primeiros são venda; os outros dizem o que houve com a reunião.
+const RESULTADOS_VALIDOS = new Set(['', 'venda_call', 'venda_fup', 'pix_compromisso', 'sem_venda', 'no_show', 'em_followup']);
+const RESULTADOS_VENDA = new Set(['venda_call', 'venda_fup', 'pix_compromisso']);
+const ehVenda = (r) => RESULTADOS_VENDA.has(r);
 const DATA_OK = /^\d{4}-\d{2}-\d{2}$/;
 
 /** Diferença em dias corridos entre duas datas YYYY-MM-DD (b - a). null se alguma faltar/for inválida. */
@@ -353,6 +370,9 @@ async function atualizarResultado(id, campos = {}, { versaoEsperada } = {}) {
       if (tem('leadEmail')) novo.leadEmail = String(campos.leadEmail || '').trim().slice(0, 200);
       if (tem('resultado')) novo.resultado = RESULTADOS_VALIDOS.has(campos.resultado) ? campos.resultado : '';
       if (tem('dataReuniao')) novo.dataReuniao = DATA_OK.test(campos.dataReuniao || '') ? campos.dataReuniao : '';
+      if (tem('obsReuniao')) novo.obsReuniao = String(campos.obsReuniao || '').replace(/\s+/g, ' ').trim().slice(0, 500);
+      if (tem('perfilReal')) novo.perfilReal = chaveDoPerfil(campos.perfilReal) || '';
+      if (tem('conscienciaReal')) novo.conscienciaReal = chaveDoNivel(campos.conscienciaReal) || '';
       if (tem('dataFechamento')) {
         novo.dataFechamento = DATA_OK.test(campos.dataFechamento || '') ? campos.dataFechamento : '';
       }
@@ -388,4 +408,5 @@ async function registrarResumoRapido({ usuarioNome, uso }) {
 
 module.exports = {
   registrar, resumo, listar, remover, buscarPorChave, buscarPorId, atualizarResultado, hojeStr, registrarResumoRapido,
+  RESULTADOS_VALIDOS, ehVenda, emDiaLocal,
 };

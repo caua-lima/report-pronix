@@ -31,6 +31,7 @@ A chave é sua e individual: é ela que assina o seu nome no report. Não passe 
 2. Clique no ícone da PRONIX → **Gerar Report da conversa aberta**.
 3. Vai aparecer um aviso na tela mostrando o andamento. Enquanto estiver **"Lendo a conversa…"**, **não troque de conversa** (ele está rolando e lendo a que está aberta). Quando o aviso virar **"Gerando report…"**, a leitura terminou e você já pode responder outros leads.
 4. No fim aparece **✅ Report pronto!** com o botão de **baixar o PDF**.
+5. No mesmo aviso, escolha o **closer desta reunião**. Quando já há histórico, o closer que mais fecha com aquele tipo de lead vem marcado como **(indicado)**, com o motivo. A escolha é sua: nada é salvo sozinho.
 
 **Já existe um report igual?** Se você gerar duas vezes a mesma conversa, o aviso oferece **Abrir o existente** (baixa o PDF que já foi gerado, sem custo) ou **Gerar de novo** (chama a IA outra vez e custa). Só abra de novo se a conversa mudou.
 
@@ -49,7 +50,7 @@ No aviso final também vem quantos áudios ele transcreveu:
 
 Ao abrir a conversa de um lead no WhatsApp Web, aparece um cartão no canto de cima da conversa com o que já está no RD Station. O jeito mais certeiro é abrir pelo ícone de WhatsApp do card do lead no RD: o número vai junto e ele acha o lead mesmo se o contato estiver salvo com outro nome. O cartão mostra: **etapa e funil**, **responsável** e as respostas do formulário (**Profissão, Estado, Vende online, Investimento**...). Use para abrir a conversa já sabendo com quem está falando.
 
-- **Coach da conversa** (só para quem o master liberou): perfil do lead, como abordar, respostas para as objeções que apareceram e perguntas para aprofundar. Use o que fizer sentido e marque **Funcionou**: assim ele aprende o que dá certo com os seus leads.
+- **Coach da conversa** (só para quem o master liberou): perfil do lead (dominante, analítico, cético, relacional, cauteloso ou entusiasta), como abordar, **o que ainda falta levantar**, respostas para as objeções que apareceram, perguntas para aprofundar e a **próxima mensagem** pronta para copiar. Use o que fizer sentido e marque **Funcionou**: assim ele aprende o que dá certo com os seus leads. No popup da PRONIX aparece "Coach: liberado" quando está ativo para a sua chave.
 - **Resumo rápido da conversa**: botão no topo do cartão. Ele lê a conversa (e os áudios, no mudo) e mostra o cenário, **onde parou**, a última pergunta e o próximo passo. Ideal para retomar um lead de dias atrás sem reouvir os áudios. Enquanto ele lê, não troque de conversa.
 - Contato salvo com nome e a ficha não achou? Clique no nome no topo da conversa para abrir **Dados do contato**: a ficha lê o número de lá sozinha.
 - **Lead com mais de um card no RD** (inscreveu de novo): o cartão mostra uma lista "Este lead tem N cards". Se o aberto não for o certo, escolha o certo ali: fica lembrado e o "Abrir no RD Station" passa a abrir esse card.

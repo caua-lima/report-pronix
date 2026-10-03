@@ -481,3 +481,61 @@ test('lead com vários cards: o cartão mostra o seletor e trocar manda o card e
   await esperar(() => cartao(p).querySelector('select') && cartao(p).querySelector('select').value === 'e1', { motivo: 'seletor no card novo' });
   p.fechar();
 });
+
+// ---------------------------------------------------------------- Coach não depende mais da ficha do RD
+test('coach sem RD: CRM desligado no servidor (ou popup do lead desligado) ainda mostra o cartão com resumo e coach', async () => {
+  const srv = crmFalso(() => ({ ok: true, configurado: false, coach: true }));
+  const p = abrir(srv);
+  await esperar(() => !!botao(p, 'Coach da conversa'), { motivo: 'cartão só com o coach' });
+  const t = textoCartao(p);
+  assert.ok(t.includes('PRONIX') && !t.includes('RD STATION'));
+  assert.ok(!t.includes('Não achei este lead'), 'sem busca de RD neste cartão');
+  assert.ok(botao(p, 'Resumo rápido da conversa'));
+  p.fechar();
+
+  // sem o coach liberado, CRM desligado continua sem cartão nenhum
+  const sem = crmFalso(() => ({ ok: true, configurado: false, coach: false }));
+  const q = abrir(sem);
+  await esperar(() => sem.consultas.length === 1, { motivo: 'consulta' });
+  await dormir(60);
+  assert.equal(cartao(q), null);
+  q.fechar();
+});
+
+test('coach: a permissão vem da chave — aparece mesmo quando a consulta ao RD dá erro', async () => {
+  const srv = crmFalso(() => ({ ok: false, erro: 'RD Station fora do ar' }));
+  const aoEnviar = async (msg) => (msg.action === 'permissoes' ? { ok: true, coach: true, papel: 'master' } : srv.aoEnviar(msg));
+  const p = abrir({ aoEnviar });
+  await esperar(() => /RD Station fora do ar/.test(textoCartao(p)), { motivo: 'erro do RD na tela' });
+  await esperar(() => !!botao(p, 'Coach da conversa'), { motivo: 'coach apesar do erro' });
+  p.fechar();
+});
+
+test('coach: mostra o que falta levantar e a próxima mensagem pronta (copiar e marcar "Funcionou")', async () => {
+  const completo = {
+    ...COACH_FALSO,
+    perfil: { tipo: 'Dominante', chave: 'dominante', evidencia: 'Respondeu só "quanto custa?".' },
+    faltaLevantar: ['Quem decide junto', 'Por que agora'],
+    proximaMensagem: 'Te passo já. Antes: você decide isso sozinho?',
+  };
+  const srv = crmFalso(() => comCoach({ ok: true, configurado: true, encontrado: true, ficha: FICHA_MARCOS }), { coach: () => ({ ok: true, coach: completo }) });
+  const p = abrir(srv);
+  let copiado = null;
+  Object.defineProperty(p.w.navigator, 'clipboard', { configurable: true, value: { writeText: async (t) => { copiado = t; } } });
+  await esperar(() => !!botao(p, 'Coach da conversa'), { motivo: 'botão' });
+  botao(p, 'Coach da conversa').click();
+  await esperar(() => /Próxima mensagem/.test(textoCartao(p)), { motivo: 'coach completo' });
+  const t = textoCartao(p);
+  for (const x of ['Dominante', 'Respondeu só "quanto custa?".', 'Ainda falta levantar', '• Quem decide junto', '• Por que agora', 'Te passo já. Antes: você decide isso sozinho?']) {
+    assert.ok(t.includes(x), 'faltou no cartão: ' + x);
+  }
+  botao(p, 'Copiar').click();
+  await esperar(() => copiado !== null, { motivo: 'copiou' });
+  assert.equal(copiado, 'Te passo já. Antes: você decide isso sozinho?');
+  const funcionou = [...cartao(p).querySelectorAll('button')].filter((b) => b.textContent === 'Funcionou');
+  funcionou[funcionou.length - 1].click();
+  await esperar(() => srv.feedbacks.length === 1, { motivo: 'feedback da mensagem' });
+  assert.equal(srv.feedbacks[0].tipo, 'mensagem');
+  assert.equal(srv.feedbacks[0].contexto, 'Dominante');
+  p.fechar();
+});
