@@ -1,581 +1,609 @@
 # PRONIX · Closer Report
 
-Extensão do Chrome + servidor (Node/Express) que lê a **conversa aberta no WhatsApp
-Web ou no Instagram Direct** — incluindo o histórico retroativo e os áudios,
-transcritos automaticamente nas duas plataformas — e gera, com um clique, um
-**relatório de handoff de pré-vendas em PDF** para o closer.
+Extensão do Chrome + servidor que transformam a conversa de prospecção em um **relatório de
+handoff em PDF** para o closer — com um clique, direto do **WhatsApp Web** ou do **Instagram
+Direct**, lendo o histórico inteiro e transcrevendo os áudios.
 
-Sem bot, sem QR code, sem biblioteca não-oficial: a extensão só lê a página que o
-SDR já tem aberta e logada — em qualquer uma das duas plataformas.
+Em volta do report, a ferramenta virou a mesa de trabalho do pré-vendedor: mostra a **ficha do
+lead no RD Station** ao lado da conversa, resume onde a conversa parou, tem um **coach gratuito**
+que lê o perfil do lead e sugere a próxima mensagem, move o card no RD quando o lead responde e
+acumula dados para responder, com número, **qual closer fecha com qual tipo de lead** e **o que
+funciona na prospecção**.
 
-## O que o report faz
+Sem bot, sem QR code e sem biblioteca não oficial: a extensão só lê a página que o SDR já tem
+aberta e logada.
 
-- Lê a conversa inteira (texto + áudio, transcrito automaticamente) e monta um PDF de
-  no máximo 2 páginas com resumo, seções de análise, citações do lead e uma fala pronta
-  para o closer abrir a call.
-- **Investimento, Motivação e Decisor(es) nunca ficam em branco** — o prompt é
-  instruído a extrair o sinal de qualificação que já está na conversa (inclusive
-  estrutura implícita: "tenho uma distribuidora há 12 anos" já responde investimento,
-  sem precisar de número).
-- **Tom só positivo** — o relatório é pensado para "vender" o lead pro closer: nenhum
-  ponto de atenção real (objeção, decisor ausente, orçamento apertado) é omitido, mas
-  tudo é escrito como próximo passo estratégico, nunca como alerta ou veredito ruim.
-- **Temperatura do lead** (logo abaixo do resumo, cartão escuro): o **nível de
-  consciência** do lead (escala de Schwartz: inconsciente → problema → solução → nossa
-  entrega → pronto para decidir) com o porquê, e os **sinais de compra** com a prova da
-  conversa. O selo de consciência **só aparece de "consciente da solução" para cima** —
-  abaixo disso fica fora do PDF, para não esfriar o closer (`src/consciencia.js`). Na
-  dúvida entre dois níveis, a IA fica com o menor, para o selo ser confiável.
-- **Nas palavras do lead** só entra fala MUITO boa (sinal de compra, decisão, urgência, entusiasmo), no máximo 2. Fala real que pode desanimar o closer (preço caro, "vou pensar", medo, desconfiança, falta de dinheiro/tempo, reclamação) fica de fora: pelo prompt e por um filtro sem IA (`citacaoDesanimadora` em `src/citacoes.js`). Prompt `v4`.
-- **Como foi a conversa**: 3 a 5 frases do desenrolar, com os nomes ("Cauã explicou que a
-  entrega é…; Marcos respondeu que faz sentido…") — o closer chega sabendo o que o SDR
-  já apresentou e como o lead reagiu. Só o que foi dito, no mesmo tom de venda.
-- O card final ("Como iniciar a reunião") traz a fala pronta **e** os 3 pontos-chave
-  do resumo juntos — o closer não precisa reler o handoff inteiro entre uma call e
-  outra.
-- É editável: dá pra corrigir qualquer campo (no popup da extensão ou no dashboard) e
-  rebaixar o PDF sem chamar a IA de novo — de graça.
+---
+
+## Sumário
+
+1. [O que a ferramenta entrega](#o-que-a-ferramenta-entrega)
+2. [Como funciona](#como-funciona)
+3. [Começando](#começando)
+4. [Papéis e permissões](#papéis-e-permissões)
+5. [O report](#o-report)
+6. [O cartão do lead no WhatsApp](#o-cartão-do-lead-no-whatsapp)
+7. [Inteligência comercial](#inteligência-comercial)
+8. [O painel](#o-painel)
+9. [API](#api)
+10. [Variáveis de ambiente](#variáveis-de-ambiente)
+11. [Dados guardados](#dados-guardados)
+12. [Testes](#testes)
+13. [Deploy e publicação](#deploy-e-publicação)
+14. [Segurança e privacidade](#segurança-e-privacidade)
+15. [Limites e riscos](#limites-e-riscos)
+16. [Estrutura do projeto](#estrutura-do-projeto)
+17. [Documentação relacionada](#documentação-relacionada)
+
+---
+
+## O que a ferramenta entrega
+
+| Para quem | O quê |
+| --- | --- |
+| **Pré-vendedor (SDR)** | Report em PDF com um clique; ficha do lead do RD ao abrir a conversa; resumo rápido para retomar um lead; coach com perfil do lead, objeções e próxima mensagem; .zip com os reports do dia. |
+| **Closer** | Handoff de até 2 páginas: resumo, perfil do lead e como conduzir, nível de consciência, sinais de compra, como foi a conversa e a fala pronta para abrir a reunião. |
+| **Gestão** | Custo por report e por SDR, PDFs de toda a equipe, resultado de cada reunião, matriz closer × perfil de lead, padrões da prospecção que fecha e insights escritos por IA gratuita. |
+
+**Custo:** só a geração do report (Anthropic) é paga. Transcrição de áudio, leitura de print,
+coach, insights, ficha do RD e a automação do cartão não têm custo por uso.
+
+---
 
 ## Como funciona
 
 ```
-WhatsApp Web
-   │  extensão (content.js) lê o DOM, rola o histórico, captura áudio
+WhatsApp Web / Instagram Direct
+   │  extensão (content script): lê o DOM, rola o histórico, captura os áudios no mudo
    ▼
-servidor (Express) ── autentica por chave (x-cr-key) ──▶ usuarios.js
-   │
-   ├─ transcreve os áudios (Groq API, ou faster-whisper local)
-   ├─ chama a Anthropic (prompt cacheado + saída estruturada) ──▶ src/report.js
-   ├─ monta o PDF (pdfkit, marca PRONIX)                       ──▶ src/generatePdf.js
-   └─ registra custo/uso                                        ──▶ src/stats.js
+service worker da extensão ── x-cr-key ──▶ servidor (Express, na Vercel)
+                                             │
+                                             ├─ transcreve os áudios ........ Groq (Whisper)
+                                             ├─ normaliza a conversa ........ src/conversation-normalizer.js
+                                             ├─ gera o report ............... Anthropic (prompt em cache, saída estruturada)
+                                             ├─ confere as citações sem IA .. src/citacoes.js
+                                             ├─ monta o PDF ................. pdfkit, até 2 páginas
+                                             └─ registra custo e leitura .... src/stats.js
    ▼
-PDF em base64 ──▶ extensão baixa direto (sem passar por disco)
+PDF em base64 ──▶ a extensão oferece o download (e o painel guarda uma cópia)
 ```
 
-- **Local** (`npm start`): dados em `data/*.json`; transcrição via `faster-whisper`
-  (Python) a menos que `GROQ_API_KEY` esteja definida.
-- **Produção** (Vercel): mesmo `server.js`, exposto por `api/index.js`; dados no
-  Vercel KV/Upstash Redis (sem isso, a Vercel nem sobe — disco não persiste lá);
-  transcrição sempre via Groq (não há Python na Vercel).
+- **Produção (Vercel):** o mesmo `server.js`, exposto por `api/index.js`. Dados no Vercel KV /
+  Upstash Redis (o disco da Vercel não persiste). Áudio sempre pelo Groq.
+- **Local (`npm start`):** dados em `data/*.json`; áudio pelo Groq se houver `GROQ_API_KEY`,
+  senão pelo `faster-whisper` em Python.
 
-`src/db.js` decide sozinho entre os dois modos, olhando se `KV_REST_API_URL` +
-`KV_REST_API_TOKEN` estão preenchidas.
+`src/db.js` escolhe o modo sozinho, olhando se `KV_REST_API_URL` e `KV_REST_API_TOKEN` existem.
 
-## Estrutura do projeto
+---
 
-```
-server.js                  Express: rotas de página, admin, report e transcrição
-api/index.js                Entrada da Vercel (reexporta server.js)
-vercel.json                 Config da Vercel (rewrite tudo pra api/index.js)
+## Começando
 
-src/
-  report.js                 Prompt do relatório, chamada à Anthropic/Ollama, validação
-  conversation-normalizer.js Limpa/agrupa/corta a conversa antes do prompt (menos custo)
-  idempotencia.js             Hash da conversa (reportKey) — evita cobrar 2x a mesma
-  generatePdf.js             Monta o PDF (pdfkit) com a marca PRONIX, teto de 2 páginas
-  generateDoc.js             Legado (só o helper slugify ainda é usado)
-  transcribe.js               Escolhe Groq (nuvem) ou faster-whisper (local)
-  groq.js                     Cliente da API do Groq (Whisper)
-  usuarios.js                  Acessos da equipe (chave pnx_..., sem e-mail real)
-  closers.js                    Roster de closers (nome+e-mail, sem login) pra marcar quem fez cada call
-  base.js                      Base de conhecimento (playbook) que entra em todo report
-  stats.js                     Histórico de reports gerados + custo em dólar
-  pdfStorage.js                 Guarda/lê/remove o PDF de cada report (download individual/zip)
-  precos.js                    Tabela de preço por modelo (calcula o custo de cada report)
-  db.js                        Redis (Vercel KV) em produção, data/*.json localmente; trava de concorrência
-
-extension/                  Extensão MV3 (publicada na Chrome Web Store)
-  manifest.json
-  content.js                  Lê o DOM do WhatsApp, rola o histórico, captura áudio
-  inject.js                   Roda no contexto da página (world: MAIN): hook de áudio
-  content-instagram.js         Lê o DOM do Instagram Direct (texto + voz)
-  background.js                Service worker: chama o servidor por trás da CSP da página
-  popup.html / popup.js        UI: detecta a plataforma da aba, gera, edita e baixa o report
-
-public/                     Servido como estático pelo Express
-  dashboard.html               Painel (gerar report manual, acessos, números, base, extensão)
-  dia.html                      Resumo do dia (reports gerados)
-  privacidade.html              Política de privacidade (exigida pela Chrome Web Store)
-  icons/                        Favicon (mesma marca da extensão)
-  PRONIX-extensao.zip           Gerado por `npm run empacotar`, servido pra equipe baixar
-
-scripts/
-  transcribe.py                faster-whisper local (só usado sem GROQ_API_KEY)
-
-data/                        (git-ignorado) usuarios.json, reports.json, base.json locais
-output/                      (git-ignorado) PDFs gerados localmente fora do fluxo da API
-```
-
-## Rodando localmente
+### Servidor local
 
 ```bash
 npm install
 cp .env.example .env      # preencha pelo menos ANTHROPIC_API_KEY e ADMIN_PASSWORD
-npm start                  # http://localhost:3000
+npm start                 # http://localhost:3000
 ```
 
-Sem `KV_REST_API_URL`/`KV_REST_API_TOKEN`, os dados (acessos, base, histórico de
-reports) gravam em `data/*.json` — ótimo para testar, mas não sobrevive num deploy
-sem disco persistente (é exatamente por isso que a Vercel exige o KV).
+Abra `http://localhost:3000`, entre com a `ADMIN_PASSWORD` e crie o primeiro acesso na aba
+**Acessos** (papel **Master**). Cada acesso é um nome + uma chave `pnx_…` — não há e-mail nem senha.
 
-### Extensão no Chrome
+### Extensão
 
-1. `npm run empacotar` (gera `public/PRONIX-extensao.zip`) — ou use a pasta `extension/`
-   direto, sem zipar.
-2. `chrome://extensions` → ative o **Modo do desenvolvedor** → **Carregar sem
-   compactação** → selecione a pasta `extension/`.
-3. Abra o popup, cole a URL do servidor (`http://localhost:3000` local, ou a URL da
-   Vercel em produção) e uma chave válida (crie uma em `/` → aba **Acessos**, como
-   admin).
+- **Equipe:** instala pela Chrome Web Store (atualiza sozinha). Passo a passo em
+  [`GUIA-SDR.md`](GUIA-SDR.md).
+- **Desenvolvimento:** `chrome://extensions` → **Modo do desenvolvedor** → **Carregar sem
+  compactação** → pasta `extension/`. No popup, cole a chave; para apontar para o servidor local,
+  troque o endereço para `http://localhost:3000`.
 
-Em produção o time usa a versão publicada na **Chrome Web Store** (atualiza sozinha) —
-ver o passo a passo de instalação para o SDR em [`GUIA-SDR.md`](GUIA-SDR.md).
+Para usar: abra a conversa do lead, clique no ícone da extensão e em **Gerar Report da conversa
+aberta**. Um aviso no canto acompanha a leitura e, no fim, oferece o PDF. Dá para responder
+outros leads enquanto a IA escreve — só não troque de conversa durante a leitura.
 
-### Testes
+---
+
+## Papéis e permissões
+
+| | Usuário (SDR) | Gestor | Master |
+| --- | :---: | :---: | :---: |
+| Gerar report (extensão e painel) | ✓ | ✓ | ✓ |
+| Reports do dia — os próprios (.zip) | ✓ | ✓ | ✓ |
+| Reports do dia — equipe inteira (.zip com uma pasta por SDR) | | ✓ | ✓ |
+| Reports gerados (números, custo, closer e resultado) | | ✓ | ✓ |
+| Arquivos (PDFs guardados, download em massa) | | ✓ | ✓ |
+| Base de conhecimento | | ✓ | ✓ |
+| Aba Extensão (download, teste do RD) | | ✓ | ✓ |
+| Acessos (criar, editar, remover chaves e permissões) | | | ✓ |
+| Resultados da reunião e inteligência | | | ✓ |
+| Closers (adicionar e remover) | | | ✓ |
+| Escolher o closer no aviso "Report pronto!" | | | ✓ |
+
+Além do papel, o master liga três recursos **por pessoa** na aba Acessos:
+
+| Recurso | Padrão | O que libera |
+| --- | --- | --- |
+| **Popup do lead** | ligado para todos | Ficha do RD e resumo rápido no WhatsApp. |
+| **Coach** | só o master | Botão "Coach da conversa" no cartão. |
+| **Automação RD** | só o master | Mover o card para "Respondeu", etiqueta "Qualificado" e agendamento. |
+
+Regras do cadastro (`src/usuarios.js`): o único master não pode ser rebaixado nem removido; enquanto
+não houver nenhum, o usuário cujo nome é `MASTER_NOME` é promovido uma vez. A `ADMIN_PASSWORD` é o acesso
+reserva (cria o primeiro master).
+
+---
+
+## O report
+
+### O que vem no PDF
+
+- **Resumo** em linhas (nível, investimento, motivação, decisor, perfil…). **Investimento,
+  Motivação e Decisor(es) nunca ficam em branco:** a IA extrai o sinal que já está na conversa
+  ("tenho uma distribuidora há 12 anos" já responde investimento).
+- **Perfil do lead** — dominante, analítico, cético, relacional, cauteloso ou entusiasta — com
+  a evidência e uma frase de **como conduzir** a reunião (`src/perfil.js`).
+- **Temperatura do lead:** nível de consciência (inconsciente → problema → solução → nossa
+  entrega → pronto para decidir) com o porquê, e os sinais de compra com a prova da conversa.
+  O selo só aparece **de "consciente da solução" para cima** (`src/consciencia.js`) e cada nível
+  exige prova: sem ela, a IA desce um degrau.
+- **Como foi a conversa:** 4 a 6 frases em ordem cronológica, com os nomes de quem falou.
+- **Seções de análise**, **nas palavras do lead** (0 a 2 falas, só as muito boas) e a
+  **frase de impacto**.
+- **Como iniciar a reunião:** fala pronta para o closer, junto dos 3 pontos-chave do resumo.
+
+**Tom só positivo.** O report existe para "vender" o lead ao closer: nenhum ponto real é omitido
+(objeção, decisor ausente, orçamento apertado), mas tudo é escrito como próximo passo, nunca como
+alerta. Fala do lead que desanima fica fora das citações — pelo prompt e por um filtro sem IA
+(`citacaoDesanimadora`).
+
+**Editável e de graça.** Qualquer campo pode ser corrigido no popup da extensão ou no painel; o
+PDF é refeito sem chamar a IA (`POST /api/pdf`).
+
+### Qualidade
+
+- **Conversa é dado, não instrução.** O texto vai entre `<conversa>` e `</conversa>`; marcas
+  parecidas escritas por alguém na conversa são neutralizadas.
+- **Regras de leitura:** só é afirmação do lead o que o lead disse; correção posterior
+  prevalece; faturamento não é lucro nem verba; números e nomes exatamente como ditos; **nome de
+  pessoa nunca é inventado**.
+- **Citações conferidas sem IA** (`verificarCitacoes`): a fala precisa estar na conversa, ou ter
+  ≥ 80% das palavras na mesma ordem e todos os números iguais. A que não passa sai do report.
+- **Captura parcial à vista.** A extensão informa quantos áudios achou e quantos transcreveu; o
+  painel marca *captura parcial*.
+- **Remetente conferido.** O aviso final mostra "N mensagens · X suas · Y do lead" e alerta
+  quando um lado vem zerado. Se o site some com os sinais de remetente, vale a posição da bolha.
+- **Trava de conversa.** Trocou de conversa durante a leitura? A extensão aborta em vez de
+  misturar duas conversas.
+
+### Custo
+
+- **Cache do prompt.** Instruções, exemplos e a base de conhecimento ficam num prefixo em cache
+  (1 h): a partir do segundo report, essa parte custa cerca de 0,1x.
+- **Idempotência.** A `reportKey` é o hash da conversa normalizada + versão do prompt + modo de
+  qualidade (`src/idempotencia.js`). Conversa igual não chama a IA de novo: a extensão pergunta
+  entre **Abrir o existente** e **Gerar de novo**. Uma trava por chave impede duas gerações
+  simultâneas da mesma conversa.
+- **Normalização** (`src/conversation-normalizer.js`): remove vazios e ecos longos, agrupa falas
+  seguidas e, só acima de `MAX_CONVERSATION_CHARS`, corta preservando o mais recente e todo
+  trecho com sinal comercial. Quando corta, o report avisa.
+- **Modo de qualidade.** `qualidade: "eco" | "standard" | "premium"` troca só o modelo; nunca é
+  automático. `POST /api/estimar-custo` mostra a estimativa no painel sem chamar a IA.
+- **Custo registrado.** `src/precos.js` calcula o custo real de cada report (com cache) e
+  `src/stats.js` guarda o número da época — recalcular depois daria outro valor.
+
+**Versão do prompt:** `PROMPT_VERSAO = 'v6'` em `src/report.js`. Subir a versão permite gerar de
+novo uma conversa já feita.
+
+---
+
+## O cartão do lead no WhatsApp
+
+Ao abrir uma conversa no WhatsApp Web, um cartão aparece encostado na borda da conversa. Liga e
+desliga no popup da extensão; **–** minimiza e **×** fecha só naquela conversa.
+
+### Ficha do RD Station
+
+Etapa e funil, responsável, as respostas do formulário (a anotação com linhas "Campo: valor"),
+campos personalizados, outras anotações e o link **Abrir no RD Station**.
+
+- **Como acha o lead.** Pelo telefone: o cabeçalho (contato não salvo), o link de WhatsApp do
+  card no RD (`send?phone=…`) ou o painel "Dados do contato". O servidor tenta os formatos em que
+  o número pode estar no RD e só aceita contato cujos **8 últimos dígitos** batem.
+- **Contato salvo com nome.** O nome é limpo das etiquetas do time ("Armando PRONIX Moretti" →
+  "Armando Moretti") e buscado do mais específico para o mais amplo. Só escolhe sozinho quando
+  não há dúvida; senão mostra a lista. Não achou? O cartão tem busca.
+- **Lead com vários cards.** O servidor junta todos os contatos com o mesmo telefone e abre o
+  card que o SDR já escolheu; senão, o em aberto com atividade mais recente. O seletor "Este lead
+  tem N cards" lembra a escolha no servidor.
+- **Limpeza.** Acentos quebrados por integrações ("EmpresÃ¡rio") são consertados, campos
+  repetidos aparecem uma vez e campos de anúncio/origem ficam de fora.
+
+### Resumo rápido
+
+Botão no cartão: lê a conversa e os áudios e devolve o **cenário**, **onde parou**, a **última
+pergunta** e o **próximo passo**. Mesma conversa = resumo do cache por 7 dias, sem custo.
+
+### Coach da conversa (custo zero)
+
+Lê a conversa e, num modelo gratuito do Groq, devolve: **perfil do lead** com evidência, **como
+abordar**, **o que ainda falta levantar** (BANT e a implicação do SPIN, mais o que o closer mais
+usa: valor disponível, cartão e limite, meta, tentativa anterior, concorrente), **objeções** com
+resposta, **perguntas de aprofundamento** e a **próxima mensagem** pronta para copiar.
+
+- **Aprende sem treinar modelo:** o que o SDR marca como "Funcionou" vira exemplo nos próximos
+  pedidos.
+- **Não depende do RD:** sem CRM, o cartão aparece só com resumo e coach.
+- **Modelos:** fila `openai/gpt-oss-120b` → `openai/gpt-oss-20b` → `llama-3.3-70b-versatile` →
+  `llama-3.1-8b-instant`. Saiu do ar ou bateu no limite, o seguinte assume. O plano gratuito
+  limita cerca de 8 mil tokens por minuto por modelo, por isso o pedido vai enxuto.
+
+### Automação do cartão
+
+Três coisas, sem IA e sem custo, para quem o master ligou:
+
+1. **Mover para "Respondeu" no RD.** Com a conversa aberta, se há mensagem do lead depois de uma
+   mensagem sua e o card está em aberto e **antes** de "Respondeu" no mesmo funil, o servidor
+   avança o card. É a **única escrita** que o sistema faz no RD: nunca volta um card, não mexe em
+   card fechado nem em funil sem essa etapa, confere tudo de novo no RD na hora e registra cada
+   movimento. O RD só aceita se o dono do token for o responsável pelo card ou do mesmo time; se
+   recusar, o cartão mostra o motivo.
+2. **Etiqueta "Qualificado".** Entra sozinha quando o card está na etapa "Qualificado", quando um
+   report é gerado ou quando há reunião agendada, e **fica lembrada** mesmo que o card mude de
+   etapa depois (remarcou, sumiu). Marcar ou tirar à mão vale sobre a leitura automática.
+3. **Dia e horário agendados.** `extension/agenda.js` lê, no navegador, a última mensagem sua
+   que marca dia e hora ("reunião agendada para quinta às 15h", "remarquei para 10/10 às 16h") —
+   ou o lead escolhendo um horário que você ofereceu, seguido do seu "Agendado!". Oferta de
+   opções e duração ("2h por dia") não contam. Agendamento dito em áudio entra quando o resumo,
+   o coach ou o report leem a conversa inteira. Depois do horário, vira "Estava agendado".
+
+O texto da conversa não vai ao servidor para isso — só o pedido de mover, a etiqueta e a data.
+
+---
+
+## Inteligência comercial
+
+O objetivo é decidir por dado, não por achismo: **que closer pega que lead** e **que prospecção
+funciona**.
+
+1. **Cada report guarda uma leitura** (fora do PDF): perfil do lead, nível de consciência e a
+   análise da prospecção — BANT, SPIN, as perguntas-chave do pré-vendedor e a abordagem.
+2. **O closer é escolhido na extensão**, no aviso "Report pronto!". Havendo histórico, o closer
+   indicado para aquele perfil vem marcado "(indicado)" com o motivo. Nada é salvo sozinho.
+3. **O resultado é marcado na aba Resultados da reunião:** venda em call, venda em follow-up,
+   pix de compromisso, não fechou, no-show ou em follow-up, com anotação e a correção do perfil e
+   do nível de consciência quando a IA errou.
+4. **A conta é feita sem IA** (`src/inteligencia.js`): matriz closer × perfil, conversão por
+   perfil e por nível, e o que difere na prospecção das reuniões que fecharam.
+5. **Insights** escritos pelo Groq gratuito, só em cima dos números e das perguntas do SDR (a fala
+   dos leads não é enviada). Exige 5 reuniões com resultado.
+
+- **Sem amostra, sem indicação.** O closer só é indicado com **3 ou mais reuniões** dele com
+  aquele perfil, com taxa suavizada (1 de 1 não passa na frente de 8 de 10).
+- **A IA aprende o nível de consciência de graça.** Cada correção do master vira um exemplo no
+  prompt dos próximos reports (os 8 mais recentes). Não há treino de modelo.
+- **Escopo.** Resultados e inteligência usam os reports de quem está olhando; o seletor "Toda a
+  equipe" inclui os demais.
+
+### Base de conhecimento
+
+Seis campos na aba **Base**: empresa, oferta e valores, perfil de cliente, roteiro, régua de
+qualificação (SPIN e BANT) e objeções. Entram no prefixo em cache de todo report e, resumidos, no
+coach. Campo nunca escrito vem com o texto recomendado (`src/baseInicial.js`, versão 3), montado
+com os scripts, apresentações, contratos e a análise de 12 reuniões que viraram venda
+([docs/analise-calls-vendas.md](docs/analise-calls-vendas.md)). Uma versão nova só substitui o
+campo que ninguém editou; **Voltar aos textos anteriores** desfaz a migração.
+
+---
+
+## O painel
+
+Em `SUA_URL/`. As abas aparecem conforme o papel.
+
+| Aba | Para | O que faz |
+| --- | --- | --- |
+| **Gerar report** | todos | Report sem a extensão, em formato de chat (abaixo). |
+| **Reports do dia** | todos | Lista do dia e .zip para o líder; gestor e master veem a equipe. |
+| **Acessos** | master | Chaves da equipe, papel e os três recursos por pessoa. |
+| **Reports gerados** | gestor, master | Números, custo por SDR, closer e resultado de cada report. |
+| **Resultados da reunião** | master | Resultado por reunião, inteligência e insights. |
+| **Closers** | master | Lista de closers. |
+| **Arquivos** | gestor, master | PDFs guardados; download individual, por SDR ou tudo em .zip. |
+| **Base** | gestor, master | Base de conhecimento. |
+| **Extensão** | gestor, master | Download do .zip e teste da ficha do RD. |
+
+**Report em formato de chat.** Escreva fala por fala (Lead ou Eu), cole a conversa inteira ou
+anexe e arraste áudios (transcritos), prints (lidos como conversa) e arquivos de texto. Cada fala
+vira uma bolha removível; o texto final continua editável. PDF e Word ainda não são lidos.
+
+**Print e celular.** O print é lido pelo modelo de visão do Groq (custo zero); o painel reduz a
+imagem antes de enviar e o servidor confere o tipo pelos *magic bytes*. É o caminho para quem
+atende pelo telefone, onde a extensão não roda: tira o print e abre o painel no navegador do
+celular. Sem print, o **Exportar conversa** do WhatsApp gera um `.txt` para colar.
+
+**Reports do dia.** Quando o SDR refaz o report de um lead, vale **o último** (`src/diario.js`
+agrupa por SDR + dia + contato). Dá para marcar outra versão antes de baixar. O mesmo .zip sai
+pelo botão **Baixar meus reports de hoje** do popup.
+
+---
+
+## API
+
+Autenticação por cabeçalho `x-cr-key` (a chave do usuário). `gestor+` = master, gestor ou a
+`ADMIN_PASSWORD` em `x-admin-pass`.
+
+### Report e mídia
+
+| Rota | Acesso | Para quê |
+| --- | --- | --- |
+| `POST /api/report-direto` | chave | Report a partir das mensagens lidas pela extensão. |
+| `POST /api/report-texto` | chave | Report a partir de texto (painel). |
+| `POST /api/pdf` | chave | Refaz o PDF de um report editado — sem IA. |
+| `POST /api/transcrever` | chave | Transcreve um áudio (cache pelo hash dos bytes). |
+| `POST /api/ler-imagem` | chave | Lê um print de conversa. |
+| `POST /api/estimar-custo` | chave | Estimativa de custo, sem IA. |
+| `GET /api/reports/:id/pdf` | chave | Reabre o PDF (o dono; gestor e master, qualquer um). |
+| `POST /api/reports/:id/closer` | chave | Define o closer do próprio report (gestor e master, de qualquer um). |
+| `GET /api/closers` | chave | Closers (id e nome) e a indicação para um perfil. |
+
+### Cartão do lead
+
+| Rota | Acesso | Para quê |
+| --- | --- | --- |
+| `POST /api/crm/lead` | chave + popup do lead | Ficha do RD do lead da conversa. |
+| `POST /api/crm/respondeu` | chave + automação | Avança o card para "Respondeu". |
+| `POST /api/lead/marca` | chave + automação | Etiqueta "Qualificado" e agendamento. |
+| `POST /api/resumo-rapido` | chave + popup do lead | Resumo rápido da conversa. |
+| `POST /api/coach` · `POST /api/coach/feedback` | chave + coach | Coach e o "Funcionou". |
+
+### Dia a dia e gestão
+
+| Rota | Acesso | Para quê |
+| --- | --- | --- |
+| `GET /api/eu` | chave | Nome, papel e recursos liberados. |
+| `GET /api/meus-reports` · `POST /api/meus-reports/zip` | chave | Reports do dia do próprio usuário. |
+| `GET /api/equipe-reports` · `POST /api/equipe-reports/zip` | gestor+ | Reports do dia da equipe. |
+| `GET /api/admin/stats` | gestor+ | Números e custo. |
+| `PATCH /api/admin/reports/:id/resultado` | gestor+ | Closer, resultado, datas e correções. |
+| `DELETE /api/admin/reports/:id` | gestor+ | Remove o report e o PDF. |
+| `GET /api/admin/reports/:id/pdf` · `GET /api/admin/reports/pdf-zip` | gestor+ | PDFs guardados. |
+| `GET/POST /api/admin/base` · `…/recomendada` · `…/restaurar` | gestor+ | Base de conhecimento. |
+| `GET /api/admin/closers` | gestor+ | Lista completa de closers. |
+| `POST /api/admin/crm/teste` | gestor+ | Busca no RD sem cache, com o passo a passo. |
+| `POST/DELETE /api/admin/closers` | master | Adiciona e remove closers. |
+| `GET/POST/PATCH/DELETE /api/admin/usuarios` | master | Acessos da equipe. |
+| `GET /api/master/resultados` · `GET /api/master/inteligencia` · `POST /api/master/insights` | master | Resultados, inteligência e insights. |
+| `GET /api/status` | pública | Verificação de conexão. |
+
+Do RD Station CRM (API v1) o servidor **lê** `/contacts`, `/deals/{id}`, `/activities`, `/users`,
+`/custom_fields` e `/deal_pipelines`, e **escreve** só `PUT /deals/{id}` com `deal_stage_id`.
+
+---
+
+## Variáveis de ambiente
+
+Tudo tem padrão seguro no código; o `.env.example` traz a lista comentada.
+
+### Essenciais
+
+| Variável | Quando | Descrição |
+| --- | --- | --- |
+| `ANTHROPIC_API_KEY` | sempre | Gera os reports. |
+| `ADMIN_PASSWORD` | sempre | Acesso reserva do painel; cria o primeiro master. |
+| `GROQ_API_KEY` | produção | Áudio, print, coach e insights. Local sem ela: `faster-whisper`. |
+| `KV_REST_API_URL` · `KV_REST_API_TOKEN` | produção | Banco (Vercel KV / Upstash; também aceita `UPSTASH_REDIS_REST_URL` e `UPSTASH_REDIS_REST_TOKEN`). Vazias: `data/*.json`. |
+| `RDSTATION_CRM_TOKEN` | ficha do lead | Token do RD Station CRM. Vazio: ficha desligada. |
+
+### Modelos
+
+| Variável | Padrão | Descrição |
+| --- | --- | --- |
+| `LLM_PROVIDER` | `anthropic` | `anthropic` ou `ollama` (local, custo zero). |
+| `ANTHROPIC_MODEL` | `claude-sonnet-5` | Modelo dos reports; precisa de preço em `src/precos.js`. |
+| `ANTHROPIC_MODEL_ECO` · `ANTHROPIC_MODEL_PREMIUM` | `claude-haiku-4-5` · `claude-opus-4-8` | Só com `qualidade` explícita no pedido. |
+| `ANTHROPIC_MODEL_RESUMO` | o dos reports | Modelo do resumo rápido. |
+| `GROQ_MODEL` | `whisper-large-v3-turbo` | Transcrição. |
+| `GROQ_VISION_MODEL` | `qwen/qwen3.6-27b` | Leitura de print (reserva: `qwen/qwen3.8-27b`). |
+| `GROQ_COACH_MODEL` | fila padrão | Modelo a tentar primeiro no coach e nos insights. |
+| `OLLAMA_MODEL` · `OLLAMA_URL` | `llama3.1` · `localhost:11434` | Só com `LLM_PROVIDER=ollama`. |
+
+### RD Station
+
+| Variável | Padrão | Descrição |
+| --- | --- | --- |
+| `CRM_CACHE_TTL_SEG` · `CRM_TIMEOUT_MS` | `300` · `8000` | Cache da ficha e tempo máximo por chamada. |
+| `CRM_PALAVRAS_IGNORADAS` | — | Etiquetas extras a tirar do nome salvo (separadas por vírgula). |
+| `CRM_MOVER_ETAPA` | ligado | `0` desliga a escrita no RD; as etiquetas continuam. |
+| `CRM_ETAPA_RESPONDEU` · `CRM_ETAPA_QUALIFICADO` | `Respondeu` · `Qualificado` | Nome das etapas, se o time renomear. |
+
+### Limites e ajustes
+
+| Variável | Padrão | Descrição |
+| --- | --- | --- |
+| `MAX_CONVERSATION_CHARS` | `24000` | Teto da conversa antes do prompt. |
+| `MAX_REPORT_OUTPUT_TOKENS` | `4000` | Teto de saída pedido à Anthropic. |
+| `MAX_AUDIO_BYTES` · `MAX_AUDIO_TRANSCRIPTION_CHARS` | `20971520` · `6000` | Tamanho do áudio e da transcrição. |
+| `MAX_IMAGEM_BYTES` | `4194304` | Tamanho do print. |
+| `MAX_RESUMO_CHARS` · `MAX_COACH_CHARS` | `16000` · `7000` | Conversa enviada ao resumo e ao coach. |
+| `TRANSCRIPTION_CACHE_TTL_SEG` | `86400` | Cache da transcrição; `0` desliga. |
+| `ANTHROPIC_TIMEOUT_MS` · `GROQ_TIMEOUT_MS` | `50000` | A Vercel corta a função em 60 s. |
+| `USD_BRL_RATE` | `5.3` | Câmbio fixo, só para exibir a estimativa em reais. |
+| `TZ_RELATORIO` | `America/Sao_Paulo` | Fuso que define o "dia" de cada report. |
+| `COMPANY_NAME` · `SDR_NAME` | `PRONIX` · — | Nome no PDF; `SDR_NAME` é só reserva para uso sem chave. |
+| `MASTER_NOME` | `Cauã Lima` | Quem é promovido enquanto não houver master. |
+| `PORT` · `CR_DATA_DIR` | `3000` · `data/` | Servidor local. |
+| `PYTHON_BIN` · `WHISPER_MODEL_SIZE` | `python` · `small` | Transcrição local, sem Groq. |
+
+---
+
+## Dados guardados
+
+Tudo em `src/db.js` (Redis em produção, `data/*.json` local). **A conversa não é guardada.**
+
+| Chave | Conteúdo |
+| --- | --- |
+| `usuarios` | Acessos: nome, chave, papel e recursos. |
+| `reports` | Histórico (até 5.000): lead, contato, SDR, custo, leitura da IA, closer e resultado. |
+| `consumo` | Custo por geração — continua valendo se o report for removido. |
+| `pdf_<id>` | O PDF de cada report. |
+| `base` | Base de conhecimento (com os textos anteriores, para restaurar). |
+| `closers` | Lista de closers. |
+| `crm_cards` | Card escolhido para cada lead com mais de um. |
+| `lead_marcas` | Etiqueta "Qualificado" e agendamento por lead (até 4.000). |
+| `crm_movimentos` | Registro de cada card movido para "Respondeu" (últimos 500). |
+| `coach_feedback` | Sugestões marcadas como úteis ou não. |
+| `aprendizado_consciencia` | Correções do nível de consciência (até 200). |
+| `insights_ultimo` | Últimos insights gerados. |
+| `cache:*` | Temporários: transcrições, ficha do RD (5 min), funis (1 h), resumos (7 dias), coach (24 h). |
+
+---
+
+## Testes
 
 ```bash
 npm test
 ```
 
-Roda todos os `tests/*.test.js` (Node ≥ 18; a única dependência extra é o `jsdom`, só de
-desenvolvimento). Sem rede, sem chave de API real, sem custo e sem tocar em `data/`
-(o banco de teste é uma pasta temporária, via `CR_DATA_DIR`):
+**339 testes**, sem rede, sem chave real, sem custo e sem tocar em `data/` (o banco é uma pasta
+temporária). O `jsdom` roda os scripts **reais** da extensão e do painel.
 
 | Arquivo | O que cobre |
 | --- | --- |
-| `servidor.test.js` | A API inteira com IA e Groq simulados: acessos, geração, duplicado, reabrir PDF só do dono, resultado com versão (409), consumo de reports excluídos, áudio (tipo real, cache), `captureQuality`. |
-| `qualidade.test.js` | 36 casos sintéticos: conferência de citações (número trocado, fala inventada, ordem das palavras) e normalização da conversa (falas repetidas, limite, sinal comercial). |
-| `extensao-dom.test.js` | Os content scripts **reais** do WhatsApp e do Instagram em DOM simulado: lista virtualizada que ignora `scrollTop`, remetente, áudios, troca de conversa no meio da leitura, falas repetidas, duplicado. |
-| `painel.test.js` | O painel **real** com API falsa: abas sob demanda, edição de resultado, duplicado, áudio/print, rascunho, chaves mascaradas. |
-| `popup.test.js` | Popup da extensão: último report só do dono da chave, edição guardada. |
-| `audio-cliente.test.js` | Validador de áudio dos dois content scripts. |
-| `auditoria.test.js` | Correções pontuais da auditoria (escape de HTML, silenciamento de áudio, destino do servidor). |
+| `servidor.test.js` | A API com IA e Groq simulados: acessos, geração, duplicado, PDFs, resultado, áudio. |
+| `qualidade.test.js` | Conferência de citações e normalização da conversa, em casos sintéticos. |
+| `report-rico.test.js` | Nível de consciência, "Como foi a conversa", sinais de compra e o limite de 2 páginas. |
+| `extensao-dom.test.js` | Leitura da conversa no WhatsApp e no Instagram: ordem, remetente, áudios, troca de conversa. |
+| `ficha-crm.test.js` | O cartão no WhatsApp: ficha, busca, vários cards, resumo e coach. |
+| `automacao-dom.test.js` | Mover para "Respondeu", etiqueta e agendamento no cartão. |
+| `automacao.test.js` | A escrita no RD e as marcas do lead, com RD simulado. |
+| `agenda.test.js` | Leitura de dia e horário nas mensagens. |
+| `crm.test.js` | Busca do lead no RD: telefone, nome, duplicados, cache. |
+| `coach.test.js` · `resumo.test.js` | Coach e resumo rápido com IA simulada. |
+| `inteligencia.test.js` | Perfil, closer × perfil, resultados, calibragem e base recomendada. |
+| `diario.test.js` | Regra do .zip do dia (vale o último report de cada lead). |
+| `painel.test.js` | O painel inteiro com API falsa. |
+| `popup.test.js` | Popup da extensão. |
+| `audio-cliente.test.js` · `auditoria.test.js` | Validador de áudio e correções da auditoria. |
 
-Não substitui um teste manual no WhatsApp e no Instagram reais: o DOM simulado reproduz o
-que foi medido ao vivo, mas os dois sites mudam de layout sem avisar.
+Os testes não substituem o uso real: WhatsApp e Instagram mudam de layout sem avisar, e a
+qualidade do texto gerado pela IA só se confere em reports de verdade.
 
-## Deploy (Vercel)
+---
 
-1. Conecte o repositório na Vercel.
-2. Adicione um **Vercel KV** (ou Upstash Redis) ao projeto — sem isso o servidor recusa
-   gravar dados em produção (ver `src/db.js`).
-3. Preencha as variáveis de ambiente do projeto na Vercel (mesmas do `.env.example`,
-   sem `PYTHON_BIN`/`WHISPER_MODEL_SIZE` — não há Python lá, então `GROQ_API_KEY` é
-   obrigatória para transcrever áudio em produção).
-4. `git push origin main` — a Vercel builda e publica sozinha (`vercel.json` redireciona
-   tudo para `api/index.js`).
+## Deploy e publicação
 
-O painel admin fica em `SUA_URL/` (aba **Acessos**), e é lá que se cria a chave de cada
-SDR — nada de e-mail real, é só nome + chave gerada.
+### Servidor (Vercel)
 
-## Variáveis de ambiente
+1. Conecte o repositório e adicione um **Vercel KV** (ou Upstash Redis).
+2. Preencha as variáveis do projeto (as [essenciais](#essenciais), no mínimo).
+3. `git push origin main` — a Vercel publica sozinha (`vercel.json` manda tudo para
+   `api/index.js`, com limite de 60 s por função).
 
-| Variável | Obrigatória | Descrição |
-| --- | --- | --- |
-| `COMPANY_NAME` | não (padrão `PRONIX`) | Nome exibido no cabeçalho do PDF. |
-| `ADMIN_PASSWORD` | sim, pra usar o painel admin | Senha reserva do painel — cria o primeiro acesso admin. |
-| `PORT` | não (padrão `3000`) | Porta do servidor local. |
-| `LLM_PROVIDER` | não (padrão `anthropic`) | `anthropic` ou `ollama`. |
-| `ANTHROPIC_API_KEY` | sim, se `LLM_PROVIDER=anthropic` | Chave da API da Anthropic. |
-| `ANTHROPIC_MODEL` | não (padrão `claude-sonnet-5`) | Modelo usado; precisa ter entrada em `src/precos.js` pra calcular custo. |
-| `OLLAMA_MODEL` / `OLLAMA_URL` | só se `LLM_PROVIDER=ollama` | Modelo e endpoint do Ollama local (custo zero). |
-| `GROQ_API_KEY` | sim, em produção (Vercel) | Transcrição de áudio via API do Groq (Whisper). Sem ela, cai no faster-whisper local. |
-| `GROQ_MODEL` | não (padrão `whisper-large-v3-turbo`) | Modelo de transcrição do Groq. |
-| `GROQ_VISION_MODEL` | não (padrão `qwen/qwen3.6-27b`, reserva `qwen/qwen3.8-27b`) | Modelo com visão que lê o print da conversa no modo manual. Se o configurado sair do ar, o reserva assume. |
-| `GROQ_COACH_MODEL` | não | Modelo de texto gratuito do Groq a tentar primeiro no coach e nos insights (padrão: fila `openai/gpt-oss-120b`, `openai/gpt-oss-20b`, `llama-3.3-70b-versatile`, `llama-3.1-8b-instant`). |
-| `MASTER_NOME` | não (padrão `Cauã Lima`) | Nome do usuário promovido a master enquanto não houver nenhum. |
-| `MAX_IMAGEM_BYTES` | não (padrão `4194304`) | Teto do print enviado para leitura (o dashboard já reduz antes). |
-| `PYTHON_BIN` / `WHISPER_MODEL_SIZE` | só localmente, sem `GROQ_API_KEY` | Transcrição local via `faster-whisper` (`pip install faster-whisper`). |
-| `KV_REST_API_URL` / `KV_REST_API_TOKEN` | sim, na Vercel | Credenciais do Vercel KV/Upstash Redis. Vazias = grava em `data/*.json`. |
-| `TZ_RELATORIO` | não (padrão `America/Sao_Paulo`) | Fuso usado pra decidir o "dia" de cada report nos números do dashboard. |
-| `ANTHROPIC_MODEL_ECO` / `ANTHROPIC_MODEL_PREMIUM` | não | Modelos usados só quando o pedido manda `qualidade: "eco"` ou `"premium"` explicitamente — nunca automático. `ANTHROPIC_MODEL` continua o padrão (`"standard"`). |
-| `MAX_CONVERSATION_CHARS` | não (padrão `24000`) | Teto de caracteres da conversa antes do prompt (ver [normalização](#normalização-e-custo) abaixo). |
-| `MAX_AUDIO_TRANSCRIPTION_CHARS` | não (padrão `6000`) | Teto de caracteres de uma transcrição de áudio (aplicado em `/api/transcrever`). |
-| `MAX_REPORT_OUTPUT_TOKENS` | não (padrão `4000`) | Teto de tokens de saída pedido à Anthropic. |
-| `USD_BRL_RATE` | não (padrão `5.3`) | Taxa fixa usada só para exibir a estimativa de custo em BRL — nunca busca câmbio numa API externa. |
-| `MAX_AUDIO_BYTES` | não (padrão `20971520`) | Teto do tamanho de um áudio enviado para transcrição. |
-| `TRANSCRIPTION_CACHE_TTL_SEG` | não (padrão `86400`) | Por quanto tempo a transcrição de um mesmo áudio fica em cache (chave = hash dos bytes). `0` desliga. |
-| `ANTHROPIC_TIMEOUT_MS` / `GROQ_TIMEOUT_MS` | não (padrão `50000`) | Tempo máximo de cada chamada. A Vercel corta a função em 60s; estourar dá mensagem clara em vez de erro opaco. |
-| `CR_DATA_DIR` | não | Pasta dos arquivos de dados no modo local (padrão `data/`). Os testes usam uma pasta temporária. |
-| `RDSTATION_CRM_TOKEN` | só para a ficha do lead | Token de acesso do RD Station CRM (API v1). Vazio = ficha desligada. De um usuário que vê todas as negociações. |
-| `CRM_CACHE_TTL_SEG` / `CRM_TIMEOUT_MS` | não (padrão `300` / `8000`) | Cache da ficha no servidor e tempo máximo de cada chamada ao RD. |
-| `CRM_MOVER_ETAPA` | não (padrão ligado) | `0` desliga a única escrita no RD (mover o card para "Respondeu"); as etiquetas do cartão continuam. |
-| `CRM_ETAPA_RESPONDEU` / `CRM_ETAPA_QUALIFICADO` | não (padrão `Respondeu` / `Qualificado`) | Nome das etapas do funil no RD, se o time renomear. |
+Mudança só no servidor ou no painel: basta o push.
 
-`SDR_NAME` no `.env.example` é só um nome de exibição de reserva para quando o PDF é
-gerado sem usuário autenticado (uso local avulso) — em uso normal, quem assina o
-report é sempre o dono da chave (`x-cr-key`).
+### Extensão (Chrome Web Store)
 
-## Qualidade do report
+Qualquer mudança em `extension/` exige versão nova:
 
-- **Conversa como dado, não como instrução.** O prompt (`PROMPT_VERSAO = 'v2'`) põe a
-  conversa entre `<conversa>` e `</conversa>` e manda tratar tudo ali dentro como
-  material a analisar; marcas parecidas escritas por alguém na conversa são
-  neutralizadas (`src/citacoes.js`).
-- **Regras de leitura:** só é afirmação do lead o que o lead escreveu; correção posterior
-  prevalece; faturamento não é lucro nem verba; números e nomes exatamente como ditos.
-- **Citações conferidas sem IA.** Depois da geração, cada "fala do lead" é comparada com
-  as falas reais (`verificarCitacoes`): inteira na conversa, ou com ≥ 80% das palavras
-  **na mesma ordem** e **todos os números iguais**. Fala inventada ou com número trocado
-  sai do report (o report continua válido sem citações). O painel mostra quantas foram
-  removidas, junto do cache do prompt e das capturas parciais — a base para decidir
-  custo e qualidade com número.
-- **Captura parcial visível.** A extensão manda quantos áudios achou e quantos
-  transcreveu (`captureQuality`); o servidor recalcula "incompleta" e o painel marca o
-  report como *captura parcial*.
-- **Remetente conferido.** A extensão também manda quantas mensagens leu de cada lado;
-  o aviso final mostra "N mensagens · X suas · Y do lead" e alerta quando um lado vem
-  zerado numa conversa de 6+ mensagens (quase sempre é leitura errada do remetente). O
-  painel marca esses reports como *remetente a conferir*. Quando o WhatsApp/Instagram
-  some com os sinais de remetente, a extensão usa a posição da bolha (a sua encosta na
-  direita) em vez de jogar tudo para o lead.
-- **Trava de conversa.** Se o SDR abrir outra conversa durante a leitura, a extensão
-  aborta em vez de misturar duas conversas (WhatsApp: id da conversa nos `data-id`;
-  Instagram: endereço `/direct/t/<id>`). O nome do contato é o do começo da leitura.
+1. Suba a `version` em `extension/manifest.json`.
+2. `npm run empacotar` — gera `public/PRONIX-extensao.zip`.
+3. Envie o .zip no painel da Chrome Web Store e aguarde a revisão.
 
-O que **não** existe: status por campo (confirmado/inferido) e a origem de cada
-afirmação por mensagem. Mudam o contrato com a IA e o PDF e só dá para validar com
-chamadas pagas de verdade — ver `docs/plano-implementacao.md`.
+Não é preciso sincronizar as duas publicações: recurso que o outro lado ainda não conhece fica
+desligado até ele ser atualizado.
 
-## Custo por report
+---
 
-A Anthropic é o único custo por report (Groq e o dashboard/stats são gratuitos). O
-prompt usa **cache** (system + exemplos + base de conhecimento ficam num prefixo
-cacheado, TTL de 1h): a partir do segundo report do dia, a maior parte do prompt é lida
-a ~0,1x do preço normal. `src/precos.js` calcula o custo real de cada report (já
-considerando cache) e `src/stats.js` guarda esse número — dá pra ver o total, a média
-diária/mensal e o gasto por SDR na aba **Reports gerados** do dashboard.
+## Segurança e privacidade
 
-Reeditar um report e baixar o PDF de novo (`/api/pdf`) **não** chama a IA — não conta
-como um novo report nem soma custo.
+- **Segredos só no servidor.** Chaves da Anthropic e do Groq e o token do RD ficam em variáveis
+  de ambiente; nunca vão para a extensão, para o navegador nem para log.
+- **O servidor é fixo na extensão.** O service worker só fala com o endereço salvo no popup
+  (https, ou `localhost` em desenvolvimento) e ignora endereço vindo da página.
+- **Nada de fora vira HTML.** Nome do contato, dados do CRM e erros entram na tela como texto.
+- **Cada um vê o seu.** O SDR só reabre e baixa os próprios reports; a chave é mascarada no painel.
+- **Telefone e nome do lead** vão por POST, fora de URL e de log de acesso.
+- **Leitura sob clique.** O conteúdo das mensagens só vai ao servidor quando o SDR clica (report,
+  resumo ou coach). A automação do cartão lê no navegador e envia apenas o resultado.
+- **Tipo conferido pelos bytes** em áudio e imagem, não pela extensão do arquivo.
 
-### Versão do prompt
+A política completa, exigida pela Chrome Web Store, está em `/privacidade`
+(`public/privacidade.html`).
 
-`PROMPT_VERSAO` (em `src/report.js`) compõe a `reportKey`: subir a versão faz a mesma
-conversa poder ser gerada de novo com o prompt novo. `v3` = nível de consciência, "Como foi
-a conversa" e sinais de compra.
+---
 
-### Normalização e custo
+## Limites e riscos
 
-Antes de montar o prompt, `src/conversation-normalizer.js` limpa a conversa: remove
-mensagens vazias e o eco de texto **longo** repetido em seguida ("ok", "sim" e "[áudio]"
-repetidos são falas reais e ficam), agrupa mensagens de texto seguidas do mesmo
-remetente (menos prefixo repetido) e, só se a conversa passar de `MAX_CONVERSATION_CHARS`,
-corta preservando as mensagens mais recentes **e** qualquer trecho com sinal comercial
-(dor, orçamento, prazo, decisor, objeção, concorrência, próximos passos, compromissos —
-essas nunca somem por causa do limite). Quando isso acontece, o report volta com
-`resumida: true` e a tela mostra um aviso.
+- **Risco de ban: baixo.** A extensão só lê a página aberta; não abre conexão própria com o
+  WhatsApp nem com o Instagram.
+- **Layout dos sites.** A leitura depende do HTML de cada site. `extension/content.js` e
+  `extension/content-instagram.js` são os arquivos mais sensíveis do projeto.
+- **Instagram.** O Direct usa classes trocadas a cada build e **destrói do DOM** as mensagens
+  fora da tela, além de ignorar `scrollTop`. Por isso a leitura navega com `scrollIntoView`,
+  costura cada janela na anterior pela maior sobreposição de sequência e captura o áudio no
+  momento em que a bolha aparece.
+- **Áudio.** Transcrever exige tocar o áudio no mudo; no Instagram isso pode marcá-lo como
+  ouvido. Áudio antigo, que o WhatsApp não entrega mais, entra como `[áudio]`.
+- **Automação do RD.** Montada pela documentação da API e testada com RD simulado; depende de o
+  token ter permissão sobre os cards. A leitura de agendamento é por regra de texto e pode errar
+  em frases fora do padrão — o × no cartão corrige.
+- **Amostra pequena.** A inteligência só vale com resultados marcados na rotina.
+- **Ainda não existe:** leitura de PDF e Word no chat manual, status por campo
+  (confirmado/inferido) no report e expurgo automático dos PDFs antigos.
 
-### Idempotência (não pagar duas vezes pela mesma conversa)
+---
 
-`/api/report-direto` e `/api/report-texto` calculam uma `reportKey` (hash da conversa
-normalizada + versão do prompt + modo de qualidade, em `src/idempotencia.js`). Se já
-existe um report com a mesma chave, o servidor **não chama a IA de novo** — devolve
-`{ duplicado: true, existente: { id, quando, lead, podeAbrir } }`. A extensão e o painel
-mostram duas opções: **Abrir o existente** (baixa o PDF guardado, sem IA — o SDR só abre
-os seus; o admin abre qualquer um, via `GET /api/reports/:id/pdf`) ou **Gerar de novo**
-(`forcarNovo: true` no corpo do pedido pula a checagem e cobra a IA de novo). Uma trava
-por `reportKey` (`db.travar`/`db.destravar`) também impede que duas chamadas
-simultâneas da mesma conversa (ex.: um retry de rede) gerem e cobrem em paralelo.
+## Estrutura do projeto
 
-### Modo de qualidade e estimativa
+```
+server.js                     Rotas: páginas, report, cartão do lead, gestão
+api/index.js · vercel.json    Entrada e configuração da Vercel
 
-O pedido pode mandar `qualidade: "eco" | "standard" | "premium"` — troca só o modelo da
-Anthropic (`ANTHROPIC_MODEL_ECO`/`ANTHROPIC_MODEL`/`ANTHROPIC_MODEL_PREMIUM`); sem esse
-campo, o comportamento é o de sempre (`standard`). `POST /api/estimar-custo` calcula uma
-estimativa (entrada real da conversa normalizada + uma saída média por modo) sem chamar
-a IA nem nenhuma API de câmbio — o dashboard usa isso pra mostrar "Custo estimado" ao
-digitar a conversa no modo manual.
+src/
+  report.js                   Prompt do report, chamada à IA, validação da resposta
+  conversation-normalizer.js  Limpa, agrupa e corta a conversa antes do prompt
+  citacoes.js                 Conferência das citações e filtro de falas, sem IA
+  consciencia.js · perfil.js  Nível de consciência e perfil do lead (a mesma régua em tudo)
+  generatePdf.js              PDF com a marca PRONIX, até 2 páginas
+  idempotencia.js             Hash da conversa (reportKey)
+  precos.js · stats.js        Preço por modelo; histórico, custo e resultados
+  pdfStorage.js · diario.js   PDFs guardados; regra do .zip do dia
+  transcribe.js · groq.js     Transcrição, visão e chat gratuito (com fila de modelos)
+  resumoRapido.js · coach.js  Resumo rápido e coach da conversa
+  crm.js · leads.js           RD Station (ficha e mover etapa); etiqueta e agendamento por lead
+  inteligencia.js             Closer × perfil, padrões da prospecção, insights
+  aprendizado.js              Correções que calibram o nível de consciência
+  base.js · baseInicial.js    Base de conhecimento e o texto recomendado
+  usuarios.js · closers.js    Acessos, papéis e recursos; lista de closers
+  db.js                       Redis em produção, arquivos localmente; cache e trava
 
-## Armazenamento dos PDFs e download em massa
+extension/                    Extensão MV3
+  content.js                  WhatsApp: leitura da conversa, áudios, cartão do lead
+  agenda.js                   Leitura de agendamento e de "lead respondeu" (sem rede)
+  content-instagram.js        Instagram Direct: leitura da conversa e dos áudios
+  inject.js                   Gancho de áudio no contexto da página
+  background.js               Service worker: fala com o servidor
+  popup.html · popup.js       Gerar, editar e baixar o report; chave e servidor
 
-Todo PDF gerado fica guardado (`src/pdfStorage.js`, chave própria `pdf_<id>` no
-mesmo banco de `src/db.js` — Redis/KV em produção, `data/*.json` local; os
-arquivos são pequenos, poucos KB cada, então isso é barato). A aba **Arquivos**
-do dashboard é só para isso — **só aparece pra admin** (mesmo gate das abas
-Acessos/Números/Base: escondida na tela pra quem não é admin, e as rotas abaixo
-exigem a mesma autenticação de admin no servidor, então não dá para contornar
-só escondendo o botão) — e deixa:
-- baixar o PDF de um report específico (botão **PDF** na tabela "Reports do período");
-- baixar de **um SDR só** (botão **Baixar .zip** na tabela "Por SDR");
-- baixar **tudo** de uma vez num `.zip` (botão **Baixar tudo**), sempre
-  organizado em pastas por SDR, respeitando o filtro de período/SDR da própria aba.
+public/
+  dashboard.html              O painel
+  dia.html                    Resumo do dia
+  privacidade.html            Política de privacidade
+  PRONIX-extensao.zip         Gerado por `npm run empacotar`
 
-`GET /api/admin/reports/:id/pdf` e `GET /api/admin/reports/pdf-zip?de=&ate=&sdr=`
-(ambas atrás do middleware `admin`). O zip usa `archiver` (única dependência
-nova — **pin em `^7.0.1`**: a partir da v8 o pacote virou ESM puro e quebra o
-`require()` deste projeto). Removeu um report na aba Números? O PDF salvo dele
-some junto. Não há expurgo automático por tempo — como os arquivos são
-pequenos isso não é urgente, mas fica registrado como próximo passo caso vire
-necessidade.
+tests/                        17 arquivos; helpers/dom.js simula WhatsApp e Instagram
+docs/                         Auditoria, plano, checklist e análise das calls
+scripts/transcribe.py         faster-whisper local (só sem GROQ_API_KEY)
+```
 
-## Ficha do lead no WhatsApp (RD Station CRM)
-
-Ao abrir uma conversa no WhatsApp Web, a extensão mostra um cartão no canto com a negociação
-do lead no RD Station CRM: etapa e funil, responsável, as respostas do formulário (a anotação
-com linhas "Campo: valor", como *Profissão / Estado / Vende online / Investimento*), campos
-personalizados, outras anotações e o link para abrir no RD. Liga/desliga no popup.
-
-- **Como acha o lead.** Pelo telefone da conversa: o cabeçalho mostra o número quando o
-  contato não está salvo; ao abrir pelo botão de WhatsApp do card no RD
-  (`web.whatsapp.com/send?phone=…`), o número vem no link e vale para a conversa que ele
-  abriu, mesmo com o contato salvo por nome; ou o id do chat, quando o WhatsApp o expõe. O
-  servidor tenta os formatos em que o número pode estar no RD — primeiro como o card mostra,
-  `(11) 96763-6300`, depois só dígitos, com/sem 55 e com/sem o 9 — e só aceita um contato
-  cujos **8 últimos dígitos** batem.
-- **Onde aparece.** Encostado na borda direita da conversa (não da janela): quando a extensão
-  oficial do RD Station CRM está aberta à direita, o cartão fica ao lado do painel dela. Contato salvo com nome: busca pelo nome; mais
-  de um resultado vira uma lista para o SDR escolher. Não achou: o próprio cartão tem busca.
-- **Contato salvo com nome no WhatsApp.** O nome salvo é limpo das etiquetas do time
-  ("Armando PRONIX Moretti" → "Armando Moretti"; lista em `CRM_PALAVRAS_IGNORADAS`, além de
-  pronix/prxc/lead/cliente/sdr/closer) e buscado no RD: nome inteiro, nome limpo, nome +
-  sobrenome e, por último, o primeiro nome. Só escolhe sozinho quando um único contato do RD tem
-  todas as palavras do nome; senão, mostra a lista. Se o SDR abrir o painel "Dados do contato"
-  do WhatsApp, o número de lá é lido (um só número; grupo com vários é ignorado) e fica
-  guardado para aquela conversa enquanto a aba estiver aberta.
-- **Acentos quebrados** que integrações gravam no RD ("EmpresÃ¡rio") são consertados, e campos
-  repetidos ("Vende online?" x "Vende online") aparecem uma vez só. Campos de anúncio/origem
-  ([AD]…, LP, UTM, criativo, conjunto) não entram na ficha.
-- **Disponível para todo usuário com chave** (SDR, gestor ou admin). Cada um pode esconder o
-  cartão no próprio popup da extensão.
-- **Coach da conversa** (botão no cartão, **custo zero**): lê a conversa e os áudios e, num modelo
-  gratuito do Groq, devolve o **perfil do lead** (dominante, analítico, cético, relacional, cauteloso
-  ou entusiasta — a mesma régua do report, `src/perfil.js`) com a evidência, **como abordar**, **o
-  que ainda falta levantar** (BANT e a pergunta de implicação do SPIN), **objeções** com resposta
-  pronta, **3 perguntas de aprofundamento** e a **próxima mensagem** pronta para copiar
-  (`src/coach.js`, `POST /api/coach`). Usa a régua de qualificação e as objeções da aba **Base**.
-  **Aprende sem treinar modelo:** o SDR marca "Funcionou" no que usar (`POST /api/coach/feedback`);
-  as sugestões marcadas entram como exemplos no prompt das próximas conversas, e as "não ajudou"
-  como o que evitar. Só para quem o master ligar (aba **Acessos** → coluna **Coach**; padrão: só o
-  master). **Não depende da ficha do RD:** a permissão vem da chave (`/api/eu`), e o cartão aparece
-  só com resumo e coach quando o CRM está desligado. O popup da extensão mostra a versão instalada e
-  "Coach: liberado / não liberado".
-  **Modelos:** fila `openai/gpt-oss-120b` → `openai/gpt-oss-20b` → `llama-3.3-70b-versatile` →
-  `llama-3.1-8b-instant` (`GROQ_COACH_MODEL` põe outro na frente). Se um saiu do ar ou bateu no
-  limite, o seguinte assume. O plano gratuito limita tokens por minuto (cerca de 8 mil por modelo),
-  por isso o pedido vai enxuto; estourando em todos, o aviso é "limite gratuito atingido". Mesma
-  conversa = cache de 24h.
-- **Automação do cartão** (aba **Acessos** → coluna **Automação RD**; padrão: só o master). Três coisas,
-  todas sem IA e sem custo:
-  1. **Mover para "Respondeu" no RD.** Com a conversa aberta, se há mensagem do lead depois de uma
-     mensagem sua e o card está em aberto e numa etapa ANTERIOR a "Respondeu" do mesmo funil (ex.:
-     "Contato iniciado"), o servidor avança o card (`POST /api/crm/respondeu` →
-     `PUT /deals/{id}` com `deal_stage_id`). É a **única escrita** que o sistema faz no RD: nunca
-     volta um card, não mexe em card fechado nem em funil sem essa etapa, confere tudo de novo no RD
-     na hora e registra cada movimento (`crm_movimentos`). O RD só aceita a mudança se o dono do
-     token for o responsável pelo card ou do mesmo time; se recusar, o cartão mostra o motivo.
-  2. **Etiqueta "Qualificado".** Entra sozinha quando o card está na etapa "Qualificado", quando um
-     report é gerado para o lead ou quando há reunião agendada, e **fica lembrada** mesmo que o card
-     mude de etapa depois (remarcou, sumiu). Dá para marcar e tirar à mão no cartão — a escolha
-     manual vale sobre a automática.
-  3. **Dia e horário agendados.** `extension/agenda.js` lê, no navegador, a última mensagem SUA que
-     marca dia e hora ("reunião agendada para quinta às 15h", "remarquei para 10/10 às 16h", ou o
-     lead escolhendo um dos horários que você ofereceu seguido do seu "Agendado!"). Oferta de opções
-     e duração ("2h por dia") não contam. Resumo rápido, Coach e report leem a conversa inteira com
-     os áudios transcritos, então agendamento dito em áudio entra quando um deles roda. O × apaga.
-  O texto da conversa não vai ao servidor para isso: vão só o pedido de mover, a etiqueta e a data
-  (`POST /api/lead/marca`, guardadas por lead em `lead_marcas` — `src/leads.js`).
-
-## Inteligência comercial: perfil do lead, closer certo e o que funciona na prospecção
-
-- **Leitura de cada report** (prompt `v5`, `src/report.js`): além do handoff, a IA devolve o
-  **perfil do lead** (vira a linha "Perfil" do resumo, com o "como conduzir"), o **nível de
-  consciência** com prova obrigatória (teste de cima para baixo; sem a prova do nível, desce um
-  degrau) e uma **análise interna da prospecção** — BANT (orçamento, autoridade, necessidade,
-  prazo), SPIN (situação, problema, implicação, necessidade), as perguntas-chave do pré-vendedor e
-  a abordagem. A análise fica no histórico (`stats`), não vai para o PDF nem para quem gerou.
-- **Closer na extensão:** o aviso "Report pronto!" traz a lista de closers; o SDR escolhe ali
-  (`POST /api/reports/:id/closer`, só o próprio report). Quando há histórico, o closer indicado
-  para aquele perfil vem marcado "(indicado)" com o motivo — nada é salvo sozinho.
-- **Aba Closers** (só o master): adicionar e remover. `GET /api/closers` (qualquer chave) devolve
-  só id e nome.
-- **Aba Resultados da reunião** (só o master): por report, closer, resultado (venda em call, venda em
-  FUP, pix compromisso, não fechou, no-show, em follow-up), anotação do que deu, e a correção do
-  perfil e do nível de consciência quando a IA errou. `GET /api/master/resultados`.
-- **A IA aprende o nível de consciência, sem custo:** cada correção vira um exemplo ("com esta
-  evidência a IA disse X, o certo é Y") guardado em `aprendizado_consciencia` e incluído no prompt
-  dos próximos reports (os 8 mais recentes, `src/aprendizado.js`). Não há treino de modelo.
-- **Inteligência** (`src/inteligencia.js`, `GET /api/master/inteligencia`): tudo é conta em cima
-  dos reports com resultado marcado, sem IA — matriz closer × perfil, conversão por perfil e por
-  nível de consciência, e o que difere na prospecção das reuniões que fecharam (cada critério de
-  BANT/SPIN: % nas que fecharam vs. nas que não) com as perguntas-chave. **A indicação de closer
-  só aparece com 3 ou mais reuniões daquele closer com aquele perfil** (taxa suavizada, para 1 de 1
-  não passar na frente de 8 de 10) e ignora closer que saiu da lista. A correção do master vale no
-  lugar da leitura da IA.
-- **Insights** (`POST /api/master/insights`): texto escrito pela IA gratuita (Groq) em cima dos
-  números e das perguntas — closer por perfil, prospecção que funciona, perguntas para a
-  qualificação padrão, melhorias no script e limites da amostra. A fala dos leads não é enviada.
-  Exige 5 reuniões com resultado.
-
-## Base de conhecimento
-
-Seis campos na aba **Base**: a empresa, oferta e valores, perfil de cliente, roteiro (o que o SDR
-levanta e o que o closer faz), régua de qualificação (SPIN e BANT) e objeções/dores. Campo nunca
-escrito vem com o texto recomendado (`src/baseInicial.js`), montado com os scripts de diagnóstico,
-as apresentações Performance e Aceleração, os contratos e as notícias públicas da empresa. Quem
-tinha a base antiga (4 campos) passa para a recomendada uma vez, e os textos antigos ficam
-guardados: **Voltar aos textos anteriores** restaura. **Usar a base recomendada** reaplica tudo.
-Pisos de negociação não entram na base. A **v3** incorpora o que 12 reuniões de closer que viraram venda mostraram (o que o closer usa do report, perguntas que destravam, objeções reais e como cada perfil fecha): ver [docs/analise-calls-vendas.md](docs/analise-calls-vendas.md). Quem já estava na v2 recebe o texto novo só nos campos que não editou. O playbook vai no prefixo cacheado de todo report (cerca
-de 4 mil tokens a ~0,1x do preço) e, resumido, no coach.
-
-## Report manual em formato de chat
-
-A aba **Gerar report** monta a conversa como um chat: escreva e adicione fala por fala (escolhendo
-Lead ou Eu), cole a conversa inteira, ou anexe/arraste áudios (transcritos), prints (lidos como
-conversa) e arquivos de texto (.txt, .md, .csv). Cada fala vira uma bolha que dá para remover; a
-conversa em texto continua editável em "Ver ou editar a conversa como texto" e é exatamente o que
-vai para a IA. PDF e Word ainda não são lidos (o painel avisa).
-- **Resumo rápido da conversa** (botão no cartão): lê a conversa aberta, inclusive transcrevendo
-  os áudios, e a IA devolve o **cenário**, **onde parou** (quem deve responder), a **última
-  pergunta** e o **próximo passo** — para retomar um lead sem reler nem reouvir tudo.
-  `POST /api/resumo-rapido` (`src/resumoRapido.js`); mesma conversa = resumo do cache (7 dias), sem
-  custo. O custo entra no gasto do painel como "resumos rápidos", fora da lista de reports.
-  Modelo: `ANTHROPIC_MODEL_RESUMO` (padrão: o mesmo dos reports).
-- **Qual negociação (card).** Lead que se inscreveu de novo costuma ter contatos duplicados e vários
-  cards. O servidor junta **todos os contatos com o mesmo telefone** e as negociações de todos
-  (até 8, buscando os detalhes de cada uma) e abre: 1º o card que o SDR já escolheu para aquele
-  lead; senão o **em aberto com atividade mais recente** (`updated_at`); senão o mais recente. O
-  cartão mostra um seletor "Este lead tem N cards": ao trocar, a escolha fica **lembrada no
-  servidor** (`crm_cards`, vale para todos) e o "Abrir no RD Station" passa a abrir esse card.
-- **Segurança.** O token (`RDSTATION_CRM_TOKEN`) fica só no servidor. A extensão manda só
-  telefone/nome, por POST (fora de URL e de log). Tudo que vem do CRM entra no cartão como
-  texto, nunca como HTML. O cartão fica fora do `#main`, então a leitura do report nunca o
-  confunde com mensagem.
-- **Custo de API.** Cache de 5 min por telefone no servidor (não achado: 2 min); usuários e
-  rótulos de campos do CRM: 1 h. Uma conversa nova custa de 3 a 8 chamadas ao RD.
-- `POST /api/crm/lead` `{ telefone?, nome?, contatoId? }` (chave do SDR) e
-  `POST /api/admin/crm/teste` (admin: sem cache, mostra quais formatos de telefone foram
-  tentados). No painel, aba **Extensão** → **Ficha do lead (RD Station CRM)** → Testar.
-- API usada (RD Station CRM v1): `/contacts?phone=`, `/contacts?q=`, `/contacts/{id}`,
-  `/deals/{id}`, `/activities?deal_id=`, `/users`, `/custom_fields?for=contact`.
-
-## Reports do dia (.zip para o líder)
-
-Todo usuário (SDR ou admin) baixa o .zip com **os próprios** reports do dia — pela aba
-**Reports do dia** do painel ou pelo botão **Baixar meus reports de hoje (.zip)** do
-popup da extensão.
-
-- **Só o último de cada lead.** Quando o SDR refaz o report de um lead (áudio que não
-  veio, informação lida errado), vale o último. `src/diario.js` agrupa por SDR + dia +
-  lead e marca o gerado por último. "Mesmo lead" = mesmo **contato** (nome ou telefone
-  que a extensão leu no cabeçalho, guardado em `contato` em cada report) — estável entre
-  gerações, ao contrário do nome que a IA devolve. Sem contato (reports manuais sem nome
-  ou anteriores a esta versão), usa o nome do lead. Status lido por engano ("online",
-  "Ativo(a) agora") nunca junta leads diferentes.
-- **Ajuste manual.** A aba lista todos os reports do dia com uma caixa por report
-  (marcada = vai no .zip); o SDR pode trocar qual versão manda.
-- `GET /api/meus-reports?dia=YYYY-MM-DD` (lista, com `usar`, `substituidoPor`,
-  `geracoes`) e `POST /api/meus-reports/zip` `{ dia, ids? }` — sem `ids`, o último de cada
-  lead; com `ids`, exatamente esses, sempre restritos aos reports **da própria chave**
-  naquele dia. Nome do arquivo: `Reports_<SDR>_<dd-mm-aaaa>.zip`; nomes repetidos dentro
-  do .zip ganham " (2)". Cabeçalhos `X-Reports-No-Zip` e `X-Reports-Sem-Pdf`.
-- **Gestor:** papel criado na aba **Acessos** ("Gestor"). Tem todos os acessos do admin e, na aba **Reports do dia**, a opção **Todos os SDRs** (começa nela): lista os reports do dia da equipe inteira e baixa um .zip com **uma pasta por SDR**, só com o último report de cada lead (dá para marcar/desmarcar). Admin também tem a opção, começando em "Meus reports". Rotas: `GET /api/equipe-reports?dia=` e `POST /api/equipe-reports/zip` `{ dia, ids? }` (admin, gestor ou senha reserva). Arquivo: `Reports_Equipe_<dd-mm-aaaa>.zip`.
-- **Admin:** o .zip da aba **Arquivos** tem a opção **"só o último report de cada lead
-  no dia"** marcada por padrão (`?ultimo=1` em `/api/admin/reports/pdf-zip`).
-
-## Print de conversa (e uso no celular)
-
-No modo manual dá pra **colar um print** da conversa (Ctrl+V), arrastar ou
-escolher o arquivo. O servidor lê a imagem com o modelo de visão do Groq
-(`POST /api/ler-imagem`) e devolve a conversa transcrita no formato
-`VENDEDOR:`/`LEAD:`, que cai direto na caixa de texto — daí segue o fluxo normal
-de geração. Vários prints podem ser colados em sequência; cada um vai
-acrescentando à conversa.
-
-**Custo: zero.** A leitura da imagem usa o mesmo plano gratuito do Groq que já
-transcreve os áudios. O que continua custando é só a geração do relatório em si
-(Anthropic), igual a qualquer outro report.
-
-Cuidados que já estão no código:
-- O tipo do arquivo é conferido pelos **magic bytes** no servidor, não pela
-  extensão nem pelo que o navegador declara (`tipoDeImagem()` em `server.js`).
-- O dashboard **reduz a imagem** antes de enviar (máx. 1600px, JPEG 0.92): um
-  print de celular sai de vários MB para algumas centenas de KB, sem perder a
-  legibilidade do texto.
-- O erro nunca loga a imagem nem o texto lido — é conversa de lead.
-
-**No celular:** a extensão do Chrome não roda em Android/iOS, então o caminho
-para quem atende pelo WhatsApp Business do telefone é este: tira o print da
-conversa, abre o dashboard no navegador do celular e toca no campo de print (o
-`accept="image/*"` abre a galeria direto). Alternativa sem print: o próprio
-WhatsApp tem **Exportar conversa**, que gera um `.txt` para colar na caixa de
-texto.
-
-## Closer e resultado da call
-
-Cada report pode ser marcado manualmente (pelo admin, na aba **Reports gerados**)
-com **quem foi o closer** e **o que aconteceu com aquela call** — nada disso vem da
-IA nem é preenchido sozinho, é o admin alimentando aos poucos:
-
-- **Closers**: um roster simples (nome + e-mail, sem login) em `src/closers.js` —
-  cadastra uma vez, depois só escolhe num select na tabela de reports.
-- **E-mail do lead** (`leadEmail`): campo de texto por report — é o e-mail de
-  quem comprou/negociou, não do closer, pra dar pra puxar o report depois por
-  e-mail (ex.: cruzar com um sistema de pagamento).
-- **Resultado**: `venda_call` (fechou na própria reunião), `venda_fup` (fechou
-  depois, num follow-up), `pix_compromisso` (entrou com PIX de compromisso), ou
-  em branco (nada marcado ainda — não confundir com "não vendeu").
-- **Data da reunião** e **data do fechamento**: dois campos de data; o servidor
-  calcula sozinho quantos dias levou entre uma e outra (`diasParaFechar`).
-
-Tudo isso é `PATCH /api/admin/reports/:id/resultado` (admin), guardado direto no
-registro do report em `src/stats.js` (mesmo armazenamento do custo/tokens — nada
-de tabela nova). Editar de novo é só marcar de novo; não tem histórico de mudanças.
-
-**Desempenho por closer** (card na mesma aba): total de reports que cada closer
-pegou, quantos fecharam (por tipo de resultado) e a taxa de conversão — calculado
-puro em `stats.resumo()`, sem IA. É a base de dados que uma futura análise de
-"qual closer se dá bem com qual perfil de lead" vai precisar ter acumulado antes
-de fazer sentido — não tem volume suficiente pra isso ainda, então essa parte
-fica para quando os resultados estiverem sendo marcados na rotina.
-
-## Base de conhecimento (playbook)
-
-Na aba **Base** do dashboard (admin), dá pra colar o script de qualificação, a oferta,
-objeções comuns e o perfil de cliente ideal. Esse conteúdo entra no prompt de todo
-report gerado — não é fato sobre o lead específico, é contexto para a IA calibrar o
-relatório (ex.: não fazer qualificação financeira de quem já tem uma distribuidora
-consolidada).
-
-## Riscos
-
-- **Risco de ban:** baixo — a extensão só **lê** a página que o SDR já tem aberta e
-  logada (WhatsApp ou Instagram); não abre conexão própria com nenhum dos dois
-  (diferente de bots com biblioteca não-oficial).
-- **Fragilidade de layout:** a leitura depende do HTML de cada site. Se o WhatsApp ou
-  o Instagram mudarem a estrutura da página, os seletores em `extension/content.js`
-  (WhatsApp) ou `extension/content-instagram.js` (Instagram) podem precisar de ajuste
-  — são os arquivos mais sensíveis do projeto. O **Instagram Direct usa CSS atômico
-  com classes trocadas a cada build** (ex.: `xexx8yu`, sem nome com sentido) — por
-  isso `content-instagram.js` evita depender de classes e usa sinais estruturais
-  (posição do texto na tela, `flex-direction` do container) pra saber quem enviou
-  cada mensagem, e faixa vertical pra agrupar as marcações de uma bolha de voz.
-- **Virtualização do Direct + rolagem:** o Instagram DESTRÓI do DOM as mensagens
-  que saem da tela (medido ao vivo: 5 nós no DOM numa conversa de 2959px), então
-  não dá pra rolar até o topo e ler tudo no fim. Pior: **a lista ignora escrita
-  em `scrollTop`** (pedir `scrollTop = 2959` deixava em `1`), então dirigir a
-  rolagem por número não funciona — `coletarConversa()` navega com
-  `scrollIntoView()` na própria mensagem, deixando o navegador resolver como
-  rolar. Lê progressivamente enquanto desce, costurando cada janela na anterior
-  pela maior sobreposição de sequência — repetição real na conversa ("kkk" duas vezes)
-  continua aparecendo duas vezes, porque a comparação é de sequência e não de
-  conjunto. O áudio é capturado no passo em que a bolha aparece, pelo mesmo
-  motivo (depois ela não existe mais pra clicar no play).
-- **Áudio no Instagram:** como não se sabia de antemão como o Direct entrega o
-  arquivo de voz, `capturarAudio()` tenta em ordem — `<audio>` da bolha, clicar
-  no play e olhar de novo, e o gancho `URL.createObjectURL` (o mesmo do WhatsApp)
-  — validando tudo por magic bytes. Se o `src` apontar pro CDN da Meta e o CORS
-  bloquear, o log `[CR-ig-audio]` diz exatamente isso, e o áudio entra no report
-  como `[áudio]` sem quebrar o resto. O caminho seguinte nesse caso seria buscar
-  pelo service worker, que exigiria `host_permissions` do CDN — não pedimos
-  enquanto não houver necessidade comprovada.
-- Transcrever exige **tocar** o áudio (no mudo). No Instagram isso pode marcar a
-  mensagem como ouvida pra quem enviou — está avisado no `GUIA-SDR.md`.
+---
 
 ## Documentação relacionada
 
-- [`GUIA-SDR.md`](GUIA-SDR.md) — passo a passo de instalação e uso para quem só vai
-  gerar reports (sem acesso admin).
-- [`docs/auditoria-pronix.md`](docs/auditoria-pronix.md) — status de cada achado da
-  auditoria externa (corrigido, parcial, confirmado, não verificado).
+- [`GUIA-SDR.md`](GUIA-SDR.md) — instalação e uso para quem só gera reports.
+- [`docs/analise-calls-vendas.md`](docs/analise-calls-vendas.md) — o que 12 reuniões que viraram
+  venda ensinam (sem dados de clientes).
+- [`docs/checklist-pendencias.md`](docs/checklist-pendencias.md) — o que entrou em cada versão e
+  o que falta conferir.
+- [`docs/auditoria-pronix.md`](docs/auditoria-pronix.md) — status de cada achado da auditoria.
 - [`docs/plano-implementacao.md`](docs/plano-implementacao.md) — o que falta, em etapas.
