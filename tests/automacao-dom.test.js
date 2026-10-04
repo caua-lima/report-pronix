@@ -12,7 +12,7 @@ const fichaDoRd = (etapa) => ({
   negociacoes: [{ id: 'd1', nome: 'Marcos Pereira', etapa, funil: 'Funil SDR', responsavel: 'Cauã Lima', criadaEm: '28/09/2026', aberta: true, escolhida: true }],
   formulario: null, campos: [], anotacoes: [],
 });
-const SEM_MARCA = { qualificado: false, agendadoPara: '', agendaFonteTs: -1 };
+const SEM_MARCA = { qualificado: false, origem: '', agendadoPara: '', agendaFonteTs: -1 };
 
 /** Service worker + servidor falsos: guarda cada pedido e aplica a marca como o servidor faria. */
 function servidorFalso({ automacao = true, podeResponder = true, marca = SEM_MARCA, etapa = 'Contato iniciado', mover } = {}) {
@@ -30,9 +30,9 @@ function servidorFalso({ automacao = true, podeResponder = true, marca = SEM_MAR
     }
     if (msg.action === 'leadMarca') {
       pedidos.marca.push(msg);
-      if (typeof msg.qualificado === 'boolean') atual.qualificado = msg.qualificado;
+      if (typeof msg.qualificado === 'boolean') Object.assign(atual, { qualificado: msg.qualificado, origem: msg.qualificado ? (msg.manual ? 'manual' : msg.origem || '') : '' });
       if (msg.limparAgenda) atual.agendadoPara = '';
-      else if (msg.agendadoPara) atual = { ...atual, qualificado: true, agendadoPara: msg.agendadoPara, agendaFonteTs: msg.fonteTs };
+      else if (msg.agendadoPara) atual = { ...atual, agendadoPara: msg.agendadoPara, agendaFonteTs: msg.fonteTs };
       return { ok: true, marca: { ...atual } };
     }
     if (msg.action === 'reportFetch') {
@@ -142,9 +142,11 @@ test('servidor diz que o card já estava adiante: nada muda na tela', async () =
 
 // ---------------------------------------------------------------- etiqueta "Qualificado"
 test('etiqueta Qualificado: aparece quando o lead está marcado; dá para tirar e colocar à mão', async () => {
-  const srv = servidorFalso({ podeResponder: false, etapa: 'Ultima tentativa', marca: { ...SEM_MARCA, qualificado: true } });
+  const srv = servidorFalso({ podeResponder: false, etapa: 'Ultima tentativa', marca: { ...SEM_MARCA, qualificado: true, origem: 'rd' } });
   const p = abrir(srv);
   await esperar(() => /QUALIFICADO/.test(etiquetas(p)), { motivo: 'etiqueta' });
+  const chip = () => [...p.document.getElementById('cr-etiquetas').querySelectorAll('span')].find((x) => x.textContent === 'QUALIFICADO');
+  assert.equal(chip().title, 'Qualificado: o card esteve na etapa Qualificado do RD.', 'passar o mouse diz de onde a etiqueta veio');
   botaoPorTitulo(p, 'Tirar a etiqueta Qualificado').click();
   await esperar(() => srv.pedidos.marca.length === 1, { motivo: 'pedido para tirar' });
   assert.deepEqual(srv.pedidos.marca[0], { action: 'leadMarca', telefone: '5571999998888', nome: '+55 71 99999-8888', qualificado: false, manual: true });
@@ -154,6 +156,7 @@ test('etiqueta Qualificado: aparece quando o lead está marcado; dá para tirar 
   assert.equal(srv.pedidos.marca[1].qualificado, true);
   assert.equal(srv.pedidos.marca[1].manual, true);
   await esperar(() => /QUALIFICADO/.test(etiquetas(p)), { motivo: 'etiqueta de volta' });
+  assert.equal(chip().title, 'Qualificado: você marcou à mão.');
   p.fechar();
 });
 
@@ -180,10 +183,11 @@ test('agendamento dito na conversa: o cartão mostra o dia e a hora e o servidor
   const p = abrir(srv, AGENDOU);
   await esperar(() => srv.pedidos.marca.length === 1, { motivo: 'agendamento enviado' });
   assert.deepEqual(srv.pedidos.marca[0], {
-    action: 'leadMarca', telefone: '5571999998888', nome: '+55 71 99999-8888', agendadoPara: '2031-03-15T15:00', fonteTs: TS_AGENDOU,
+    action: 'leadMarca', telefone: '5571999998888', nome: '+55 71 99999-8888', agendadoPara: '2031-03-15T15:00', fonteTs: TS_AGENDOU, regra: 2,
   }, 'vai o dia e a hora — nenhum texto da conversa');
   const dia = DIA_CURTO[new Date(2031, 2, 15).getDay()];
-  await esperar(() => etiquetas(p).includes(`Agendado: ${dia}, 15/03 às 15:00`) && /QUALIFICADO/.test(etiquetas(p)), { motivo: 'etiquetas no cartão' });
+  await esperar(() => etiquetas(p).includes(`Agendado: ${dia}, 15/03 às 15:00`), { motivo: 'agendamento no cartão' });
+  assert.doesNotMatch(etiquetas(p), /QUALIFICADO/, 'ter agendamento não coloca a etiqueta Qualificado');
   await dormir(120);
   assert.equal(srv.pedidos.marca.length, 1, 'a mesma mensagem não é enviada de novo');
 
@@ -253,4 +257,19 @@ test('report gerado: o lead ganha a etiqueta Qualificado (e o agendamento lido n
   assert.equal(sem.pedidos.marca.length, 0);
   p.fechar();
   q.fechar();
+});
+
+// ---------------------------------------------------------------- lead que só respondeu a primeira pergunta
+test('lead respondeu só a primeira pergunta: o card vai para "Respondeu" e NÃO ganha etiqueta nem agendamento', async () => {
+  const srv = servidorFalso();
+  const p = abrir(srv, [
+    { from: 'eu', texto: 'Oi Marcos! Aqui é o Cauã, da PRONIX. Vi que você se inscreveu hoje às 14h para o diagnóstico com o nosso especialista. Você já vende no Mercado Livre ou está começando do zero?', hora: '14:05, 01/09/2026' },
+    { from: 'eles', texto: 'Estou começando do zero', hora: '14:20, 01/09/2026' },
+  ]);
+  await esperar(() => srv.pedidos.respondeu.length === 1, { motivo: 'card movido' });
+  await esperar(() => /Movido para "Respondeu" no RD\./.test(texto(p)), { motivo: 'aviso' });
+  await dormir(150);
+  assert.equal(srv.pedidos.marca.length, 0, 'nada de etiqueta nem de agendamento vai para o servidor');
+  assert.doesNotMatch(etiquetas(p), /QUALIFICADO|Agendado/);
+  assert.match(etiquetas(p), /\+ Qualificado/, 'fica só o botão para marcar à mão');
 });

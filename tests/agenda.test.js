@@ -32,21 +32,37 @@ test('formas de escrever o horário', () => {
   assert.equal(ler('Agendado amanhã as 15hrs'), '2026-10-03T15:00');
   assert.equal(ler('Agendado amanhã às 15'), '2026-10-03T15:00');
   assert.equal(ler('AGENDADO AMANHÃ ÀS 15H'), '2026-10-03T15:00');
-  assert.equal(ler('Reunião amanhã das 15 às 16h'), '2026-10-03T15:00', 'intervalo: vale o começo');
+  assert.equal(ler('Reunião confirmada amanhã das 15 às 16h'), '2026-10-03T15:00', 'intervalo: vale o começo');
 });
 
 test('o que NÃO é agendamento', () => {
   assert.equal(ler('Te chamo amanhã às 15h'), '', 'sem palavra de compromisso');
-  assert.equal(ler('A reunião dura 1h e você precisa de 2 horas por dia para o projeto, começamos amanhã'), '', 'duração não é horário');
+  assert.equal(ler('Reunião agendada: ela dura 1h e você precisa de 2 horas por dia, começamos amanhã'), '', 'duração não é horário');
   assert.equal(ler('Tenho horário amanhã às 10h ou às 15h, qual fica melhor?'), '', 'opções, não agendamento');
-  assert.equal(ler('Consigo reunião amanhã às 10h ou às 15h.'), '', 'opções mesmo sem interrogação');
+  assert.equal(ler('Fica agendado amanhã às 10h ou às 15h, você escolhe.'), '', 'opções mesmo com a palavra de confirmação');
   assert.equal(ler('Reunião marcada, te aviso o horário'), '', 'sem dia nem hora');
   assert.equal(ler('Reunião amanhã, combinado'), '', 'sem hora');
   assert.equal(ler('Reunião às 15h, combinado'), '', 'sem dia');
-  assert.equal(ler('Na segunda parcela da reunião de vendas às 15h'), '', '"segunda parcela" não é dia da semana');
-  assert.equal(ler('A reunião do dia 10 de manhã foi boa'), '', '"dia 10 de manhã" não é 10 horas');
+  assert.equal(ler('Confirmado: a segunda parcela vence, às 15h te aviso'), '', '"segunda parcela" não é dia da semana');
+  assert.equal(ler('Reunião confirmada dia 10 de manhã'), '', '"dia 10 de manhã" não é 10 horas');
   assert.equal(ler(''), '');
-  assert.equal(ler('x'.repeat(5000) + ' reunião amanhã às 15h'), '', 'texto gigante não é lido');
+  assert.equal(ler('x'.repeat(5000) + ' reunião agendada amanhã às 15h'), '', 'texto gigante não é lido');
+});
+
+test('citar reunião, horário ou diagnóstico não é agendar: só vale mensagem que CONFIRMA o compromisso', () => {
+  // a primeira mensagem do pré-vendedor costuma falar do cadastro, do especialista e de horário
+  assert.equal(ler('Oi Marcos! Vi que você se inscreveu hoje às 14h para o diagnóstico com o nosso especialista.'), '');
+  assert.equal(ler('Nosso horário de atendimento é das 8h às 18h, posso te chamar hoje?'), '');
+  assert.equal(ler('A reunião com o consultor é por chamada de vídeo. Você consegue amanhã às 15h?'), '', 'pergunta de disponibilidade');
+  assert.equal(ler('Posso agendar a sua reunião para amanhã às 15h?'), '', '"agendar" ainda é proposta');
+  assert.equal(ler('Vamos marcar uma call amanhã às 10h?'), '');
+  assert.equal(ler('Tenho um horário amanhã às 16h com o especialista'), '');
+  // já as formas de confirmação continuam valendo
+  assert.equal(ler('Agendei aqui: amanhã às 15h'), '2026-10-03T15:00');
+  assert.equal(ler('Marquei pra você amanhã às 15h'), '2026-10-03T15:00');
+  assert.equal(ler('Confirmo nossa reunião amanhã às 15h'), '2026-10-03T15:00');
+  assert.equal(ler('Combinado, amanhã às 15h então'), '2026-10-03T15:00');
+  assert.equal(ler('Fechado! Fica pra amanhã às 15h'), '2026-10-03T15:00');
 });
 
 test('várias frases: afirmação vale mais que pergunta; o dia pode estar em outra frase', () => {

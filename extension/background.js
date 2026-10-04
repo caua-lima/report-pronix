@@ -112,7 +112,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       const corpo = { telefone: String(msg.telefone || '').slice(0, 30), nome: String(msg.nome || '').slice(0, 80) };
       if (typeof msg.qualificado === 'boolean') Object.assign(corpo, { qualificado: msg.qualificado, manual: msg.manual === true, origem: String(msg.origem || '').slice(0, 20) });
       if (msg.limparAgenda === true) corpo.limparAgenda = true;
-      else if (msg.agendadoPara) Object.assign(corpo, { agendadoPara: String(msg.agendadoPara).slice(0, 16), fonteTs: Number(msg.fonteTs) || 0 });
+      else if (msg.agendadoPara) Object.assign(corpo, { agendadoPara: String(msg.agendadoPara).slice(0, 16), fonteTs: Number(msg.fonteTs) || 0, regra: Number(msg.regra) || 0 });
       const r = await chamar('/api/lead/marca', corpo, { timeoutMs: 20000 });
       sendResponse(r.ok ? { ok: true, marca: r.data.marca || null } : { ok: false, erro: r.erro });
     })();

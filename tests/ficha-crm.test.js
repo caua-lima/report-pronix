@@ -394,73 +394,6 @@ test('painel com vários números (grupo) ou número na lista de conversas: não
   p.fechar();
 });
 
-// ---------------------------------------------------------------- Coach da conversa
-const comCoach = (r) => ({ ...r, coach: true });
-
-test('coach: só aparece o botão se o servidor liberou para este usuário', async () => {
-  const sem = crmFalso(() => ({ ok: true, configurado: true, encontrado: true, ficha: FICHA_MARCOS, coach: false }));
-  const p1 = abrir(sem);
-  await esperar(() => /Investimento/.test(textoCartao(p1)), { motivo: 'ficha' });
-  assert.ok(botao(p1, 'Resumo rápido da conversa'));
-  assert.equal(botao(p1, 'Coach da conversa'), undefined);
-  p1.fechar();
-
-  const com = crmFalso(() => comCoach({ ok: true, configurado: true, encontrado: true, ficha: FICHA_MARCOS }));
-  const p2 = abrir(com);
-  await esperar(() => /Investimento/.test(textoCartao(p2)), { motivo: 'ficha' });
-  assert.ok(botao(p2, 'Coach da conversa'));
-  p2.fechar();
-});
-
-test('coach: o botão mostra perfil, como abordar, objeção com resposta e perguntas', async () => {
-  const srv = crmFalso(() => comCoach({ ok: true, configurado: true, encontrado: true, ficha: FICHA_MARCOS }));
-  const p = abrir(srv);
-  await esperar(() => !!botao(p, 'Coach da conversa'), { motivo: 'botão do coach' });
-  botao(p, 'Coach da conversa').click();
-  await esperar(() => /Perguntas para aprofundar/.test(textoCartao(p)), { motivo: 'coach na tela' });
-  assert.deepEqual(srv.coachPedidos[0].mensagens.map((m) => m.content), ['Oi, tudo bem?', 'Tudo sim']);
-  const t = textoCartao(p);
-  for (const x of ['COACH', 'Perfil do lead', 'analítico', 'Pediu números e prova de resultado.', 'Como abordar', 'traga dados antes de falar de preço',
-    'Objeção: Achou o investimento alto', 'Posso te mostrar quanto os clientes recuperam', '• Quanto você fatura hoje por mês?', '• Quem mais participa da decisão?']) {
-    assert.ok(t.includes(x), 'faltou no cartão: ' + x);
-  }
-  assert.equal(p.document.getElementById('closer-report-badge'), null, 'o aviso de andamento some');
-  p.fechar();
-});
-
-test('coach aprende: "Funcionou" manda a sugestão ao servidor uma vez só', async () => {
-  const srv = crmFalso(() => comCoach({ ok: true, configurado: true, encontrado: true, ficha: FICHA_MARCOS }));
-  const p = abrir(srv);
-  await esperar(() => !!botao(p, 'Coach da conversa'), { motivo: 'botão' });
-  botao(p, 'Coach da conversa').click();
-  await esperar(() => /Perguntas para aprofundar/.test(textoCartao(p)), { motivo: 'coach' });
-  const funcionou = [...cartao(p).querySelectorAll('button')].filter((b) => b.textContent === 'Funcionou');
-  assert.equal(funcionou.length, 4, 'abordagem + 1 objeção + 2 perguntas');
-  funcionou[1].click(); // a objeção
-  funcionou[1].click(); // clique repetido não duplica
-  await esperar(() => srv.feedbacks.length === 1, { motivo: 'feedback' });
-  assert.deepEqual({ tipo: srv.feedbacks[0].tipo, texto: srv.feedbacks[0].texto, contexto: srv.feedbacks[0].contexto, util: srv.feedbacks[0].util },
-    { tipo: 'objecao', texto: 'Posso te mostrar quanto os clientes recuperam nos primeiros meses?', contexto: 'Achou o investimento alto', util: true });
-  assert.equal(funcionou[1].disabled, true);
-  await dormir(60);
-  assert.equal(srv.feedbacks.length, 1);
-  p.fechar();
-});
-
-test('coach: erro (ex.: limite gratuito) mostra a mensagem e "Tentar de novo" pede outra vez', async () => {
-  let vez = 0;
-  const srv = crmFalso(() => comCoach({ ok: true, configurado: true, encontrado: true, ficha: FICHA_MARCOS }), {
-    coach: () => (++vez === 1 ? { ok: false, erro: 'O limite gratuito do coach foi atingido por agora.' } : { ok: true, coach: COACH_FALSO }),
-  });
-  const p = abrir(srv);
-  await esperar(() => !!botao(p, 'Coach da conversa'), { motivo: 'botão' });
-  botao(p, 'Coach da conversa').click();
-  await esperar(() => /limite gratuito/.test(textoCartao(p)), { motivo: 'erro' });
-  [...cartao(p).querySelectorAll('button')].filter((b) => b.textContent === 'Tentar de novo').pop().click();
-  await esperar(() => /Perguntas para aprofundar/.test(textoCartao(p)), { motivo: 'coach na 2ª' });
-  p.fechar();
-});
-
 // ---------------------------------------------------------------- lead com mais de um card
 test('lead com vários cards: o cartão mostra o seletor e trocar manda o card escolhido para o servidor lembrar', async () => {
   const f = { ...FICHA_MARCOS, negociacoes: [
@@ -482,60 +415,29 @@ test('lead com vários cards: o cartão mostra o seletor e trocar manda o card e
   p.fechar();
 });
 
-// ---------------------------------------------------------------- Coach não depende mais da ficha do RD
-test('coach sem RD: CRM desligado no servidor (ou popup do lead desligado) ainda mostra o cartão com resumo e coach', async () => {
-  const srv = crmFalso(() => ({ ok: true, configurado: false, coach: true }));
+// ---------------------------------------------------------------- o coach saiu do cartão
+// (virou um popup próprio que acompanha a conversa: tests/coach-popup.test.js)
+test('coach liberado: o cartão da ficha continua só com a ficha e o resumo; CRM desligado mostra o cartão do resumo', async () => {
+  const srv = crmFalso(() => ({ ok: true, configurado: true, encontrado: true, ficha: FICHA_MARCOS, coach: true }));
   const p = abrir(srv);
-  await esperar(() => !!botao(p, 'Coach da conversa'), { motivo: 'cartão só com o coach' });
-  const t = textoCartao(p);
+  await esperar(() => /Investimento/.test(textoCartao(p)), { motivo: 'ficha' });
+  assert.ok(botao(p, 'Resumo rápido da conversa'));
+  assert.ok(![...cartao(p).querySelectorAll('button')].some((b) => /coach/i.test(b.textContent)));
+  p.fechar();
+
+  const semCrm = crmFalso(() => ({ ok: true, configurado: false, coach: true }));
+  const q = abrir(semCrm);
+  await esperar(() => !!botao(q, 'Resumo rápido da conversa'), { motivo: 'cartão sem RD' });
+  const t = textoCartao(q);
   assert.ok(t.includes('PRONIX') && !t.includes('RD STATION'));
   assert.ok(!t.includes('Não achei este lead'), 'sem busca de RD neste cartão');
-  assert.ok(botao(p, 'Resumo rápido da conversa'));
-  p.fechar();
+  q.fechar();
 
   // sem o coach liberado, CRM desligado continua sem cartão nenhum
   const sem = crmFalso(() => ({ ok: true, configurado: false, coach: false }));
-  const q = abrir(sem);
+  const r = abrir(sem);
   await esperar(() => sem.consultas.length === 1, { motivo: 'consulta' });
   await dormir(60);
-  assert.equal(cartao(q), null);
-  q.fechar();
-});
-
-test('coach: a permissão vem da chave — aparece mesmo quando a consulta ao RD dá erro', async () => {
-  const srv = crmFalso(() => ({ ok: false, erro: 'RD Station fora do ar' }));
-  const aoEnviar = async (msg) => (msg.action === 'permissoes' ? { ok: true, coach: true, papel: 'master' } : srv.aoEnviar(msg));
-  const p = abrir({ aoEnviar });
-  await esperar(() => /RD Station fora do ar/.test(textoCartao(p)), { motivo: 'erro do RD na tela' });
-  await esperar(() => !!botao(p, 'Coach da conversa'), { motivo: 'coach apesar do erro' });
-  p.fechar();
-});
-
-test('coach: mostra o que falta levantar e a próxima mensagem pronta (copiar e marcar "Funcionou")', async () => {
-  const completo = {
-    ...COACH_FALSO,
-    perfil: { tipo: 'Dominante', chave: 'dominante', evidencia: 'Respondeu só "quanto custa?".' },
-    faltaLevantar: ['Quem decide junto', 'Por que agora'],
-    proximaMensagem: 'Te passo já. Antes: você decide isso sozinho?',
-  };
-  const srv = crmFalso(() => comCoach({ ok: true, configurado: true, encontrado: true, ficha: FICHA_MARCOS }), { coach: () => ({ ok: true, coach: completo }) });
-  const p = abrir(srv);
-  let copiado = null;
-  Object.defineProperty(p.w.navigator, 'clipboard', { configurable: true, value: { writeText: async (t) => { copiado = t; } } });
-  await esperar(() => !!botao(p, 'Coach da conversa'), { motivo: 'botão' });
-  botao(p, 'Coach da conversa').click();
-  await esperar(() => /Próxima mensagem/.test(textoCartao(p)), { motivo: 'coach completo' });
-  const t = textoCartao(p);
-  for (const x of ['Dominante', 'Respondeu só "quanto custa?".', 'Ainda falta levantar', '• Quem decide junto', '• Por que agora', 'Te passo já. Antes: você decide isso sozinho?']) {
-    assert.ok(t.includes(x), 'faltou no cartão: ' + x);
-  }
-  botao(p, 'Copiar').click();
-  await esperar(() => copiado !== null, { motivo: 'copiou' });
-  assert.equal(copiado, 'Te passo já. Antes: você decide isso sozinho?');
-  const funcionou = [...cartao(p).querySelectorAll('button')].filter((b) => b.textContent === 'Funcionou');
-  funcionou[funcionou.length - 1].click();
-  await esperar(() => srv.feedbacks.length === 1, { motivo: 'feedback da mensagem' });
-  assert.equal(srv.feedbacks[0].tipo, 'mensagem');
-  assert.equal(srv.feedbacks[0].contexto, 'Dominante');
-  p.fechar();
+  assert.equal(cartao(r), null);
+  r.fechar();
 });

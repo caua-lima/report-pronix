@@ -557,11 +557,11 @@ function conversaDoPedido(conversa, reserva = {}) {
 async function automacaoDoLead(r, conversa, usuario) {
   const saida = { automacao: true };
   try {
-    let marca = await leads.ler(conversa);
+    let marca = await leads.ler(conversa, usuario.id);
     const etapa = (r.ficha && r.ficha.negociacao && r.ficha.negociacao.etapa) || '';
     // Card na etapa "Qualificado": a etiqueta fica lembrada mesmo que depois ele mude de etapa (remarcou, sumiu).
-    if (crm.ehEtapaQualificado(etapa) && !(marca && (marca.qualificado || marca.manual))) {
-      marca = await leads.marcar(conversa, { qualificado: true, origem: 'rd', por: usuario.nome });
+    if (crm.ehEtapaQualificado(etapa) && !leads.qualificado(marca) && !(marca && marca.manual)) {
+      marca = await leads.marcar(conversa, { qualificado: true, origem: 'rd', por: usuario.nome, usuarioId: usuario.id });
     }
     saida.marca = leads.publica(marca);
   } catch (err) {
@@ -589,20 +589,22 @@ app.post('/api/crm/respondeu', auth, async (req, res) => {
   }
 });
 
-/** Etiqueta "Qualificado" (marcar/desmarcar à mão ou leitura automática) e o agendamento lido na conversa. */
+/**
+ * Etiqueta "Qualificado" (à mão, ou automática quando um report é gerado) e o agendamento lido na conversa.
+ * Agendamento NÃO qualifica ninguém: a etiqueta só vem da etapa do RD, de report gerado ou do usuário.
+ */
 app.post('/api/lead/marca', auth, async (req, res) => {
   try {
     if (semAutomacao(req, res)) return;
     const b = req.body || {};
     const conversa = conversaDoPedido({ telefone: b.telefone, nome: b.nome });
-    const campos = { por: req.usuario.nome };
+    const campos = { por: req.usuario.nome, usuarioId: req.usuario.id };
     if (typeof b.qualificado === 'boolean') Object.assign(campos, { qualificado: b.qualificado, manual: b.manual === true, origem: b.origem });
     if (b.limparAgenda === true) campos.limparAgenda = true;
     else if (b.agendadoPara !== undefined) {
       if (!leads.QUANDO_OK.test(String(b.agendadoPara))) return res.status(400).json({ erro: 'Data do agendamento inválida.' });
-      // Quem tem reunião marcada passou pela qualificação: a etiqueta entra junto (se ninguém a tirou à mão).
-      Object.assign(campos, { agendadoPara: b.agendadoPara, fonteTs: b.fonteTs });
-      if (campos.qualificado === undefined) Object.assign(campos, { qualificado: true, origem: 'agenda' });
+      // "regra" = versão da leitura de agendamento da extensão: leitura de uma regra antiga é ignorada.
+      Object.assign(campos, { agendadoPara: b.agendadoPara, fonteTs: b.fonteTs, regra: b.regra });
     }
     const marca = await leads.marcar(conversa, campos);
     if (!marca) return res.status(400).json({ erro: 'Conversa sem telefone nem nome.' });

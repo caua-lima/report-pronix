@@ -16,11 +16,15 @@
   const RE_MES = Object.keys(MESES).sort((a, b) => b.length - a.length).join('|');
   const SEMANA = { domingo: 0, segunda: 1, terca: 2, quarta: 3, quinta: 4, sexta: 5, sabado: 6 };
 
-  // A mensagem fala de um compromisso marcado (e não de "2 horas por dia" ou "te chamo às 15h")?
+  // Versão da regra de leitura: o servidor só aceita agendamento lido por esta regra (o que uma regra
+  // antiga anotou deixa de valer). Sobe quando a regra mudar.
+  const REGRA = 2;
+
+  // A mensagem CONFIRMA um compromisso ("agendado", "remarquei", "ficou para")? Citar reunião, horário,
+  // especialista ou diagnóstico não basta: "vi que você se inscreveu hoje às 14h no diagnóstico" e
+  // "posso agendar para amanhã às 15h?" não são agendamento feito.
   const RE_COMPROMISSO =
-    /\b(?:re)?agend\w*|\bremar(?:c|qu)\w*|\bmarcad\w*|\bmarcamos\b|\bmarquei\b|\bmarcar\b|\breuniao\b|\bcall\b|\bchamada\b|\bvideochamada\b|\bconfirmad\w*|\bconfirmo\b|\bconfirmamos\b|\bcombinad\w*|\bdiagnostico\b|\bconsultoria\b|\bsessao\b|\bespecialista\b|\bconsultor\b|\bmeet\b|\bzoom\b|\bencontro\b|\bhorario\b|\bfic(?:a|ou|amos|aria)\s+(?:para|pra|pro)\b/;
-  // "Agendado!", "Confirmado então": fecha o que foi combinado nas mensagens anteriores.
-  const RE_CONFIRMA = /\b(?:re)?agendad\w*|\b(?:re)?marcad\w*|\bconfirmad\w*|\bcombinad\w*|\breservad\w*|\bfechado\b/;
+    /\b(?:re)?agendad\w*|\b(?:re)?agendei\b|\b(?:re)?agendamos\b|\bremarcad\w*|\bremarquei\b|\bremarcamos\b|\bmarcad\w*|\bmarquei\b|\bmarcamos\b|\bconfirmad\w*|\bconfirmei\b|\bconfirmo\b|\bconfirmamos\b|\bcombinad\w*|\breservad\w*|\breservei\b|\bfechado\b|\bfic(?:a|ou|amos)\s+(?:para|pra|pro)\b/;
 
   // "15h", "15h30", "15 horas", "15:30", "às 15", "3 da tarde" e "meio-dia".
   const RE_HORA =
@@ -141,8 +145,9 @@
     lista.reduce((a, b) => (!a || b.peso > a.peso || (b.peso === a.peso && Math.abs(b.pos - pos) < Math.abs(a.pos - pos)) ? b : a), null);
 
   /**
-   * Agendamento escrito num texto: o horário de uma frase com o dia mais explícito (da mesma frase, de
-   * preferência). Afirmação vale mais que pergunta; oferta de opções ("15h ou 17h") não é agendamento.
+   * Agendamento escrito num texto que CONFIRMA o compromisso: o horário de uma frase com o dia mais
+   * explícito (da mesma frase, de preferência). Afirmação vale mais que pergunta; oferta de opções
+   * ("15h ou 17h") não é agendamento.
    * @param {string} texto  @param {Date} base data da mensagem (para "amanhã", "quinta")
    * @returns {string} 'AAAA-MM-DDTHH:mm' no horário local, ou ''
    */
@@ -227,7 +232,7 @@
       if (!m || m.from !== 'eu' || typeof m.content !== 'string' || !m.content || m.content.startsWith('[áudio')) continue;
       const quando =
         lerAgendamento(m.content, ts[i] === null ? ref : new Date(ts[i])) ||
-        (RE_CONFIRMA.test(semAcento(m.content)) ? porEscolhaDoLead(lista, ts, i, ref) : '');
+        (RE_COMPROMISSO.test(semAcento(m.content)) ? porEscolhaDoLead(lista, ts, i, ref) : '');
       if (quando) return { quando, fonteTs: ts[i] === null ? 0 : ts[i] };
     }
     return null;
@@ -258,7 +263,7 @@
     return { texto: `${dia} às ${m[4]}:${m[5]}`, passou: d.getTime() < ref.getTime() };
   }
 
-  const api = { lerAgendamento, detectarAgendamento, leadRespondeu, descrever };
+  const api = { lerAgendamento, detectarAgendamento, leadRespondeu, descrever, REGRA };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else raiz.__crAgenda = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

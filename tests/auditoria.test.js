@@ -269,12 +269,12 @@ test('automação: o service worker manda só a etiqueta e a data do agendamento
   const marca = { qualificado: true, agendadoPara: '2026-10-08T15:00', agendaFonteTs: 5 };
   const { chamadas, enviar } = carregarBackground({ chave: 'k' }, { corpo: { ok: true, marca } });
   const r = await enviar({
-    action: 'leadMarca', telefone: '5571999998888', nome: 'Marcos', agendadoPara: '2026-10-08T15:00', fonteTs: 5,
+    action: 'leadMarca', telefone: '5571999998888', nome: 'Marcos', agendadoPara: '2026-10-08T15:00', fonteTs: 5, regra: 2,
     mensagens: [{ content: 'texto da conversa' }], server: 'https://evil.example',
   });
   assert.deepEqual(JSON.parse(JSON.stringify(r)), { ok: true, marca });
   assert.equal(chamadas[0].url, 'https://report-closer.vercel.app/api/lead/marca');
-  assert.deepEqual(JSON.parse(chamadas[0].opts.body), { telefone: '5571999998888', nome: 'Marcos', agendadoPara: '2026-10-08T15:00', fonteTs: 5 });
+  assert.deepEqual(JSON.parse(chamadas[0].opts.body), { telefone: '5571999998888', nome: 'Marcos', agendadoPara: '2026-10-08T15:00', fonteTs: 5, regra: 2 });
 
   await enviar({ action: 'leadMarca', telefone: '5571999998888', qualificado: false, manual: true });
   assert.deepEqual(JSON.parse(chamadas[1].opts.body), { telefone: '5571999998888', nome: '', qualificado: false, manual: true, origem: '' });

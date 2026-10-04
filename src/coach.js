@@ -1,8 +1,8 @@
 'use strict';
 
-// Coach da conversa (botão no cartão do WhatsApp): perfil do lead, como abordar, o que falta
-// qualificar (BANT/SPIN), objeções com resposta sugerida, perguntas de aprofundamento e a próxima
-// mensagem. Roda no Groq (plano gratuito: custo zero).
+// Coach da conversa (popup no WhatsApp que acompanha a conversa): a dica do momento, perfil do lead,
+// como abordar, o que falta qualificar (BANT/SPIN), objeções com resposta sugerida, perguntas de
+// aprofundamento e a próxima mensagem. Roda no Groq (plano gratuito: custo zero).
 //
 // "Aprende" sem treinar modelo: o SDR marca "funcionou" nas sugestões que deram certo; elas ficam
 // guardadas e entram como exemplos no prompt das próximas conversas (e as marcadas "não ajudou"
@@ -17,7 +17,7 @@ const { neutralizarMarcas } = require('./citacoes');
 const { montarHistoricoFormatado, extrairJson } = require('./report');
 const { PERFIS, chaveDoPerfil, infoDoPerfil, reguaParaPrompt } = require('./perfil');
 
-const VERSAO = 'c3'; // sobe quando o prompt mudar (invalida o cache)
+const VERSAO = 'c4'; // sobe quando o prompt mudar (invalida o cache)
 const CHAVE_FEEDBACK = 'coach_feedback';
 const LIMITE_FEEDBACK = 600;
 const TIPOS_FEEDBACK = ['objecao', 'pergunta', 'abordagem', 'mensagem'];
@@ -50,8 +50,12 @@ O QUE FALTA QUALIFICAR ("falta_levantar") — compare a conversa com a régua: N
 
 "proxima_mensagem": UMA mensagem pronta para o vendedor enviar agora, no tom dele e do perfil do lead, que faça a conversa avançar (normalmente termina com uma das perguntas).
 
+"agora": a dica do momento, em UMA frase curta: o que a ÚLTIMA fala do lead revela e o que fazer em seguida ("Ele disse que começa do zero: confirme a reserva para o estoque antes de falar do método."). Se a última fala for do vendedor, diga como retomar.
+
+"[áudio]" na conversa é um áudio que ainda não foi transcrito: não suponha o que foi dito. Se a última fala do lead for "[áudio]", diga em "agora" que é preciso ouvir o áudio (ou ler a conversa inteira) antes de responder.
+
 Responda SOMENTE com um JSON, sem texto fora dele, neste formato:
-{"perfil":{"tipo":"dominante|analitico|cetico|relacional|cauteloso|entusiasta","evidencia":"..."},"como_abordar":"...","falta_levantar":["..."],"objecoes":[{"objecao":"...","resposta":"..."}],"perguntas":["...","...","..."],"proxima_mensagem":"..."}`;
+{"perfil":{"tipo":"dominante|analitico|cetico|relacional|cauteloso|entusiasta","evidencia":"..."},"agora":"...","como_abordar":"...","falta_levantar":["..."],"objecoes":[{"objecao":"...","resposta":"..."}],"perguntas":["...","...","..."],"proxima_mensagem":"..."}`;
 
 /** Exemplos aprendidos: o que o SDR marcou como "funcionou" (usar) e "não ajudou" (evitar). */
 async function aprendizado() {
@@ -155,6 +159,7 @@ async function gerarCoach({ mensagens, nome }) {
       chave: tipo || '',
       evidencia: texto(j.perfil && j.perfil.evidencia, 300),
     },
+    agora: texto(j.agora, 300), // a dica do momento: é o que o popup mostra em destaque
     comoAbordar: texto(j.como_abordar, 400),
     faltaLevantar: lista(j.falta_levantar, 160, 5),
     objecoes: (Array.isArray(j.objecoes) ? j.objecoes : [])

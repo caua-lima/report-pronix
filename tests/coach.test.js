@@ -22,6 +22,7 @@ const chamadas = [];
 let status429 = false;
 const RESPOSTA = {
   perfil: { tipo: 'Analítico', evidencia: 'Pediu números e prova de resultado.' },
+  agora: 'Ele pediu prova: mande um resultado de cliente antes de falar de valor.',
   como_abordar: 'Seja objetivo e traga dados concretos antes de falar de preço.',
   objecoes: [
     { objecao: 'Achou o investimento alto', resposta: 'Entendo. Posso te mostrar quanto os clientes recuperam nos primeiros meses?' },
@@ -88,6 +89,7 @@ test('coach: perfil, como abordar, objeções (só as completas) e no máximo 3 
   assert.deepEqual(c.perfil, { tipo: 'Analítico', chave: 'analitico', evidencia: 'Pediu números e prova de resultado.' });
   assert.deepEqual(c.faltaLevantar, ['Quem decide junto e se participa da reunião', 'Por que agora (prazo)']);
   assert.match(c.proximaMensagem, /você decide isso sozinho/);
+  assert.equal(c.agora, 'Ele pediu prova: mande um resultado de cliente antes de falar de valor.', 'a dica do momento (destaque do popup)');
   assert.match(c.comoAbordar, /dados concretos/);
   assert.equal(c.objecoes.length, 1, 'objeção sem texto é descartada');
   assert.equal(c.perguntas.length, 3);
@@ -97,6 +99,7 @@ test('coach: perfil, como abordar, objeções (só as completas) e no máximo 3 
   assert.match(sistema0, /"dominante" \(Dominante\)/);
   assert.match(sistema0, /"cetico" \(Cético\)/);
   assert.match(sistema0, /O QUE FALTA QUALIFICAR/);
+  assert.match(sistema0, /"agora": a dica do momento[\s\S]*"\[áudio\]" na conversa é um áudio que ainda não foi transcrito: não suponha/);
   assert.match(sistema0, /DISPONÍVEL hoje[\s\S]*cartão e limite[\s\S]*já fez curso ou mentoria antes[\s\S]*outra empresa/);
   assert.match(sistema0, /RÉGUA DE QUALIFICAÇÃO DA CASA/, 'o coach conhece a régua SPIN/BANT da base');
   const tamanho = sistema0.length + req.messages[1].content.length;

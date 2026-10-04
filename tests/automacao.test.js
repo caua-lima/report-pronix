@@ -140,7 +140,7 @@ const tel = (final) => '55119' + final;
 const ficha = (final, chave = E.master) => post('/api/crm/lead', { telefone: tel(final) }, chave);
 const mover = (final, extra = {}, chave = E.master) => post('/api/crm/respondeu', { telefone: tel(final), ...extra }, chave);
 const marca = (corpo, chave = E.master) => post('/api/lead/marca', corpo, chave);
-const SEM_MARCA = { qualificado: false, agendadoPara: '', agendaFonteTs: -1 };
+const SEM_MARCA = { qualificado: false, origem: '', agendadoPara: '', agendaFonteTs: -1 };
 
 // ---------------------------------------------------------------- quem tem a automação
 test('a automação começa só com o master; ele liga e desliga para os outros na aba Acessos', async () => {
@@ -241,7 +241,7 @@ test('CRM_MOVER_ETAPA=0 desliga a escrita no RD sem desligar as etiquetas', asyn
 
 // ---------------------------------------------------------------- etiqueta "Qualificado"
 test('card em "Qualificado": a etiqueta entra sozinha e fica lembrada depois que o card muda de etapa', async () => {
-  assert.equal((await ficha('11110002')).json.marca.qualificado, true);
+  assert.deepEqual((await ficha('11110002')).json.marca, { ...SEM_MARCA, qualificado: true, origem: 'rd' });
   // o lead sumiu e o card foi para "Ultima tentativa"; passado o cache, a etiqueta continua
   etapaDoCard.d2 = 's5';
   await db.cacheDel('crm:tel:11110002');
@@ -250,52 +250,107 @@ test('card em "Qualificado": a etiqueta entra sozinha e fica lembrada depois que
   assert.equal(f.json.marca.qualificado, true);
 });
 
+test('lead que só respondeu NÃO é qualificado: a etiqueta só vem da etapa do RD, de report gerado ou da mão do usuário', async () => {
+  // card movido para "Respondeu" (o lead respondeu a primeira pergunta): sem etiqueta
+  assert.equal((await ficha('11110001')).json.ficha.negociacao.etapa, 'Respondeu');
+  assert.deepEqual((await ficha('11110001')).json.marca, SEM_MARCA);
+  // agendamento lido na conversa também não qualifica ninguém
+  const comAgenda = await marca({ telefone: tel('11110001'), agendadoPara: '2026-10-08T15:00', fonteTs: 1000, regra: 2 });
+  assert.deepEqual(comAgenda.json.marca, { qualificado: false, origem: '', agendadoPara: '2026-10-08T15:00', agendaFonteTs: 1000 });
+  // origem automática desconhecida (ou a antiga "agenda") é ignorada
+  assert.equal((await marca({ telefone: tel('11110001'), qualificado: true, origem: 'agenda' })).json.marca.qualificado, false);
+  assert.equal((await marca({ telefone: tel('11110001'), qualificado: true })).json.marca.qualificado, false);
+  // report gerado: aí sim
+  assert.deepEqual((await marca({ telefone: tel('11110007'), qualificado: true, origem: 'report' })).json.marca, { ...SEM_MARCA, qualificado: true, origem: 'report' });
+});
+
 test('marcar e tirar à mão: a escolha do usuário vale sobre qualquer leitura automática', async () => {
-  const conversa = { telefone: tel('11110001') };
-  assert.deepEqual((await marca({ ...conversa, qualificado: true, manual: true })).json, { ok: true, marca: { ...SEM_MARCA, qualificado: true } });
-  assert.equal((await ficha('11110001')).json.marca.qualificado, true, 'aparece ao reabrir a conversa');
-  assert.equal((await marca({ ...conversa, qualificado: false, manual: true })).json.marca.qualificado, false);
-  // leitura automática (report gerado, agendamento) não recoloca o que o usuário tirou
+  const conversa = { telefone: tel('11110004') };
+  assert.deepEqual((await marca({ ...conversa, qualificado: true, manual: true })).json, { ok: true, marca: { ...SEM_MARCA, qualificado: true, origem: 'manual' } });
+  assert.equal((await ficha('11110004')).json.marca.qualificado, true, 'aparece ao reabrir a conversa');
+  assert.deepEqual((await marca({ ...conversa, qualificado: false, manual: true })).json.marca, SEM_MARCA);
+  // leitura automática (report gerado, etapa do RD) não recoloca o que o usuário tirou
   assert.equal((await marca({ ...conversa, qualificado: true, origem: 'report' })).json.marca.qualificado, false);
-  assert.equal((await marca({ ...conversa, agendadoPara: '2026-10-08T15:00', fonteTs: 1000 })).json.marca.qualificado, false);
-  // e, para quem nunca foi mexido à mão, report gerado marca
-  assert.equal((await marca({ telefone: tel('11110007'), qualificado: true, origem: 'report' })).json.marca.qualificado, true);
-  assert.equal((await marca({ telefone: '', nome: '' , qualificado: true, manual: true })).status, 400, 'sem telefone nem nome');
+  const b = { telefone: tel('11110002') }; // card que esteve em "Qualificado"
+  assert.equal((await marca({ ...b, qualificado: false, manual: true })).json.marca.qualificado, false);
+  etapaDoCard.d2 = 's4';
+  await db.cacheDel('crm:tel:11110002');
+  assert.equal((await ficha('11110002')).json.marca.qualificado, false, 'o usuário tirou: a etapa do RD não recoloca');
+  assert.equal((await marca({ telefone: '', nome: '', qualificado: true, manual: true })).status, 400, 'sem telefone nem nome');
 });
 
 // ---------------------------------------------------------------- agendamento
 test('agendamento: guarda o dia e a hora, só troca por mensagem mais nova, e apagar não volta', async () => {
   const conversa = { telefone: tel('11110003') };
-  const r = await marca({ ...conversa, agendadoPara: '2026-10-08T15:00', fonteTs: 5000 });
-  assert.deepEqual(r.json.marca, { qualificado: true, agendadoPara: '2026-10-08T15:00', agendaFonteTs: 5000 }, 'quem tem reunião marcada é qualificado');
+  const r = await marca({ ...conversa, agendadoPara: '2026-10-08T15:00', fonteTs: 5000, regra: 2 });
+  assert.deepEqual(r.json.marca, { qualificado: false, origem: '', agendadoPara: '2026-10-08T15:00', agendaFonteTs: 5000 });
   assert.deepEqual((await ficha('11110003')).json.marca, r.json.marca);
 
   // mensagem mais antiga (ou a mesma) não sobrescreve; a remarcação (mais nova) sim
-  assert.equal((await marca({ ...conversa, agendadoPara: '2026-10-01T10:00', fonteTs: 4000 })).json.marca.agendadoPara, '2026-10-08T15:00');
-  assert.equal((await marca({ ...conversa, agendadoPara: '2026-10-01T10:00', fonteTs: 5000 })).json.marca.agendadoPara, '2026-10-08T15:00');
-  assert.equal((await marca({ ...conversa, agendadoPara: '2026-10-12T10:00', fonteTs: 9000 })).json.marca.agendadoPara, '2026-10-12T10:00');
+  assert.equal((await marca({ ...conversa, agendadoPara: '2026-10-01T10:00', fonteTs: 4000, regra: 2 })).json.marca.agendadoPara, '2026-10-08T15:00');
+  assert.equal((await marca({ ...conversa, agendadoPara: '2026-10-01T10:00', fonteTs: 5000, regra: 2 })).json.marca.agendadoPara, '2026-10-08T15:00');
+  assert.equal((await marca({ ...conversa, agendadoPara: '2026-10-12T10:00', fonteTs: 9000, regra: 2 })).json.marca.agendadoPara, '2026-10-12T10:00');
 
   // apagar: some, e a mesma mensagem não traz de volta — só uma mais nova
-  assert.deepEqual((await marca({ ...conversa, limparAgenda: true })).json.marca, { qualificado: true, agendadoPara: '', agendaFonteTs: 9000 });
-  assert.equal((await marca({ ...conversa, agendadoPara: '2026-10-12T10:00', fonteTs: 9000 })).json.marca.agendadoPara, '');
-  assert.equal((await marca({ ...conversa, agendadoPara: '2026-10-20T09:30', fonteTs: 9500 })).json.marca.agendadoPara, '2026-10-20T09:30');
+  assert.deepEqual((await marca({ ...conversa, limparAgenda: true })).json.marca, { qualificado: false, origem: '', agendadoPara: '', agendaFonteTs: 9000 });
+  assert.equal((await marca({ ...conversa, agendadoPara: '2026-10-12T10:00', fonteTs: 9000, regra: 2 })).json.marca.agendadoPara, '');
+  assert.equal((await marca({ ...conversa, agendadoPara: '2026-10-20T09:30', fonteTs: 9500, regra: 2 })).json.marca.agendadoPara, '2026-10-20T09:30');
 
   for (const ruim of ['amanhã às 15h', '2026-10-08', '2026-10-08T15:00:00Z', 123]) {
-    assert.equal((await marca({ ...conversa, agendadoPara: ruim, fonteTs: 99999 })).status, 400, 'data inválida: ' + ruim);
+    assert.equal((await marca({ ...conversa, agendadoPara: ruim, fonteTs: 99999, regra: 2 })).status, 400, 'data inválida: ' + ruim);
   }
 });
 
-test('a marca é da conversa do WhatsApp: contato salvo só com nome acha a marca; com telefone, vale o telefone', async () => {
-  await marca({ nome: 'João PRONIX Souza', qualificado: true, manual: true });
-  assert.equal((await leads.ler({ nome: 'joão pronix souza' })).qualificado, true, 'nome sem diferença de maiúscula/acento');
-  assert.equal(await leads.ler({ nome: 'Outro Nome' }), null);
-  // depois o número ficou conhecido: a consulta manda telefone e nome e continua achando pelo nome
-  const r = await post('/api/crm/lead', { telefone: tel('11110099'), conversa: { telefone: tel('11110099'), nome: 'João PRONIX Souza' } }, E.master);
-  assert.equal(r.json.marca.qualificado, true);
+test('extensão antiga (regra de leitura antiga) não anota agendamento, e o que ela anotou antes deixa de valer', async () => {
+  const conversa = { telefone: tel('11110005') };
+  // sem "regra" (extensão 1.11.0, que lia qualquer menção a horário): ignorado
+  assert.deepEqual((await marca({ ...conversa, agendadoPara: '2026-10-08T15:00', fonteTs: 7000 })).json.marca, SEM_MARCA);
+  assert.deepEqual((await marca({ ...conversa, agendadoPara: '2026-10-08T15:00', fonteTs: 7000, regra: 1 })).json.marca, SEM_MARCA);
+
+  // marca gravada pela versão anterior: "qualificado" por agendamento e agendamento sem versão de regra
+  const mapa = await db.getJson('lead_marcas', {});
+  mapa['tel:11110006'] = { qualificado: true, origem: 'agenda', agendadoPara: '2026-10-03T08:00', agendaFonteTs: 8000, atualizadoEm: '2026-10-03T12:00:00.000Z' };
+  await db.setJson('lead_marcas', mapa);
+  assert.deepEqual((await ficha('11110006')).json.marca, SEM_MARCA, 'nem a etiqueta nem o agendamento antigos aparecem');
+  // e a regra nova pode ler a mesma mensagem de novo (o horário guardado pela antiga não bloqueia)
+  const novo = await marca({ telefone: tel('11110006'), agendadoPara: '2026-10-09T10:00', fonteTs: 8000, regra: 2 });
+  assert.deepEqual(novo.json.marca, { qualificado: false, origem: '', agendadoPara: '2026-10-09T10:00', agendaFonteTs: 8000 });
+  // se depois o lead for qualificado de verdade, a etiqueta entra normalmente
+  assert.equal((await marca({ telefone: tel('11110006'), qualificado: true, origem: 'report' })).json.marca.qualificado, true);
+});
+
+test('a marca segue a conversa: aberta só com o nome ou com nome e telefone (link do RD), acha a mesma etiqueta', async () => {
+  const nome = 'João PRONIX Souza';
+  const numero = tel('11110098');
+  // marcada com a conversa aberta só pelo nome (contato salvo, aberto pela lista do WhatsApp)
+  await marca({ nome, qualificado: true, manual: true });
+  // depois aberta pelo link do RD (nome + telefone): acha pelo nome
+  const pelaFicha = await post('/api/crm/lead', { telefone: numero, conversa: { telefone: numero, nome } }, E.master);
+  assert.equal(pelaFicha.json.marca.qualificado, true);
+  // mexida com o telefone conhecido: vale para as duas formas de abrir
+  assert.equal((await marca({ telefone: numero, nome, qualificado: false, manual: true })).json.marca.qualificado, false);
+  assert.equal((await post('/api/crm/lead', { nome, conversa: { telefone: '', nome } }, E.master)).json.marca.qualificado, false, 'só com o nome: a mais recente');
+  assert.equal((await marca({ telefone: numero, qualificado: true, manual: true })).json.marca.qualificado, true);
+  assert.equal((await post('/api/crm/lead', { telefone: numero, conversa: { telefone: numero, nome: '' } }, E.master)).json.marca.qualificado, true);
+});
+
+test('chave por nome é de cada usuário (o nome salvo é da agenda de cada um); por telefone é do lead', async () => {
+  const k = leads.chaves({ telefone: '5511911110001', nome: 'Ana Souza' }, 'u1');
+  assert.deepEqual(k, { tel: 'tel:11110001', nome: 'nome:u1:ana souza', nomeAntigo: 'nome:ana souza' });
   // número que apareceu como "nome" (contato não salvo) não vira chave por nome
-  assert.deepEqual(leads.chaves({ telefone: '', nome: '+55 11 91111-0001' }), { tel: '', nome: '' });
-  assert.deepEqual(leads.chaves({ telefone: '5511911110001', nome: 'Ana' }), { tel: 'tel:11110001', nome: 'nome:ana' });
+  assert.deepEqual(leads.chaves({ telefone: '', nome: '+55 11 91111-0001' }, 'u1'), { tel: '', nome: '', nomeAntigo: '' });
+
+  await leads.marcar({ nome: 'Carlos Lima' }, { qualificado: true, manual: true, usuarioId: 'u1' });
+  assert.equal(leads.qualificado(await leads.ler({ nome: 'carlos  LIMA' }, 'u1')), true, 'sem diferença de maiúscula, acento ou espaço');
+  assert.equal(await leads.ler({ nome: 'Carlos Lima' }, 'u2'), null, 'o "Carlos Lima" da agenda de outro usuário é outra pessoa');
+  assert.equal(await leads.ler({ nome: 'Outro Nome' }, 'u1'), null);
+
+  // marca gravada antes de a chave por nome ser por usuário continua sendo achada
+  const mapa = await db.getJson('lead_marcas', {});
+  mapa['nome:maria antiga'] = { qualificado: true, origem: 'manual', manual: true, atualizadoEm: '2026-10-03T12:00:00.000Z' };
+  await db.setJson('lead_marcas', mapa);
+  assert.equal(leads.qualificado(await leads.ler({ nome: 'Maria Antiga' }, 'u1')), true);
+
   // nada de conversa guardado: só a etiqueta e a data
-  const guardado = JSON.stringify(await db.getJson('lead_marcas', {}));
-  assert.ok(!/content|mensag/i.test(guardado));
+  assert.ok(!/content|mensag/i.test(JSON.stringify(await db.getJson('lead_marcas', {}))));
 });

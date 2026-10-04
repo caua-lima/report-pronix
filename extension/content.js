@@ -710,6 +710,8 @@
           if (resp && resp.ok && resp.texto && resp.texto.trim()) {
             // quem enviou já veio do DOM (aria-label "Você:"), não sobrescreve.
             reg.content = resp.texto.trim();
+            if (audiosLidos.size > 3000) audiosLidos.clear();
+            audiosLidos.set(chave, reg.content); // as dicas do coach usam sem transcrever de novo
           } else if (resp && resp.erro) {
             logA('transcrição falhou:', resp.erro);
           }
@@ -1100,7 +1102,7 @@
   function telefoneDoPainelDoContato() {
     const achados = new Map(); // 8 últimos dígitos -> número completo
     for (const s of document.querySelectorAll('span[dir="auto"], span.selectable-text, span[title], div[title]')) {
-      if (s.closest('#pane-side, #main, #' + FICHA_ID + ', #closer-report-badge, [contenteditable="true"]')) continue;
+      if (s.closest('#pane-side, #main, #' + FICHA_ID + ', #cr-coach, #closer-report-badge, [contenteditable="true"]')) continue;
       const t = (s.getAttribute('title') || s.textContent || '').trim();
       if (!/^\+\d{1,3}[\d\s().-]{8,20}$/.test(t)) continue;
       const d = t.replace(/\D/g, '');
@@ -1121,6 +1123,7 @@
   const resumos = new Map();
   const coaches = new Map(); // coach da conversa, por conversa (só na memória desta aba)
   const marcados = new Set(); // sugestões já marcadas "funcionou"/"não ajudou" nesta aba
+  const audiosLidos = new Map(); // data-id da mensagem -> transcrição feita numa leitura completa (só nesta aba)
 
   /** Telefone da conversa aberta: o cabeçalho (contato não salvo mostra o número) ou o id do chat no data-id. */
   function telefoneDaConversa() {
@@ -1244,36 +1247,151 @@
     }
   }
 
-  /** Coach: lê a conversa (e os áudios, no mudo) e pede perfil, abordagem, objeções e perguntas. */
-  async function pedirCoach() {
+  // ---------------------------------------------------------------------------
+  // Coach da conversa: um popup próprio que ACOMPANHA a conversa. A cada mensagem nova do lead ele lê
+  // as mensagens que já estão na tela (sem rolar a conversa nem tocar áudio) e atualiza a dica de como
+  // seguir. "Ler conversa inteira" faz a leitura completa, com os áudios transcritos — e as transcrições
+  // ficam lembradas nesta aba para as próximas dicas. Só para quem o master liberou o Coach.
+  // ---------------------------------------------------------------------------
+  const COACH_ID = 'cr-coach';
+  // O vigia roda a cada 1,5s; os tempos abaixo são contados em tiques dele.
+  const COACH_ESPERA = 2; // ~3s sem mudança antes de pedir: o lead costuma mandar várias mensagens seguidas
+  const COACH_INTERVALO = 14; // ~20s entre pedidos automáticos: o plano gratuito da IA tem limite por minuto
+  const COACH_PAUSA_ERRO = 40; // ~1min sem insistir depois de um erro (limite atingido, servidor fora)
+  const coachUi = {
+    acompanhar: true, minimizado: false, detalhes: false, pos: null, fechadoPara: null,
+    tique: 0, vista: '', vistaNoTique: 0, atendida: '', pedidoNoTique: -1000, pausaAte: 0, emCurso: false,
+  };
+
+  const mensagensNaTela = () => acharMensagens(document.querySelector('#main') || document);
+  /** Identifica o estado da conversa na tela: muda quando chega (ou sai) mensagem. */
+  const assinaturaDaTela = (els) => {
+    const ultimo = els.length ? els[els.length - 1] : null;
+    return [ficha.chave, els.length, ultimo ? ultimo.getAttribute('data-id') || (ultimo.textContent || '').length : ''].join('|');
+  };
+  const audiosDoLeadSemLer = (mensagens) =>
+    mensagens.filter((m) => m.from !== 'eu' && m.type === 'audio' && String(m.content || '').startsWith('[áudio')).length;
+
+  /** Pede a dica com o que já está na tela (leitura leve: não rola a conversa nem toca áudio). */
+  function pedirDica() {
     const chave = ficha.chave;
-    if (!chave) return;
-    if (jobEmAndamento) {
-      coaches.set(chave, { tipo: 'erro', erro: 'Espere o report ou o resumo terminarem.' });
-      return redesenharFicha();
+    if (!chave || coachUi.emCurso || jobEmAndamento) return;
+    const els = mensagensNaTela();
+    const assinatura = assinaturaDaTela(els);
+    const mensagens = mensagensVisiveis(els).filter((m) => m.content);
+    const anterior = coaches.get(chave);
+    const tinha = anterior && anterior.tipo === 'ok' ? anterior : null;
+    if (!mensagens.length) {
+      if (!tinha) coaches.set(chave, { tipo: 'erro', erro: 'Ainda não há mensagens nesta conversa para analisar.' });
+      return renderCoach();
     }
+    const nome = nomeDoContato();
+    coachUi.emCurso = true;
+    coachUi.pedidoNoTique = coachUi.tique;
+    coachUi.atendida = assinatura;
+    coaches.set(chave, tinha ? { ...tinha, atualizando: true, erro: '' } : { tipo: 'carregando' });
+    renderCoach();
+    const fim = (r) => {
+      coachUi.emCurso = false;
+      if (r && r.ok && r.coach) {
+        coaches.set(chave, { tipo: 'ok', dados: r.coach, contexto: nome || '', assinatura, quando: Date.now(), audiosSemLer: audiosDoLeadSemLer(mensagens) });
+      } else {
+        const erro = (r && r.erro) || 'Não consegui gerar a dica.';
+        coachUi.pausaAte = coachUi.tique + COACH_PAUSA_ERRO;
+        coaches.set(chave, tinha ? { ...tinha, atualizando: false, erro } : { tipo: 'erro', erro });
+      }
+      if (ficha.chave === chave) renderCoach();
+    };
+    try {
+      chrome.runtime.sendMessage(
+        {
+          action: 'coach',
+          mensagens: mensagens.map(({ from, type, content, timestamp }) => ({ from, type: type === 'audio' ? 'audio' : 'texto', content, timestamp })),
+          nome,
+        },
+        (r) => fim(chrome.runtime.lastError ? null : r)
+      );
+    } catch (_) {
+      fim({ ok: false, erro: 'A extensão foi atualizada: recarregue a página (F5).' });
+    }
+  }
+
+  /** Leitura completa: rola a conversa e transcreve os áudios (no mudo), como no report. */
+  async function lerConversaInteira() {
+    const chave = ficha.chave;
+    if (!chave || coachUi.emCurso) return;
+    const anterior = coaches.get(chave);
+    const tinha = anterior && anterior.tipo === 'ok' ? anterior : null;
+    const falhou = (erro) => coaches.set(chave, tinha ? { ...tinha, atualizando: false, erro } : { tipo: 'erro', erro });
+    if (jobEmAndamento) {
+      falhou('Espere o report ou o resumo terminarem.');
+      return renderCoach();
+    }
+    coachUi.emCurso = true;
     jobEmAndamento = true;
     capturaAtiva = true;
-    coaches.set(chave, { tipo: 'carregando' });
-    redesenharFicha();
-    const badgeAntes = !!document.getElementById(BADGE_ID);
     try {
-      const conversa = ficha.conversa;
-      const { mensagens, nome } = await coletarConversa('ficha', true);
-      anotarAgendamento(mensagens, conversa);
-      const r = await new Promise((res) => chrome.runtime.sendMessage({ action: 'coach', mensagens, nome }, res));
-      if (!r || !r.ok) throw new Error((r && r.erro) || 'Não consegui gerar o coach.');
-      coaches.set(chave, { tipo: 'ok', dados: r.coach, contexto: nome || '' });
+      coaches.set(chave, { tipo: 'lendo' });
+      renderCoach();
+      const badgeAntes = !!document.getElementById(BADGE_ID);
+      try {
+        const conversa = ficha.conversa;
+        const { mensagens, nome } = await coletarConversa('ficha', true);
+        anotarAgendamento(mensagens, conversa);
+        const r = await new Promise((res) => chrome.runtime.sendMessage({ action: 'coach', mensagens, nome }, res));
+        if (!r || !r.ok) throw new Error((r && r.erro) || 'Não consegui gerar a dica.');
+        // O que está na tela agora já foi analisado: o acompanhamento só pede de novo quando chegar mensagem nova.
+        const assinatura = assinaturaDaTela(mensagensNaTela());
+        Object.assign(coachUi, { vista: assinatura, atendida: assinatura, vistaNoTique: coachUi.tique, pedidoNoTique: coachUi.tique });
+        coaches.set(chave, { tipo: 'ok', dados: r.coach, contexto: nome || '', assinatura, quando: Date.now(), audiosSemLer: audiosDoLeadSemLer(mensagens) });
+      } finally {
+        // A leitura usa o aviso do report para o andamento ("Transcrevendo áudios…"): tira ao terminar.
+        const b = document.getElementById(BADGE_ID);
+        if (b && !badgeAntes) b.remove();
+      }
     } catch (e) {
-      coaches.set(chave, { tipo: 'erro', erro: e.message || 'Não consegui gerar o coach.' });
+      falhou(e.message || 'Não consegui gerar a dica.');
     } finally {
       jobEmAndamento = false;
       capturaAtiva = false;
       restaurarAudios();
-      const b = document.getElementById(BADGE_ID);
-      if (b && !badgeAntes) b.remove();
-      if (ficha.chave === chave) redesenharFicha();
+      coachUi.emCurso = false;
+      if (ficha.chave === chave) renderCoach();
     }
+  }
+
+  /** A cada tique do vigia: chegou mensagem e o lead falou por último? Então pede a dica (com calma). */
+  function acompanharCoach() {
+    coachUi.tique++;
+    if (!ficha.coach || !ficha.chave) return;
+    if (!document.getElementById(COACH_ID)) renderCoach();
+    else posicionarCoach();
+    if (!coachUi.acompanhar || coachUi.fechadoPara === ficha.chave || jobEmAndamento || coachUi.emCurso) return;
+    const els = mensagensNaTela();
+    if (!els.length) return;
+    const assinatura = assinaturaDaTela(els);
+    if (assinatura !== coachUi.vista) {
+      coachUi.vista = assinatura;
+      coachUi.vistaNoTique = coachUi.tique;
+      return;
+    }
+    if (assinatura === coachUi.atendida || coachUi.tique - coachUi.vistaNoTique < COACH_ESPERA) return;
+    const atual = coaches.get(ficha.chave);
+    if (atual && atual.tipo === 'ok' && atual.assinatura === assinatura) {
+      coachUi.atendida = assinatura; // voltou para uma conversa que já tem a dica deste ponto
+      return;
+    }
+    const mensagens = mensagensVisiveis(els);
+    const ultima = mensagens[mensagens.length - 1];
+    if (!ultima || ultima.from === 'eu') {
+      // Você falou por último: a dica só muda quando o lead responder.
+      coachUi.atendida = assinatura;
+      if (!atual) coaches.set(ficha.chave, { tipo: 'aguardando' });
+      else if (atual.tipo === 'ok') atual.aguardando = true;
+      return renderCoach();
+    }
+    if (coachUi.tique < coachUi.pausaAte || coachUi.tique - coachUi.pedidoNoTique < COACH_INTERVALO) return; // espera a vez
+    pedirDica();
   }
 
   function enviarFeedbackCoach(tipo, textoSugestao, contexto, util, botaoEl) {
@@ -1291,63 +1409,183 @@
     }
   }
 
-  function blocoCoach() {
+  function posicionarCoach() {
+    const el = document.getElementById(COACH_ID);
+    if (!el) return;
+    if (coachUi.pos) {
+      // Onde o usuário deixou, sem sair da janela.
+      const dentro = (v, max) => Math.max(4, Math.min(Number(v) || 0, Math.max(4, max)));
+      el.style.left = dentro(coachUi.pos.left, window.innerWidth - 120) + 'px';
+      el.style.top = dentro(coachUi.pos.top, window.innerHeight - 60) + 'px';
+      return;
+    }
+    // Padrão: na borda esquerda da conversa — o lado oposto ao da ficha do RD.
+    const main = document.querySelector('#main');
+    const r = main && main.getBoundingClientRect();
+    if (!r || r.width < 320) {
+      el.style.left = '16px';
+      el.style.top = '70px';
+      return;
+    }
+    el.style.left = Math.max(8, Math.round(r.left + 16)) + 'px';
+    el.style.top = Math.max(8, Math.round(r.top + 70)) + 'px';
+    el.style.width = Math.min(300, Math.round(r.width - 40)) + 'px';
+  }
+
+  /** Arrastar pelo topo muda o popup de lugar (fica guardado); duplo clique devolve ao lugar padrão. */
+  function tornarArrastavel(el, alca) {
+    alca.style.cursor = 'move';
+    const guardar = () => {
+      try {
+        chrome.storage.local.set({ coachPos: coachUi.pos });
+      } catch (_) {
+        /* sem storage: vale só nesta aba */
+      }
+    };
+    alca.addEventListener('mousedown', (ev) => {
+      if (ev.button !== 0) return;
+      const r = el.getBoundingClientRect();
+      const dx = ev.clientX - r.left;
+      const dy = ev.clientY - r.top;
+      const mover = (e) => {
+        coachUi.pos = { left: Math.round(e.clientX - dx), top: Math.round(e.clientY - dy) };
+        posicionarCoach();
+      };
+      const soltar = () => {
+        document.removeEventListener('mousemove', mover);
+        document.removeEventListener('mouseup', soltar);
+        if (coachUi.pos) guardar();
+      };
+      document.addEventListener('mousemove', mover);
+      document.addEventListener('mouseup', soltar);
+      ev.preventDefault();
+    });
+    alca.addEventListener('dblclick', () => {
+      coachUi.pos = null;
+      guardar();
+      posicionarCoach();
+    });
+  }
+
+  function renderCoach() {
+    let el = document.getElementById(COACH_ID);
+    if (!ficha.ligada || !ficha.coach || !ficha.chave || coachUi.fechadoPara === ficha.chave || !document.querySelector('#main')) {
+      if (el) el.remove();
+      return;
+    }
+    if (!el) {
+      el = document.createElement('div');
+      el.id = COACH_ID;
+      // Fora do #main, como a ficha: a leitura da conversa nunca confunde o popup com mensagem.
+      el.style.cssText = [
+        'position:fixed', 'top:70px', 'left:16px', 'z-index:2147483645', 'width:300px',
+        'max-height:calc(100vh - 150px)', 'overflow:auto', 'background:#16212e', 'color:#e6edf3',
+        'border:1px solid #26333f', 'border-left:4px solid #25d366', 'border-radius:10px', 'padding:10px 12px',
+        'font:13px/1.4 -apple-system,Segoe UI,Roboto,sans-serif', 'box-shadow:0 6px 24px rgba(0,0,0,.4)',
+      ].join(';');
+      document.body.appendChild(el);
+    }
+    el.textContent = '';
+    posicionarCoach();
+
     const r = coaches.get(ficha.chave);
-    const caixa = elem('div', 'margin:2px 0 10px;padding:8px 10px;background:#0d141c;border:1px solid #26333f;border-radius:8px');
-    const titulo = (t) => elem('div', 'font-size:10.5px;color:#ffc400;font-weight:700;letter-spacing:.06em;margin-bottom:4px', t);
-    if (!r) {
-      caixa.appendChild(botaoFicha('Coach da conversa', pedirCoach, true));
-      caixa.appendChild(elem('div', 'font-size:11px;color:#8b98a5;margin-top:5px', 'Perfil do lead, o que falta levantar, objeções, perguntas e a próxima mensagem.'));
-      return caixa;
+    const d = (r && r.tipo === 'ok' && r.dados) || null;
+    const guardar = (o) => {
+      try {
+        chrome.storage.local.set(o);
+      } catch (_) {
+        /* ok */
+      }
+    };
+
+    // Topo: título (é por ele que se arrasta), estado do acompanhamento, minimizar e fechar.
+    const btnMin = botaoFicha(coachUi.minimizado ? '+' : '–', () => {
+      coachUi.minimizado = !coachUi.minimizado;
+      guardar({ coachMinimizado: coachUi.minimizado });
+      renderCoach();
+    });
+    btnMin.title = coachUi.minimizado ? 'Abrir o coach' : 'Minimizar';
+    const btnX = botaoFicha('×', () => {
+      coachUi.fechadoPara = ficha.chave; // só nesta conversa; volta na próxima
+      renderCoach();
+    });
+    btnX.title = 'Fechar nesta conversa';
+    const alca = elem(
+      'div',
+      'flex:1;min-width:0;user-select:none',
+      elem('div', 'font-size:10.5px;color:#25d366;font-weight:700;letter-spacing:.06em', 'COACH'),
+      elem('div', `font-size:11px;color:${coachUi.acompanhar ? '#8b98a5' : '#f0ad4e'}`, coachUi.acompanhar ? 'acompanhando a conversa' : 'acompanhamento pausado')
+    );
+    alca.title = 'Arraste para mudar de lugar (duplo clique volta ao lugar padrão)';
+    tornarArrastavel(el, alca);
+    el.appendChild(elem('div', 'display:flex;align-items:center;gap:6px', alca, btnMin, btnX));
+
+    const agora = d ? d.agora || d.comoAbordar : '';
+    const caixaAgora = () =>
+      elem(
+        'div',
+        'margin-top:8px;background:#0d141c;border:1px solid #26333f;border-left:3px solid #25d366;border-radius:7px;padding:7px 9px',
+        elem('div', 'font-size:10.5px;color:#25d366;font-weight:700;letter-spacing:.06em', 'AGORA'),
+        elem('div', '', agora)
+      );
+    if (coachUi.minimizado) {
+      if (agora) el.appendChild(caixaAgora()); // minimizado: só a dica do momento
+      return;
     }
-    if (r.tipo === 'carregando') {
-      caixa.appendChild(titulo('COACH'));
-      caixa.appendChild(elem('div', 'color:#8b98a5', 'Analisando a conversa e os áudios… não troque de conversa.'));
-      return caixa;
+
+    const corpo = elem('div', 'margin-top:2px');
+    el.appendChild(corpo);
+    const nota = (t, cor) => elem('div', `margin-top:8px;font-size:12px;color:${cor || '#8b98a5'}`, t);
+    const controles = (rotuloPedir) => {
+      const linha = elem('div', 'display:flex;flex-wrap:wrap;gap:6px;margin-top:8px');
+      const mini = (b) => {
+        b.style.cssText += ';padding:4px 8px;font-size:11.5px';
+        return b;
+      };
+      linha.appendChild(mini(botaoFicha(rotuloPedir, pedirDica, true)));
+      const inteira = mini(botaoFicha('Ler conversa inteira', lerConversaInteira));
+      inteira.title = 'Rola a conversa e transcreve os áudios (no mudo). Não troque de conversa enquanto lê.';
+      linha.appendChild(inteira);
+      const alternar = mini(botaoFicha(coachUi.acompanhar ? 'Pausar' : 'Acompanhar', () => {
+        coachUi.acompanhar = !coachUi.acompanhar;
+        coachUi.atendida = ''; // ao religar, olha de novo o ponto em que a conversa está
+        guardar({ coachAcompanhar: coachUi.acompanhar });
+        renderCoach();
+      }));
+      alternar.title = coachUi.acompanhar ? 'Parar de pedir dica sozinho a cada mensagem do lead' : 'Voltar a pedir dica sozinho a cada mensagem do lead';
+      linha.appendChild(alternar);
+      return linha;
+    };
+
+    if (!r || r.tipo === 'aguardando') {
+      corpo.appendChild(nota(
+        r ? 'Você falou por último. A dica chega quando o lead responder.'
+          : coachUi.acompanhar ? 'A dica aparece sozinha quando o lead responder.' : 'Peça uma dica quando quiser.'
+      ));
+      corpo.appendChild(controles('Pedir dica agora'));
+      return;
     }
+    if (r.tipo === 'carregando') return void corpo.appendChild(nota('Lendo as últimas mensagens…'));
+    if (r.tipo === 'lendo') return void corpo.appendChild(nota('Lendo a conversa inteira e os áudios… não troque de conversa.'));
     if (r.tipo === 'erro') {
-      caixa.appendChild(titulo('COACH'));
-      caixa.appendChild(elem('div', 'color:#ff6b6b;margin-bottom:6px', r.erro));
-      caixa.appendChild(botaoFicha('Tentar de novo', pedirCoach));
-      return caixa;
+      corpo.appendChild(nota(r.erro, '#ff6b6b'));
+      corpo.appendChild(controles('Tentar de novo'));
+      return;
     }
-    const d = r.dados || {};
-    caixa.appendChild(titulo('COACH'));
+
+    // Dica pronta: o que fazer agora e a mensagem para mandar; a análise completa fica recolhida.
     const util = (tipo, textoSug, contexto) => {
       const b = botaoFicha(marcados.has(tipo + '|' + textoSug) ? 'Anotado' : 'Funcionou', () => enviarFeedbackCoach(tipo, textoSug, contexto, true, b));
       b.style.cssText += ';margin-top:4px;padding:3px 7px;font-size:11px';
       if (marcados.has(tipo + '|' + textoSug)) b.disabled = true;
       return b;
     };
-    if (d.perfil && d.perfil.tipo) {
-      caixa.appendChild(elem('div', 'font-size:11px;color:#8b98a5;text-transform:uppercase;letter-spacing:.03em', 'Perfil do lead'));
-      caixa.appendChild(elem('div', 'color:#ffc400;font-weight:700;text-transform:capitalize', d.perfil.tipo));
-      if (d.perfil.evidencia) caixa.appendChild(elem('div', 'font-size:12px;color:#c9ced6;margin-bottom:4px', d.perfil.evidencia));
-    }
-    if (d.comoAbordar) {
-      caixa.appendChild(elem('div', 'font-size:11px;color:#8b98a5;text-transform:uppercase;letter-spacing:.03em;margin-top:6px', 'Como abordar'));
-      caixa.appendChild(elem('div', '', d.comoAbordar));
-      caixa.appendChild(util('abordagem', d.comoAbordar, d.perfil && d.perfil.tipo));
-    }
-    if ((d.faltaLevantar || []).length) {
-      caixa.appendChild(elem('div', 'font-size:11px;color:#8b98a5;text-transform:uppercase;letter-spacing:.03em;margin-top:8px', 'Ainda falta levantar'));
-      d.faltaLevantar.forEach((f) => caixa.appendChild(elem('div', 'margin-top:2px', '• ' + f)));
-    }
-    (d.objecoes || []).forEach((o) => {
-      caixa.appendChild(elem('div', 'font-size:11px;color:#8b98a5;text-transform:uppercase;letter-spacing:.03em;margin-top:8px', 'Objeção: ' + o.objecao));
-      caixa.appendChild(elem('div', 'white-space:pre-wrap', o.resposta));
-      caixa.appendChild(util('objecao', o.resposta, o.objecao));
-    });
-    if ((d.perguntas || []).length) {
-      caixa.appendChild(elem('div', 'font-size:11px;color:#8b98a5;text-transform:uppercase;letter-spacing:.03em;margin-top:8px', 'Perguntas para aprofundar'));
-      d.perguntas.forEach((p) => {
-        caixa.appendChild(elem('div', 'margin-top:4px', '• ' + p));
-        caixa.appendChild(util('pergunta', p, d.perfil && d.perfil.tipo));
-      });
-    }
+    const rotulo = (t) => elem('div', 'font-size:10.5px;color:#8b98a5;text-transform:uppercase;letter-spacing:.04em;margin-top:8px', t);
+    const perfil = d.perfil && d.perfil.tipo;
+    if (agora) corpo.appendChild(caixaAgora());
     if (d.proximaMensagem) {
-      caixa.appendChild(elem('div', 'font-size:11px;color:#8b98a5;text-transform:uppercase;letter-spacing:.03em;margin-top:8px', 'Próxima mensagem'));
-      caixa.appendChild(elem('div', 'white-space:pre-wrap;background:#16212e;border:1px solid #26333f;border-radius:7px;padding:6px 8px;margin-top:2px', d.proximaMensagem));
+      corpo.appendChild(rotulo('Próxima mensagem'));
+      corpo.appendChild(elem('div', 'white-space:pre-wrap;background:#0d141c;border:1px solid #26333f;border-radius:7px;padding:6px 8px;margin-top:2px', d.proximaMensagem));
       const copiar = botaoFicha('Copiar', async () => {
         try {
           await navigator.clipboard.writeText(d.proximaMensagem);
@@ -1357,15 +1595,51 @@
         }
       });
       copiar.style.cssText += ';margin:4px 6px 0 0;padding:3px 7px;font-size:11px';
-      caixa.appendChild(copiar);
-      caixa.appendChild(util('mensagem', d.proximaMensagem, d.perfil && d.perfil.tipo));
+      corpo.appendChild(copiar);
+      corpo.appendChild(util('mensagem', d.proximaMensagem, perfil));
     }
-    const rodape = elem('div', 'display:flex;align-items:center;gap:8px;margin-top:8px');
-    rodape.appendChild(elem('div', 'flex:1;font-size:11px;color:#8b98a5', 'Marque "Funcionou" no que usar: o coach aprende com isso.'));
-    const atualizar = botaoFicha('Atualizar', pedirCoach);
-    rodape.appendChild(atualizar);
-    caixa.appendChild(rodape);
-    return caixa;
+    if (perfil) {
+      corpo.appendChild(elem('div', 'margin-top:8px', elem('span', 'color:#8b98a5', 'Perfil do lead: '), elem('span', 'color:#ffc400;font-weight:700;text-transform:capitalize', perfil)));
+    }
+
+    const det = document.createElement('details');
+    det.style.cssText = 'margin-top:8px;padding-top:6px;border-top:1px solid #26333f';
+    det.open = coachUi.detalhes;
+    det.addEventListener('toggle', () => {
+      coachUi.detalhes = det.open;
+    });
+    det.appendChild(elem('summary', 'cursor:pointer;color:#8b98a5;font-size:12px', 'Análise completa'));
+    if (d.perfil && d.perfil.evidencia) det.appendChild(elem('div', 'font-size:12px;color:#c9ced6;margin-top:6px', d.perfil.evidencia));
+    if (d.comoAbordar) {
+      det.appendChild(rotulo('Como abordar'));
+      det.appendChild(elem('div', '', d.comoAbordar));
+      det.appendChild(util('abordagem', d.comoAbordar, perfil));
+    }
+    if ((d.faltaLevantar || []).length) {
+      det.appendChild(rotulo('Ainda falta levantar'));
+      d.faltaLevantar.forEach((f) => det.appendChild(elem('div', 'margin-top:2px', '• ' + f)));
+    }
+    (d.objecoes || []).forEach((o) => {
+      det.appendChild(rotulo('Objeção: ' + o.objecao));
+      det.appendChild(elem('div', 'white-space:pre-wrap', o.resposta));
+      det.appendChild(util('objecao', o.resposta, o.objecao));
+    });
+    if ((d.perguntas || []).length) {
+      det.appendChild(rotulo('Perguntas para aprofundar'));
+      d.perguntas.forEach((p) => {
+        det.appendChild(elem('div', 'margin-top:4px', '• ' + p));
+        det.appendChild(util('pergunta', p, perfil));
+      });
+    }
+    corpo.appendChild(det);
+
+    const hora = new Date(r.quando || Date.now()).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    if (r.erro) corpo.appendChild(nota(r.erro, '#ff6b6b'));
+    else corpo.appendChild(nota(r.atualizando ? 'Atualizando a dica…' : r.aguardando ? `Dica de ${hora} · aguardando o lead responder` : `Dica de ${hora}`));
+    if (r.audiosSemLer) {
+      corpo.appendChild(nota(`${r.audiosSemLer} áudio(s) do lead ainda sem leitura: "Ler conversa inteira" transcreve.`, '#f0ad4e'));
+    }
+    corpo.appendChild(controles('Atualizar'));
   }
 
   function blocoResumo() {
@@ -1424,9 +1698,15 @@
     const out = [];
     for (const el of els) {
       try {
-        const m = ehAudio(el) ? null : extrairMensagem(el);
-        // Áudio, foto ou figurinha também contam como "alguém falou" — só não têm texto para ler.
-        out.push(m || { from: ehDeMim(el) ? 'eu' : 'eles', type: 'outro', content: '', timestamp: null });
+        if (ehAudio(el)) {
+          // Áudio que uma leitura completa já transcreveu nesta aba entra com o texto; senão, como [áudio].
+          const idEl = el.matches('[data-id]') ? el : el.closest('[data-id]') || el.querySelector('[data-id]');
+          const lido = idEl ? audiosLidos.get(idEl.getAttribute('data-id')) : '';
+          out.push({ from: ehDeMim(el) ? 'eu' : 'eles', type: 'audio', content: lido || '[áudio]', timestamp: null });
+          continue;
+        }
+        // Foto ou figurinha também contam como "alguém falou" — só não têm texto para ler.
+        out.push(extrairMensagem(el) || { from: ehDeMim(el) ? 'eu' : 'eles', type: 'outro', content: '', timestamp: null });
       } catch (_) {
         /* mensagem que não deu para ler: fica de fora */
       }
@@ -1463,7 +1743,7 @@
       est.marca = { ...marca, agendadoPara: achado.quando, agendaFonteTs: achado.fonteTs };
       redesenharFicha();
     }
-    enviarMarca(conversa, { agendadoPara: achado.quando, fonteTs: achado.fonteTs });
+    enviarMarca(conversa, { agendadoPara: achado.quando, fonteTs: achado.fonteTs, regra: agendaLib.REGRA });
   }
 
   /** Lead respondeu e o card ainda está antes de "Respondeu": pede ao servidor para avançar no RD (uma vez por card). */
@@ -1530,13 +1810,17 @@
       enviarMarca(conversa, campos);
     };
     if (marca.qualificado) {
-      linha.appendChild(elem('span', `${base};border:1px solid #25d366;background:rgba(37,211,102,.14);color:#25d366`, 'QUALIFICADO'));
+      const chip = elem('span', `${base};border:1px solid #25d366;background:rgba(37,211,102,.14);color:#25d366`, 'QUALIFICADO');
+      // De onde a etiqueta veio (passe o mouse): assim dá para confiar nela sem reabrir a conversa.
+      const porque = { rd: 'o card esteve na etapa Qualificado do RD', report: 'você gerou o report deste lead', manual: 'você marcou à mão' }[marca.origem];
+      chip.title = porque ? 'Qualificado: ' + porque + '.' : 'Lead qualificado.';
+      linha.appendChild(chip);
       linha.appendChild(tirar('Tirar a etiqueta Qualificado', () => mudar({ qualificado: false, manual: true }, { qualificado: false })));
     } else {
       const b = elem('button', `${base};cursor:pointer;border:1px dashed #3a4a5a;background:transparent;color:#8b98a5`, '+ Qualificado');
       b.type = 'button';
       b.title = 'Marcar este lead como qualificado';
-      b.addEventListener('click', () => mudar({ qualificado: true, manual: true }, { qualificado: true }));
+      b.addEventListener('click', () => mudar({ qualificado: true, manual: true }, { qualificado: true, origem: 'manual' }));
       linha.appendChild(b);
     }
     const ag = marca.agendadoPara && agendaLib ? agendaLib.descrever(marca.agendadoPara, new Date()) : null;
@@ -1604,7 +1888,6 @@
     const corpo = elem('div', 'margin-top:8px');
     el.appendChild(corpo);
     if (estado.tipo !== 'carregando') corpo.appendChild(blocoResumo());
-    if (estado.tipo !== 'carregando' && ficha.coach) corpo.appendChild(blocoCoach());
 
     if (estado.tipo === 'carregando') {
       corpo.appendChild(elem('div', 'color:#8b98a5', 'Buscando no RD Station…'));
@@ -1702,6 +1985,7 @@
     }
     if (seq !== ficha.seq) return; // resposta de uma conversa que o SDR já deixou
     if (r && typeof r.coach === 'boolean') ficha.coach = r.coach; // o servidor diz se este usuário vê o Coach
+    renderCoach();
     if (!r || !r.ok) return renderFicha({ tipo: 'erro', erro: (r && r.erro) || 'Não consegui consultar o RD Station.', busca });
     // Automação (mover para "Respondeu", etiqueta e agendamento): o servidor diz se o master ligou para esta chave.
     ficha.automacao = r.automacao === true;
@@ -1731,6 +2015,7 @@
       ficha.chave = null;
       ficha.conversa = null;
       esconderFicha();
+      renderCoach();
       return;
     }
     let telefone = telefoneDaConversa();
@@ -1752,26 +2037,35 @@
     posicionarFicha();
     const chave = telefone || nome;
     if (!chave) return;
-    if (chave === ficha.chave) return automatizar();
+    if (chave === ficha.chave) {
+      automatizar();
+      acompanharCoach();
+      return;
+    }
     ficha.chave = chave;
     ficha.conversa = { telefone, nome };
     ficha.ultimoEstado = null; // o que estava na tela era da conversa anterior
     ficha.fechadaPara = null;
+    Object.assign(coachUi, { fechadoPara: null, vista: '', atendida: '' });
+    renderCoach();
     clearTimeout(ficha.timer);
     ficha.timer = setTimeout(() => consultarFicha({ telefone, nome: telefone && nome.replace(/\D/g, '') === telefone ? '' : nome }), 700);
   }
 
   try {
-    chrome.storage.local.get({ fichaCrm: true, fichaCrmMinimizada: false }, (c) => {
+    chrome.storage.local.get({ fichaCrm: true, fichaCrmMinimizada: false, coachAcompanhar: true, coachMinimizado: false, coachPos: null }, (c) => {
       ficha.ligada = c.fichaCrm !== false;
       ficha.minimizada = !!c.fichaCrmMinimizada;
+      coachUi.acompanhar = c.coachAcompanhar !== false;
+      coachUi.minimizado = !!c.coachMinimizado;
+      coachUi.pos = c.coachPos && Number.isFinite(c.coachPos.left) && Number.isFinite(c.coachPos.top) ? { left: c.coachPos.left, top: c.coachPos.top } : null;
       // O Coach não depende da ficha do RD: a permissão vem da chave (e o cartão se redesenha se já estiver na tela).
       try {
         chrome.runtime.sendMessage({ action: 'permissoes' }, (r) => {
           if (chrome.runtime.lastError || !r || !r.ok || typeof r.coach !== 'boolean') return;
           const antes = ficha.coach;
           ficha.coach = Boolean(r.coach);
-          if (ficha.coach !== antes && ficha.ultimoEstado && document.getElementById(FICHA_ID)) renderFicha(ficha.ultimoEstado);
+          if (ficha.coach !== antes) renderCoach();
         });
       } catch (_) {
         /* sem a permissão o cartão segue como a ficha disser */
@@ -1788,7 +2082,10 @@
       chrome.storage.onChanged.addListener((mud) => {
         if (!mud.fichaCrm) return;
         ficha.ligada = mud.fichaCrm.newValue !== false;
-        if (!ficha.ligada) esconderFicha();
+        if (!ficha.ligada) {
+          esconderFicha();
+          renderCoach();
+        }
         ficha.chave = null; // ao religar, busca de novo a conversa aberta
       });
     }
