@@ -41,7 +41,7 @@ aberta e logada.
 
 | Para quem | O quê |
 | --- | --- |
-| **Pré-vendedor (SDR)** | Report em PDF com um clique; ficha do lead do RD ao abrir a conversa; resumo rápido para retomar um lead; coach que acompanha a conversa e dá a dica de como seguir; .zip com os reports do dia. |
+| **Pré-vendedor (SDR)** | Report em PDF com um clique; ficha do lead do RD ao abrir a conversa; resumo rápido para retomar um lead; coach em popup com a dica de como seguir; .zip com os reports do dia. |
 | **Closer** | Handoff de até 2 páginas: resumo, perfil do lead e como conduzir, nível de consciência, sinais de compra, como foi a conversa e a fala pronta para abrir a reunião. |
 | **Gestão** | Custo por report e por SDR, PDFs de toda a equipe, resultado de cada reunião, matriz closer × perfil de lead, padrões da prospecção que fecha e insights escritos por IA gratuita. |
 
@@ -125,7 +125,7 @@ Além do papel, o master liga três recursos **por pessoa** na aba Acessos:
 | Recurso | Padrão | O que libera |
 | --- | --- | --- |
 | **Popup do lead** | ligado para todos | Ficha do RD e resumo rápido no WhatsApp. |
-| **Coach** | só o master | Popup do coach, que acompanha a conversa e dá a dica de como seguir. |
+| **Coach** | só o master | Popup do coach: a dica de como seguir, quando você pede. |
 | **Automação RD** | só o master | Mover o card para "Respondeu", etiqueta "Qualificado" e agendamento. |
 
 Regras do cadastro (`src/usuarios.js`): o único master não pode ser rebaixado nem removido; enquanto
@@ -227,33 +227,27 @@ pergunta** e o **próximo passo**. Mesma conversa = resumo do cache por 7 dias, 
 
 ### Coach da conversa (custo zero)
 
-Um popup próprio que **acompanha a conversa**. Sempre que o lead manda mensagem, ele lê o que já
-está na tela e atualiza, num modelo gratuito do Groq:
+Um **popup próprio**, separado do cartão da ficha, que só trabalha **quando você clica**:
 
-- **AGORA** — a dica do momento: o que a última fala do lead revela e o que fazer em seguida.
-- **Próxima mensagem** pronta para copiar, e o **perfil do lead**.
-- **Análise completa** (recolhida): evidência do perfil, como abordar, **o que ainda falta
-  levantar** (BANT, a implicação do SPIN e o que o closer mais usa: valor disponível, cartão e
-  limite, meta, tentativa anterior, concorrente), objeções com resposta e perguntas.
-
-Como ele acompanha sem atrapalhar:
-
-- **Leitura leve.** No automático não rola a conversa nem toca áudio: usa só as mensagens que já
-  estão na tela. Áudio ainda não transcrito entra como `[áudio]` e o coach avisa que falta
-  ouvi-lo. **Ler conversa inteira** faz a leitura completa, com os áudios; as transcrições ficam
-  lembradas naquela aba e entram nas dicas seguintes.
-- **Só quando é a sua vez.** Se você falou por último, ele espera o lead responder. Várias
-  mensagens seguidas do lead viram um pedido só (espera ~3 s a conversa assentar) e há um
-  intervalo mínimo de ~20 s entre pedidos automáticos.
-- **Limite gratuito.** Cada dica gasta do plano gratuito do Groq (cerca de 8 mil tokens por
-  minuto e 200 mil por dia, por modelo). Fila `openai/gpt-oss-120b` → `openai/gpt-oss-20b` →
-  `llama-3.3-70b-versatile` → `llama-3.1-8b-instant`: bateu no limite de um, o seguinte assume.
-  Acabando em todos, o popup avisa e volta sozinho depois. **Pausar** desliga o automático; o
-  botão de pedir a dica continua.
+- **Pedir dica** lê as mensagens que já estão na tela (não rola a conversa nem toca áudio) e, num
+  modelo gratuito do Groq, devolve:
+  - **AGORA** — a dica do momento: o que a última fala do lead revela e o que fazer em seguida;
+  - a **próxima mensagem** pronta para copiar e o **perfil do lead**;
+  - a **análise completa** (recolhida): evidência do perfil, como abordar, **o que ainda falta
+    levantar** (BANT, a implicação do SPIN e o que o closer mais usa: valor disponível, cartão e
+    limite, meta, tentativa anterior, concorrente), objeções com resposta e perguntas.
+- **Ler conversa inteira** faz a leitura completa, com os áudios transcritos. As transcrições
+  ficam lembradas naquela aba e entram nas dicas seguintes; áudio ainda não lido aparece como
+  `[áudio]` e o popup avisa quantos faltam.
+- **Nada é pedido sozinho.** Chegou mensagem depois da dica? O popup só avisa e espera o clique
+  em **Atualizar**.
 - **Aprende sem treinar modelo:** o que o SDR marca como "Funcionou" vira exemplo nos próximos
   pedidos.
 - **Popup de verdade:** arrasta pelo topo (o lugar fica guardado; duplo clique volta ao padrão),
   minimizado mostra só a dica do momento, e não depende do RD.
+- **Modelos:** fila `openai/gpt-oss-120b` → `openai/gpt-oss-20b` → `llama-3.3-70b-versatile` →
+  `llama-3.1-8b-instant`. Saiu do ar ou bateu no limite, o seguinte assume. O plano gratuito
+  limita cerca de 8 mil tokens por minuto por modelo, por isso o pedido vai enxuto.
 
 ### Automação do cartão
 
@@ -486,7 +480,7 @@ Tudo em `src/db.js` (Redis em produção, `data/*.json` local). **A conversa nã
 npm test
 ```
 
-**349 testes**, sem rede, sem chave real, sem custo e sem tocar em `data/` (o banco é uma pasta
+**350 testes**, sem rede, sem chave real, sem custo e sem tocar em `data/` (o banco é uma pasta
 temporária). O `jsdom` roda os scripts **reais** da extensão e do painel.
 
 | Arquivo | O que cobre |
@@ -496,7 +490,7 @@ temporária). O `jsdom` roda os scripts **reais** da extensão e do painel.
 | `report-rico.test.js` | Nível de consciência, "Como foi a conversa", sinais de compra e o limite de 2 páginas. |
 | `extensao-dom.test.js` | Leitura da conversa no WhatsApp e no Instagram: ordem, remetente, áudios, troca de conversa. |
 | `ficha-crm.test.js` | O cartão no WhatsApp: ficha, busca, vários cards e resumo. |
-| `coach-popup.test.js` | O popup do coach: acompanhar a conversa, pausar, erro, leitura com áudios, arrastar. |
+| `coach-popup.test.js` | O popup do coach: só no clique, aviso de mensagens novas, erro, leitura com áudios, arrastar. |
 | `automacao-dom.test.js` | Mover para "Respondeu", etiqueta e agendamento no cartão. |
 | `automacao.test.js` | A escrita no RD e as marcas do lead, com RD simulado. |
 | `agenda.test.js` | Leitura de dia e horário nas mensagens. |
@@ -546,10 +540,8 @@ desligado até ele ser atualizado.
 - **Nada de fora vira HTML.** Nome do contato, dados do CRM e erros entram na tela como texto.
 - **Cada um vê o seu.** O SDR só reabre e baixa os próprios reports; a chave é mascarada no painel.
 - **Telefone e nome do lead** vão por POST, fora de URL e de log de acesso.
-- **Quando a conversa sai do navegador.** Quando o SDR clica (report, resumo, leitura completa
-  do coach) e, para quem tem o coach acompanhando, quando o lead manda mensagem — aí vai só o
-  texto que já está na tela, sem rolar a conversa nem tocar áudio. A automação do cartão lê no
-  navegador e envia apenas o resultado.
+- **Leitura sob clique.** O conteúdo das mensagens só vai ao servidor quando o SDR clica (report,
+  resumo ou coach). A automação do cartão lê no navegador e envia apenas o resultado.
 - **Tipo conferido pelos bytes** em áudio e imagem, não pela extensão do arquivo.
 
 A política completa, exigida pela Chrome Web Store, está em `/privacidade`
@@ -572,8 +564,8 @@ A política completa, exigida pela Chrome Web Store, está em `/privacidade`
 - **Automação do RD.** Montada pela documentação da API e testada com RD simulado; depende de o
   token ter permissão sobre os cards. A leitura de agendamento é por regra de texto e pode errar
   em frases fora do padrão — o × no cartão corrige.
-- **Coach e o plano gratuito.** Acompanhar todas as conversas gasta o limite diário mais rápido;
-  quando acaba, o popup avisa e os reports não são afetados (usam outro provedor).
+- **Coach e o plano gratuito.** Cada dica gasta do limite gratuito do Groq; quando acaba, o popup
+  avisa e os reports não são afetados (usam outro provedor).
 - **Amostra pequena.** A inteligência só vale com resultados marcados na rotina.
 - **Ainda não existe:** leitura de PDF e Word no chat manual, status por campo
   (confirmado/inferido) no report e expurgo automático dos PDFs antigos.

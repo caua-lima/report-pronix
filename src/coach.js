@@ -1,6 +1,6 @@
 'use strict';
 
-// Coach da conversa (popup no WhatsApp que acompanha a conversa): a dica do momento, perfil do lead,
+// Coach da conversa (popup no WhatsApp, pedido no clique): a dica do momento, perfil do lead,
 // como abordar, o que falta qualificar (BANT/SPIN), objeções com resposta sugerida, perguntas de
 // aprofundamento e a próxima mensagem. Roda no Groq (plano gratuito: custo zero).
 //

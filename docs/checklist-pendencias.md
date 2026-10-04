@@ -11,14 +11,13 @@ Detalhes técnicos em [`auditoria-pronix.md`](auditoria-pronix.md) e [`plano-imp
 - [x] 117 testes automáticos (`npm test`), sem rede e sem custo
 - [x] Merge local na `main`
 
-## Novo em 04/10 (2): coach em popup e etiqueta mais rígida (extensão 1.12.0 + servidor)
+## Novo em 04/10 (2): coach em popup e etiqueta mais rígida (extensão 1.12.1 + servidor)
 
 - [x] Mover para "Respondeu" confirmado em uso real (04/10)
 - [x] Etiqueta "Qualificado" só pela etapa do RD, por report gerado ou à mão — agendamento não qualifica mais; o cartão diz de onde ela veio
 - [x] Agendamento só de mensagem que confirma o compromisso ("agendado", "remarquei", "ficou para"); o que a regra antiga anotou deixa de aparecer
-- [x] Coach virou popup próprio que acompanha a conversa (dica "AGORA" a cada resposta do lead), com Pausar, arrastar e "Ler conversa inteira"
-- [ ] **Você:** `git push origin main` e enviar a extensão 1.12.0 à loja
-- [ ] **Você:** se o coach mostrar "limite gratuito atingido" cedo demais no dia, me avise (dá para espaçar mais os pedidos)
+- [x] Coach virou popup próprio, separado do cartão, que só trabalha no clique ("Pedir dica" e "Ler conversa inteira"); chegando mensagem depois da dica, ele só avisa
+- [ ] **Você:** `git push origin main` e enviar a extensão 1.12.1 à loja
 
 ## Novo em 03/10 (2): automação do cartão (extensão 1.11.0 + servidor)
 
