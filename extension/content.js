@@ -1248,47 +1248,43 @@
   }
 
   // ---------------------------------------------------------------------------
-  // Coach da conversa: um popup próprio que ACOMPANHA a conversa. A cada mensagem nova do lead ele lê
-  // as mensagens que já estão na tela (sem rolar a conversa nem tocar áudio) e atualiza a dica de como
-  // seguir. "Ler conversa inteira" faz a leitura completa, com os áudios transcritos — e as transcrições
-  // ficam lembradas nesta aba para as próximas dicas. Só para quem o master liberou o Coach.
+  // Coach da conversa: um popup próprio, separado do cartão da ficha. Só trabalha quando o usuário
+  // clica: "Pedir dica" lê as mensagens que já estão na tela (sem rolar a conversa nem tocar áudio);
+  // "Ler conversa inteira" faz a leitura completa, com os áudios transcritos — e as transcrições ficam
+  // lembradas nesta aba para as próximas dicas. Só para quem o master liberou o Coach.
   // ---------------------------------------------------------------------------
   const COACH_ID = 'cr-coach';
-  // O vigia roda a cada 1,5s; os tempos abaixo são contados em tiques dele.
-  const COACH_ESPERA = 2; // ~3s sem mudança antes de pedir: o lead costuma mandar várias mensagens seguidas
-  const COACH_INTERVALO = 14; // ~20s entre pedidos automáticos: o plano gratuito da IA tem limite por minuto
-  const COACH_PAUSA_ERRO = 40; // ~1min sem insistir depois de um erro (limite atingido, servidor fora)
-  const coachUi = {
-    acompanhar: true, minimizado: false, detalhes: false, pos: null, fechadoPara: null,
-    tique: 0, vista: '', vistaNoTique: 0, atendida: '', pedidoNoTique: -1000, pausaAte: 0, emCurso: false,
-  };
+  const coachUi = { minimizado: false, detalhes: false, pos: null, fechadoPara: null, emCurso: false };
 
   const mensagensNaTela = () => acharMensagens(document.querySelector('#main') || document);
-  /** Identifica o estado da conversa na tela: muda quando chega (ou sai) mensagem. */
+  /** Até onde a conversa foi lida: a última mensagem na tela. Chegou mensagem nova, muda. */
   const assinaturaDaTela = (els) => {
     const ultimo = els.length ? els[els.length - 1] : null;
-    return [ficha.chave, els.length, ultimo ? ultimo.getAttribute('data-id') || (ultimo.textContent || '').length : ''].join('|');
+    return [ficha.chave, ultimo ? ultimo.getAttribute('data-id') || (ultimo.textContent || '').length : ''].join('|');
   };
   const audiosDoLeadSemLer = (mensagens) =>
     mensagens.filter((m) => m.from !== 'eu' && m.type === 'audio' && String(m.content || '').startsWith('[áudio')).length;
 
-  /** Pede a dica com o que já está na tela (leitura leve: não rola a conversa nem toca áudio). */
+  /** "Pedir dica": lê o que já está na tela (leitura leve: não rola a conversa nem toca áudio). */
   function pedirDica() {
     const chave = ficha.chave;
-    if (!chave || coachUi.emCurso || jobEmAndamento) return;
+    if (!chave || coachUi.emCurso) return;
+    const anterior = coaches.get(chave);
+    const tinha = anterior && anterior.tipo === 'ok' ? anterior : null;
+    const falhou = (erro) => coaches.set(chave, tinha ? { ...tinha, atualizando: false, erro } : { tipo: 'erro', erro });
+    if (jobEmAndamento) {
+      falhou('Espere o report ou o resumo terminarem.');
+      return renderCoach();
+    }
     const els = mensagensNaTela();
     const assinatura = assinaturaDaTela(els);
     const mensagens = mensagensVisiveis(els).filter((m) => m.content);
-    const anterior = coaches.get(chave);
-    const tinha = anterior && anterior.tipo === 'ok' ? anterior : null;
     if (!mensagens.length) {
-      if (!tinha) coaches.set(chave, { tipo: 'erro', erro: 'Ainda não há mensagens nesta conversa para analisar.' });
+      falhou('Ainda não há mensagens nesta conversa para analisar.');
       return renderCoach();
     }
     const nome = nomeDoContato();
     coachUi.emCurso = true;
-    coachUi.pedidoNoTique = coachUi.tique;
-    coachUi.atendida = assinatura;
     coaches.set(chave, tinha ? { ...tinha, atualizando: true, erro: '' } : { tipo: 'carregando' });
     renderCoach();
     const fim = (r) => {
@@ -1296,9 +1292,7 @@
       if (r && r.ok && r.coach) {
         coaches.set(chave, { tipo: 'ok', dados: r.coach, contexto: nome || '', assinatura, quando: Date.now(), audiosSemLer: audiosDoLeadSemLer(mensagens) });
       } else {
-        const erro = (r && r.erro) || 'Não consegui gerar a dica.';
-        coachUi.pausaAte = coachUi.tique + COACH_PAUSA_ERRO;
-        coaches.set(chave, tinha ? { ...tinha, atualizando: false, erro } : { tipo: 'erro', erro });
+        falhou((r && r.erro) || 'Não consegui gerar a dica.');
       }
       if (ficha.chave === chave) renderCoach();
     };
@@ -1316,7 +1310,7 @@
     }
   }
 
-  /** Leitura completa: rola a conversa e transcreve os áudios (no mudo), como no report. */
+  /** "Ler conversa inteira": rola a conversa e transcreve os áudios (no mudo), como no report. */
   async function lerConversaInteira() {
     const chave = ficha.chave;
     if (!chave || coachUi.emCurso) return;
@@ -1340,10 +1334,10 @@
         anotarAgendamento(mensagens, conversa);
         const r = await new Promise((res) => chrome.runtime.sendMessage({ action: 'coach', mensagens, nome }, res));
         if (!r || !r.ok) throw new Error((r && r.erro) || 'Não consegui gerar a dica.');
-        // O que está na tela agora já foi analisado: o acompanhamento só pede de novo quando chegar mensagem nova.
-        const assinatura = assinaturaDaTela(mensagensNaTela());
-        Object.assign(coachUi, { vista: assinatura, atendida: assinatura, vistaNoTique: coachUi.tique, pedidoNoTique: coachUi.tique });
-        coaches.set(chave, { tipo: 'ok', dados: r.coach, contexto: nome || '', assinatura, quando: Date.now(), audiosSemLer: audiosDoLeadSemLer(mensagens) });
+        coaches.set(chave, {
+          tipo: 'ok', dados: r.coach, contexto: nome || '', assinatura: assinaturaDaTela(mensagensNaTela()), quando: Date.now(),
+          audiosSemLer: audiosDoLeadSemLer(mensagens),
+        });
       } finally {
         // A leitura usa o aviso do report para o andamento ("Transcrevendo áudios…"): tira ao terminar.
         const b = document.getElementById(BADGE_ID);
@@ -1360,38 +1354,21 @@
     }
   }
 
-  /** A cada tique do vigia: chegou mensagem e o lead falou por último? Então pede a dica (com calma). */
-  function acompanharCoach() {
-    coachUi.tique++;
+  /**
+   * A cada tique do vigia: mantém o popup na tela e no lugar, e avisa quando chegaram mensagens depois
+   * da dica. Não pede nada sozinho — a dica só é pedida no clique.
+   */
+  function vigiarCoach() {
     if (!ficha.coach || !ficha.chave) return;
-    if (!document.getElementById(COACH_ID)) renderCoach();
-    else posicionarCoach();
-    if (!coachUi.acompanhar || coachUi.fechadoPara === ficha.chave || jobEmAndamento || coachUi.emCurso) return;
+    if (!document.getElementById(COACH_ID)) return renderCoach();
+    posicionarCoach();
+    const r = coaches.get(ficha.chave);
+    if (!r || r.tipo !== 'ok' || r.desatualizada || coachUi.emCurso || jobEmAndamento) return;
     const els = mensagensNaTela();
-    if (!els.length) return;
-    const assinatura = assinaturaDaTela(els);
-    if (assinatura !== coachUi.vista) {
-      coachUi.vista = assinatura;
-      coachUi.vistaNoTique = coachUi.tique;
-      return;
+    if (els.length && r.assinatura !== assinaturaDaTela(els)) {
+      r.desatualizada = true;
+      renderCoach();
     }
-    if (assinatura === coachUi.atendida || coachUi.tique - coachUi.vistaNoTique < COACH_ESPERA) return;
-    const atual = coaches.get(ficha.chave);
-    if (atual && atual.tipo === 'ok' && atual.assinatura === assinatura) {
-      coachUi.atendida = assinatura; // voltou para uma conversa que já tem a dica deste ponto
-      return;
-    }
-    const mensagens = mensagensVisiveis(els);
-    const ultima = mensagens[mensagens.length - 1];
-    if (!ultima || ultima.from === 'eu') {
-      // Você falou por último: a dica só muda quando o lead responder.
-      coachUi.atendida = assinatura;
-      if (!atual) coaches.set(ficha.chave, { tipo: 'aguardando' });
-      else if (atual.tipo === 'ok') atual.aguardando = true;
-      return renderCoach();
-    }
-    if (coachUi.tique < coachUi.pausaAte || coachUi.tique - coachUi.pedidoNoTique < COACH_INTERVALO) return; // espera a vez
-    pedirDica();
   }
 
   function enviarFeedbackCoach(tipo, textoSugestao, contexto, util, botaoEl) {
@@ -1490,18 +1467,16 @@
 
     const r = coaches.get(ficha.chave);
     const d = (r && r.tipo === 'ok' && r.dados) || null;
-    const guardar = (o) => {
+    const hora = d ? new Date(r.quando || Date.now()).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
+
+    // Topo: título (é por ele que se arrasta), minimizar e fechar.
+    const btnMin = botaoFicha(coachUi.minimizado ? '+' : '–', () => {
+      coachUi.minimizado = !coachUi.minimizado;
       try {
-        chrome.storage.local.set(o);
+        chrome.storage.local.set({ coachMinimizado: coachUi.minimizado });
       } catch (_) {
         /* ok */
       }
-    };
-
-    // Topo: título (é por ele que se arrasta), estado do acompanhamento, minimizar e fechar.
-    const btnMin = botaoFicha(coachUi.minimizado ? '+' : '–', () => {
-      coachUi.minimizado = !coachUi.minimizado;
-      guardar({ coachMinimizado: coachUi.minimizado });
       renderCoach();
     });
     btnMin.title = coachUi.minimizado ? 'Abrir o coach' : 'Minimizar';
@@ -1514,7 +1489,7 @@
       'div',
       'flex:1;min-width:0;user-select:none',
       elem('div', 'font-size:10.5px;color:#25d366;font-weight:700;letter-spacing:.06em', 'COACH'),
-      elem('div', `font-size:11px;color:${coachUi.acompanhar ? '#8b98a5' : '#f0ad4e'}`, coachUi.acompanhar ? 'acompanhando a conversa' : 'acompanhamento pausado')
+      elem('div', 'font-size:11px;color:#8b98a5', d ? 'dica de ' + hora : 'dica quando você pedir')
     );
     alca.title = 'Arraste para mudar de lugar (duplo clique volta ao lugar padrão)';
     tornarArrastavel(el, alca);
@@ -1542,27 +1517,18 @@
         b.style.cssText += ';padding:4px 8px;font-size:11.5px';
         return b;
       };
-      linha.appendChild(mini(botaoFicha(rotuloPedir, pedirDica, true)));
+      const pedir = mini(botaoFicha(rotuloPedir, pedirDica, true));
+      pedir.title = 'Lê as mensagens que estão na tela (não rola a conversa nem toca áudio).';
+      linha.appendChild(pedir);
       const inteira = mini(botaoFicha('Ler conversa inteira', lerConversaInteira));
       inteira.title = 'Rola a conversa e transcreve os áudios (no mudo). Não troque de conversa enquanto lê.';
       linha.appendChild(inteira);
-      const alternar = mini(botaoFicha(coachUi.acompanhar ? 'Pausar' : 'Acompanhar', () => {
-        coachUi.acompanhar = !coachUi.acompanhar;
-        coachUi.atendida = ''; // ao religar, olha de novo o ponto em que a conversa está
-        guardar({ coachAcompanhar: coachUi.acompanhar });
-        renderCoach();
-      }));
-      alternar.title = coachUi.acompanhar ? 'Parar de pedir dica sozinho a cada mensagem do lead' : 'Voltar a pedir dica sozinho a cada mensagem do lead';
-      linha.appendChild(alternar);
       return linha;
     };
 
-    if (!r || r.tipo === 'aguardando') {
-      corpo.appendChild(nota(
-        r ? 'Você falou por último. A dica chega quando o lead responder.'
-          : coachUi.acompanhar ? 'A dica aparece sozinha quando o lead responder.' : 'Peça uma dica quando quiser.'
-      ));
-      corpo.appendChild(controles('Pedir dica agora'));
+    if (!r) {
+      corpo.appendChild(nota('Peça a dica de como seguir nesta conversa: perfil do lead, o que fazer agora e a próxima mensagem.'));
+      corpo.appendChild(controles('Pedir dica'));
       return;
     }
     if (r.tipo === 'carregando') return void corpo.appendChild(nota('Lendo as últimas mensagens…'));
@@ -1633,9 +1599,9 @@
     }
     corpo.appendChild(det);
 
-    const hora = new Date(r.quando || Date.now()).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
     if (r.erro) corpo.appendChild(nota(r.erro, '#ff6b6b'));
-    else corpo.appendChild(nota(r.atualizando ? 'Atualizando a dica…' : r.aguardando ? `Dica de ${hora} · aguardando o lead responder` : `Dica de ${hora}`));
+    else if (r.atualizando) corpo.appendChild(nota('Atualizando a dica…'));
+    else if (r.desatualizada) corpo.appendChild(nota('Chegaram mensagens depois desta dica. Clique em Atualizar para ver a nova.', '#f0ad4e'));
     if (r.audiosSemLer) {
       corpo.appendChild(nota(`${r.audiosSemLer} áudio(s) do lead ainda sem leitura: "Ler conversa inteira" transcreve.`, '#f0ad4e'));
     }
@@ -2039,24 +2005,23 @@
     if (!chave) return;
     if (chave === ficha.chave) {
       automatizar();
-      acompanharCoach();
+      vigiarCoach();
       return;
     }
     ficha.chave = chave;
     ficha.conversa = { telefone, nome };
     ficha.ultimoEstado = null; // o que estava na tela era da conversa anterior
     ficha.fechadaPara = null;
-    Object.assign(coachUi, { fechadoPara: null, vista: '', atendida: '' });
+    coachUi.fechadoPara = null;
     renderCoach();
     clearTimeout(ficha.timer);
     ficha.timer = setTimeout(() => consultarFicha({ telefone, nome: telefone && nome.replace(/\D/g, '') === telefone ? '' : nome }), 700);
   }
 
   try {
-    chrome.storage.local.get({ fichaCrm: true, fichaCrmMinimizada: false, coachAcompanhar: true, coachMinimizado: false, coachPos: null }, (c) => {
+    chrome.storage.local.get({ fichaCrm: true, fichaCrmMinimizada: false, coachMinimizado: false, coachPos: null }, (c) => {
       ficha.ligada = c.fichaCrm !== false;
       ficha.minimizada = !!c.fichaCrmMinimizada;
-      coachUi.acompanhar = c.coachAcompanhar !== false;
       coachUi.minimizado = !!c.coachMinimizado;
       coachUi.pos = c.coachPos && Number.isFinite(c.coachPos.left) && Number.isFinite(c.coachPos.top) ? { left: c.coachPos.left, top: c.coachPos.top } : null;
       // O Coach não depende da ficha do RD: a permissão vem da chave (e o cartão se redesenha se já estiver na tela).
