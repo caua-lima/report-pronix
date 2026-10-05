@@ -62,6 +62,8 @@ test('citar reunião, horário ou diagnóstico não é agendar: só vale mensage
   // quando foi o lead que marcou pelo formulário e o pré-vendedor só confirma
   assert.equal(ler('Você agendou sua reunião para hoje às 14h.'), '2026-10-02T14:00');
   assert.equal(ler('Vi que você marcou para amanhã às 10h'), '2026-10-03T10:00');
+  assert.equal(ler('Sua reunião está pra amanhã às 18h30.'), '2026-10-03T18:30');
+  assert.equal(ler('Nosso encontro está para quinta às 15h'), '2026-10-08T15:00');
   assert.equal(ler('Você remarcou para segunda às 16h, certo?'), '2026-10-05T16:00');
   assert.equal(ler('Marquei pra você amanhã às 15h'), '2026-10-03T15:00');
   assert.equal(ler('Confirmo nossa reunião amanhã às 15h'), '2026-10-03T15:00');
