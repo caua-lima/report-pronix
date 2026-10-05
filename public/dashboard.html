@@ -522,7 +522,7 @@
         <div class="card">
           <div class="head"><div class="t"><i data-ic="users"></i>Equipe</div></div>
           <table>
-            <thead><tr><th>Nome</th><th>Chave</th><th title="Mostrar a ficha do lead (RD) e o resumo rápido no WhatsApp">Popup do lead</th><th title="Botão Coach da conversa no WhatsApp (IA gratuita: perfil do lead, objeções e perguntas)">Coach</th><th title="No cartão do lead: move o card para Respondeu no RD quando o lead responde e mostra a etiqueta Qualificado e o dia/horário agendado">Automação RD</th><th>Criado</th><th></th></tr></thead>
+            <thead><tr><th>Nome</th><th>Chave</th><th title="Mostrar a ficha do lead (RD) e o resumo rápido no WhatsApp">Popup do lead</th><th title="Botão Coach da conversa no WhatsApp (IA gratuita: perfil do lead, objeções e perguntas)">Coach</th><th title="No cartão do lead: move o card para Respondeu no RD quando o lead responde e mostra a etiqueta Qualificado e o dia/horário agendado">Automação RD</th><th title="No cartão do lead: etiquetas com o investimento do formulário (3 a 5k, 5k+) e se já vende">Etiquetas</th><th>Criado</th><th></th></tr></thead>
             <tbody id="lista"></tbody>
           </table>
           <div id="vazio" class="hint">Nenhum acesso criado ainda.</div>
@@ -1011,6 +1011,7 @@
             <td><input type="checkbox" data-ficha-crm="${esc(u.id)}" ${u.fichaCrm ? 'checked' : ''} ${podeMexerEmUsuarios() ? '' : 'disabled'} style="width:auto" title="Popup do lead (ficha do RD e resumo rápido) para ${esc(u.nome)}" /></td>
             <td><input type="checkbox" data-coach="${esc(u.id)}" ${u.coach ? 'checked' : ''} ${podeMexerEmUsuarios() ? '' : 'disabled'} style="width:auto" title="Coach da conversa para ${esc(u.nome)}" /></td>
             <td><input type="checkbox" data-automacao="${esc(u.id)}" ${u.automacao ? 'checked' : ''} ${podeMexerEmUsuarios() ? '' : 'disabled'} style="width:auto" title="Automação do RD (mover para Respondeu, etiqueta Qualificado e agendamento) para ${esc(u.nome)}" /></td>
+            <td><input type="checkbox" data-etiquetas="${esc(u.id)}" ${u.etiquetas ? 'checked' : ''} ${podeMexerEmUsuarios() ? '' : 'disabled'} style="width:auto" title="Etiquetas do formulário (investimento e se já vende) para ${esc(u.nome)}" /></td>
             <td style="color:var(--muted);font-size:.8rem">${new Date(u.criadoEm).toLocaleDateString('pt-BR')}</td>
             <td><div class="acoes">
               <button class="mini" data-copiar="${esc(u.chave)}">Copiar chave</button>
@@ -1024,6 +1025,20 @@
 
     // Só o master troca o tipo de acesso e escolhe quem vê o popup do lead.
     $('lista').addEventListener('change', async (ev) => {
+      const et = ev.target.closest('[data-etiquetas]');
+      if (et) {
+        et.disabled = true;
+        try {
+          await api('PATCH', '/api/admin/usuarios/' + et.dataset.etiquetas, { etiquetas: et.checked });
+          toast(et.checked ? 'Etiquetas ligadas.' : 'Etiquetas desligadas.');
+        } catch (e) {
+          et.checked = !et.checked;
+          setStatus('statusCriar', e.message, { erro: true });
+        } finally {
+          et.disabled = false;
+        }
+        return;
+      }
       const au = ev.target.closest('[data-automacao]');
       if (au) {
         au.disabled = true;

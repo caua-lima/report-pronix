@@ -28,6 +28,8 @@ const normalizar = (u) => {
     fichaCrm: typeof u.fichaCrm === 'boolean' ? u.fichaCrm : true,
     coach: typeof u.coach === 'boolean' ? u.coach : papel === 'master',
     automacao: typeof u.automacao === 'boolean' ? u.automacao : papel === 'master',
+    // etiquetas: no cartão do lead, o investimento do formulário e se já vende. Também começa só com o master.
+    etiquetas: typeof u.etiquetas === 'boolean' ? u.etiquetas : papel === 'master',
   };
 };
 /** Master e gestor veem e fazem tudo; só o master cria, edita e remove usuários. */
@@ -122,6 +124,16 @@ async function definirAutomacao(id, ligada) {
   return true;
 }
 
+/** Liga/desliga as etiquetas do formulário (investimento e se já vende) no cartão do lead. */
+async function definirEtiquetas(id, ligadas) {
+  const dados = await ler();
+  const u = dados.usuarios.find((x) => x.id === id);
+  if (!u) return false;
+  u.etiquetas = Boolean(ligadas);
+  await db.setJson(CHAVE_DB, dados);
+  return true;
+}
+
 async function remover(id) {
   const dados = await ler();
   const alvo = dados.usuarios.find((u) => u.id === id);
@@ -139,4 +151,4 @@ async function porChave(chave) {
   return (await ler()).usuarios.find((u) => u.chave === chave) || null;
 }
 
-module.exports = { listar, criar, remover, definirPapel, definirFichaCrm, definirCoach, definirAutomacao, porChave, ehAdmin, ehMaster, PAPEIS };
+module.exports = { listar, criar, remover, definirPapel, definirFichaCrm, definirCoach, definirAutomacao, definirEtiquetas, porChave, ehAdmin, ehMaster, PAPEIS };

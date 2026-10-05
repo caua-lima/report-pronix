@@ -275,31 +275,49 @@ test('lead respondeu só a primeira pergunta: o card vai para "Respondeu" e NÃO
 });
 
 // ---------------------------------------------------------------- etiquetas do formulário
-test('etiquetas do formulário: investimento ("3 a 5k", "5k+") e se já vende — só para quem tem a automação', async () => {
-  const comFormulario = (campos, automacao = true) => ({
+test('etiquetas do formulário: investimento ("R$ 3 a 5k", "R$ 5k+") e se já vende — permissão própria, separada da automação', async () => {
+  const comFormulario = (campos, { etiquetas = true, automacao = false } = {}) => ({
     aoEnviar: async (msg) => {
       if (msg.action !== 'crmLead') return { ok: true };
       const ficha = { ...fichaDoRd('Respondeu'), formulario: { campos, autor: '', quando: '' } };
-      return { ok: true, configurado: true, encontrado: true, ficha, coach: false, ...(automacao ? { automacao: true, podeResponder: false, marca: SEM_MARCA } : {}) };
+      return {
+        ok: true, configurado: true, encontrado: true, ficha, coach: false,
+        ...(etiquetas ? { etiquetas: true } : {}), ...(automacao ? { automacao: true, podeResponder: false, marca: SEM_MARCA } : {}),
+      };
     },
   });
+  const chips = (p) => [...p.document.getElementById('cr-etiquetas').querySelectorAll('span')].map((x) => x.textContent);
   const casos = [
-    [[{ rotulo: 'Investimento', valor: 'R$3.000 a R$5.000' }, { rotulo: 'Vende online', valor: 'Quero começar a vender no Mercado Livre' }], ['3 a 5k', 'Ainda não vende']],
-    [[{ rotulo: 'Investimento', valor: '+ de R$5.000' }, { rotulo: 'Vende online?', valor: 'Já vendo e quero aumentar meus resultados no Mercado Livre' }], ['5k+', 'Já vende']],
-    [[{ rotulo: 'Investimento', valor: 'Até R$ 3 mil' }, { rotulo: 'Vende online', valor: 'Não' }], ['até 3k', 'Ainda não vende']],
+    [[{ rotulo: 'Investimento', valor: 'R$3.000 a R$5.000' }, { rotulo: 'Vende online', valor: 'Quero começar a vender no Mercado Livre' }], ['R$ 3 a 5k', 'Ainda não vende']],
+    [[{ rotulo: 'Investimento', valor: '+ de R$5.000' }, { rotulo: 'Vende online?', valor: 'Já vendo e quero aumentar meus resultados no Mercado Livre' }], ['R$ 5k+', 'Já vende']],
+    [[{ rotulo: 'Investimento', valor: 'Até R$ 3 mil' }, { rotulo: 'Vende online', valor: 'Não' }], ['R$ até 3k', 'Ainda não vende']],
   ];
   for (const [campos, esperado] of casos) {
+    // só as etiquetas ligadas (sem a automação): aparecem as do formulário, e nada de "Qualificado"
     const p = abrir(comFormulario(campos));
-    await esperar(() => /\+ Qualificado/.test(etiquetas(p)), { motivo: 'etiquetas' });
-    const chips = [...p.document.getElementById('cr-etiquetas').querySelectorAll('span')].map((s) => s.textContent);
-    assert.deepEqual(chips, esperado);
+    await esperar(() => !!p.document.getElementById('cr-etiquetas'), { motivo: 'etiquetas' });
+    assert.deepEqual(chips(p), esperado);
+    assert.doesNotMatch(etiquetas(p), /Qualificado/, 'sem a automação não há etiqueta nem botão de Qualificado');
   }
-  // formulário sem esses campos: nenhuma etiqueta a mais
+  // as duas permissões ligadas: tudo junto
+  const tudo = abrir(comFormulario(casos[1][0], { automacao: true }));
+  await esperar(() => /\+ Qualificado/.test(etiquetas(tudo)), { motivo: 'etiquetas' });
+  assert.deepEqual(chips(tudo), ['R$ 5k+', 'Já vende']);
+  // mais aparentes que as outras: preenchidas e em letra maior
+  const investimento = [...tudo.document.getElementById('cr-etiquetas').querySelectorAll('span')][0];
+  assert.equal(investimento.style.fontSize, '12px');
+  assert.equal(investimento.style.fontWeight, '800');
+  assert.notEqual(investimento.style.background, 'transparent');
+
+  // só a automação (etiquetas desligadas): nenhuma etiqueta do formulário
+  const soAuto = abrir(comFormulario(casos[0][0], { etiquetas: false, automacao: true }));
+  await esperar(() => /\+ Qualificado/.test(etiquetas(soAuto)), { motivo: 'etiquetas' });
+  assert.deepEqual(chips(soAuto), []);
+  // formulário sem esses campos, ou nenhuma permissão: nada
   const vazio = abrir(comFormulario([{ rotulo: 'Estado', valor: 'Bahia' }]));
-  await esperar(() => /\+ Qualificado/.test(etiquetas(vazio)), { motivo: 'etiquetas' });
-  assert.equal(vazio.document.getElementById('cr-etiquetas').querySelectorAll('span').length, 0);
-  // sem a automação (os outros usuários): o cartão não tem etiquetas
-  const outro = abrir(comFormulario(casos[0][0], false));
-  await fichaNaTela(outro);
-  assert.equal(outro.document.getElementById('cr-etiquetas'), null);
+  await fichaNaTela(vazio);
+  assert.deepEqual(chips(vazio), []);
+  const nada = abrir(comFormulario(casos[0][0], { etiquetas: false }));
+  await fichaNaTela(nada);
+  assert.equal(nada.document.getElementById('cr-etiquetas'), null);
 });

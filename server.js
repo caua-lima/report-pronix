@@ -144,6 +144,7 @@ app.get('/api/eu', auth, (req, res) => {
     ok: true, nome: req.usuario.nome, id: req.usuario.id, papel: req.usuario.papel,
     // O que o master liberou para esta chave (a extensão mostra no popup).
     coach: Boolean(req.usuario.coach), fichaCrm: Boolean(req.usuario.fichaCrm), automacao: Boolean(req.usuario.automacao),
+    etiquetas: Boolean(req.usuario.etiquetas),
   });
 });
 
@@ -176,6 +177,7 @@ app.patch('/api/admin/usuarios/:id', master, async (req, res) => {
     if (typeof corpo.fichaCrm === 'boolean') ok = await usuarios.definirFichaCrm(req.params.id, corpo.fichaCrm);
     else if (typeof corpo.coach === 'boolean') ok = await usuarios.definirCoach(req.params.id, corpo.coach);
     else if (typeof corpo.automacao === 'boolean') ok = await usuarios.definirAutomacao(req.params.id, corpo.automacao);
+    else if (typeof corpo.etiquetas === 'boolean') ok = await usuarios.definirEtiquetas(req.params.id, corpo.etiquetas);
     else ok = await usuarios.definirPapel(req.params.id, String(corpo.papel || ''));
     if (!ok) return res.status(404).json({ erro: 'Usuário não encontrado.' });
     res.json({ ok: true });
@@ -535,6 +537,7 @@ app.post('/api/crm/lead', auth, async (req, res) => {
     // "coach" avisa a extensão se este usuário vê o botão Coach da conversa.
     const extra = { coach: Boolean(req.usuario.coach) };
     if (req.usuario.automacao) Object.assign(extra, await automacaoDoLead(r, conversaDoPedido(conversa, { telefone, nome }), req.usuario));
+    if (req.usuario.etiquetas) extra.etiquetas = true; // etiquetas do formulário (investimento, já vende) no cartão
     res.json({ ...r, ...extra });
   } catch (err) {
     res.status(502).json({ erro: err.message });

@@ -120,13 +120,14 @@ outros leads enquanto a IA escreve — só não troque de conversa durante a lei
 | Closers (adicionar e remover) | | | ✓ |
 | Escolher o closer no aviso "Report pronto!" | | | ✓ |
 
-Além do papel, o master liga três recursos **por pessoa** na aba Acessos:
+Além do papel, o master liga quatro recursos **por pessoa** na aba Acessos:
 
 | Recurso | Padrão | O que libera |
 | --- | --- | --- |
 | **Popup do lead** | ligado para todos | Ficha do RD e resumo rápido no WhatsApp. |
 | **Coach** | só o master | Popup do coach: a dica de como seguir, quando você pede. |
 | **Automação RD** | só o master | Mover o card para "Respondeu", etiqueta "Qualificado" e agendamento. |
+| **Etiquetas** | só o master | No cartão, o investimento do formulário ("R$ 3 a 5k", "R$ 5k+") e se o lead já vende. |
 
 Regras do cadastro (`src/usuarios.js`): o único master não pode ser rebaixado nem removido; enquanto
 não houver nenhum, o usuário cujo nome é `MASTER_NOME` é promovido uma vez. A `ADMIN_PASSWORD` é o acesso
@@ -480,7 +481,7 @@ Tudo em `src/db.js` (Redis em produção, `data/*.json` local). **A conversa nã
 npm test
 ```
 
-**350 testes**, sem rede, sem chave real, sem custo e sem tocar em `data/` (o banco é uma pasta
+**353 testes**, sem rede, sem chave real, sem custo e sem tocar em `data/` (o banco é uma pasta
 temporária). O `jsdom` roda os scripts **reais** da extensão e do painel.
 
 | Arquivo | O que cobre |

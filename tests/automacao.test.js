@@ -354,3 +354,21 @@ test('chave por nome é de cada usuário (o nome salvo é da agenda de cada um);
   // nada de conversa guardado: só a etiqueta e a data
   assert.ok(!/content|mensag/i.test(JSON.stringify(await db.getJson('lead_marcas', {}))));
 });
+
+// ---------------------------------------------------------------- etiquetas do formulário
+test('etiquetas do formulário: permissão própria (padrão só o master); o master liga para os outros sem ligar a automação', async () => {
+  assert.equal((await chamar('GET', '/api/eu', undefined, E.master)).json.etiquetas, true);
+  assert.equal((await chamar('GET', '/api/eu', undefined, E.sdr)).json.etiquetas, false);
+  assert.equal((await ficha('11110001')).json.etiquetas, true);
+  assert.ok(!('etiquetas' in (await ficha('11110001', E.sdr)).json));
+
+  const patch = (corpo, chave) => chamar('PATCH', '/api/admin/usuarios/' + E.idSdr, corpo, chave);
+  assert.equal((await patch({ etiquetas: true }, E.sdr)).status, 403, 'só o master muda');
+  assert.equal((await patch({ etiquetas: true }, E.master)).status, 200);
+  const doSdr = await ficha('11110001', E.sdr);
+  assert.equal(doSdr.json.etiquetas, true);
+  assert.ok(!('automacao' in doSdr.json) && !('marca' in doSdr.json), 'ligar as etiquetas não liga a automação do RD');
+  assert.equal((await mover('11110006', {}, E.sdr)).status, 403);
+  assert.equal((await patch({ etiquetas: false }, E.master)).status, 200);
+  assert.equal((await chamar('GET', '/api/eu', undefined, E.sdr)).json.etiquetas, false);
+});

@@ -1114,6 +1114,7 @@
   const ficha = {
     ligada: true, minimizada: false, chave: null, fechadaPara: null, seq: 0, timer: null, vigia: null, ultimoEstado: null, coach: false,
     automacao: false, // o master ligou a automação para esta chave (mover para "Respondeu", etiqueta e agendamento)
+    etiquetas: false, // o master ligou as etiquetas do formulário (investimento e se já vende)
     conversa: null, // { telefone, nome } da conversa aberta: é por ela que o servidor lembra a etiqueta
   };
   // Leitura do agendamento e do "lead respondeu" (agenda.js, carregado antes deste arquivo).
@@ -1794,7 +1795,7 @@
 
   /** Linha de etiquetas no topo do cartão: "Qualificado" (liga/desliga à mão), o agendamento e o formulário. */
   function blocoEtiquetas(estado) {
-    if (!ficha.automacao || estado.tipo === 'carregando') return null;
+    if ((!ficha.automacao && !ficha.etiquetas) || estado.tipo === 'carregando') return null;
     const marca = estado.marca || {};
     const conversa = ficha.conversa;
     const linha = elem('div', 'display:flex;flex-wrap:wrap;align-items:center;gap:5px;margin-top:7px');
@@ -1814,38 +1815,44 @@
       redesenharFicha();
       enviarMarca(conversa, campos);
     };
-    if (marca.qualificado) {
+    if (ficha.automacao && marca.qualificado) {
       const chip = elem('span', `${base};border:1px solid #25d366;background:rgba(37,211,102,.14);color:#25d366`, 'QUALIFICADO');
       // De onde a etiqueta veio (passe o mouse): assim dá para confiar nela sem reabrir a conversa.
       const porque = { rd: 'o card esteve na etapa Qualificado do RD', report: 'você gerou o report deste lead', manual: 'você marcou à mão' }[marca.origem];
       chip.title = porque ? 'Qualificado: ' + porque + '.' : 'Lead qualificado.';
       linha.appendChild(chip);
       linha.appendChild(tirar('Tirar a etiqueta Qualificado', () => mudar({ qualificado: false, manual: true }, { qualificado: false })));
-    } else {
+    } else if (ficha.automacao) {
       const b = elem('button', `${base};cursor:pointer;border:1px dashed #3a4a5a;background:transparent;color:#8b98a5`, '+ Qualificado');
       b.type = 'button';
       b.title = 'Marcar este lead como qualificado';
       b.addEventListener('click', () => mudar({ qualificado: true, manual: true }, { qualificado: true, origem: 'manual' }));
       linha.appendChild(b);
     }
-    const ag = marca.agendadoPara && agendaLib ? agendaLib.descrever(marca.agendadoPara, new Date()) : null;
+    const ag = ficha.automacao && marca.agendadoPara && agendaLib ? agendaLib.descrever(marca.agendadoPara, new Date()) : null;
     if (ag) {
       const cor = ag.passou ? '#f0ad4e' : '#ffc400';
       linha.appendChild(elem('span', `${base};border:1px solid ${cor};background:rgba(255,196,0,.1);color:${cor}`, (ag.passou ? 'Estava agendado: ' : 'Agendado: ') + ag.texto));
       linha.appendChild(tirar('Apagar este agendamento', () => mudar({ limparAgenda: true }, { agendadoPara: '' })));
     }
     // Do formulário do RD, para ver de relance: quanto o lead disse que investe e se já vende.
-    const doFormulario = etiquetasDoFormulario(estado.ficha);
-    const neutra = `${base};border:1px solid #3a4a5a;background:rgba(139,152,165,.12);color:#c9d1d9`;
-    if (doFormulario.investimento) {
-      const c = elem('span', neutra, doFormulario.investimento);
-      c.title = 'Investimento informado no formulário';
-      linha.appendChild(c);
-    }
-    if (doFormulario.vende) {
-      const c = elem('span', neutra, doFormulario.vende);
-      c.title = 'Resposta do formulário sobre vender online';
-      linha.appendChild(c);
+    // Cheias e maiores que as outras: são o que se bate o olho primeiro, mesmo com o cartão minimizado.
+    const doFormulario = ficha.etiquetas ? etiquetasDoFormulario(estado.ficha) : { investimento: '', vende: '' };
+    const cheia = (fundo, cor) => `border-radius:999px;padding:3px 11px;font-size:12px;font-weight:800;line-height:1.5;letter-spacing:.02em;border:1px solid ${fundo};background:${fundo};color:${cor}`;
+    if (doFormulario.investimento || doFormulario.vende) {
+      const doForm = elem('div', 'flex-basis:100%;display:flex;flex-wrap:wrap;gap:6px');
+      if (doFormulario.investimento) {
+        const c = elem('span', cheia('#ffc400', '#121214'), 'R$ ' + doFormulario.investimento);
+        c.title = 'Investimento informado no formulário';
+        doForm.appendChild(c);
+      }
+      if (doFormulario.vende) {
+        const jaVende = doFormulario.vende === 'Já vende';
+        const c = elem('span', cheia(jaVende ? '#25d366' : '#4c8dff', jaVende ? '#05130c' : '#ffffff'), doFormulario.vende);
+        c.title = 'Resposta do formulário sobre vender online';
+        doForm.appendChild(c);
+      }
+      linha.appendChild(doForm);
     }
     if (estado.aviso) linha.appendChild(elem('div', `flex-basis:100%;font-size:11px;color:${estado.aviso.erro ? '#ff6b6b' : '#25d366'}`, estado.aviso.texto));
     return linha;
@@ -2007,6 +2014,7 @@
     if (!r || !r.ok) return renderFicha({ tipo: 'erro', erro: (r && r.erro) || 'Não consegui consultar o RD Station.', busca });
     // Automação (mover para "Respondeu", etiqueta e agendamento): o servidor diz se o master ligou para esta chave.
     ficha.automacao = r.automacao === true;
+    ficha.etiquetas = r.etiquetas === true; // etiquetas do formulário: permissão própria
     const extras = ficha.automacao ? { marca: r.marca || null, podeResponder: r.podeResponder === true } : {};
     // Sem ficha do RD para este usuário (CRM desligado no servidor ou popup do lead desligado):
     // quem tem o Coach continua vendo o cartão, só com o resumo e o coach.
