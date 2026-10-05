@@ -24,7 +24,7 @@
   // especialista ou diagnóstico não basta: "vi que você se inscreveu hoje às 14h no diagnóstico" e
   // "posso agendar para amanhã às 15h?" não são agendamento feito.
   const RE_COMPROMISSO =
-    /\b(?:re)?agendad\w*|\b(?:re)?agendei\b|\b(?:re)?agendamos\b|\bremarcad\w*|\bremarquei\b|\bremarcamos\b|\bmarcad\w*|\bmarquei\b|\bmarcamos\b|\bconfirmad\w*|\bconfirmei\b|\bconfirmo\b|\bconfirmamos\b|\bcombinad\w*|\breservad\w*|\breservei\b|\bfechado\b|\bfic(?:a|ou|amos)\s+(?:para|pra|pro)\b/;
+    /\b(?:re)?agendad\w*|\b(?:re)?agendei\b|\b(?:re)?agendamos\b|\b(?:re)?agendou\b|\bremarcad\w*|\bremarquei\b|\bremarcamos\b|\bremarcou\b|\bmarcad\w*|\bmarquei\b|\bmarcamos\b|\bmarcou\b|\bconfirmad\w*|\bconfirmei\b|\bconfirmou\b|\bconfirmo\b|\bconfirmamos\b|\bcombinad\w*|\breservad\w*|\breservei\b|\bfechado\b|\bfic(?:a|ou|amos)\s+(?:para|pra|pro)\b/;
 
   // "15h", "15h30", "15 horas", "15:30", "às 15", "3 da tarde" e "meio-dia".
   const RE_HORA =
