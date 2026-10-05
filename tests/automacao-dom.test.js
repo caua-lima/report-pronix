@@ -273,3 +273,33 @@ test('lead respondeu só a primeira pergunta: o card vai para "Respondeu" e NÃO
   assert.doesNotMatch(etiquetas(p), /QUALIFICADO|Agendado/);
   assert.match(etiquetas(p), /\+ Qualificado/, 'fica só o botão para marcar à mão');
 });
+
+// ---------------------------------------------------------------- etiquetas do formulário
+test('etiquetas do formulário: investimento ("3 a 5k", "5k+") e se já vende — só para quem tem a automação', async () => {
+  const comFormulario = (campos, automacao = true) => ({
+    aoEnviar: async (msg) => {
+      if (msg.action !== 'crmLead') return { ok: true };
+      const ficha = { ...fichaDoRd('Respondeu'), formulario: { campos, autor: '', quando: '' } };
+      return { ok: true, configurado: true, encontrado: true, ficha, coach: false, ...(automacao ? { automacao: true, podeResponder: false, marca: SEM_MARCA } : {}) };
+    },
+  });
+  const casos = [
+    [[{ rotulo: 'Investimento', valor: 'R$3.000 a R$5.000' }, { rotulo: 'Vende online', valor: 'Quero começar a vender no Mercado Livre' }], ['3 a 5k', 'Ainda não vende']],
+    [[{ rotulo: 'Investimento', valor: '+ de R$5.000' }, { rotulo: 'Vende online?', valor: 'Já vendo e quero aumentar meus resultados no Mercado Livre' }], ['5k+', 'Já vende']],
+    [[{ rotulo: 'Investimento', valor: 'Até R$ 3 mil' }, { rotulo: 'Vende online', valor: 'Não' }], ['até 3k', 'Ainda não vende']],
+  ];
+  for (const [campos, esperado] of casos) {
+    const p = abrir(comFormulario(campos));
+    await esperar(() => /\+ Qualificado/.test(etiquetas(p)), { motivo: 'etiquetas' });
+    const chips = [...p.document.getElementById('cr-etiquetas').querySelectorAll('span')].map((s) => s.textContent);
+    assert.deepEqual(chips, esperado);
+  }
+  // formulário sem esses campos: nenhuma etiqueta a mais
+  const vazio = abrir(comFormulario([{ rotulo: 'Estado', valor: 'Bahia' }]));
+  await esperar(() => /\+ Qualificado/.test(etiquetas(vazio)), { motivo: 'etiquetas' });
+  assert.equal(vazio.document.getElementById('cr-etiquetas').querySelectorAll('span').length, 0);
+  // sem a automação (os outros usuários): o cartão não tem etiquetas
+  const outro = abrir(comFormulario(casos[0][0], false));
+  await fichaNaTela(outro);
+  assert.equal(outro.document.getElementById('cr-etiquetas'), null);
+});

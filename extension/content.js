@@ -1753,7 +1753,46 @@
     anotarAgendamento(mensagens, ficha.conversa);
   }
 
-  /** Linha de etiquetas no topo do cartão: "Qualificado" (liga/desliga à mão) e o agendamento. */
+  /**
+   * Etiquetas tiradas das respostas do formulário (ficha do RD):
+   *  - investimento: "R$3.000 a R$5.000" -> "3 a 5k"; "+ de R$5.000" -> "5k+"; "até R$3.000" -> "até 3k";
+   *  - vende: "Já vendo e quero aumentar…" -> "Já vende"; "Quero começar a vender…" -> "Ainda não vende".
+   * Sem o campo no formulário (ou resposta que não dá para ler), a etiqueta não aparece.
+   */
+  function etiquetasDoFormulario(f) {
+    const saida = { investimento: '', vende: '' };
+    if (!f) return saida;
+    const campos = ((f.formulario && f.formulario.campos) || []).concat(f.campos || []);
+    const semAcento = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+    const valorDe = (re) => {
+      const c = campos.find((x) => re.test(semAcento(x.rotulo)));
+      return c ? String(c.valor || '') : '';
+    };
+
+    const inv = semAcento(valorDe(/invest/));
+    if (inv) {
+      const emK = (v) => (v >= 1000 ? String(Math.round(v / 100) / 10).replace('.', ',') + 'k' : String(v));
+      const numeros = [...inv.matchAll(/(\d{1,3}(?:\.\d{3})+|\d+)\s*(mil\b|k\b)?/g)]
+        .map((m) => {
+          const n = Number(m[1].replace(/\./g, ''));
+          return m[2] && n < 1000 ? n * 1000 : n;
+        })
+        .filter((n) => n > 0);
+      if (numeros.length >= 2) saida.investimento = `${emK(numeros[0]).replace(/k$/, '')} a ${emK(numeros[1])}`;
+      else if (numeros.length === 1) {
+        if (/\+|mais de|acima|a partir/.test(inv)) saida.investimento = emK(numeros[0]) + '+';
+        else if (/ate|menos de|abaixo/.test(inv)) saida.investimento = 'até ' + emK(numeros[0]);
+        else saida.investimento = emK(numeros[0]);
+      }
+    }
+
+    const vende = semAcento(valorDe(/vend/));
+    if (/comec|ainda nao|nao vend|do zero|quero vender|^nao\b/.test(vende)) saida.vende = 'Ainda não vende';
+    else if (/ja vend|ja tenho|aumentar|^sim\b/.test(vende)) saida.vende = 'Já vende';
+    return saida;
+  }
+
+  /** Linha de etiquetas no topo do cartão: "Qualificado" (liga/desliga à mão), o agendamento e o formulário. */
   function blocoEtiquetas(estado) {
     if (!ficha.automacao || estado.tipo === 'carregando') return null;
     const marca = estado.marca || {};
@@ -1794,6 +1833,19 @@
       const cor = ag.passou ? '#f0ad4e' : '#ffc400';
       linha.appendChild(elem('span', `${base};border:1px solid ${cor};background:rgba(255,196,0,.1);color:${cor}`, (ag.passou ? 'Estava agendado: ' : 'Agendado: ') + ag.texto));
       linha.appendChild(tirar('Apagar este agendamento', () => mudar({ limparAgenda: true }, { agendadoPara: '' })));
+    }
+    // Do formulário do RD, para ver de relance: quanto o lead disse que investe e se já vende.
+    const doFormulario = etiquetasDoFormulario(estado.ficha);
+    const neutra = `${base};border:1px solid #3a4a5a;background:rgba(139,152,165,.12);color:#c9d1d9`;
+    if (doFormulario.investimento) {
+      const c = elem('span', neutra, doFormulario.investimento);
+      c.title = 'Investimento informado no formulário';
+      linha.appendChild(c);
+    }
+    if (doFormulario.vende) {
+      const c = elem('span', neutra, doFormulario.vende);
+      c.title = 'Resposta do formulário sobre vender online';
+      linha.appendChild(c);
     }
     if (estado.aviso) linha.appendChild(elem('div', `flex-basis:100%;font-size:11px;color:${estado.aviso.erro ? '#ff6b6b' : '#25d366'}`, estado.aviso.texto));
     return linha;
