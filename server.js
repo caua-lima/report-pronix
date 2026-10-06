@@ -679,9 +679,15 @@ app.post('/api/admin/crm/teste', admin, async (req, res) => {
 // Quando o mesmo lead teve mais de um report no dia, vale o último (src/diario.js).
 // Qualquer usuário com chave usa; cada um só enxerga os seus.
 // ---------------------------------------------------------------------------
+/**
+ * Report de reunião que não aconteceu (no-show) não vai para o líder: sai do .zip padrão e aparece
+ * desmarcado na lista do dia (dá para marcar à mão se for o caso).
+ */
+const semNoShow = (marcados) => marcados.map((r) => (r.resultado === 'no_show' ? { ...r, usar: false, noShow: true } : { ...r, noShow: false }));
+
 async function meusReportsDoDia(usuario, dia) {
   const doDia = await stats.listar({ de: dia, ate: dia });
-  return diario.marcarUltimos(doDia.filter((r) => r.usuarioId === usuario.id));
+  return semNoShow(diario.marcarUltimos(doDia.filter((r) => r.usuarioId === usuario.id)));
 }
 
 app.get('/api/meus-reports', auth, async (req, res) => {
@@ -700,6 +706,7 @@ app.get('/api/meus-reports', auth, async (req, res) => {
         origem: r.origem,
         arquivo: r.arquivo,
         usar: r.usar,
+        noShow: r.noShow,
         substituidoPor: r.substituidoPor,
         geracoes: r.geracoes,
       })),
@@ -714,7 +721,7 @@ app.get('/api/meus-reports', auth, async (req, res) => {
 // um .zip com uma pasta por SDR.
 // ---------------------------------------------------------------------------
 async function reportsDaEquipe(dia) {
-  return diario.marcarUltimos(await stats.listar({ de: dia, ate: dia }));
+  return semNoShow(diario.marcarUltimos(await stats.listar({ de: dia, ate: dia })));
 }
 
 app.get('/api/equipe-reports', admin, async (req, res) => {
@@ -735,6 +742,7 @@ app.get('/api/equipe-reports', admin, async (req, res) => {
         origem: r.origem,
         arquivo: r.arquivo,
         usar: r.usar,
+        noShow: r.noShow,
         substituidoPor: r.substituidoPor,
         geracoes: r.geracoes,
       })),

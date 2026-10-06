@@ -596,3 +596,28 @@ test('perfil: o "como conduzir" traz o que funcionou nas reuniões (garantia com
   assert.match(p('cauteloso'), /forma de pagamento que ele sustente/);
   assert.match(p('dominante'), /responder direto/);
 });
+
+// ---------------------------------------------------------------- no-show fora do .zip do dia
+test('no-show não vai para o líder: sai do .zip do dia e aparece desmarcado na lista', async () => {
+  const foi = await gerar(E.master, 'Lead Que Foi ' + Date.now());
+  const faltou = await gerar(E.master, 'Lead Que Faltou ' + Date.now());
+  await api('PATCH', `/api/admin/reports/${faltou.json.id}/resultado`, { chave: E.master, corpo: { resultado: 'no_show' } });
+
+  const lista = (await api('GET', '/api/meus-reports', { chave: E.master })).json.reports;
+  const doQueFaltou = lista.find((r) => r.id === faltou.json.id);
+  const doQueFoi = lista.find((r) => r.id === foi.json.id);
+  assert.deepEqual([doQueFaltou.usar, doQueFaltou.noShow], [false, true]);
+  assert.deepEqual([doQueFoi.usar, doQueFoi.noShow], [true, false]);
+  const equipe = (await api('GET', '/api/equipe-reports', { chave: E.master })).json.reports;
+  assert.equal(equipe.find((r) => r.id === faltou.json.id).usar, false);
+
+  const z = await fetch(base + '/api/meus-reports/zip', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-cr-key': E.master }, body: '{}' });
+  assert.equal(z.status, 200);
+  const noZip = lista.filter((r) => r.usar).length;
+  assert.equal(Number(z.headers.get('X-Reports-No-Zip')), noZip, 'o .zip leva só os que valem (sem o no-show)');
+  await z.arrayBuffer();
+
+  // desfeito o no-show, volta a valer
+  await api('PATCH', `/api/admin/reports/${faltou.json.id}/resultado`, { chave: E.master, corpo: { resultado: '' } });
+  assert.equal((await api('GET', '/api/meus-reports', { chave: E.master })).json.reports.find((r) => r.id === faltou.json.id).usar, true);
+});

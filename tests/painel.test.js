@@ -1174,3 +1174,38 @@ test('Acessos: o master liga/desliga as Etiquetas do formulário por pessoa', as
   assert.deepEqual(p.erros, []);
   p.fechar();
 });
+
+test('Resultados: no-show sai da lista (e volta com "Mostrar no-show"); quem já tem closer ou resultado continua', async () => {
+  const linhas = { ...LINHAS_RES, reports: [
+    ...LINHAS_RES.reports,
+    { ...LINHAS_RES.reports[0], id: 'x3', lead: 'Lead Que Faltou', resultado: 'no_show', closerId: '' },
+    { ...LINHAS_RES.reports[0], id: 'x4', lead: 'Lead Que Fechou', resultado: 'venda_call' },
+  ] };
+  const api = apiBase({ papel: 'master', nome: 'Cauã' })
+    .quando('GET /api/master/resultados', () => ({ corpo: linhas }))
+    .quando('GET /api/master/inteligencia', () => ({ corpo: INTEL }))
+    .quando('PATCH /api/admin/reports/x1/resultado', ({ corpo }) => ({ corpo: { ok: true, versao: corpo.versao + 1 } }));
+  const p = abrirPainel(api, { hash: '#resultados' });
+  const ids = () => [...p.$('listaRes').querySelectorAll('tr')].map((tr) => tr.dataset.res);
+  await esperar(() => ids().length === 3, { motivo: 'linhas' });
+  assert.ok(!ids().includes('x3'), 'no-show fora da lista');
+  assert.ok(ids().includes('x4'), 'quem já tem resultado continua na lista');
+  assert.match(p.$('statusRes').textContent, /1 no-show fora da lista/);
+
+  p.$('resNoShow').checked = true;
+  p.$('resNoShow').dispatchEvent(new p.w.Event('change', { bubbles: true }));
+  await esperar(() => ids().includes('x3'), { motivo: 'no-show à vista' });
+  p.$('resNoShow').checked = false;
+  p.$('resNoShow').dispatchEvent(new p.w.Event('change', { bubbles: true }));
+  await esperar(() => !ids().includes('x3'), { motivo: 'no-show escondido de novo' });
+
+  // marcar no-show numa linha: ela sai na hora
+  const campo = p.document.querySelector('tr[data-res="x1"] [data-res-campo="resultado"]');
+  campo.value = 'no_show';
+  campo.dispatchEvent(new p.w.Event('change', { bubbles: true }));
+  await esperar(() => !ids().includes('x1'), { motivo: 'linha marcada como no-show some' });
+  await esperar(() => /No-show: saiu da lista/.test(p.$('toast').textContent), { motivo: 'aviso' });
+  await dormir(60);
+  assert.deepEqual(p.erros, []);
+  p.fechar();
+});

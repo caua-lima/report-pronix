@@ -410,6 +410,7 @@
               </select>
             </div>
             <label style="display:flex;align-items:center;gap:6px;margin:0"><input id="resPendentes" type="checkbox" style="width:auto" /> Só sem resultado</label>
+            <label style="display:flex;align-items:center;gap:6px;margin:0" title="Reunião que não aconteceu sai da lista e do .zip do dia"><input id="resNoShow" type="checkbox" style="width:auto" /> Mostrar no-show</label>
             <button id="resVer" class="btn sec"><i data-ic="refresh"></i>Atualizar</button>
           </div>
           <div id="statusRes" class="status"></div>
@@ -1541,11 +1542,15 @@
         const j = await api('GET', '/api/master/resultados?' + q);
         closersRes = j.closers || [];
         mostrarContagemClosers(closersRes.length);
-        const linhas = (j.reports || []).filter((r) => !$('resPendentes').checked || !r.resultado);
+        // No-show (gerou o report, a reunião não aconteceu) sai da lista; quem já tem closer ou resultado continua.
+        const noShows = (j.reports || []).filter((r) => r.resultado === 'no_show').length;
+        const linhas = (j.reports || []).filter((r) =>
+          (!$('resPendentes').checked || !r.resultado) && ($('resNoShow').checked || r.resultado !== 'no_show'));
         $('listaRes').innerHTML = linhas.map(linhaResultado).join('');
         $('vazioRes').style.display = linhas.length ? 'none' : '';
         const marcados = (j.reports || []).filter((r) => r.resultado).length;
         setStatus('statusRes', `${(j.reports || []).length} report(s) no período · ${marcados} com resultado marcado` +
+          (noShows && !$('resNoShow').checked ? ` · ${noShows} no-show fora da lista` : '') +
           (closersRes.length ? ` · ${closersRes.length} closer(s) cadastrado(s).` : '. Cadastre os closers na aba Closers para poder escolher.'), {});
       } catch (e) {
         setStatus('statusRes', e.message, { erro: true });
@@ -1566,7 +1571,12 @@
             versao: Number(linha.dataset.versao || 0),
           });
           linha.dataset.versao = r.versao;
-          toast(campo.dataset.resCampo === 'conscienciaReal' && campo.value ? 'Salvo. A IA vai usar esta correção.' : 'Salvo.');
+          if (campo.dataset.resCampo === 'resultado' && campo.value === 'no_show' && !$('resNoShow').checked) {
+            linha.remove();
+            toast('No-show: saiu da lista e do .zip do dia.');
+          } else {
+            toast(campo.dataset.resCampo === 'conscienciaReal' && campo.value ? 'Salvo. A IA vai usar esta correção.' : 'Salvo.');
+          }
           carregarInteligencia();
         } catch (e) {
           if (e.status === 409) {
@@ -1591,6 +1601,7 @@
       carregarResultados();
     }));
     $('resPendentes').addEventListener('change', carregarResultados);
+    $('resNoShow').addEventListener('change', carregarResultados);
     $('resEscopo').addEventListener('change', carregarResultados);
     $('resVer').addEventListener('click', carregarResultados);
 
@@ -2470,9 +2481,11 @@
         $('vazioMeus').style.display = j.reports.length ? 'none' : '';
         $('listaMeus').innerHTML = j.reports.map((x) => {
           const novo = x.substituidoPor ? porId.get(x.substituidoPor) : null;
-          const nota = x.usar
-            ? (x.geracoes > 1 ? `o último de ${x.geracoes} gerados` : '')
-            : `refeito — vale o das ${novo ? horaBR(novo.quando) : '?'}`;
+          const nota = x.noShow
+            ? 'no-show: fica fora do .zip'
+            : x.usar
+              ? (x.geracoes > 1 ? `o último de ${x.geracoes} gerados` : '')
+              : `refeito — vale o das ${novo ? horaBR(novo.quando) : '?'}`;
           return `<tr class="${x.usar ? '' : 'substituido'}">
             <td><input type="checkbox" data-meu="${esc(x.id)}" ${x.usar ? 'checked' : ''} style="width:auto" /></td>
             <td>${esc(x.lead || x.contato || '—')}</td>
