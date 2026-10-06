@@ -442,6 +442,7 @@
         <div class="card">
           <table>
             <thead><tr><th>Lead</th><th>Perfil</th><th>Consciência</th><th>Closer</th><th>Resultado</th><th>O que deu a reunião</th></tr></thead>
+            <datalist id="formasPgto"><option value="Cartão de crédito 12x"></option><option value="Cartão de crédito à vista"></option><option value="Pix à vista"></option><option value="Pix + cartão"></option><option value="Boleto parcelado"></option><option value="Recorrência no cartão"></option><option value="Dois cartões"></option></datalist>
             <tbody id="listaRes"></tbody>
           </table>
           <div id="vazioRes" class="hint">Nenhum report neste período.</div>
@@ -1645,7 +1646,16 @@
         </select></td>
         <td><select class="mini-select" data-res-campo="resultado">
           ${RESULTADOS_OPCOES.map((o) => `<option value="${o.v}" ${o.v === (r.resultado || '') ? 'selected' : ''}>${o.t}</option>`).join('')}
-        </select></td>
+        </select>
+        <div class="dados-venda ${VENDAS.includes(r.resultado) || r.vendidoNoRd ? '' : 'hidden'}" style="display:grid;gap:4px;margin-top:5px">
+          <select class="mini-select" data-res-campo="produto" title="Produto vendido">
+            <option value="">Produto…</option>
+            <option value="performance" ${r.produto === 'performance' ? 'selected' : ''}>PRONIX Performance</option>
+            <option value="acelera" ${r.produto === 'acelera' ? 'selected' : ''}>PRONIX Acelera</option>
+          </select>
+          <input type="text" inputmode="decimal" data-res-campo="ticket" value="${r.ticket ? esc(Number(r.ticket).toLocaleString('pt-BR', { minimumFractionDigits: 2 })) : ''}" placeholder="Ticket (R$)" title="Valor fechado, em reais" style="padding:5px 8px;font-size:.8rem" />
+          <input type="text" list="formasPgto" data-res-campo="pagamento" value="${esc(r.pagamento || '')}" placeholder="Forma de pagamento" title="Como o cliente pagou" style="padding:5px 8px;font-size:.8rem" />
+        </div></td>
         <td><input type="text" data-res-campo="obsReuniao" value="${esc(r.obsReuniao || '')}" placeholder="Ex.: fechou Performance; travou no sócio…" style="min-width:180px;padding:5px 8px;font-size:.8rem" /></td>
       </tr>`;
     }
@@ -1715,6 +1725,9 @@
           });
           linha.dataset.versao = r.versao;
           if (campo.dataset.resCampo === 'resultado') {
+            // produto, ticket e pagamento só fazem sentido em venda
+            const dv = linha.querySelector('.dados-venda');
+            if (dv) dv.classList.toggle('hidden', !VENDAS.includes(campo.value));
             // o certinho / selo da linha acompanha o resultado escolhido
             const celula = linha.querySelector('td');
             celula.querySelectorAll('.selo-venda, .selo-rd, .selo-fim').forEach((x) => x.remove());

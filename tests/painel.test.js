@@ -1367,3 +1367,37 @@ test('Resultados: "Não fechou" também é encerrado — sai da lista ao marcar 
   assert.deepEqual(p.erros, []);
   p.fechar();
 });
+
+test('Resultados: produto, ticket e forma de pagamento aparecem na venda e são salvos um a um', async () => {
+  const linhas = { ...LINHAS_RES, reports: [
+    { ...LINHAS_RES.reports[0], id: 'v1', resultado: 'venda_call', produto: 'acelera', ticket: 29892, pagamento: 'Cartão de crédito 12x' },
+    { ...LINHAS_RES.reports[0], id: 'v2', resultado: '', produto: '', ticket: 0, pagamento: '' },
+  ] };
+  const api = apiBase({ papel: 'master', nome: 'Cauã' })
+    .quando('GET /api/master/resultados', () => ({ corpo: linhas }))
+    .quando('GET /api/master/inteligencia', () => ({ corpo: INTEL }))
+    .quando('PATCH /api/admin/reports/v2/resultado', ({ corpo }) => ({ corpo: { ok: true, versao: corpo.versao + 1 } }));
+  const p = abrirPainel(api, { hash: '#resultados' });
+  const campo = (id, nome) => p.document.querySelector('tr[data-res="' + id + '"] [data-res-campo="' + nome + '"]');
+  const dados = (id) => p.document.querySelector('tr[data-res="' + id + '"] .dados-venda');
+  await esperar(() => !!campo('v2', 'produto'), { motivo: 'linhas' });
+  assert.ok(!dados('v1').classList.contains('hidden'), 'venda: os dados aparecem');
+  assert.equal(campo('v1', 'produto').value, 'acelera');
+  assert.equal(campo('v1', 'ticket').value, '29.892,00');
+  assert.equal(campo('v1', 'pagamento').value, 'Cartão de crédito 12x');
+  assert.deepEqual([...campo('v1', 'produto').options].map((o) => o.textContent), ['Produto…', 'PRONIX Performance', 'PRONIX Acelera']);
+  assert.ok(dados('v2').classList.contains('hidden'), 'sem venda: escondidos');
+
+  const mudar = (nome, valor) => { campo('v2', nome).value = valor; campo('v2', nome).dispatchEvent(new p.w.Event('change', { bubbles: true })); };
+  mudar('resultado', 'venda_fup');
+  await esperar(() => !dados('v2').classList.contains('hidden'), { motivo: 'dados da venda à vista' });
+  mudar('produto', 'performance');
+  mudar('ticket', '15.984,00');
+  mudar('pagamento', 'Pix + cartão');
+  await esperar(() => api.contar('PATCH /api/admin/reports/v2/resultado') === 4, { motivo: 'salvou os quatro' });
+  assert.deepEqual(api.corpos('PATCH /api/admin/reports/v2/resultado').map((c) => Object.keys(c).filter((k) => k !== 'versao')[0] + '=' + Object.values(c)[0]),
+    ['resultado=venda_fup', 'produto=performance', 'ticket=15.984,00', 'pagamento=Pix + cartão']);
+  await dormir(60);
+  assert.deepEqual(p.erros, []);
+  p.fechar();
+});
