@@ -414,3 +414,38 @@ test('abas do painel: padrão pelo papel, e o master libera ou tira aba por aba 
   assert.equal((await patch({ aba: 'resultados', liberada: false }, E.master)).status, 200);
   assert.equal((await get('/api/master/resultados', E.sdr)).status, 403);
 });
+
+// ---------------------------------------------------------------- conferir o que outra pessoa preencheu / agendador
+test('resultados de uma pessoa: master escolhe de quem ver; quem não é gestor/master só vê os próprios', async () => {
+  const stats = require('../src/stats');
+  await stats.registrar({ id: 'res-master', usuarioId: (await chamar('GET', '/api/eu', undefined, E.master)).json.id, usuarioNome: 'Cauã Lima', lead: 'Lead do Cauã', contato: 'Lead do Cauã' });
+  await stats.registrar({ id: 'res-sdr', usuarioId: E.idSdr, usuarioNome: 'Bia SDR', lead: 'Lead da Bia', contato: 'Lead da Bia' });
+  const ids = async (escopo, chave) => ((await chamar('GET', '/api/master/resultados?escopo=' + escopo, undefined, chave)).json.reports || []).map((r) => r.id);
+  assert.deepEqual(await ids('meus', E.master), ['res-master']);
+  assert.deepEqual(await ids(E.idSdr, E.master), ['res-sdr'], 'o master vê só os da pessoa escolhida');
+  assert.deepEqual((await ids('todos', E.master)).sort(), ['res-master', 'res-sdr']);
+
+  await chamar('PATCH', '/api/admin/usuarios/' + E.idSdr, { aba: 'resultados', liberada: true }, E.master);
+  const idMaster = (await chamar('GET', '/api/eu', undefined, E.master)).json.id;
+  assert.deepEqual(await ids('todos', E.sdr), ['res-sdr'], 'usuário com a aba vê só os dele, peça o que pedir');
+  assert.deepEqual(await ids(idMaster, E.sdr), ['res-sdr']);
+  await chamar('PATCH', '/api/admin/usuarios/' + E.idSdr, { aba: 'resultados', liberada: false }, E.master);
+});
+
+test('agendador diário: só roda com o segredo que a Vercel envia', async () => {
+  delete process.env.CRON_SECRET;
+  assert.equal((await chamar('GET', '/api/cron/rd')).status, 401, 'sem CRON_SECRET configurado, ninguém dispara');
+  process.env.CRON_SECRET = 'segredo-do-agendador';
+  try {
+    assert.equal((await chamar('GET', '/api/cron/rd')).status, 401);
+    const errado = await fetchReal(base + '/api/cron/rd', { headers: { Authorization: 'Bearer errado' } });
+    assert.equal(errado.status, 401);
+    const certo = await fetchReal(base + '/api/cron/rd', { headers: { Authorization: 'Bearer segredo-do-agendador' } });
+    assert.equal(certo.status, 200);
+    const j = await certo.json();
+    assert.equal(j.ok, true);
+    assert.equal(typeof j.conferidos, 'number');
+  } finally {
+    delete process.env.CRON_SECRET;
+  }
+});

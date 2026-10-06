@@ -246,7 +246,24 @@ async function reportsDoEscopo(usuarioId, filtro) {
   return usuarioId ? todos.filter((r) => r.usuarioId === usuarioId) : todos;
 }
 // "Toda a equipe" só para master e gestor: quem recebeu a aba Resultados como usuário vê só os próprios reports.
-const donoDoEscopo = (req) => (req.usuario && (req.query.escopo !== 'todos' || !usuarios.ehAdmin(req.usuario)) ? req.usuario.id : null);
+// Master e gestor também podem olhar os de UMA pessoa (escopo = id dela), para conferir o que ela preencheu.
+const donoDoEscopo = (req) => {
+  const escopo = String(req.query.escopo || '');
+  if (!req.usuario) return null;
+  if (!usuarios.ehAdmin(req.usuario)) return req.usuario.id;
+  if (escopo === 'todos') return null;
+  return /^[a-f0-9]{6,32}$/i.test(escopo) ? escopo : req.usuario.id;
+};
+
+/**
+ * Leva para os reports o desfecho que os closers registraram no RD (vendido / não comprou, com o motivo).
+ * Roda sozinho no máximo a cada 30 min quando alguém abre a aba Resultados, e uma vez por dia pelo
+ * agendador da Vercel — a perda pode vir semanas depois, sem ninguém abrir a conversa.
+ */
+async function conferirDesfechosNoRd({ porVez } = {}) {
+  if (!crm.configurado() || !(await db.travar('rd-desfechos', 1800))) return null;
+  return vendasRd.sincronizar(await stats.listar({}), { porVez });
+}
 
 /** Lista de closers (só id e nome) para quem gera report; com ?perfil= vem a sugestão. */
 app.get('/api/closers', auth, async (req, res) => {
@@ -284,6 +301,7 @@ app.post('/api/reports/:id/closer', auth, async (req, res) => {
 app.get('/api/master/resultados', acesso(['resultados'], SO_MASTER_ERRO), async (req, res) => {
   try {
     const filtro = filtroDaQuery(req.query);
+    await conferirDesfechosNoRd({ porVez: 8 }).catch((err) => console.error('Falha ao conferir desfechos no RD:', err.message));
     // Do mesmo lead gerado mais de uma vez no dia, só o último (é o que foi para o closer).
     const linhas = diario
       .marcarUltimos(await reportsDoEscopo(donoDoEscopo(req), filtro))
@@ -293,7 +311,7 @@ app.get('/api/master/resultados', acesso(['resultados'], SO_MASTER_ERRO), async 
       .map((r) => ({
         id: r.id, lead: r.lead, contato: r.contato, usuarioNome: r.usuarioNome, quando: r.quando, dia: r.dia,
         closerId: r.closerId || '', closerNome: r.closerNome || '', resultado: r.resultado || '', obsReuniao: r.obsReuniao || '',
-        vendidoNoRd: Boolean(r.vendidoNoRd),
+        vendidoNoRd: Boolean(r.vendidoNoRd), encerradoPeloRd: Boolean(r.encerradoPeloRd),
         perfil: r.perfil || '', perfilReal: r.perfilReal || '', perfilEvidencia: r.perfilEvidencia || '',
         consciencia: r.consciencia || '', conscienciaReal: r.conscienciaReal || '', conscienciaPorque: r.conscienciaPorque || '',
         versao: Number(r.versao) || 0,
@@ -304,7 +322,22 @@ app.get('/api/master/resultados', acesso(['resultados'], SO_MASTER_ERRO), async 
   }
 });
 
-/** Lê no RD quais leads dos reports do período já foram marcados como vendidos pelo closer (só leitura). */
+/**
+ * Agendador da Vercel (vercel.json → crons), uma vez por dia. Só aceita com o CRON_SECRET que a própria
+ * Vercel envia no cabeçalho Authorization.
+ */
+app.get('/api/cron/rd', async (req, res) => {
+  const segredo = String(process.env.CRON_SECRET || '').trim();
+  if (!segredo || req.get('authorization') !== 'Bearer ' + segredo) return res.status(401).json({ erro: 'Não autorizado.' });
+  try {
+    await db.destravar('rd-desfechos'); // a rodada diária não depende de quando a aba foi aberta
+    res.json({ ok: true, ...(await conferirDesfechosNoRd({ porVez: 25 })) });
+  } catch (err) {
+    res.status(502).json({ erro: err.message });
+  }
+});
+
+/** Botão "Puxar vendas do RD": confere agora os leads do período (vendidos e os que não compraram). */
 app.post('/api/master/vendas-rd', acesso(['resultados'], SO_MASTER_ERRO), async (req, res) => {
   try {
     res.json(await vendasRd.sincronizar(await reportsDoEscopo(donoDoEscopo(req), filtroDaQuery(req.query))));
