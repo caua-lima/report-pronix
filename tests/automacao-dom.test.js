@@ -321,3 +321,25 @@ test('etiquetas do formulário: investimento ("R$ 3 a 5k", "R$ 5k+") e se já ve
   await fichaNaTela(nada);
   assert.equal(nada.document.getElementById('cr-etiquetas'), null);
 });
+
+// ---------------------------------------------------------------- reunião do Google Agenda
+test('reunião do Google Agenda: o cartão mostra dia, hora e closer, e ela vale mais que o agendamento lido na conversa', async () => {
+  const comReuniao = (reuniao, marca = SEM_MARCA) => ({
+    aoEnviar: async (msg) => (msg.action === 'crmLead'
+      ? { ok: true, configurado: true, encontrado: true, ficha: fichaDoRd('Qualificado'), coach: false, automacao: true, podeResponder: false, marca, reuniao }
+      : { ok: true }),
+  });
+  const dia = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'][new Date(2031, 2, 15).getDay()];
+  const p = abrir(comReuniao({ quando: '2031-03-15T14:00', closer: 'Vitor Augusto', titulo: 'Diagnóstico Pronix — Marcos' }, { ...SEM_MARCA, agendadoPara: '2031-03-10T09:00', agendaFonteTs: 9e15 }));
+  await esperar(() => /Agendado/.test(etiquetas(p)), { motivo: 'etiqueta da agenda' });
+  assert.ok(etiquetas(p).includes(`Agendado: ${dia}, 15/03 às 14:00 · Vitor Augusto`));
+  assert.doesNotMatch(etiquetas(p), /10\/03/, 'o que foi lido na conversa dá lugar ao que está na agenda');
+  const chip = [...p.document.getElementById('cr-etiquetas').querySelectorAll('span')].find((x) => /Agendado/.test(x.textContent));
+  assert.equal(chip.title, 'Do Google Agenda: Diagnóstico Pronix — Marcos');
+  assert.equal(botaoPorTitulo(p, 'Apagar este agendamento'), undefined, 'o que vem da agenda não se apaga pelo cartão');
+
+  // reunião que já passou, e sem closer (evento na própria agenda)
+  const q = abrir(comReuniao({ quando: '2020-01-10T09:00', closer: '', titulo: '' }));
+  await esperar(() => /Estava agendado/.test(etiquetas(q)), { motivo: 'reunião passada' });
+  assert.match(etiquetas(q), /Estava agendado: \S+, 10\/01 às 09:00$|Estava agendado: \S+, 10\/01 às 09:00[^·]*$/);
+});

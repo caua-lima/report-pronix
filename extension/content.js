@@ -1829,7 +1829,16 @@
       b.addEventListener('click', () => mudar({ qualificado: true, manual: true }, { qualificado: true, origem: 'manual' }));
       linha.appendChild(b);
     }
-    const ag = ficha.automacao && marca.agendadoPara && agendaLib ? agendaLib.descrever(marca.agendadoPara, new Date()) : null;
+    // A reunião que está no Google Agenda vale mais que o que foi lido na conversa: é o compromisso de fato.
+    const daAgenda = ficha.automacao && estado.reuniao && agendaLib ? agendaLib.descrever(estado.reuniao.quando, new Date()) : null;
+    if (daAgenda) {
+      const cor = daAgenda.passou ? '#f0ad4e' : '#ffc400';
+      const texto = (daAgenda.passou ? 'Estava agendado: ' : 'Agendado: ') + daAgenda.texto + (estado.reuniao.closer ? ' · ' + estado.reuniao.closer : '');
+      const c = elem('span', `${base};border:1px solid ${cor};background:rgba(255,196,0,.1);color:${cor}`, texto);
+      c.title = 'Do Google Agenda' + (estado.reuniao.titulo ? ': ' + estado.reuniao.titulo : '');
+      linha.appendChild(c);
+    }
+    const ag = !daAgenda && ficha.automacao && marca.agendadoPara && agendaLib ? agendaLib.descrever(marca.agendadoPara, new Date()) : null;
     if (ag) {
       const cor = ag.passou ? '#f0ad4e' : '#ffc400';
       linha.appendChild(elem('span', `${base};border:1px solid ${cor};background:rgba(255,196,0,.1);color:${cor}`, (ag.passou ? 'Estava agendado: ' : 'Agendado: ') + ag.texto));
@@ -2015,7 +2024,7 @@
     // Automação (mover para "Respondeu", etiqueta e agendamento): o servidor diz se o master ligou para esta chave.
     ficha.automacao = r.automacao === true;
     ficha.etiquetas = r.etiquetas === true; // etiquetas do formulário: permissão própria
-    const extras = ficha.automacao ? { marca: r.marca || null, podeResponder: r.podeResponder === true } : {};
+    const extras = ficha.automacao ? { marca: r.marca || null, podeResponder: r.podeResponder === true, reuniao: r.reuniao || null } : {};
     // Sem ficha do RD para este usuário (CRM desligado no servidor ou popup do lead desligado):
     // quem tem o Coach continua vendo o cartão, só com o resumo e o coach.
     if (!r.configurado) return ficha.coach ? renderFicha({ tipo: 'sem-crm', busca, ...extras }) : esconderFicha();
