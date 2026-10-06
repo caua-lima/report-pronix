@@ -640,3 +640,29 @@ test('perfil: report e coach recebem o mesmo critério de decisão, e "cauteloso
   assert.ok(SYSTEM_PROMPT.includes(regra), 'o report usa o critério');
   assert.ok(require('../src/coach').SYSTEM_BASE.includes(regra), 'o coach usa o mesmo');
 });
+
+// ---------------------------------------------------------------- onde cada closer vai melhor, e por quê
+test('destaques: "Fulano vai melhor com lead X" com os números e o porquê das anotações do master', () => {
+  const lista = [
+    rep('p', 'Paulo Henrique', 'cauteloso', VENDA, { obsReuniao: 'fechou Performance; parcelou em 12x sem medo' }),
+    rep('p', 'Paulo Henrique', 'cauteloso', VENDA, { obsReuniao: 'trouxe a esposa para a call e explicou o passo a passo' }),
+    rep('p', 'Paulo Henrique', 'cauteloso', 'venda_fup', { obsReuniao: '' }),
+    rep('p', 'Paulo Henrique', 'cauteloso', 'sem_venda', { obsReuniao: 'travou no sócio' }),
+    rep('p', 'Paulo Henrique', 'cauteloso', 'no_show', { obsReuniao: 'não apareceu' }), // não é reunião
+    rep('p', 'Paulo Henrique', 'dominante', 'sem_venda', { obsReuniao: 'achou caro' }),
+    rep('p', 'Paulo Henrique', 'dominante', 'sem_venda'),
+    rep('v', 'Vitor', 'analitico', VENDA), rep('v', 'Vitor', 'analitico', 'sem_venda'), // amostra pequena: sem destaque
+    rep('x', 'Saiu Da Casa', 'cetico', VENDA), rep('x', 'Saiu Da Casa', 'cetico', VENDA), rep('x', 'Saiu Da Casa', 'cetico', VENDA),
+  ];
+  const ativos = [{ id: 'p', nome: 'Paulo Henrique' }, { id: 'v', nome: 'Vitor' }];
+  const d = inteligencia.destaquesPorCloser(lista, ativos);
+  assert.equal(d.length, 1, 'só quem tem 3+ reuniões com um perfil, e só closer que ainda está na casa');
+  assert.equal(d[0].frase, 'Paulo Henrique vai melhor com lead cauteloso: fechou 3 de 4 (75%), contra 0 de 2 (0%) com os outros perfis.');
+  assert.deepEqual(d[0].porQueFechou, ['fechou Performance; parcelou em 12x sem medo', 'trouxe a esposa para a call e explicou o passo a passo']);
+  assert.deepEqual(d[0].ondeTravou, ['travou no sócio'], 'no-show não entra');
+  assert.deepEqual(inteligencia.painel(lista, ativos).destaques, d, 'vai no painel da aba Resultados');
+  assert.deepEqual(inteligencia.destaquesPorCloser([], ativos), []);
+  // closer que só atendeu um perfil: sem a comparação
+  const so = inteligencia.destaquesPorCloser(lista.slice(0, 4), ativos);
+  assert.equal(so[0].frase, 'Paulo Henrique vai melhor com lead cauteloso: fechou 3 de 4 (75%).');
+});

@@ -94,6 +94,47 @@ function sugerirCloser(reports, perfil, closersAtivos) {
   };
 }
 
+const nota = (r) => String(r.obsReuniao || '').replace(/\s+/g, ' ').trim();
+
+/**
+ * Onde cada closer vai melhor, com o porquê: o perfil de lead em que a taxa dele é a mais alta (com
+ * MIN_AMOSTRA reuniões ou mais), comparada com a dos outros perfis que ele atendeu, e as anotações do
+ * master sobre essas reuniões ("o que deu a reunião") — que são o "por causa disso".
+ * Sem IA: é conta e citação das anotações.
+ */
+function destaquesPorCloser(reports, closersAtivos) {
+  const ativos = new Map((closersAtivos || []).map((c) => [c.id, c.nome]));
+  const doCloser = (id) => base(reports).filter((r) => r.closerId === id && perfilDe(r));
+  return matrizCloserPerfil(reports)
+    .filter((c) => ativos.has(c.closerId))
+    .map((c) => {
+      const candidatos = Object.entries(c.perfis)
+        .filter(([, v]) => v.total >= MIN_AMOSTRA && v.vendas > 0)
+        .sort((a, b) => b[1].taxa - a[1].taxa || b[1].total - a[1].total);
+      if (!candidatos.length) return null;
+      const [perfil, cel] = candidatos[0];
+      const resto = { total: c.total - cel.total, vendas: c.vendas - cel.vendas };
+      const reunioes = doCloser(c.closerId).filter((r) => perfilDe(r) === perfil);
+      const notas = (venda) => [...new Set(reunioes.filter((r) => ehVenda(r.resultado) === venda).map(nota).filter(Boolean))].slice(-4);
+      const info = infoDoPerfil(perfil);
+      const rotulo = info ? info.rotulo : perfil;
+      const nome = ativos.get(c.closerId);
+      const pc = (v, t) => Math.round(taxa(v, t) * 100) + '%';
+      return {
+        closerId: c.closerId, nome, perfil, rotulo,
+        vendas: cel.vendas, total: cel.total, taxa: cel.taxa,
+        outros: { ...resto, taxa: taxa(resto.vendas, resto.total) },
+        porQueFechou: notas(true),
+        ondeTravou: notas(false),
+        frase:
+          `${nome} vai melhor com lead ${rotulo.toLowerCase()}: fechou ${cel.vendas} de ${cel.total} (${pc(cel.vendas, cel.total)})` +
+          (resto.total ? `, contra ${resto.vendas} de ${resto.total} (${pc(resto.vendas, resto.total)}) com os outros perfis.` : '.'),
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.taxa - a.taxa || b.total - a.total);
+}
+
 /** Conversão por uma dimensão qualquer (perfil, nível de consciência...). */
 function conversaoPor(reports, chaveDe, rotuloDe) {
   const m = new Map();
@@ -160,6 +201,7 @@ function painel(reports, closersAtivos) {
     semCloser: comRes.filter((r) => !r.closerId).length,
     perfis: PERFIS.map((p) => ({ chave: p.chave, rotulo: p.rotulo })),
     matriz: matrizCloserPerfil(reports),
+    destaques: destaquesPorCloser(reports, closersAtivos),
     porPerfil: conversaoPor(reports, perfilDe, rotuloPerfil),
     porConsciencia: conversaoPor(reports, nivelDe, rotuloNivel),
     prospeccao: padroesDeProspeccao(reports),
@@ -197,6 +239,14 @@ async function gerarInsights(reports, closersAtivos) {
       p.prospeccao.criterios.map((c) => `${c.rotulo}: ${pc(c.ganhou)} vs ${pc(c.perdeu)}`).join('; ')
   );
   const lista = (titulo, itens) => (itens.length ? `${titulo}:\n` + itens.map((x) => `- ${x}`).join('\n') : '');
+  linhas.push(lista(
+    'ONDE CADA CLOSER VAI MELHOR, com as anotações do gestor sobre essas reuniões',
+    p.destaques.map((d) =>
+      d.frase +
+      (d.porQueFechou.length ? ` Anotações das que fecharam: ${d.porQueFechou.join(' | ')}.` : ' Sem anotação nas que fecharam.') +
+      (d.ondeTravou.length ? ` Anotações das que não fecharam: ${d.ondeTravou.join(' | ')}.` : '') +
+      ` Como se conduz lead ${d.rotulo.toLowerCase()}: ${(infoDoPerfil(d.perfil) || {}).conduzir || ''}.`)
+  ));
   linhas.push(lista('PERGUNTAS DO PRÉ-VENDEDOR NAS REUNIÕES QUE FECHARAM', p.prospeccao.perguntasQueFecharam.map((x) => x.pergunta)));
   linhas.push(lista('PERGUNTAS NAS QUE NÃO FECHARAM', p.prospeccao.perguntasQueNaoFecharam.map((x) => x.pergunta)));
   linhas.push(lista('COMO FOI A ABORDAGEM NAS QUE FECHARAM', p.prospeccao.abordagensQueFecharam));
@@ -208,7 +258,10 @@ async function gerarInsights(reports, closersAtivos) {
     'diga que é indício, não conclusão. Nada de teoria genérica: cada item cita o número que o sustenta.\n' +
     'Responda SOMENTE com um JSON: {"closer_por_perfil":["..."],"prospeccao_que_funciona":["..."],' +
     '"perguntas_para_o_padrao":["..."],"melhorias_no_script":["..."],"atencao":["..."]} — até 4 itens curtos em cada lista. ' +
-    '"perguntas_para_o_padrao" são perguntas prontas para entrar na qualificação padrão; "atencao" são limites da amostra.';
+    '"perguntas_para_o_padrao" são perguntas prontas para entrar na qualificação padrão; "atencao" são limites da amostra.\n' +
+    '"closer_por_perfil": uma frase por closer, no formato "Fulano se dá melhor com lead cauteloso (3 de 4) porque ...". ' +
+    'O PORQUÊ sai das anotações do gestor sobre as reuniões e de como aquele perfil se conduz; cite o que as anotações dizem. ' +
+    'Sem anotação que explique, escreva o número e diga que ainda falta anotar o que deu a reunião — não invente motivo.';
   const bruto = await chatGroq({ system, user: linhas.filter(Boolean).join('\n\n'), modelo: process.env.GROQ_COACH_MODEL, maxTokens: 1200 });
   let j;
   try {
@@ -235,4 +288,4 @@ async function gerarInsights(reports, closersAtivos) {
 
 const ultimosInsights = () => db.getJson(CHAVE_INSIGHTS, null).catch(() => null);
 
-module.exports = { painel, sugerirCloser, matrizCloserPerfil, padroesDeProspeccao, gerarInsights, ultimosInsights, MIN_AMOSTRA, MIN_GERAL };
+module.exports = { painel, sugerirCloser, destaquesPorCloser, matrizCloserPerfil, padroesDeProspeccao, gerarInsights, ultimosInsights, MIN_AMOSTRA, MIN_GERAL };

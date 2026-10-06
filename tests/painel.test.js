@@ -975,6 +975,7 @@ const INTEL = {
   minAmostra: 3, reunioesComResultado: 6, vendas: 4, semCloser: 1, calibragens: 2,
   perfis: [{ chave: 'analitico', rotulo: 'Analítico' }, { chave: 'relacional', rotulo: 'Relacional' }],
   matriz: [{ closerId: 'c1', nome: 'Vitor', total: 4, vendas: 3, taxa: 0.75, perfis: { analitico: { total: 4, vendas: 3, taxa: 0.75 } } }],
+  destaques: [{ closerId: 'c1', nome: 'Vitor', perfil: 'analitico', rotulo: 'Analítico', vendas: 3, total: 4, taxa: 0.75, outros: { total: 0, vendas: 0, taxa: 0 }, frase: 'Vitor vai melhor com lead analítico: fechou 3 de 4 (75%).', porQueFechou: ['mostrou a conta de margem <b>na tela</b>'], ondeTravou: ['travou no sócio'] }],
   porPerfil: [{ chave: 'analitico', rotulo: 'Analítico', total: 4, vendas: 3, taxa: 0.75 }],
   porConsciencia: [{ chave: 'produto', rotulo: 'Consciente da nossa entrega', total: 2, vendas: 2, taxa: 1 }],
   prospeccao: {
@@ -1207,5 +1208,15 @@ test('Resultados: no-show sai da lista (e volta com "Mostrar no-show"); quem já
   await esperar(() => /No-show: saiu da lista/.test(p.$('toast').textContent), { motivo: 'aviso' });
   await dormir(60);
   assert.deepEqual(p.erros, []);
+  p.fechar();
+});
+
+test('Resultados: mostra onde cada closer vai melhor, com o porquê das anotações (como texto, nunca HTML)', async () => {
+  const p = abrirPainel(apiMaster(), { hash: '#resultados' });
+  await esperar(() => /Vitor vai melhor com lead analítico/.test(p.$('intelDestaques').textContent), { motivo: 'destaques' });
+  const t = p.$('intelDestaques').textContent;
+  assert.ok(t.includes('Nas que fecharam: mostrou a conta de margem <b>na tela</b>'));
+  assert.ok(t.includes('Nas que não fecharam: travou no sócio'));
+  assert.equal(p.$('intelDestaques').querySelectorAll('b').length, 1, 'só o negrito da frase: a anotação não vira HTML');
   p.fechar();
 });

@@ -429,6 +429,7 @@
           <div id="intelResumo" class="hint" style="margin:0 0 12px"></div>
 
           <h3 class="sec-t">Qual closer para cada tipo de lead</h3>
+          <div id="intelDestaques" style="margin:0 0 14px"></div>
           <table><thead><tr><th>Perfil do lead</th><th>Closer indicado</th><th>Por quê</th></tr></thead><tbody id="intelMelhor"></tbody></table>
 
           <h3 class="sec-t">Closer × perfil <span style="font-weight:400;color:var(--muted)">(vendas / reuniões)</span></h3>
@@ -1629,6 +1630,14 @@
           (p.semCloser ? ` · ${p.semCloser} sem closer marcado (não entram no cruzamento)` : '') +
           ` · ${p.calibragens || 0} correção(ões) de consciência ensinadas à IA. ` +
           `A indicação de closer só aparece com ${p.minAmostra} ou mais reuniões daquele closer com aquele perfil.`;
+        // Onde cada closer vai melhor, com o porquê tirado das anotações de "o que deu a reunião".
+        $('intelDestaques').innerHTML = (p.destaques || []).length
+          ? p.destaques.map((d) => `<div style="border:1px solid var(--border);border-left:3px solid var(--primary);border-radius:8px;padding:9px 12px;margin-bottom:8px">
+              <div><b>${esc(d.frase)}</b></div>
+              ${d.porQueFechou.length ? `<div style="color:var(--text-2);font-size:.84rem;margin-top:4px">Nas que fecharam: ${d.porQueFechou.map(esc).join(' · ')}</div>` : '<div style="color:var(--muted);font-size:.8rem;margin-top:4px">Anote "o que deu a reunião" nas vendas dele para o porquê aparecer aqui.</div>'}
+              ${d.ondeTravou.length ? `<div style="color:var(--muted);font-size:.84rem;margin-top:2px">Nas que não fecharam: ${d.ondeTravou.map(esc).join(' · ')}</div>` : ''}
+            </div>`).join('')
+          : `<div class="hint" style="margin:0">A análise de "com que tipo de lead cada closer vai melhor" aparece quando um closer tiver ${p.minAmostra} ou mais reuniões com resultado com o mesmo perfil de lead.</div>`;
         $('intelMelhor').innerHTML = (p.melhorCloserPorPerfil || []).map((m) =>
           `<tr><td><b>${esc(m.rotulo)}</b></td><td>${m.sugestao ? esc(m.sugestao.nome) : '<span style="color:var(--muted)">sem dados ainda</span>'}</td><td style="color:var(--text-2)">${esc(m.motivo || '')}</td></tr>`
         ).join('');
