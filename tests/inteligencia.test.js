@@ -626,3 +626,17 @@ test('no-show não vai para o líder: sai do .zip do dia e aparece desmarcado na
   await api('PATCH', `/api/admin/reports/${faltou.json.id}/resultado`, { chave: E.master, corpo: { resultado: '' } });
   assert.equal((await api('GET', '/api/meus-reports', { chave: E.master })).json.reports.find((r) => r.id === faltou.json.id).usar, true);
 });
+
+// ---------------------------------------------------------------- "cauteloso" não é o perfil padrão
+test('perfil: report e coach recebem o mesmo critério de decisão, e "cauteloso" exige hesitação dita', () => {
+  const regra = perfilMod.comoDecidirPerfil();
+  const ordem = ['"cetico"', '"analitico"', '"dominante"', '"entusiasta"', '"relacional"', '"cauteloso"'].map((x) => regra.indexOf(x));
+  assert.ok(ordem.every((p, i) => p > -1 && (i === 0 || p > ordem[i - 1])), 'testa os perfis em ordem, com o cauteloso por último');
+  assert.match(regra, /"cauteloso": SÓ com hesitação dita/);
+  assert.match(regra, /"cauteloso" não é o perfil padrão[\s\S]*confirmar a reunião[\s\S]*decide sozinho NÃO é cautela/);
+  assert.equal(regra.split('\n').length, 8);
+  const { SYSTEM_PROMPT, PROMPT_VERSAO } = require('../src/report');
+  assert.equal(PROMPT_VERSAO, 'v7');
+  assert.ok(SYSTEM_PROMPT.includes(regra), 'o report usa o critério');
+  assert.ok(require('../src/coach').SYSTEM_BASE.includes(regra), 'o coach usa o mesmo');
+});

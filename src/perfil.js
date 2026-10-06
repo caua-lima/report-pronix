@@ -79,4 +79,21 @@ function reguaParaPrompt() {
   return PERFIS.map((p) => `- "${p.chave}" (${p.rotulo}): ${p.sinais}. Como conduzir: ${p.conduzir}.`).join('\n');
 }
 
-module.exports = { PERFIS, chaveDoPerfil, infoDoPerfil, normalizarPerfil, reguaParaPrompt, semAcento };
+/**
+ * Como escolher entre os perfis (report e coach usam o mesmo texto). Existe porque, sem um critério, a IA
+ * cai em "cauteloso" para quase todo lead educado — e aí o perfil não serve para escolher closer.
+ */
+function comoDecidirPerfil() {
+  return [
+    'COMO DECIDIR — teste nesta ordem e fique com o PRIMEIRO que tiver prova nas falas do LEAD (o que o vendedor disse não conta):',
+    '1. "cetico": desconfiança dita — pediu prova ou garantia, citou golpe, curso ou mentoria que não deu certo, perguntou "funciona mesmo?".',
+    '2. "analitico": pediu número, detalhe ou passo a passo; comparou opções; quis entender o método, a margem ou o retorno antes de avançar.',
+    '3. "dominante": respostas curtas e diretas; perguntou preço, prazo ou resultado logo; conduziu a conversa ou cobrou objetividade.',
+    '4. "entusiasta": animação dita — exclamações, "quero começar já", topou as coisas na hora, já se imagina vendendo.',
+    '5. "relacional": contou a própria história sem ser perguntado, falou de família, sonho ou sentimento, mandou áudio longo.',
+    '6. "cauteloso": SÓ com hesitação dita — pediu tempo, disse que precisa de outra pessoa para DECIDIR, falou do medo de perder dinheiro ou de errar, respondeu "vou ver".',
+    'ARMADILHAS: "cauteloso" não é o perfil padrão. Ser educado, responder "sim", confirmar a reunião, ter pouco dinheiro, estar começando do zero ou dizer que conversa com o cônjuge mas decide sozinho NÃO é cautela. Em conversa curta, decida pelo JEITO das respostas (curtas e diretas: dominante; perguntou dado: analítico; contou história: relacional). Dois perfis com prova: vale o das ÚLTIMAS falas do lead.',
+  ].join('\n');
+}
+
+module.exports = { PERFIS, chaveDoPerfil, infoDoPerfil, normalizarPerfil, reguaParaPrompt, comoDecidirPerfil, semAcento };

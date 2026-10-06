@@ -7,7 +7,7 @@ const base = require('./base');
 const { normalizarConversa, normalizarTextoLivre } = require('./conversation-normalizer');
 const { verificarCitacoes, neutralizarMarcas, citacaoDesanimadora } = require('./citacoes');
 const { normalizarConsciencia } = require('./consciencia');
-const { normalizarPerfil, infoDoPerfil, reguaParaPrompt } = require('./perfil');
+const { normalizarPerfil, infoDoPerfil, reguaParaPrompt, comoDecidirPerfil } = require('./perfil');
 const aprendizado = require('./aprendizado');
 
 const LLM_PROVIDER = (process.env.LLM_PROVIDER || 'anthropic').toLowerCase();
@@ -16,7 +16,7 @@ const LLM_PROVIDER = (process.env.LLM_PROVIDER || 'anthropic').toLowerCase();
 // idênticos já gerados (ex.: mudança de tom, de campos obrigatórios). Compõe
 // a reportKey em src/idempotencia.js — sem isso, um prompt novo poderia ser
 // confundido com o antigo e nunca rodar de novo pra mesma conversa.
-const PROMPT_VERSAO = 'v6';
+const PROMPT_VERSAO = 'v7';
 
 // Modo de qualidade só troca o MODELO da Anthropic — nunca inferido sozinho:
 // "standard" é o comportamento de sempre (ANTHROPIC_MODEL), então nenhum
@@ -243,7 +243,8 @@ Em "porque", UMA frase curta que CITA a prova — a fala ou o fato exato do lead
 
 PERFIL DO LEAD (campo "perfil") — como este lead se comunica e decide, lido pelo JEITO das respostas dele (tamanho, tom, o que pergunta, o que conta nos áudios). Escolha UM:
 ${reguaParaPrompt()}
-Em "evidencia", o comportamento observado NESTA conversa (não a definição do perfil). Em "conduzir", UMA frase para o closer conduzir a reunião com este lead, em tom de plano de ação. Conversa curta demais para ler o perfil: escolha o mais provável pelas falas que existem e diga isso na evidência.
+${comoDecidirPerfil()}
+Em "evidencia", a FALA ou o comportamento do lead NESTA conversa que prova o perfil escolhido (não a definição do perfil). Em "conduzir", UMA frase para o closer conduzir a reunião com este lead, em tom de plano de ação. Conversa curta demais para ler o perfil: escolha pelo jeito das falas que existem e diga na evidência que a leitura é de poucas falas.
 
 COMO FOI A CONVERSA (campo "conversa") — 4 a 6 frases em ordem cronológica: é a narração que faz o closer entrar na reunião como se tivesse lido a conversa inteira. Terceira pessoa e com os nomes: o pré-vendedor pelo NOME DELE (informado abaixo, junto da conversa) e o lead pelo nome. Cubra, nesta ordem, o que existir:
 1. COMO COMEÇOU: de onde o lead veio ou como a conversa abriu.
@@ -867,6 +868,7 @@ module.exports = {
   dadosDireto,
   dadosDeTexto,
   PROMPT_VERSAO,
+  SYSTEM_PROMPT,
   normalizarDados,
   normalizarAnalise,
   aplicarPerfilNoResumo,
