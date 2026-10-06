@@ -372,3 +372,45 @@ test('etiquetas do formulário: permissão própria (padrão só o master); o ma
   assert.equal((await patch({ etiquetas: false }, E.master)).status, 200);
   assert.equal((await chamar('GET', '/api/eu', undefined, E.sdr)).json.etiquetas, false);
 });
+
+// ---------------------------------------------------------------- abas do painel por pessoa
+test('abas do painel: padrão pelo papel, e o master libera ou tira aba por aba de cada pessoa', async () => {
+  const eu = async (chave) => (await chamar('GET', '/api/eu', undefined, chave)).json.abas;
+  assert.deepEqual(await eu(E.master), ['numeros', 'resultados', 'closers', 'arquivos', 'base', 'extensao', 'equipe'], 'master: todas');
+  assert.deepEqual(await eu(E.sdr), [], 'usuário: nenhuma aba de gestão');
+  const get = (rota, chave) => chamar('GET', rota, undefined, chave);
+  assert.equal((await get('/api/master/resultados', E.sdr)).status, 403);
+  assert.equal((await get('/api/admin/stats', E.sdr)).status, 401);
+
+  const patch = (corpo, chave) => chamar('PATCH', '/api/admin/usuarios/' + E.idSdr, corpo, chave);
+  assert.equal((await patch({ aba: 'resultados', liberada: true }, E.sdr)).status, 403, 'ninguém libera aba para si mesmo');
+  assert.equal((await patch({ aba: 'inventada', liberada: true }, E.master)).status, 400);
+  assert.equal((await patch({ aba: 'resultados', liberada: true }, E.master)).status, 200);
+  assert.deepEqual(await eu(E.sdr), ['resultados']);
+
+  // com a aba Resultados: vê os próprios resultados e a inteligência; o resto continua fechado
+  assert.equal((await get('/api/master/resultados', E.sdr)).status, 200);
+  assert.equal((await get('/api/master/inteligencia', E.sdr)).status, 200);
+  assert.equal((await get('/api/admin/closers', E.sdr)).status, 200, 'precisa da lista de closers para marcar');
+  assert.equal((await get('/api/admin/stats', E.sdr)).status, 401);
+  assert.equal((await get('/api/admin/base', E.sdr)).status, 401);
+  assert.equal((await get('/api/equipe-reports', E.sdr)).status, 401);
+  assert.equal((await get('/api/admin/usuarios', E.sdr)).status, 403, 'a aba Acessos nunca é liberada');
+  assert.equal((await chamar('POST', '/api/admin/closers', { nome: 'Novo Closer' }, E.sdr)).status, 403);
+
+  // a lista de usuários mostra o que cada um tem, para o checklist
+  const lista = (await get('/api/admin/usuarios', E.master)).json;
+  const doSdr = lista.usuarios.find((u) => u.id === E.idSdr);
+  assert.deepEqual(doSdr.abas, { numeros: false, resultados: true, closers: false, arquivos: false, base: false, extensao: false, equipe: false });
+  assert.ok(Object.values(lista.usuarios.find((u) => u.papel === 'master').abas).every(Boolean));
+
+  // gestor: começa com as de gestão, e o master pode tirar uma
+  const g = (await fetchReal(base + '/api/admin/usuarios', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-pass': 'senha-de-teste' }, body: JSON.stringify({ nome: 'Líder Gestor', papel: 'gestor' }) }).then((r) => r.json())).usuario;
+  assert.deepEqual(await eu(g.chave), ['numeros', 'arquivos', 'base', 'extensao', 'equipe']);
+  await chamar('PATCH', '/api/admin/usuarios/' + g.id, { aba: 'base', liberada: false }, E.master);
+  assert.deepEqual(await eu(g.chave), ['numeros', 'arquivos', 'extensao', 'equipe']);
+  assert.equal((await get('/api/admin/base', g.chave)).status, 401);
+
+  assert.equal((await patch({ aba: 'resultados', liberada: false }, E.master)).status, 200);
+  assert.equal((await get('/api/master/resultados', E.sdr)).status, 403);
+});

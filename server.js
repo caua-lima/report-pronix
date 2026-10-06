@@ -119,6 +119,30 @@ async function master(req, res, next) {
   }
 }
 
+/**
+ * Exige uma das abas liberadas para a chave (aba Acessos do painel) ou, como reserva, a ADMIN_PASSWORD.
+ * É o que deixa o master escolher, pessoa por pessoa, quem abre cada parte do painel.
+ */
+const acesso = (abas, { status = 401, erro = 'Acesso de admin necessário.' } = {}) => async (req, res, next) => {
+  try {
+    const chave = req.get('x-cr-key') || req.query.chave;
+    if (chave) {
+      const u = await usuarios.porChave(String(chave).trim());
+      if (u && abas.some((a) => usuarios.podeAba(u, a))) {
+        req.usuario = u;
+        return next();
+      }
+    }
+    const esperada = process.env.ADMIN_PASSWORD;
+    const senha = req.get('x-admin-pass') || (req.body && req.body.senha) || req.query.senha;
+    if (esperada && senha === esperada) return next();
+    res.status(status).json({ erro });
+  } catch (err) {
+    res.status(500).json({ erro: err.message });
+  }
+};
+const SO_MASTER_ERRO = { status: 403, erro: 'Esta parte do painel não está liberada para você.' };
+
 // ---------------------------------------------------------------------------
 // Páginas
 // ---------------------------------------------------------------------------
@@ -146,6 +170,7 @@ app.get('/api/eu', auth, (req, res) => {
     ok: true, nome: req.usuario.nome, id: req.usuario.id, papel: req.usuario.papel,
     // O que o master liberou para esta chave (a extensão mostra no popup).
     coach: Boolean(req.usuario.coach), fichaCrm: Boolean(req.usuario.fichaCrm), automacao: Boolean(req.usuario.automacao),
+    abas: usuarios.abasDe(req.usuario), // abas do painel liberadas para esta chave
     etiquetas: Boolean(req.usuario.etiquetas),
   });
 });
@@ -157,7 +182,7 @@ app.post('/api/admin/login', admin, (_req, res) => res.json({ ok: true }));
 
 app.get('/api/admin/usuarios', master, async (_req, res) => {
   try {
-    res.json({ usuarios: await usuarios.listar() });
+    res.json({ usuarios: (await usuarios.listar()).map((u) => ({ ...u, abas: Object.fromEntries(usuarios.ABAS.map((a) => [a, usuarios.podeAba(u, a)])) })), abas: usuarios.ABAS });
   } catch (err) {
     res.status(500).json({ erro: err.message });
   }
@@ -180,6 +205,7 @@ app.patch('/api/admin/usuarios/:id', master, async (req, res) => {
     else if (typeof corpo.coach === 'boolean') ok = await usuarios.definirCoach(req.params.id, corpo.coach);
     else if (typeof corpo.automacao === 'boolean') ok = await usuarios.definirAutomacao(req.params.id, corpo.automacao);
     else if (typeof corpo.etiquetas === 'boolean') ok = await usuarios.definirEtiquetas(req.params.id, corpo.etiquetas);
+    else if (typeof corpo.aba === 'string') ok = await usuarios.definirAba(req.params.id, corpo.aba, corpo.liberada === true);
     else ok = await usuarios.definirPapel(req.params.id, String(corpo.papel || ''));
     if (!ok) return res.status(404).json({ erro: 'Usuário não encontrado.' });
     res.json({ ok: true });
@@ -218,7 +244,8 @@ async function reportsDoEscopo(usuarioId, filtro) {
   const todos = await stats.listar(filtro);
   return usuarioId ? todos.filter((r) => r.usuarioId === usuarioId) : todos;
 }
-const donoDoEscopo = (req) => (req.usuario && req.query.escopo !== 'todos' ? req.usuario.id : null);
+// "Toda a equipe" só para master e gestor: quem recebeu a aba Resultados como usuário vê só os próprios reports.
+const donoDoEscopo = (req) => (req.usuario && (req.query.escopo !== 'todos' || !usuarios.ehAdmin(req.usuario)) ? req.usuario.id : null);
 
 /** Lista de closers (só id e nome) para quem gera report; com ?perfil= vem a sugestão. */
 app.get('/api/closers', auth, async (req, res) => {
@@ -253,7 +280,7 @@ app.post('/api/reports/:id/closer', auth, async (req, res) => {
 // ---------------------------------------------------------------------------
 // Master: resultados da reunião e inteligência (closer × perfil, prospecção que funciona)
 // ---------------------------------------------------------------------------
-app.get('/api/master/resultados', master, async (req, res) => {
+app.get('/api/master/resultados', acesso(['resultados'], SO_MASTER_ERRO), async (req, res) => {
   try {
     const filtro = filtroDaQuery(req.query);
     // Do mesmo lead gerado mais de uma vez no dia, só o último (é o que foi para o closer).
@@ -275,7 +302,7 @@ app.get('/api/master/resultados', master, async (req, res) => {
   }
 });
 
-app.get('/api/master/inteligencia', master, async (req, res) => {
+app.get('/api/master/inteligencia', acesso(['resultados'], SO_MASTER_ERRO), async (req, res) => {
   try {
     const painel = inteligencia.painel(await reportsDoEscopo(donoDoEscopo(req)), await closers.listar());
     res.json({ ...painel, insights: await inteligencia.ultimosInsights(), calibragens: (await aprendizado.ajustes()).length });
@@ -285,7 +312,7 @@ app.get('/api/master/inteligencia', master, async (req, res) => {
 });
 
 /** Texto de insights escrito pela IA gratuita (Groq) em cima dos números — sem custo. */
-app.post('/api/master/insights', master, async (req, res) => {
+app.post('/api/master/insights', acesso(['resultados'], SO_MASTER_ERRO), async (req, res) => {
   try {
     res.json({ insights: await inteligencia.gerarInsights(await reportsDoEscopo(donoDoEscopo(req)), await closers.listar()) });
   } catch (err) {
@@ -296,7 +323,7 @@ app.post('/api/master/insights', master, async (req, res) => {
 // ---------------------------------------------------------------------------
 // Admin: closers (lista completa, com e-mail)
 // ---------------------------------------------------------------------------
-app.get('/api/admin/closers', admin, async (_req, res) => {
+app.get('/api/admin/closers', acesso(['closers', 'numeros', 'resultados']), async (_req, res) => {
   try {
     res.json({ closers: await closers.listar() });
   } catch (err) {
@@ -304,7 +331,7 @@ app.get('/api/admin/closers', admin, async (_req, res) => {
   }
 });
 
-app.post('/api/admin/closers', master, async (req, res) => {
+app.post('/api/admin/closers', acesso(['closers'], SO_MASTER_ERRO), async (req, res) => {
   try {
     const c = await closers.criar(req.body && req.body.nome, req.body && req.body.email);
     res.json({ ok: true, closer: c });
@@ -313,7 +340,7 @@ app.post('/api/admin/closers', master, async (req, res) => {
   }
 });
 
-app.delete('/api/admin/closers/:id', master, async (req, res) => {
+app.delete('/api/admin/closers/:id', acesso(['closers'], SO_MASTER_ERRO), async (req, res) => {
   try {
     await closers.remover(req.params.id);
     res.json({ ok: true });
@@ -323,7 +350,7 @@ app.delete('/api/admin/closers/:id', master, async (req, res) => {
 });
 
 // Base de conhecimento (playbook) que entra em todo report.
-app.get('/api/admin/base', admin, async (_req, res) => {
+app.get('/api/admin/base', acesso(['base']), async (_req, res) => {
   try {
     res.json(await base.ler());
   } catch (err) {
@@ -331,7 +358,7 @@ app.get('/api/admin/base', admin, async (_req, res) => {
   }
 });
 
-app.post('/api/admin/base', admin, async (req, res) => {
+app.post('/api/admin/base', acesso(['base']), async (req, res) => {
   try {
     res.json({ ok: true, base: await base.salvar(req.body || {}) });
   } catch (err) {
@@ -340,7 +367,7 @@ app.post('/api/admin/base', admin, async (req, res) => {
 });
 
 /** Volta um campo (body.campo) ou a base inteira para o texto recomendado. */
-app.post('/api/admin/base/recomendada', admin, async (req, res) => {
+app.post('/api/admin/base/recomendada', acesso(['base']), async (req, res) => {
   try {
     res.json({ ok: true, base: await base.usarRecomendada(String((req.body || {}).campo || '')) });
   } catch (err) {
@@ -349,7 +376,7 @@ app.post('/api/admin/base/recomendada', admin, async (req, res) => {
 });
 
 /** Devolve os textos que existiam antes da base recomendada entrar. */
-app.post('/api/admin/base/restaurar', admin, async (_req, res) => {
+app.post('/api/admin/base/restaurar', acesso(['base']), async (_req, res) => {
   try {
     res.json({ ok: true, base: await base.restaurarAnterior() });
   } catch (err) {
@@ -358,7 +385,7 @@ app.post('/api/admin/base/restaurar', admin, async (_req, res) => {
 });
 
 /** Tira um report do histórico (testes que sujam os números). */
-app.delete('/api/admin/reports/:id', admin, async (req, res) => {
+app.delete('/api/admin/reports/:id', acesso(['numeros']), async (req, res) => {
   try {
     const ok = await stats.remover(req.params.id);
     if (!ok) return res.status(404).json({ erro: 'Report não encontrado (já foi removido?).' });
@@ -372,9 +399,15 @@ app.delete('/api/admin/reports/:id', admin, async (req, res) => {
  * Marca manualmente o closer e o resultado de um report (preenchido aos
  * poucos pelo admin, nada disso vem da IA). closerId vazio limpa a marcação.
  */
-app.patch('/api/admin/reports/:id/resultado', admin, async (req, res) => {
+app.patch('/api/admin/reports/:id/resultado', acesso(['numeros', 'resultados']), async (req, res) => {
   try {
     const body = req.body || {};
+    // Quem recebeu só a aba Resultados (não é gestor nem master, nem vê os números da equipe) mexe
+    // apenas nos próprios reports.
+    if (req.usuario && !usuarios.ehAdmin(req.usuario) && !usuarios.podeAba(req.usuario, 'numeros')) {
+      const dono = await stats.buscarPorId(req.params.id);
+      if (!dono || dono.usuarioId !== req.usuario.id) return res.status(404).json({ erro: 'Report não encontrado.' });
+    }
     const tem = (k) => Object.prototype.hasOwnProperty.call(body, k);
     // Só entra no que veio no pedido: mudar um campo não apaga os outros. Se vier
     // "versao", o servidor recusa (409) quando o report já foi alterado por outra pessoa.
@@ -425,7 +458,7 @@ const filtroDaQuery = (q) => ({
  * Números do dashboard: quantos reports, por quem, quanto custou.
  * Filtros: ?de=YYYY-MM-DD&ate=YYYY-MM-DD&sdr=Nome (todos opcionais).
  */
-app.get('/api/admin/stats', admin, async (req, res) => {
+app.get('/api/admin/stats', acesso(['numeros']), async (req, res) => {
   try {
     res.json(await stats.resumo(filtroDaQuery(req.query)));
   } catch (err) {
@@ -434,7 +467,7 @@ app.get('/api/admin/stats', admin, async (req, res) => {
 });
 
 /** Baixa o PDF de um report já gerado (guardado em src/pdfStorage.js). */
-app.get('/api/admin/reports/:id/pdf', admin, async (req, res) => {
+app.get('/api/admin/reports/:id/pdf', acesso(['arquivos']), async (req, res) => {
   try {
     const salvo = await pdfStorage.ler(req.params.id);
     if (!salvo || !salvo.base64) {
@@ -481,7 +514,7 @@ const TETO_ZIP = 500; // protege contra timeout/memória num filtro largo demais
  * Baixa em massa os PDFs de um período/SDR num .zip, organizado em pastas por
  * SDR — pra baixar só de uma pessoa é só filtrar (?sdr=Nome) igual à aba Números.
  */
-app.get('/api/admin/reports/pdf-zip', admin, async (req, res) => {
+app.get('/api/admin/reports/pdf-zip', acesso(['arquivos']), async (req, res) => {
   try {
     const todos = await stats.listar(filtroDaQuery(req.query));
     // ?ultimo=1: do mesmo lead no mesmo dia (por SDR), só o report gerado por último.
@@ -680,7 +713,7 @@ app.post('/api/resumo-rapido', auth, async (req, res) => {
 });
 
 /** Teste do admin: mesma busca, sem cache e com o passo a passo (quais formatos de telefone foram tentados). */
-app.post('/api/admin/crm/teste', admin, async (req, res) => {
+app.post('/api/admin/crm/teste', acesso(['extensao']), async (req, res) => {
   try {
     const { telefone, nome } = req.body || {};
     res.json(await crm.consultarLead({ telefone, nome }, { diagnostico: true, semCache: true }));
@@ -795,7 +828,7 @@ async function reportsDaEquipe(dia) {
   return semNoShow(diario.marcarUltimos(await stats.listar({ de: dia, ate: dia })));
 }
 
-app.get('/api/equipe-reports', admin, async (req, res) => {
+app.get('/api/equipe-reports', acesso(['equipe']), async (req, res) => {
   try {
     const dia = dataOk(req.query.dia) || stats.hojeStr();
     const marcados = await reportsDaEquipe(dia);
@@ -823,7 +856,7 @@ app.get('/api/equipe-reports', admin, async (req, res) => {
   }
 });
 
-app.post('/api/equipe-reports/zip', admin, async (req, res) => {
+app.post('/api/equipe-reports/zip', acesso(['equipe']), async (req, res) => {
   try {
     const body = req.body || {};
     const dia = dataOk(body.dia) || stats.hojeStr();

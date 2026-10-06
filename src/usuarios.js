@@ -32,6 +32,21 @@ const normalizar = (u) => {
     etiquetas: typeof u.etiquetas === 'boolean' ? u.etiquetas : papel === 'master',
   };
 };
+// Abas do painel que o master libera por pessoa (a de Acessos é sempre só dele). Sem escolha feita, vale
+// o padrão do papel: master vê todas; gestor vê as de gestão; usuário (SDR) não vê nenhuma.
+//  - equipe: na aba "Reports do dia", ver e baixar os reports de todos os SDRs.
+const ABAS = ['numeros', 'resultados', 'closers', 'arquivos', 'base', 'extensao', 'equipe'];
+const ABAS_DO_GESTOR = ['numeros', 'arquivos', 'base', 'extensao', 'equipe'];
+
+/** Esta pessoa pode abrir esta aba? A escolha do master (u.abas) vale sobre o padrão do papel. */
+function podeAba(u, aba) {
+  if (!u || !ABAS.includes(aba)) return false;
+  if (u.papel === 'master') return true;
+  if (u.abas && typeof u.abas[aba] === 'boolean') return u.abas[aba];
+  return u.papel === 'gestor' && ABAS_DO_GESTOR.includes(aba);
+}
+const abasDe = (u) => ABAS.filter((a) => podeAba(u, a));
+
 /** Master e gestor veem e fazem tudo; só o master cria, edita e remove usuários. */
 const ehAdmin = (u) => Boolean(u && (u.papel === 'master' || u.papel === 'gestor'));
 const ehMaster = (u) => Boolean(u && u.papel === 'master');
@@ -134,6 +149,17 @@ async function definirEtiquetas(id, ligadas) {
   return true;
 }
 
+/** Libera ou tira uma aba do painel para um usuário (o master sempre tem todas). */
+async function definirAba(id, aba, liberada) {
+  if (!ABAS.includes(aba)) throw new Error('Aba inválida.');
+  const dados = await ler();
+  const u = dados.usuarios.find((x) => x.id === id);
+  if (!u) return false;
+  u.abas = { ...(u.abas || {}), [aba]: Boolean(liberada) };
+  await db.setJson(CHAVE_DB, dados);
+  return true;
+}
+
 async function remover(id) {
   const dados = await ler();
   const alvo = dados.usuarios.find((u) => u.id === id);
@@ -151,4 +177,4 @@ async function porChave(chave) {
   return (await ler()).usuarios.find((u) => u.chave === chave) || null;
 }
 
-module.exports = { listar, criar, remover, definirPapel, definirFichaCrm, definirCoach, definirAutomacao, definirEtiquetas, porChave, ehAdmin, ehMaster, PAPEIS };
+module.exports = { listar, criar, remover, definirPapel, definirFichaCrm, definirCoach, definirAutomacao, definirEtiquetas, definirAba, podeAba, abasDe, ABAS, porChave, ehAdmin, ehMaster, PAPEIS };
