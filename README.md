@@ -306,6 +306,10 @@ funciona**.
   com lead cauteloso: fechou 3 de 4 (75%), contra 0 de 2 com os outros perfis", seguidas das
   anotações de "o que deu a reunião" — é delas que sai o porquê. Os insights da IA recebem os
   mesmos dados e não podem inventar motivo: sem anotação, dizem que falta anotar.
+- **Closer preenchido sozinho.** Ao abrir a conversa do lead, se o card no RD já está em "Reunião
+  Realizada" (ou no funil dos closers) com o closer como responsável, ou se a reunião está na agenda
+  de um closer, os handoffs daquele lead que estão sem closer são preenchidos (`src/closerAuto.js`).
+  Só vale closer cadastrado na aba Closers, e closer já marcado nunca é trocado.
 - **No-show não é reunião.** Sai da lista de resultados (volta com "Mostrar no-show"), fica fora
   do .zip do dia e não conta como venda perdida do closer.
 - **Perfil com critério.** A IA testa os perfis em ordem e exige prova na fala do lead;
@@ -505,7 +509,7 @@ Tudo em `src/db.js` (Redis em produção, `data/*.json` local). **A conversa nã
 npm test
 ```
 
-**367 testes**, sem rede, sem chave real, sem custo e sem tocar em `data/` (o banco é uma pasta
+**372 testes**, sem rede, sem chave real, sem custo e sem tocar em `data/` (o banco é uma pasta
 temporária). O `jsdom` roda os scripts **reais** da extensão e do painel.
 
 | Arquivo | O que cobre |

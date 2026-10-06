@@ -25,6 +25,7 @@ const diario = require('./src/diario');
 const crm = require('./src/crm');
 const leads = require('./src/leads');
 const agendaGoogle = require('./src/agendaGoogle');
+const closerAuto = require('./src/closerAuto');
 const { gerarResumoRapido } = require('./src/resumoRapido');
 const coachIa = require('./src/coach');
 const inteligencia = require('./src/inteligencia');
@@ -546,6 +547,11 @@ app.post('/api/crm/lead', auth, async (req, res) => {
         return null;
       });
       if (reuniao) extra.reuniao = reuniao;
+      // O RD (reunião realizada, card com o closer) ou a agenda dizem quem é o closer: os handoffs
+      // deste lead que ainda estão sem closer são preenchidos sozinhos.
+      await closerAuto
+        .preencher({ usuario: req.usuario, conversa: conversaDoPedido(conversa, { telefone, nome }), ficha: r.ficha, reuniao })
+        .catch((err) => console.error('Falha ao preencher o closer do report:', err.message));
     }
     res.json({ ...r, ...extra });
   } catch (err) {
