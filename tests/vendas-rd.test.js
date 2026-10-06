@@ -178,3 +178,27 @@ test('a conferência no RD também preenche o closer do report quando o card já
     crm.consultarLead = antes;
   }
 });
+
+test('dados da venda: produto, ticket (em reais, em qualquer formato) e pagamento; o valor do card vendido vira o ticket se estiver vazio', async () => {
+  assert.deepEqual(['R$ 15.984,00', '15984', '15.984', '1.552,50', 29892.5, '', 'abc'].map(stats.valorEmReais), [15984, 15984, 15984, 1552.5, 29892.5, 0, 0]);
+  await stats.registrar({ id: 't1', usuarioId: 'u1', usuarioNome: 'Cauã Lima', lead: 'Lead t1', contato: 'Contato t1' });
+  await stats.atualizarResultado('t1', { produto: 'acelera', ticket: 'R$ 29.892,00', pagamento: '  Cartão   12x ' });
+  let r = await stats.buscarPorId('t1');
+  assert.deepEqual([r.produto, r.ticket, r.pagamento], ['acelera', 29892, 'Cartão 12x']);
+  await stats.atualizarResultado('t1', { produto: 'inventado' });
+  assert.equal((await stats.buscarPorId('t1')).produto, '', 'produto fora da lista não entra');
+
+  const antes = crm.consultarLead;
+  const vendido = (valor) => ({ configurado: true, encontrado: true, ficha: { nome: 'x', negociacoes: [{ id: 'g', ganha: true, valor, fechadaEm: new Date(Date.now() + 3600000).toISOString() }] } });
+  try {
+    await stats.registrar({ id: 't2', usuarioId: 'u1', usuarioNome: 'Cauã Lima', lead: 'Lead t2', contato: 'Contato t2' });
+    await stats.registrar({ id: 't3', usuarioId: 'u1', usuarioNome: 'Cauã Lima', lead: 'Lead t3', contato: 'Contato t3' });
+    await stats.atualizarResultado('t3', { ticket: 10000 });
+    crm.consultarLead = async () => vendido(21900);
+    await vendasRd.sincronizar((await stats.listar({})).filter((x) => x.id === 't2' || x.id === 't3'));
+    assert.equal((await stats.buscarPorId('t2')).ticket, 21900, 'valor do card no RD');
+    assert.equal((await stats.buscarPorId('t3')).ticket, 10000, 'ticket já preenchido não é trocado');
+  } finally {
+    crm.consultarLead = antes;
+  }
+});

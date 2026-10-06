@@ -312,6 +312,7 @@ app.get('/api/master/resultados', acesso(['resultados'], SO_MASTER_ERRO), async 
         id: r.id, lead: r.lead, contato: r.contato, usuarioNome: r.usuarioNome, quando: r.quando, dia: r.dia,
         closerId: r.closerId || '', closerNome: r.closerNome || '', resultado: r.resultado || '', obsReuniao: r.obsReuniao || '',
         vendidoNoRd: Boolean(r.vendidoNoRd), encerradoPeloRd: Boolean(r.encerradoPeloRd),
+        produto: r.produto || '', ticket: Number(r.ticket) || 0, pagamento: r.pagamento || '',
         perfil: r.perfil || '', perfilReal: r.perfilReal || '', perfilEvidencia: r.perfilEvidencia || '',
         consciencia: r.consciencia || '', conscienciaReal: r.conscienciaReal || '', conscienciaPorque: r.conscienciaPorque || '',
         versao: Number(r.versao) || 0,
@@ -456,7 +457,7 @@ app.patch('/api/admin/reports/:id/resultado', acesso(['numeros', 'resultados']),
     // Só entra no que veio no pedido: mudar um campo não apaga os outros. Se vier
     // "versao", o servidor recusa (409) quando o report já foi alterado por outra pessoa.
     const campos = {};
-    ['leadEmail', 'resultado', 'dataReuniao', 'dataFechamento', 'obsReuniao', 'perfilReal', 'conscienciaReal'].forEach((k) => {
+    ['leadEmail', 'resultado', 'dataReuniao', 'dataFechamento', 'obsReuniao', 'perfilReal', 'conscienciaReal', 'produto', 'ticket', 'pagamento'].forEach((k) => {
       if (tem(k)) campos[k] = body[k];
     });
     const antes = tem('conscienciaReal') ? await stats.buscarPorId(req.params.id) : null;

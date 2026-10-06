@@ -37,7 +37,8 @@ const depoisDoReport = (card, r) => {
  */
 function desfecho(ficha, report) {
   const cards = ((ficha && ficha.negociacoes) || []).filter((c) => depoisDoReport(c, report));
-  if (cards.some((c) => c.ganha || naEtapa(c, etapaVendido()))) return { venda: true };
+  const vendido = cards.find((c) => c.ganha || naEtapa(c, etapaVendido()));
+  if (vendido) return vendido.valor > 0 ? { venda: true, valor: vendido.valor } : { venda: true };
   const perdido = cards.find((c) => c.perdida || naEtapa(c, etapaNaoComprou()));
   // Ainda em negociação, mas o closer já colocou no fluxo de follow-up.
   if (!perdido) return cards.some((c) => naEtapa(c, etapaFup())) ? { fup: true } : null;
@@ -64,7 +65,8 @@ async function aplicar(r, d) {
     return '';
   }
   if (d.venda) {
-    await stats.atualizarResultado(r.id, { vendidoNoRd: agora, rdConferidoEm: agora });
+    // O valor do card no RD entra como ticket só se ninguém preencheu ainda.
+    await stats.atualizarResultado(r.id, { vendidoNoRd: agora, rdConferidoEm: agora, ...(d.valor && !r.ticket ? { ticket: d.valor } : {}) });
     return 'venda';
   }
   if (d.fup) {

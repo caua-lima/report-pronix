@@ -85,6 +85,10 @@ async function registrar({
       perfilReal: '',
       conscienciaReal: '',
       obsReuniao: '',
+      // Dados da venda, preenchidos na aba Resultados: qual produto, por quanto e como pagou.
+      produto: '', // '' | 'performance' | 'acelera'
+      ticket: 0, // valor fechado, em reais
+      pagamento: '', // forma de pagamento (texto curto)
       vendidoNoRd: '', // quando o sistema viu o card marcado como vendido no RD (o tipo de venda é o master que diz)
       modelo: u.modelo || '',
       entrada: u.entrada || 0,
@@ -327,6 +331,18 @@ async function buscarPorId(id) {
 const RESULTADOS_VALIDOS = new Set(['', 'venda_call', 'venda_fup', 'pix_compromisso', 'sem_venda', 'no_show', 'em_followup']);
 const RESULTADOS_VENDA = new Set(['venda_call', 'venda_fup', 'pix_compromisso']);
 const ehVenda = (r) => RESULTADOS_VENDA.has(r);
+const PRODUTOS_VALIDOS = ['performance', 'acelera'];
+/** "R$ 15.984,00", "15984" ou 15984.5 -> número em reais (0 se não der para ler). */
+function valorEmReais(v) {
+  if (typeof v === 'number') return Number.isFinite(v) && v > 0 ? Math.round(v * 100) / 100 : 0;
+  let t = String(v || '').replace(/[^\d.,]/g, '');
+  if (!t) return 0;
+  // vírgula é o decimal brasileiro; ponto sozinho com 3 casas depois é separador de milhar
+  if (t.includes(',')) t = t.replace(/\./g, '').replace(',', '.');
+  else if (/^\d{1,3}(\.\d{3})+$/.test(t)) t = t.replace(/\./g, '');
+  const n = Number(t);
+  return Number.isFinite(n) && n > 0 && n < 10000000 ? Math.round(n * 100) / 100 : 0;
+}
 const DATA_OK = /^\d{4}-\d{2}-\d{2}$/;
 
 /** Diferença em dias corridos entre duas datas YYYY-MM-DD (b - a). null se alguma faltar/for inválida. */
@@ -371,6 +387,9 @@ async function atualizarResultado(id, campos = {}, { versaoEsperada } = {}) {
       if (tem('leadEmail')) novo.leadEmail = String(campos.leadEmail || '').trim().slice(0, 200);
       if (tem('resultado')) novo.resultado = RESULTADOS_VALIDOS.has(campos.resultado) ? campos.resultado : '';
       if (tem('dataReuniao')) novo.dataReuniao = DATA_OK.test(campos.dataReuniao || '') ? campos.dataReuniao : '';
+      if (tem('produto')) novo.produto = PRODUTOS_VALIDOS.includes(campos.produto) ? campos.produto : '';
+      if (tem('ticket')) novo.ticket = valorEmReais(campos.ticket);
+      if (tem('pagamento')) novo.pagamento = String(campos.pagamento || '').replace(/\s+/g, ' ').trim().slice(0, 80);
       if (tem('vendidoNoRd')) novo.vendidoNoRd = String(campos.vendidoNoRd || '').slice(0, 30);
       // Marcas da leitura do RD: quando foi conferido por último e se foi o RD que encerrou ("não comprou").
       if (tem('rdConferidoEm')) novo.rdConferidoEm = String(campos.rdConferidoEm || '').slice(0, 30);
@@ -413,5 +432,5 @@ async function registrarResumoRapido({ usuarioNome, uso }) {
 
 module.exports = {
   registrar, resumo, listar, remover, buscarPorChave, buscarPorId, atualizarResultado, hojeStr, registrarResumoRapido,
-  RESULTADOS_VALIDOS, ehVenda, emDiaLocal,
+  RESULTADOS_VALIDOS, PRODUTOS_VALIDOS, valorEmReais, ehVenda, emDiaLocal,
 };

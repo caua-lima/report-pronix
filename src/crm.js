@@ -259,6 +259,7 @@ async function montarFicha(contato, extras = [], preferido = '') {
     aberta: estaAberta(d),
     ganha: d.win === true, // o closer marcou a venda no RD
     perdida: d.win === false, // marcou como perdida
+    valor: Number(d.amount_total) || 0, // valor da negociação no RD
     motivoPerda: consertarAcentos((d.deal_lost_reason && d.deal_lost_reason.name) || ''),
     notaPerda: consertarAcentos(d.deal_lost_note || '').slice(0, 300),
     fechadaEm: d.closed_at || '',
