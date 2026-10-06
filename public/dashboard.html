@@ -547,7 +547,7 @@
         <div class="card">
           <div class="head"><div class="t"><i data-ic="users"></i>Equipe</div></div>
           <table>
-            <thead><tr><th>Nome</th><th>Chave</th><th title="Mostrar a ficha do lead (RD) e o resumo rápido no WhatsApp">Popup do lead</th><th title="Botão Coach da conversa no WhatsApp (IA gratuita: perfil do lead, objeções e perguntas)">Coach</th><th title="No cartão do lead: move o card para Respondeu no RD quando o lead responde e mostra a etiqueta Qualificado e o dia/horário agendado">Automação RD</th><th title="No cartão do lead: etiquetas com o investimento do formulário (3 a 5k, 5k+) e se já vende">Etiquetas</th><th>Criado</th><th></th></tr></thead>
+            <thead><tr><th>Nome</th><th>Chave</th><th>Permissões</th><th>Criado</th><th></th></tr></thead>
             <tbody id="lista"></tbody>
           </table>
           <div id="vazio" class="hint">Nenhum acesso criado ainda.</div>
@@ -1050,37 +1050,79 @@
         $('cardCriar').classList.toggle('hidden', !podeMexerEmUsuarios());
         $('avisoSoMaster').classList.toggle('hidden', podeMexerEmUsuarios());
         $('vazio').style.display = usuarios.length ? 'none' : '';
-        $('lista').innerHTML = usuarios.map((u) => `
+        const NO_WHATSAPP = [
+          ['fichaCrm', 'data-ficha-crm', 'Popup do lead', 'Ficha do RD e resumo rápido ao abrir a conversa'],
+          ['coach', 'data-coach', 'Coach', 'Popup do coach da conversa'],
+          ['automacao', 'data-automacao', 'Automação RD', 'Move o card para Respondeu, etiqueta Qualificado, reunião da agenda e closer do handoff'],
+          ['etiquetas', 'data-etiquetas', 'Etiquetas', 'Investimento do formulário e se já vende'],
+        ];
+        const travado = podeMexerEmUsuarios() ? '' : 'disabled';
+        const caixa = (attrs, marcado, rotulo, dica) =>
+          `<label title="${esc(dica || '')}" style="display:flex;align-items:center;gap:7px;margin:0;font-weight:500;font-size:.86rem"><input type="checkbox" ${attrs} ${marcado ? 'checked' : ''} ${travado} style="width:auto" />${rotulo}</label>`;
+        $('lista').innerHTML = usuarios.map((u) => {
+          const master = u.papel === 'master';
+          const nWhats = NO_WHATSAPP.filter(([campo]) => u[campo]).length;
+          const nAbas = ROTULO_ABAS.filter(([a]) => u.abas && u.abas[a]).length;
+          const aberta = abertosAcessos.has(u.id);
+          return `
           <tr>
-            <td><b>${esc(u.nome)}</b>${podeMexerEmUsuarios() ? `
+            <td><button type="button" class="nome-acesso" data-abrir-perm="${esc(u.id)}" aria-expanded="${aberta}" title="Clique para ver e mudar o que ${esc(u.nome)} pode usar" style="background:none;border:0;padding:0;font:inherit;color:inherit;cursor:pointer;font-weight:700;text-align:left"><span class="seta" style="display:inline-block;width:14px;color:var(--muted)">${aberta ? '▾' : '▸'}</span>${esc(u.nome)}</button>${podeMexerEmUsuarios() ? `
               <select class="mini-select" data-papel-de="${esc(u.id)}" title="Tipo de acesso de ${esc(u.nome)}">
                 ${[['sdr', 'Usuário'], ['gestor', 'Gestor'], ['master', 'Master']].map(([v, t]) => `<option value="${v}" ${u.papel === v ? 'selected' : ''}>${t}</option>`).join('')}
               </select>` : u.papel !== 'sdr' ? ` <span class="tag" style="color:var(--gold-ink);border-color:var(--primary)">${u.papel}</span>` : ''}</td>
             <td><span class="chave" data-cheia="${esc(u.chave)}" data-mascara="${esc(mascarar(u.chave))}" title="Clique para mostrar ou ocultar" style="cursor:pointer">${esc(mascarar(u.chave))}</span></td>
-            <td><input type="checkbox" data-ficha-crm="${esc(u.id)}" ${u.fichaCrm ? 'checked' : ''} ${podeMexerEmUsuarios() ? '' : 'disabled'} style="width:auto" title="Popup do lead (ficha do RD e resumo rápido) para ${esc(u.nome)}" /></td>
-            <td><input type="checkbox" data-coach="${esc(u.id)}" ${u.coach ? 'checked' : ''} ${podeMexerEmUsuarios() ? '' : 'disabled'} style="width:auto" title="Coach da conversa para ${esc(u.nome)}" /></td>
-            <td><input type="checkbox" data-automacao="${esc(u.id)}" ${u.automacao ? 'checked' : ''} ${podeMexerEmUsuarios() ? '' : 'disabled'} style="width:auto" title="Automação do RD (mover para Respondeu, etiqueta Qualificado e agendamento) para ${esc(u.nome)}" /></td>
-            <td><input type="checkbox" data-etiquetas="${esc(u.id)}" ${u.etiquetas ? 'checked' : ''} ${podeMexerEmUsuarios() ? '' : 'disabled'} style="width:auto" title="Etiquetas do formulário (investimento e se já vende) para ${esc(u.nome)}" /></td>
+            <td style="color:var(--text-2);font-size:.82rem" data-resumo-perm="${esc(u.id)}">${nWhats} no WhatsApp · ${master ? 'todas as abas' : nAbas + ' aba(s)'}</td>
             <td style="color:var(--muted);font-size:.8rem">${new Date(u.criadoEm).toLocaleDateString('pt-BR')}</td>
             <td><div class="acoes">
               <button class="mini" data-copiar="${esc(u.chave)}">Copiar chave</button>
               ${podeMexerEmUsuarios() ? `<button class="mini del" data-remover="${esc(u.id)}" data-nome="${esc(u.nome)}">Remover</button>` : ''}
             </div></td>
           </tr>
-          <tr class="abas-de"><td colspan="8" style="padding-top:0;border-top:0">
-            <div style="display:flex;flex-wrap:wrap;gap:4px 16px;align-items:center;font-size:.8rem;color:var(--text-2)">
-              <span style="color:var(--muted)">Abas do painel:</span>
-              ${u.papel === 'master'
-                ? '<span>todas (master)</span>'
-                : ROTULO_ABAS.map(([a, t]) => `<label style="display:inline-flex;align-items:center;gap:5px;margin:0;font-weight:500"><input type="checkbox" data-aba-de="${esc(u.id)}" data-aba="${a}" ${u.abas && u.abas[a] ? 'checked' : ''} ${podeMexerEmUsuarios() ? '' : 'disabled'} style="width:auto" />${t}</label>`).join('')}
+          <tr class="perm-de ${aberta ? '' : 'hidden'}" data-perm-de="${esc(u.id)}"><td colspan="5" style="border-top:0;padding-top:0">
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px 28px;background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:14px 16px">
+              <div>
+                <div style="font-size:.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">No WhatsApp (extensão)</div>
+                <div style="display:grid;gap:7px">${NO_WHATSAPP.map(([campo, attr, rotulo, dica]) => caixa(`${attr}="${esc(u.id)}"`, u[campo], rotulo, dica)).join('')}</div>
+              </div>
+              <div>
+                <div style="font-size:.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Abas do painel</div>
+                ${master
+                  ? '<div style="font-size:.86rem;color:var(--text-2)">todas (master)</div>'
+                  : `<div style="display:grid;gap:7px">${ROTULO_ABAS.map(([a, t]) => caixa(`data-aba-de="${esc(u.id)}" data-aba="${a}"`, u.abas && u.abas[a], t)).join('')}</div>`}
+              </div>
             </div>
-          </td></tr>`).join('');
+          </td></tr>`;
+        }).join('');
       } catch (e) {
         setStatus('statusCriar', e.message, { erro: true });
       }
     }
 
+    // Clicar no nome abre as permissões daquela pessoa; a tabela fica só com o essencial.
+    const abertosAcessos = new Set();
+    $('lista').addEventListener('click', (ev) => {
+      const b = ev.target.closest('[data-abrir-perm]');
+      if (!b) return;
+      const id = b.dataset.abrirPerm;
+      const abrirAgora = !abertosAcessos.has(id);
+      if (abrirAgora) abertosAcessos.add(id);
+      else abertosAcessos.delete(id);
+      const linha = $('lista').querySelector('tr[data-perm-de="' + id + '"]');
+      if (linha) linha.classList.toggle('hidden', !abrirAgora);
+      b.setAttribute('aria-expanded', String(abrirAgora));
+      b.querySelector('.seta').textContent = abrirAgora ? '▾' : '▸';
+    });
+
     // Só o master troca o tipo de acesso e escolhe quem vê o popup do lead.
+    $('lista').addEventListener('change', (ev) => {
+      const linha = ev.target.closest('tr.perm-de');
+      if (!linha) return;
+      const id = linha.dataset.permDe;
+      const marcadas = (sel) => linha.querySelectorAll(sel + ':checked').length;
+      const resumo = $('lista').querySelector('[data-resumo-perm="' + id + '"]');
+      const temAbas = linha.querySelector('[data-aba-de]');
+      if (resumo) resumo.textContent = `${marcadas('[data-ficha-crm],[data-coach],[data-automacao],[data-etiquetas]')} no WhatsApp · ${temAbas ? marcadas('[data-aba-de]') + ' aba(s)' : 'todas as abas'}`;
+    });
     $('lista').addEventListener('change', async (ev) => {
       const ab = ev.target.closest('[data-aba-de]');
       if (ab) {

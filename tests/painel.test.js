@@ -1306,3 +1306,36 @@ test('Resultados: certinho verde na venda finalizada, selo "Vendido no RD" esper
   assert.deepEqual(p.erros, []);
   p.fechar();
 });
+
+test('Acessos: a tabela fica limpa; clicar no nome abre as permissões da pessoa (WhatsApp e abas) e o resumo acompanha', async () => {
+  const semAbas = { numeros: false, resultados: false, closers: false, arquivos: false, base: false, extensao: false, equipe: false };
+  const usuarios = [
+    { id: 'u2', nome: 'Samuel', papel: 'sdr', chave: 'pnx_SdrSdr1234567890abcdefgh', criadoEm: '2026-09-01T10:00:00Z', fichaCrm: true, coach: false, automacao: true, etiquetas: false, abas: { ...semAbas, resultados: true } },
+  ];
+  const api = apiBase({ papel: 'master', usuarios }).quando('PATCH /api/admin/usuarios/u2', () => ({ corpo: { ok: true } }));
+  const p = abrirPainel(api, { hash: '#acessos' });
+  await esperar(() => p.$('lista').textContent.includes('Samuel'), { motivo: 'lista' });
+  const painel = p.document.querySelector('tr[data-perm-de="u2"]');
+  const nome = p.document.querySelector('[data-abrir-perm="u2"]');
+  assert.ok(painel.classList.contains('hidden'), 'as permissões começam recolhidas');
+  assert.equal(p.document.querySelector('[data-resumo-perm="u2"]').textContent, '2 no WhatsApp · 1 aba(s)');
+  assert.deepEqual([...p.document.querySelectorAll('#aba-acessos thead th')].map((th) => th.textContent), ['Nome', 'Chave', 'Permissões', 'Criado', '']);
+
+  nome.click();
+  assert.ok(!painel.classList.contains('hidden'));
+  assert.equal(nome.getAttribute('aria-expanded'), 'true');
+  assert.match(painel.textContent, /No WhatsApp \(extensão\)[\s\S]*Popup do lead[\s\S]*Coach[\s\S]*Automação RD[\s\S]*Etiquetas[\s\S]*Abas do painel[\s\S]*Resultados da reunião/);
+
+  const coach = painel.querySelector('[data-coach="u2"]');
+  coach.checked = true;
+  coach.dispatchEvent(new p.w.Event('change', { bubbles: true }));
+  await esperar(() => api.contar('PATCH /api/admin/usuarios/u2') === 1, { motivo: 'PATCH' });
+  assert.deepEqual(api.corpos('PATCH /api/admin/usuarios/u2'), [{ coach: true }]);
+  assert.equal(p.document.querySelector('[data-resumo-perm="u2"]').textContent, '3 no WhatsApp · 1 aba(s)');
+
+  nome.click();
+  assert.ok(painel.classList.contains('hidden'), 'clicar de novo recolhe');
+  await dormir(60);
+  assert.deepEqual(p.erros, []);
+  p.fechar();
+});
