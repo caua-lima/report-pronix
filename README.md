@@ -276,6 +276,13 @@ Três coisas, sem IA e sem custo, para quem o master ligou:
 
 O texto da conversa não vai ao servidor para isso — só o pedido de mover, a etiqueta e a data.
 
+**Reunião pelo Google Agenda.** Quando o master conecta a conta dele (aba **Extensão** → **Google
+Agenda**), o servidor lê as agendas que essa conta enxerga — as dos closers, compartilhadas com
+ela — e procura o evento em que o **e-mail do lead** é convidado (sem e-mail no RD, o nome inteiro
+no título). O cartão mostra "Agendado: hoje às 14:00 · Vitor", e isso vale mais que o lido na
+conversa. Remarcou pelo link? Vale a próxima reunião. Só leitura (`calendar.readonly`), cache de
+10 min por lead, e uma falha do Google nunca derruba a ficha (`src/agendaGoogle.js`).
+
 ---
 
 ## Inteligência comercial
@@ -441,6 +448,14 @@ Tudo tem padrão seguro no código; o `.env.example` traz a lista comentada.
 | `CRM_MOVER_ETAPA` | ligado | `0` desliga a escrita no RD; as etiquetas continuam. |
 | `CRM_ETAPA_RESPONDEU` · `CRM_ETAPA_QUALIFICADO` | `Respondeu` · `Qualificado` | Nome das etapas, se o time renomear. |
 
+### Google Agenda
+
+| Variável | Padrão | Descrição |
+| --- | --- | --- |
+| `GOOGLE_CLIENT_ID` · `GOOGLE_CLIENT_SECRET` | — | Cliente OAuth do Google Cloud. Vazias: recurso desligado. |
+| `GOOGLE_REFRESH_TOKEN` | — | Opcional: a autorização da conta, em vez de conectar pelo painel. |
+| `GOOGLE_TIMEOUT_MS` | `8000` | Tempo máximo de cada chamada ao Google. |
+
 ### Limites e ajustes
 
 | Variável | Padrão | Descrição |
@@ -474,6 +489,7 @@ Tudo em `src/db.js` (Redis em produção, `data/*.json` local). **A conversa nã
 | `base` | Base de conhecimento (com os textos anteriores, para restaurar). |
 | `closers` | Lista de closers. |
 | `crm_cards` | Card escolhido para cada lead com mais de um. |
+| `google_agenda` | Autorização da conta conectada ao Google Agenda (só no servidor). |
 | `lead_marcas` | Etiqueta "Qualificado" e agendamento por lead (até 4.000). |
 | `crm_movimentos` | Registro de cada card movido para "Respondeu" (últimos 500). |
 | `coach_feedback` | Sugestões marcadas como úteis ou não. |
@@ -489,7 +505,7 @@ Tudo em `src/db.js` (Redis em produção, `data/*.json` local). **A conversa nã
 npm test
 ```
 
-**358 testes**, sem rede, sem chave real, sem custo e sem tocar em `data/` (o banco é uma pasta
+**367 testes**, sem rede, sem chave real, sem custo e sem tocar em `data/` (o banco é uma pasta
 temporária). O `jsdom` roda os scripts **reais** da extensão e do painel.
 
 | Arquivo | O que cobre |
