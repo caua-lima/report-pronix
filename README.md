@@ -295,6 +295,14 @@ funciona**.
 5. **Insights** escritos pelo Groq gratuito, só em cima dos números e das perguntas do SDR (a fala
    dos leads não é enviada). Exige 5 reuniões com resultado.
 
+- **Onde cada closer vai melhor, e por quê.** A aba mostra, sem IA, frases como "Paulo vai melhor
+  com lead cauteloso: fechou 3 de 4 (75%), contra 0 de 2 com os outros perfis", seguidas das
+  anotações de "o que deu a reunião" — é delas que sai o porquê. Os insights da IA recebem os
+  mesmos dados e não podem inventar motivo: sem anotação, dizem que falta anotar.
+- **No-show não é reunião.** Sai da lista de resultados (volta com "Mostrar no-show"), fica fora
+  do .zip do dia e não conta como venda perdida do closer.
+- **Perfil com critério.** A IA testa os perfis em ordem e exige prova na fala do lead;
+  "cauteloso" só com hesitação dita, para não virar o perfil de todo lead educado.
 - **Sem amostra, sem indicação.** O closer só é indicado com **3 ou mais reuniões** dele com
   aquele perfil, com taxa suavizada (1 de 1 não passa na frente de 8 de 10).
 - **A IA aprende o nível de consciência de graça.** Cada correção do master vira um exemplo no
@@ -481,7 +489,7 @@ Tudo em `src/db.js` (Redis em produção, `data/*.json` local). **A conversa nã
 npm test
 ```
 
-**353 testes**, sem rede, sem chave real, sem custo e sem tocar em `data/` (o banco é uma pasta
+**358 testes**, sem rede, sem chave real, sem custo e sem tocar em `data/` (o banco é uma pasta
 temporária). O `jsdom` roda os scripts **reais** da extensão e do painel.
 
 | Arquivo | O que cobre |
