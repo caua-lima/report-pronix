@@ -434,7 +434,7 @@
             <label style="display:flex;align-items:center;gap:6px;margin:0"><input id="resPendentes" type="checkbox" style="width:auto" /> Só sem resultado</label>
             <label style="display:flex;align-items:center;gap:6px;margin:0" title="No-show e 'Não fechou' são casos encerrados: saem da lista (o no-show também sai do .zip do dia)"><input id="resNoShow" type="checkbox" style="width:auto" /> Mostrar encerrados</label>
             <button id="resVer" class="btn sec"><i data-ic="refresh"></i>Atualizar</button>
-            <button id="resVendasRd" class="btn sec" title="Confere no RD quais destes leads o closer já marcou como vendidos (só leitura)">Puxar vendas do RD</button>
+            <button id="resVendasRd" class="btn sec" title="Confere agora no RD o que os closers registraram destes leads: vendido, ou não comprou com o motivo (só leitura). Isso também roda sozinho uma vez por dia.">Puxar do RD</button>
           </div>
           <div id="statusRes" class="status"></div>
         </div>
@@ -1628,6 +1628,7 @@
     const ENCERRADOS = ['no_show', 'sem_venda']; // encerrados sem venda: saem da lista de Resultados
     function selosDoResultado(r) {
       if (VENDAS.includes(r.resultado)) return '<span class="selo-venda" title="Negociação finalizada: venda" style="display:inline-block;margin-right:6px;color:#25d366;font-weight:800">✓</span>';
+      if (r.resultado === 'sem_venda' && r.encerradoPeloRd) return '<span class="selo-fim" title="O closer registrou no RD que não comprou; o motivo está em O que deu a reunião." style="display:inline-block;margin-right:6px;padding:1px 7px;border-radius:10px;border:1px solid var(--border);color:var(--muted);font-size:.7rem;font-weight:700">Encerrado pelo RD</span>';
       if (r.vendidoNoRd) return '<span class="selo-rd" title="O closer marcou este card como vendido no RD. Escolha em Resultado se foi em call, follow-up ou pix de compromisso." style="display:inline-block;margin-right:6px;padding:1px 7px;border-radius:10px;background:var(--ouro);color:#121214;font-size:.7rem;font-weight:750">Vendido no RD</span>';
       return '';
     }
@@ -1655,8 +1656,27 @@
       $('resAte').value = hojeISO();
     }
 
+    // Quem é master escolhe ver os resultados de uma pessoa (ex.: conferir o que um SDR preencheu).
+    async function prepararPessoasRes() {
+      if (prepararPessoasRes.feito || !podeMexerEmUsuarios()) return;
+      prepararPessoasRes.feito = true;
+      try {
+        const { usuarios } = await api('GET', '/api/admin/usuarios');
+        const sel = $('resEscopo');
+        usuarios.forEach((u) => {
+          const o = document.createElement('option');
+          o.value = u.id;
+          o.textContent = 'Só de ' + u.nome;
+          sel.appendChild(o);
+        });
+      } catch (_) {
+        prepararPessoasRes.feito = false; // tenta de novo na próxima vez que abrir a aba
+      }
+    }
+
     async function carregarResultados() {
       if (!podeAba('resultados')) return;
+      prepararPessoasRes();
       if (!$('resDe').value) usarPresetRes(0);
       setStatus('statusRes', 'Carregando…', { loading: true });
       try {
@@ -1697,7 +1717,7 @@
           if (campo.dataset.resCampo === 'resultado') {
             // o certinho / selo da linha acompanha o resultado escolhido
             const celula = linha.querySelector('td');
-            celula.querySelectorAll('.selo-venda, .selo-rd').forEach((x) => x.remove());
+            celula.querySelectorAll('.selo-venda, .selo-rd, .selo-fim').forEach((x) => x.remove());
             if (VENDAS.includes(campo.value)) celula.insertAdjacentHTML('afterbegin', selosDoResultado({ resultado: campo.value }));
           }
           if (campo.dataset.resCampo === 'resultado' && ENCERRADOS.includes(campo.value) && !$('resNoShow').checked) {
@@ -1740,7 +1760,7 @@
         const q = new URLSearchParams({ de: $('resDe').value, ate: $('resAte').value, escopo: $('resEscopo').value });
         const j = await api('POST', '/api/master/vendas-rd?' + q, {});
         await carregarResultados();
-        toast(`${j.conferidos} lead(s) conferido(s) no RD · ${j.vendidos} vendido(s)` + (j.restantes ? ` · faltam ${j.restantes}: clique de novo` : ''));
+        toast(`${j.conferidos} lead(s) conferido(s) no RD · ${j.vendidos} vendido(s) · ${j.encerrados || 0} não comprou` + (j.restantes ? ` · faltam ${j.restantes}: clique de novo` : ''));
       } catch (e) {
         setStatus('statusRes', e.message, { erro: true });
       } finally {

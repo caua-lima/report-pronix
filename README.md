@@ -315,6 +315,13 @@ funciona**.
   Realizada" (ou no funil dos closers) com o closer como responsável, ou se a reunião está na agenda
   de um closer, os handoffs daquele lead que estão sem closer são preenchidos (`src/closerAuto.js`).
   Só vale closer cadastrado na aba Closers, e closer já marcado nunca é trocado.
+- **Desfecho puxado do RD.** O closer registra o fim no RD: vendido, ou perdido / etapa "Não
+  compraram" com o motivo. O servidor lê isso (`src/vendasRd.js`) ao abrir a aba Resultados (no
+  máximo a cada 30 min), uma vez por dia pelo agendador da Vercel (`/api/cron/rd`, com
+  `CRON_SECRET`) e pelo botão **Puxar do RD**. Vendido vira o selo "Vendido no RD" (você só diz
+  se foi call, follow-up ou pix); não comprou vira "Não fechou" com o motivo em "o que deu a
+  reunião" e sai da lista. Só vale desfecho registrado depois de o report existir.
+- **Conferir uma pessoa.** Em "Reports de", o master escolhe ver os resultados de um usuário.
 - **No-show não é reunião.** Sai da lista de resultados (volta com "Mostrar no-show"), fica fora
   do .zip do dia e não conta como venda perdida do closer.
 - **Perfil com critério.** A IA testa os perfis em ordem e exige prova na fala do lead;
@@ -456,6 +463,8 @@ Tudo tem padrão seguro no código; o `.env.example` traz a lista comentada.
 | `CRM_PALAVRAS_IGNORADAS` | — | Etiquetas extras a tirar do nome salvo (separadas por vírgula). |
 | `CRM_MOVER_ETAPA` | ligado | `0` desliga a escrita no RD; as etiquetas continuam. |
 | `CRM_ETAPA_RESPONDEU` · `CRM_ETAPA_QUALIFICADO` | `Respondeu` · `Qualificado` | Nome das etapas, se o time renomear. |
+| `CRM_ETAPA_NAO_COMPROU` | `Não compraram` | Etapa dos closers que encerra o report como "não fechou". |
+| `CRON_SECRET` | — | Segredo do agendador diário da Vercel que confere vendas e perdas no RD. |
 
 ### Google Agenda
 
@@ -514,7 +523,7 @@ Tudo em `src/db.js` (Redis em produção, `data/*.json` local). **A conversa nã
 npm test
 ```
 
-**375 testes**, sem rede, sem chave real, sem custo e sem tocar em `data/` (o banco é uma pasta
+**387 testes**, sem rede, sem chave real, sem custo e sem tocar em `data/` (o banco é uma pasta
 temporária). O `jsdom` roda os scripts **reais** da extensão e do painel.
 
 | Arquivo | O que cobre |
