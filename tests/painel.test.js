@@ -1220,3 +1220,51 @@ test('Resultados: mostra onde cada closer vai melhor, com o porquê das anotaç�
   assert.equal(p.$('intelDestaques').querySelectorAll('b').length, 1, 'só o negrito da frase: a anotação não vira HTML');
   p.fechar();
 });
+
+test('abas por pessoa: usuário com a aba Resultados liberada vê só ela (além das dele); as outras continuam escondidas', async () => {
+  const api = criarApi({
+    'GET /api/eu': () => ({ corpo: { ok: true, nome: 'Samuel', id: '9', papel: 'sdr', abas: ['resultados'] } }),
+    'GET /api/master/resultados': () => ({ corpo: LINHAS_RES }),
+    'GET /api/master/inteligencia': () => ({ corpo: INTEL }),
+    'GET /api/admin/closers': () => ({ corpo: { closers: [] } }),
+    'POST /api/estimar-custo': () => ({ corpo: { custoUsdEstimado: 0.01, custoBrlEstimado: 0.05 } }),
+  });
+  const p = abrirPainel(api, { hash: '#resultados' });
+  await esperar(() => p.$('listaRes').querySelectorAll('tr').length === 2, { motivo: 'resultados do usuário' });
+  const abas = [...p.document.querySelectorAll('.tab')].filter((t) => !t.classList.contains('hidden')).map((t) => t.dataset.aba);
+  assert.deepEqual(abas, ['report', 'dia', 'resultados']);
+  assert.ok(visivel(p.$('aba-resultados')));
+  p.document.querySelector('.tab[data-aba="report"]').click();
+  p.w.location.hash = '#acessos';
+  await dormir(60);
+  assert.ok(!visivel(p.$('aba-acessos')), 'Acessos continua só do master');
+  assert.equal(api.contar('GET /api/admin/usuarios'), 0);
+  assert.equal(api.contar('GET /api/admin/stats'), 0);
+  assert.deepEqual(p.erros, []);
+  p.fechar();
+});
+
+test('Acessos: checklist das abas do painel por pessoa; marcar manda só aquela aba', async () => {
+  const todas = { numeros: true, resultados: true, closers: true, arquivos: true, base: true, extensao: true, equipe: true };
+  const usuarios = [
+    { id: 'u1', nome: 'Cauã', papel: 'master', chave: 'pnx_Master1234567890abcdefgh', criadoEm: '2026-09-01T10:00:00Z', fichaCrm: true, abas: todas },
+    { id: 'u2', nome: 'Samuel', papel: 'sdr', chave: 'pnx_SdrSdr1234567890abcdefgh', criadoEm: '2026-09-01T10:00:00Z', fichaCrm: true, abas: { ...todas, numeros: false, resultados: false, closers: false, arquivos: false, base: false, extensao: false, equipe: false } },
+  ];
+  const api = apiBase({ papel: 'master', usuarios }).quando('PATCH /api/admin/usuarios/u2', () => ({ corpo: { ok: true } }));
+  const p = abrirPainel(api, { hash: '#acessos' });
+  await esperar(() => p.$('lista').textContent.includes('Samuel'), { motivo: 'lista' });
+  const caixas = [...p.document.querySelectorAll('[data-aba-de="u2"]')];
+  assert.deepEqual(caixas.map((c) => c.dataset.aba), ['numeros', 'resultados', 'closers', 'arquivos', 'base', 'extensao', 'equipe']);
+  assert.ok(caixas.every((c) => !c.checked));
+  assert.equal(p.document.querySelectorAll('[data-aba-de="u1"]').length, 0, 'o master tem todas: sem caixas');
+  assert.match(p.$('lista').textContent, /todas \(master\)/);
+  const resultados = caixas.find((c) => c.dataset.aba === 'resultados');
+  resultados.checked = true;
+  resultados.dispatchEvent(new p.w.Event('change', { bubbles: true }));
+  await esperar(() => api.contar('PATCH /api/admin/usuarios/u2') === 1, { motivo: 'PATCH' });
+  assert.deepEqual(api.corpos('PATCH /api/admin/usuarios/u2'), [{ aba: 'resultados', liberada: true }]);
+  await esperar(() => /Aba liberada/.test(p.$('toast').textContent), { motivo: 'aviso' });
+  await dormir(60);
+  assert.deepEqual(p.erros, []);
+  p.fechar();
+});

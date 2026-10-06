@@ -540,7 +540,7 @@
             <button id="criar" class="btn">Criar acesso</button>
           </div>
           <div id="statusCriar" class="status"></div>
-          <div class="hint">Cada acesso vira uma <b>chave</b>. Copie e mande para o SDR — ele cola no popup da extensão e já está usando. <b>Usuário</b> enxerga só a aba de gerar report; <b>admin</b> enxerga tudo isto aqui.</div>
+          <div class="hint">Cada acesso vira uma <b>chave</b>. Copie e mande para o SDR — ele cola no popup da extensão e já está usando. Na lista abaixo você marca, pessoa por pessoa, o que aparece no WhatsApp (popup do lead, coach, automação, etiquetas) e quais <b>abas do painel</b> ela abre. O tipo de acesso só define o ponto de partida: Usuário começa sem nenhuma aba de gestão, Gestor com as de gestão, Master com todas.</div>
         </div>
 
         <div class="card">
@@ -917,11 +917,19 @@
     // ---------- Menu ----------
     const ABAS = ['report', 'dia', 'acessos', 'numeros', 'resultados', 'closers', 'arquivos', 'base', 'extensao'];
     const SO_ADMIN = ['acessos', 'numeros', 'resultados', 'closers', 'arquivos', 'base', 'extensao'];
-    const SO_MASTER = ['acessos', 'resultados', 'closers']; // acessos (chaves da equipe), resultados das reuniões e closers: só o master
     let souAdmin = false;
     let souGestor = false;
     let souMaster = false;
     const podeMexerEmUsuarios = () => souMaster || Boolean(senhaAdmin); // a senha reserva equivale ao master
+    // Abas (e o "ver a equipe" dos reports do dia) que o master liberou para esta chave, na aba Acessos.
+    let minhasAbas = new Set();
+    const ROTULO_ABAS = [
+      ['numeros', 'Reports gerados'], ['resultados', 'Resultados da reunião'], ['closers', 'Closers'], ['arquivos', 'Arquivos'],
+      ['base', 'Base'], ['extensao', 'Extensão'], ['equipe', 'Reports do dia da equipe'],
+    ];
+    const podeAba = (a) =>
+      a === 'report' || a === 'dia' || (a === 'acessos' ? podeMexerEmUsuarios() : Boolean(senhaAdmin) || minhasAbas.has(a));
+    const temAbaDeGestao = () => SO_ADMIN.some(podeAba);
     let papelConhecido = false; // a chave já foi conferida (antes disso não dá para saber se é master)
     let validacaoPendente = false; // a chave ainda está sendo conferida (a lista do dia espera: o papel muda o que ela mostra)
     // Guardado porque a chave é validada de forma assíncrona: quem abre direto
@@ -932,9 +940,7 @@
       if (!ABAS.includes(aba)) aba = 'report';
       // O SDR não passa das abas dele nem digitando o endereço na mão.
       // (Isto é só a tela: quem barra de verdade é o servidor.)
-      if (SO_ADMIN.includes(aba) && !souAdmin && !senhaAdmin) aba = 'report';
-      // Se a chave ainda está sendo conferida, o master ainda não é conhecido: abre e o servidor decide.
-      if (SO_MASTER.includes(aba) && papelConhecido && !podeMexerEmUsuarios()) aba = 'report';
+      if (SO_ADMIN.includes(aba) && !podeAba(aba)) aba = 'report';
       ABAS.forEach((a) => $('aba-' + a).classList.toggle('hidden', a !== aba));
       document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('on', t.dataset.aba === aba));
       location.hash = aba;
@@ -944,12 +950,10 @@
 
     /** Mostra ou esconde as abas de admin conforme o papel da chave. */
     function aplicarPapel() {
-      const liberado = souAdmin || Boolean(senhaAdmin);
-      document.querySelectorAll('.tab.so-admin').forEach((t) => t.classList.toggle('hidden', !liberado));
-      document.querySelectorAll('.tab.so-master').forEach((t) => t.classList.toggle('hidden', !podeMexerEmUsuarios()));
+      // Cada aba aparece só para quem tem ela liberada (o master tem todas).
+      document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('hidden', !podeAba(t.dataset.aba)));
       const naAba = (location.hash || '').replace('#', '');
-      if (!liberado && SO_ADMIN.includes(naAba)) abrir('report');
-      else if (!podeMexerEmUsuarios() && SO_MASTER.includes(naAba)) abrir('report');
+      if (SO_ADMIN.includes(naAba) && !podeAba(naAba)) abrir('report');
     }
     document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () => abrir(t.dataset.aba)));
 
@@ -1018,8 +1022,8 @@
     }
 
     async function pedirAdmin() {
-      // Chave de admin já basta; a senha é só o caminho reserva.
-      if (souAdmin) {
+      // Chave com a aba liberada já basta; a senha é só o caminho reserva.
+      if (souAdmin || minhasAbas.has(abaAtual())) {
         mostrarAdmin(true);
         await carregarAba(abaAtual());
       } else if (senhaAdmin) {
@@ -1061,7 +1065,15 @@
               <button class="mini" data-copiar="${esc(u.chave)}">Copiar chave</button>
               ${podeMexerEmUsuarios() ? `<button class="mini del" data-remover="${esc(u.id)}" data-nome="${esc(u.nome)}">Remover</button>` : ''}
             </div></td>
-          </tr>`).join('');
+          </tr>
+          <tr class="abas-de"><td colspan="8" style="padding-top:0;border-top:0">
+            <div style="display:flex;flex-wrap:wrap;gap:4px 16px;align-items:center;font-size:.8rem;color:var(--text-2)">
+              <span style="color:var(--muted)">Abas do painel:</span>
+              ${u.papel === 'master'
+                ? '<span>todas (master)</span>'
+                : ROTULO_ABAS.map(([a, t]) => `<label style="display:inline-flex;align-items:center;gap:5px;margin:0;font-weight:500"><input type="checkbox" data-aba-de="${esc(u.id)}" data-aba="${a}" ${u.abas && u.abas[a] ? 'checked' : ''} ${podeMexerEmUsuarios() ? '' : 'disabled'} style="width:auto" />${t}</label>`).join('')}
+            </div>
+          </td></tr>`).join('');
       } catch (e) {
         setStatus('statusCriar', e.message, { erro: true });
       }
@@ -1069,6 +1081,20 @@
 
     // Só o master troca o tipo de acesso e escolhe quem vê o popup do lead.
     $('lista').addEventListener('change', async (ev) => {
+      const ab = ev.target.closest('[data-aba-de]');
+      if (ab) {
+        ab.disabled = true;
+        try {
+          await api('PATCH', '/api/admin/usuarios/' + ab.dataset.abaDe, { aba: ab.dataset.aba, liberada: ab.checked });
+          toast(ab.checked ? 'Aba liberada.' : 'Aba retirada.');
+        } catch (e) {
+          ab.checked = !ab.checked;
+          setStatus('statusCriar', e.message, { erro: true });
+        } finally {
+          ab.disabled = false;
+        }
+        return;
+      }
       const et = ev.target.closest('[data-etiquetas]');
       if (et) {
         et.disabled = true;
@@ -1187,7 +1213,7 @@
     }
 
     async function carregarBase() {
-      if (!souAdmin && !senhaAdmin) return;
+      if (!podeAba('base')) return;
       try {
         mostrarBase(await api('GET', '/api/admin/base'));
       } catch (e) {
@@ -1270,7 +1296,7 @@
     }
 
     async function carregarClosers() {
-      if (!souAdmin && !senhaAdmin) return;
+      if (!podeAba('closers') && !podeAba('numeros')) return;
       try {
         const r = await api('GET', '/api/admin/closers');
         closersCache = r.closers || [];
@@ -1422,7 +1448,7 @@
     });
 
     async function carregarStats() {
-      if (!souAdmin && !senhaAdmin) return;
+      if (!podeAba('numeros')) return;
       const q = new URLSearchParams();
       if ($('de').value) q.set('de', $('de').value);
       if ($('ate').value) q.set('ate', $('ate').value);
@@ -1577,7 +1603,7 @@
     }
 
     async function carregarResultados() {
-      if (!podeMexerEmUsuarios()) return;
+      if (!podeAba('resultados')) return;
       if (!$('resDe').value) usarPresetRes(0);
       setStatus('statusRes', 'Carregando…', { loading: true });
       try {
@@ -1664,7 +1690,7 @@
     }
 
     async function carregarInteligencia() {
-      if (!podeMexerEmUsuarios()) return;
+      if (!podeAba('resultados')) return;
       try {
         const p = await api('GET', '/api/master/inteligencia?escopo=' + $('resEscopo').value);
         $('intelResumo').textContent =
@@ -1758,7 +1784,7 @@
     }
 
     async function carregarArquivos() {
-      if (!souAdmin && !senhaAdmin) return;
+      if (!podeAba('arquivos')) return;
       setStatus('statusArquivos', 'Carregando…', { loading: true });
       try {
         const s = await api('GET', '/api/admin/stats?' + filtroArqQuery().toString());
@@ -2445,13 +2471,16 @@
         papelConhecido = true;
         souGestor = j.papel === 'gestor';
         souAdmin = souMaster || souGestor; // master e gestor veem e fazem tudo; só o master mexe em usuários
+        // Servidor antigo não manda "abas": vale o padrão do papel.
+        minhasAbas = new Set(Array.isArray(j.abas) ? j.abas
+          : souMaster ? ROTULO_ABAS.map((x) => x[0]) : souGestor ? ['numeros', 'arquivos', 'base', 'extensao', 'equipe'] : []);
         prepararEscopoMeus();
         setStatus('statusChave', `Conectado como ${j.nome}${souMaster ? ' (master)' : souGestor ? ' (gestor)' : ''}.`, { ok: true });
         $('quem').innerHTML = (souMaster ? 'Master: <b>' : souGestor ? 'Gestor: <b>' : 'Usuário: <b>') + esc(j.nome) + '</b>';
         aplicarPapel();
-        if (souAdmin) {
+        if (souAdmin || temAbaDeGestao()) {
           // abrir() já chama pedirAdmin() para as abas de admin — não carrega duas vezes.
-          if (SO_ADMIN.includes(abaPedida)) abrir(abaPedida); // agora sim ele pode
+          if (SO_ADMIN.includes(abaPedida) && podeAba(abaPedida)) abrir(abaPedida); // agora sim ele pode
           else pedirAdmin();
         }
         return true;
@@ -2459,6 +2488,7 @@
         souAdmin = false;
         souGestor = false;
         souMaster = false;
+        minhasAbas = new Set();
         papelConhecido = true;
         aplicarPapel();
         setStatus('statusChave', e.message, { erro: true });
@@ -2480,7 +2510,7 @@
     let meusEquipe = false; // a lista na tela é da equipe toda?
 
     // Gestor e admin escolhem entre os próprios reports e os de todos os SDRs (gestor começa em "todos").
-    const podeVerEquipe = () => souAdmin || Boolean(senhaAdmin);
+    const podeVerEquipe = () => podeAba('equipe');
     const verEquipe = () => podeVerEquipe() && $('escopoMeus').value === 'todos';
     function prepararEscopoMeus() {
       $('escopoMeusBox').classList.toggle('hidden', !podeVerEquipe());

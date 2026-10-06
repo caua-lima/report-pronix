@@ -120,6 +120,11 @@ outros leads enquanto a IA escreve — só não troque de conversa durante a lei
 | Closers (adicionar e remover) | | | ✓ |
 | Escolher o closer no aviso "Report pronto!" | | | ✓ |
 
+O papel é só o ponto de partida. Na aba Acessos o master marca, **pessoa por pessoa**, quais abas do
+painel ela abre (Reports gerados, Resultados da reunião, Closers, Arquivos, Base, Extensão e os
+reports do dia da equipe) — a aba Acessos é sempre só do master. Quem recebe a aba Resultados sem ser
+gestor vê e edita apenas os próprios reports. O servidor confere a mesma permissão em cada rota.
+
 Além do papel, o master liga quatro recursos **por pessoa** na aba Acessos:
 
 | Recurso | Padrão | O que libera |
@@ -509,7 +514,7 @@ Tudo em `src/db.js` (Redis em produção, `data/*.json` local). **A conversa nã
 npm test
 ```
 
-**372 testes**, sem rede, sem chave real, sem custo e sem tocar em `data/` (o banco é uma pasta
+**375 testes**, sem rede, sem chave real, sem custo e sem tocar em `data/` (o banco é uma pasta
 temporária). O `jsdom` roda os scripts **reais** da extensão e do painel.
 
 | Arquivo | O que cobre |
