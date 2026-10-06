@@ -432,7 +432,7 @@
               </select>
             </div>
             <label style="display:flex;align-items:center;gap:6px;margin:0"><input id="resPendentes" type="checkbox" style="width:auto" /> Só sem resultado</label>
-            <label style="display:flex;align-items:center;gap:6px;margin:0" title="Reunião que não aconteceu sai da lista e do .zip do dia"><input id="resNoShow" type="checkbox" style="width:auto" /> Mostrar no-show</label>
+            <label style="display:flex;align-items:center;gap:6px;margin:0" title="No-show e 'Não fechou' são casos encerrados: saem da lista (o no-show também sai do .zip do dia)"><input id="resNoShow" type="checkbox" style="width:auto" /> Mostrar encerrados</label>
             <button id="resVer" class="btn sec"><i data-ic="refresh"></i>Atualizar</button>
             <button id="resVendasRd" class="btn sec" title="Confere no RD quais destes leads o closer já marcou como vendidos (só leitura)">Puxar vendas do RD</button>
           </div>
@@ -1625,6 +1625,7 @@
     // Certinho verde = negociação finalizada em venda. Selo amarelo = o closer marcou a venda no RD e
     // falta dizer se foi em call, follow-up ou pix de compromisso.
     const VENDAS = ['venda_call', 'venda_fup', 'pix_compromisso'];
+    const ENCERRADOS = ['no_show', 'sem_venda']; // encerrados sem venda: saem da lista de Resultados
     function selosDoResultado(r) {
       if (VENDAS.includes(r.resultado)) return '<span class="selo-venda" title="Negociação finalizada: venda" style="display:inline-block;margin-right:6px;color:#25d366;font-weight:800">✓</span>';
       if (r.vendidoNoRd) return '<span class="selo-rd" title="O closer marcou este card como vendido no RD. Escolha em Resultado se foi em call, follow-up ou pix de compromisso." style="display:inline-block;margin-right:6px;padding:1px 7px;border-radius:10px;background:var(--ouro);color:#121214;font-size:.7rem;font-weight:750">Vendido no RD</span>';
@@ -1664,14 +1665,15 @@
         closersRes = j.closers || [];
         mostrarContagemClosers(closersRes.length);
         // No-show (gerou o report, a reunião não aconteceu) sai da lista; quem já tem closer ou resultado continua.
-        const noShows = (j.reports || []).filter((r) => r.resultado === 'no_show').length;
+        // Encerrados sem venda (no-show e "não fechou") saem da lista; venda e o que está em andamento ficam.
+        const noShows = (j.reports || []).filter((r) => ENCERRADOS.includes(r.resultado)).length;
         const linhas = (j.reports || []).filter((r) =>
-          (!$('resPendentes').checked || !r.resultado) && ($('resNoShow').checked || r.resultado !== 'no_show'));
+          (!$('resPendentes').checked || !r.resultado) && ($('resNoShow').checked || !ENCERRADOS.includes(r.resultado)));
         $('listaRes').innerHTML = linhas.map(linhaResultado).join('');
         $('vazioRes').style.display = linhas.length ? 'none' : '';
         const marcados = (j.reports || []).filter((r) => r.resultado).length;
         setStatus('statusRes', `${(j.reports || []).length} report(s) no período · ${marcados} com resultado marcado` +
-          (noShows && !$('resNoShow').checked ? ` · ${noShows} no-show fora da lista` : '') +
+          (noShows && !$('resNoShow').checked ? ` · ${noShows} encerrado(s) fora da lista` : '') +
           (closersRes.length ? ` · ${closersRes.length} closer(s) cadastrado(s).` : '. Cadastre os closers na aba Closers para poder escolher.'), {});
       } catch (e) {
         setStatus('statusRes', e.message, { erro: true });
@@ -1698,9 +1700,9 @@
             celula.querySelectorAll('.selo-venda, .selo-rd').forEach((x) => x.remove());
             if (VENDAS.includes(campo.value)) celula.insertAdjacentHTML('afterbegin', selosDoResultado({ resultado: campo.value }));
           }
-          if (campo.dataset.resCampo === 'resultado' && campo.value === 'no_show' && !$('resNoShow').checked) {
+          if (campo.dataset.resCampo === 'resultado' && ENCERRADOS.includes(campo.value) && !$('resNoShow').checked) {
             linha.remove();
-            toast('No-show: saiu da lista e do .zip do dia.');
+            toast(campo.value === 'no_show' ? 'No-show: saiu da lista e do .zip do dia.' : 'Não fechou: encerrado, saiu da lista.');
           } else {
             toast(campo.dataset.resCampo === 'conscienciaReal' && campo.value ? 'Salvo. A IA vai usar esta correção.' : 'Salvo.');
           }

@@ -1191,7 +1191,7 @@ test('Resultados: no-show sai da lista (e volta com "Mostrar no-show"); quem já
   await esperar(() => ids().length === 3, { motivo: 'linhas' });
   assert.ok(!ids().includes('x3'), 'no-show fora da lista');
   assert.ok(ids().includes('x4'), 'quem já tem resultado continua na lista');
-  assert.match(p.$('statusRes').textContent, /1 no-show fora da lista/);
+  assert.match(p.$('statusRes').textContent, /1 encerrado\(s\) fora da lista/);
 
   p.$('resNoShow').checked = true;
   p.$('resNoShow').dispatchEvent(new p.w.Event('change', { bubbles: true }));
@@ -1285,11 +1285,11 @@ test('Resultados: certinho verde na venda finalizada, selo "Vendido no RD" esper
     .quando('PATCH /api/admin/reports/x2/resultado', ({ corpo }) => ({ corpo: { ok: true, versao: corpo.versao + 1 } }));
   const p = abrirPainel(api, { hash: '#resultados' });
   const linha = (id) => p.document.querySelector('tr[data-res="' + id + '"]');
-  await esperar(() => !!linha('x3'), { motivo: 'linhas' });
+  await esperar(() => !!linha('x2'), { motivo: 'linhas' });
   assert.ok(linha('x1').querySelector('.selo-venda'), 'venda finalizada tem o certinho');
   assert.equal(linha('x1').querySelector('.selo-venda').textContent, '✓');
   assert.equal(linha('x2').querySelector('.selo-venda, .selo-rd'), null);
-  assert.equal(linha('x3').querySelector('.selo-venda, .selo-rd'), null, 'não fechou: sem selo');
+  assert.equal(linha('x3'), null, 'não fechou: encerrado, fora da lista');
 
   p.$('resVendasRd').click();
   await esperar(() => linha('x2') && !!linha('x2').querySelector('.selo-rd'), { motivo: 'selo do RD' });
@@ -1335,6 +1335,34 @@ test('Acessos: a tabela fica limpa; clicar no nome abre as permissões da pessoa
 
   nome.click();
   assert.ok(painel.classList.contains('hidden'), 'clicar de novo recolhe');
+  await dormir(60);
+  assert.deepEqual(p.erros, []);
+  p.fechar();
+});
+
+test('Resultados: "Não fechou" também é encerrado — sai da lista ao marcar e volta com "Mostrar encerrados"', async () => {
+  const linhas = { ...LINHAS_RES, reports: [
+    { ...LINHAS_RES.reports[0], id: 'a1', resultado: '' },
+    { ...LINHAS_RES.reports[0], id: 'a2', resultado: 'sem_venda' },
+    { ...LINHAS_RES.reports[0], id: 'a3', resultado: 'em_followup' },
+    { ...LINHAS_RES.reports[0], id: 'a4', resultado: 'venda_fup' },
+  ] };
+  const api = apiBase({ papel: 'master', nome: 'Cauã' })
+    .quando('GET /api/master/resultados', () => ({ corpo: linhas }))
+    .quando('GET /api/master/inteligencia', () => ({ corpo: INTEL }))
+    .quando('PATCH /api/admin/reports/a1/resultado', ({ corpo }) => ({ corpo: { ok: true, versao: corpo.versao + 1 } }));
+  const p = abrirPainel(api, { hash: '#resultados' });
+  const ids = () => [...p.$('listaRes').querySelectorAll('tr')].map((tr) => tr.dataset.res);
+  await esperar(() => ids().length === 3, { motivo: 'linhas' });
+  assert.deepEqual(ids().sort(), ['a1', 'a3', 'a4'], 'não fechou fora; em follow-up e venda continuam');
+  const campo = p.document.querySelector('tr[data-res="a1"] [data-res-campo="resultado"]');
+  campo.value = 'sem_venda';
+  campo.dispatchEvent(new p.w.Event('change', { bubbles: true }));
+  await esperar(() => !ids().includes('a1'), { motivo: 'linha encerrada some' });
+  await esperar(() => /Não fechou: encerrado/.test(p.$('toast').textContent), { motivo: 'aviso' });
+  p.$('resNoShow').checked = true;
+  p.$('resNoShow').dispatchEvent(new p.w.Event('change', { bubbles: true }));
+  await esperar(() => ids().includes('a2'), { motivo: 'encerrados à vista' });
   await dormir(60);
   assert.deepEqual(p.erros, []);
   p.fechar();
