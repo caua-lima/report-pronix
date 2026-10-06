@@ -372,6 +372,9 @@ async function atualizarResultado(id, campos = {}, { versaoEsperada } = {}) {
       if (tem('resultado')) novo.resultado = RESULTADOS_VALIDOS.has(campos.resultado) ? campos.resultado : '';
       if (tem('dataReuniao')) novo.dataReuniao = DATA_OK.test(campos.dataReuniao || '') ? campos.dataReuniao : '';
       if (tem('vendidoNoRd')) novo.vendidoNoRd = String(campos.vendidoNoRd || '').slice(0, 30);
+      // Marcas da leitura do RD: quando foi conferido por último e se foi o RD que encerrou ("não comprou").
+      if (tem('rdConferidoEm')) novo.rdConferidoEm = String(campos.rdConferidoEm || '').slice(0, 30);
+      if (tem('encerradoPeloRd')) novo.encerradoPeloRd = String(campos.encerradoPeloRd || '').slice(0, 30);
       if (tem('obsReuniao')) novo.obsReuniao = String(campos.obsReuniao || '').replace(/\s+/g, ' ').trim().slice(0, 500);
       if (tem('perfilReal')) novo.perfilReal = chaveDoPerfil(campos.perfilReal) || '';
       if (tem('conscienciaReal')) novo.conscienciaReal = chaveDoNivel(campos.conscienciaReal) || '';

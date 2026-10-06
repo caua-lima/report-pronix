@@ -258,6 +258,11 @@ async function montarFicha(contato, extras = [], preferido = '') {
     criadaEm: quandoBR(d.created_at),
     aberta: estaAberta(d),
     ganha: d.win === true, // o closer marcou a venda no RD
+    perdida: d.win === false, // marcou como perdida
+    motivoPerda: consertarAcentos((d.deal_lost_reason && d.deal_lost_reason.name) || ''),
+    notaPerda: consertarAcentos(d.deal_lost_note || '').slice(0, 300),
+    fechadaEm: d.closed_at || '',
+    atualizadaEm: d.updated_at || '',
     escolhida: idDe(d) === idNeg,
   })).reverse(); // o mais novo primeiro
   void nomeDe;
