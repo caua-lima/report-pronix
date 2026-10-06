@@ -337,7 +337,8 @@ test('painel: matriz closer × perfil, conversão por perfil e por consciência,
     rep('v', 'Vitor', 'analitico', VENDA, { consciencia: 'produto', analise: analise(true, true) }),
     rep('v', 'Vitor', 'analitico', VENDA, { consciencia: 'pronto', analise: analise(true, false) }),
     rep('v', 'Vitor', 'relacional', 'sem_venda', { consciencia: 'problema', analise: analise(false, true) }),
-    rep('r', 'Rafa', 'relacional', 'no_show', { consciencia: 'problema', conscienciaReal: 'inconsciente', analise: analise(false, false) }),
+    rep('r', 'Rafa', 'relacional', 'em_followup', { consciencia: 'problema', conscienciaReal: 'inconsciente', analise: analise(false, false) }),
+    rep('r', 'Rafa', 'relacional', 'no_show', { consciencia: 'pronto', analise: analise(true, true) }), // no-show: a reunião não aconteceu, fora
     rep('r', 'Rafa', 'relacional', '', { consciencia: 'pronto', analise: analise(true, true) }), // sem resultado: fora
   ];
   const p = inteligencia.painel(lista, ATIVOS);
@@ -393,8 +394,12 @@ test('insights: recusa com poucas reuniões; com dados, manda SÓ números e per
   assert.equal(cedo.status, 400);
   assert.match(cedo.json.erro, /pelo menos 5 reuniões/);
 
+  // no-show não é reunião: não conta para chegar às 5
+  const faltou = await gerar(E.master, 'Lead que faltou');
+  await api('PATCH', `/api/admin/reports/${faltou.json.id}/resultado`, { chave: E.master, corpo: { resultado: 'no_show' } });
+  assert.equal((await api('POST', '/api/master/insights', { chave: E.master })).status, 400);
   const r = await gerar(E.master, 'Quinto lead');
-  await api('PATCH', `/api/admin/reports/${r.json.id}/resultado`, { chave: E.master, corpo: { resultado: 'no_show' } });
+  await api('PATCH', `/api/admin/reports/${r.json.id}/resultado`, { chave: E.master, corpo: { resultado: 'em_followup' } });
 
   chamadasGroq.length = 0;
   groq = () => ({

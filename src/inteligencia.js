@@ -6,7 +6,8 @@
 // Tudo aqui é CONTA em cima do histórico — sem IA e sem custo. Só o texto de "insights" usa IA,
 // e é a gratuita (Groq), acionada por botão.
 //
-// Regra de honestidade: só entra na conta o report que tem closer E resultado marcados. E nenhuma
+// Regra de honestidade: só entra na conta o report que tem closer E resultado marcados (no-show fica
+// de fora: a reunião não aconteceu). E nenhuma
 // recomendação sai de amostra pequena: abaixo de MIN_AMOSTRA a resposta é "ainda sem dados".
 
 const db = require('./db');
@@ -20,7 +21,8 @@ const MIN_GERAL = 5; // reuniões com resultado para mostrar padrões de prospec
 
 const perfilDe = (r) => r.perfilReal || r.perfil || '';
 const nivelDe = (r) => r.conscienciaReal || r.consciencia || '';
-const comResultado = (r) => Boolean(r.resultado);
+// No-show não é reunião: o lead não apareceu, então não conta como venda perdida de ninguém.
+const comResultado = (r) => Boolean(r.resultado) && r.resultado !== 'no_show';
 const taxa = (v, t) => (t ? v / t : 0);
 
 /** Reports que entram na conta: com resultado marcado (e, para o cruzamento, com closer). */
