@@ -791,6 +791,25 @@
         <div id="statusCrm" class="status"></div>
         <pre id="resultadoCrm" class="hint hidden" style="white-space:pre-wrap;margin:8px 0 0"></pre>
       </div>
+      <div id="googleAgenda" class="card hidden">
+        <div class="head"><div class="t"><i data-ic="target"></i>Google Agenda</div><div class="sub">— a reunião do lead no cartão do WhatsApp (dia, hora e closer)</div></div>
+        <div class="hint" style="margin:0 0 12px">O servidor só <b>lê</b> as agendas que a conta conectada enxerga (a sua e as que os closers compartilharam com você) e procura o evento em que o e-mail do lead é convidado. Aparece para quem tem a <b>Automação RD</b> ligada.</div>
+        <div class="row">
+          <button id="googleConectar" class="btn">Conectar Google Agenda</button>
+          <button id="googleConferir" class="btn sec">Conferir</button>
+          <button id="googleDesconectar" class="btn sec hidden">Desconectar</button>
+        </div>
+        <div id="statusGoogle" class="status"></div>
+        <details style="margin-top:10px"><summary class="hint" style="cursor:pointer;margin:0">Como ligar (uma vez só)</summary>
+          <ol class="hint" style="margin:8px 0 0 18px">
+            <li>No <b>Google Cloud Console</b>, crie um projeto e ative a <b>Google Calendar API</b>.</li>
+            <li>Em <b>Tela de consentimento OAuth</b>, escolha o tipo <b>Interno</b> (só contas da empresa).</li>
+            <li>Em <b>Credenciais</b>, crie um <b>ID do cliente OAuth</b> do tipo <b>Aplicativo da Web</b> e, em "URIs de redirecionamento autorizados", cole: <span class="chave" id="googleRetorno"></span></li>
+            <li>Na Vercel, crie as variáveis <code>GOOGLE_CLIENT_ID</code> e <code>GOOGLE_CLIENT_SECRET</code> com os dois valores e faça o redeploy.</li>
+            <li>Volte aqui e clique em <b>Conectar Google Agenda</b>, entrando com a conta que enxerga as agendas dos closers.</li>
+          </ol>
+        </details>
+      </div>
     </section>
   </div>
 
@@ -970,6 +989,7 @@
         return carregarStats();
       }
       if (aba === 'resultados') return carregarResultados();
+      if (aba === 'extensao') carregarGoogle();
       if (aba === 'closers') return carregarClosers();
       if (aba === 'arquivos') return carregarArquivos();
       if (aba === 'base') return carregarBase();
@@ -2561,6 +2581,46 @@
     });
 
     // ---------- Aba Extensão: teste da ficha do RD Station CRM (admin) ----------
+    // ---------- Google Agenda (só o master): reunião do lead no cartão ----------
+    async function carregarGoogle() {
+      const caixa = $('googleAgenda');
+      if (!caixa) return;
+      caixa.classList.toggle('hidden', !podeMexerEmUsuarios());
+      if (!podeMexerEmUsuarios()) return;
+      try {
+        const g = await api('GET', '/api/master/google');
+        $('googleRetorno').textContent = g.retorno || '';
+        $('googleConectar').textContent = g.conectado ? 'Conectar de novo' : 'Conectar Google Agenda';
+        $('googleDesconectar').classList.toggle('hidden', !g.conectado);
+        const texto = !g.configurado
+          ? 'Falta criar GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET na Vercel (passo a passo abaixo).'
+          : g.erro ? g.erro
+          : !g.conectado ? 'Ainda não conectado.'
+          : `Conectado. ${g.agendas.length} agenda(s) à vista: ${g.agendas.join(', ')}.`;
+        setStatus('statusGoogle', texto, { erro: Boolean(g.erro) || !g.configurado, ok: g.conectado && !g.erro });
+      } catch (e) {
+        setStatus('statusGoogle', e.message, { erro: true });
+      }
+    }
+    $('googleConectar').addEventListener('click', async () => {
+      try {
+        const j = await api('POST', '/api/master/google/conectar', {});
+        window.open(j.url, '_blank', 'noopener');
+        setStatus('statusGoogle', 'Autorize na aba que abriu e depois clique em "Conferir".', {});
+      } catch (e) {
+        setStatus('statusGoogle', e.message, { erro: true });
+      }
+    });
+    $('googleConferir').addEventListener('click', carregarGoogle);
+    $('googleDesconectar').addEventListener('click', async () => {
+      try {
+        await api('DELETE', '/api/master/google');
+        carregarGoogle();
+      } catch (e) {
+        setStatus('statusGoogle', e.message, { erro: true });
+      }
+    });
+
     $('crmTestar').addEventListener('click', async () => {
       const v = $('crmTeste').value.trim();
       if (!v) { setStatus('statusCrm', 'Digite o telefone ou o nome de um lead que está no RD.', { erro: true }); return; }

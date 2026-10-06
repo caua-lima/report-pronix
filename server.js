@@ -24,6 +24,7 @@ const base = require('./src/base');
 const diario = require('./src/diario');
 const crm = require('./src/crm');
 const leads = require('./src/leads');
+const agendaGoogle = require('./src/agendaGoogle');
 const { gerarResumoRapido } = require('./src/resumoRapido');
 const coachIa = require('./src/coach');
 const inteligencia = require('./src/inteligencia');
@@ -538,6 +539,14 @@ app.post('/api/crm/lead', auth, async (req, res) => {
     const extra = { coach: Boolean(req.usuario.coach) };
     if (req.usuario.automacao) Object.assign(extra, await automacaoDoLead(r, conversaDoPedido(conversa, { telefone, nome }), req.usuario));
     if (req.usuario.etiquetas) extra.etiquetas = true; // etiquetas do formulário (investimento, já vende) no cartão
+    // Reunião do lead no Google Agenda (dia, hora e closer). Falha do Google nunca derruba a ficha.
+    if (req.usuario.automacao && r.encontrado && r.ficha) {
+      const reuniao = await agendaGoogle.reuniaoDoLead({ emails: r.ficha.emails, nome: r.ficha.nome }).catch((err) => {
+        console.error('Falha ao consultar o Google Agenda:', err.message);
+        return null;
+      });
+      if (reuniao) extra.reuniao = reuniao;
+    }
     res.json({ ...r, ...extra });
   } catch (err) {
     res.status(502).json({ erro: err.message });
@@ -671,6 +680,62 @@ app.post('/api/admin/crm/teste', admin, async (req, res) => {
     res.json(await crm.consultarLead({ telefone, nome }, { diagnostico: true, semCache: true }));
   } catch (err) {
     res.status(502).json({ erro: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Google Agenda: o master conecta a conta dele (com quem os closers compartilharam a agenda) e o
+// cartão passa a mostrar a reunião do lead. O servidor só LÊ agenda (escopo calendar.readonly).
+// ---------------------------------------------------------------------------
+const enderecoDoServidor = (req) => `${req.get('x-forwarded-proto') || req.protocol}://${req.get('host')}`;
+const retornoDoGoogle = (req) => enderecoDoServidor(req) + '/api/google/retorno';
+
+app.get('/api/master/google', master, async (req, res) => {
+  try {
+    res.json({ ...(await agendaGoogle.status()), retorno: retornoDoGoogle(req) });
+  } catch (err) {
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+/** Devolve o endereço da tela de consentimento do Google. O "state" amarra a volta a este pedido. */
+app.post('/api/master/google/conectar', master, async (req, res) => {
+  try {
+    if (!agendaGoogle.configurado()) {
+      return res.status(400).json({ erro: 'Falta criar GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET na Vercel.' });
+    }
+    const state = crypto.randomBytes(18).toString('hex');
+    await db.cacheSet('google:state:' + state, (req.usuario && req.usuario.nome) || 'master', 600);
+    res.json({ url: agendaGoogle.urlDeAutorizacao(retornoDoGoogle(req), state) });
+  } catch (err) {
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+app.delete('/api/master/google', master, async (_req, res) => {
+  try {
+    await agendaGoogle.desconectar();
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+/** Volta do Google (o navegador chega aqui sem a chave: quem autoriza é o "state" criado pelo master há pouco). */
+app.get('/api/google/retorno', async (req, res) => {
+  const pagina = (titulo, texto) =>
+    res.type('html').send(`<!doctype html><meta charset="utf-8"><title>${titulo}</title><body style="font:16px system-ui;background:#121214;color:#e6edf3;padding:40px"><h2>${titulo}</h2><p>${texto}</p></body>`);
+  try {
+    const state = String(req.query.state || '');
+    const por = /^[a-f0-9]{36}$/.test(state) ? await db.cacheGet('google:state:' + state) : null;
+    if (!por) return pagina('Pedido expirado', 'Volte ao painel (aba Extensão) e clique em "Conectar Google Agenda" de novo.');
+    await db.cacheDel('google:state:' + state);
+    if (!req.query.code) return pagina('Conexão cancelada', 'Nenhuma agenda foi conectada. Você pode fechar esta aba.');
+    await agendaGoogle.concluirConexao(String(req.query.code), retornoDoGoogle(req), por);
+    pagina('Google Agenda conectado', 'Pode fechar esta aba e voltar ao painel.');
+  } catch (err) {
+    pagina('Não deu para conectar', 'Volte ao painel e tente de novo.');
+    console.error('Falha ao conectar o Google Agenda:', err.message);
   }
 });
 
