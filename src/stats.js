@@ -85,6 +85,7 @@ async function registrar({
       perfilReal: '',
       conscienciaReal: '',
       obsReuniao: '',
+      vendidoNoRd: '', // quando o sistema viu o card marcado como vendido no RD (o tipo de venda é o master que diz)
       modelo: u.modelo || '',
       entrada: u.entrada || 0,
       saida: u.saida || 0,
@@ -370,6 +371,7 @@ async function atualizarResultado(id, campos = {}, { versaoEsperada } = {}) {
       if (tem('leadEmail')) novo.leadEmail = String(campos.leadEmail || '').trim().slice(0, 200);
       if (tem('resultado')) novo.resultado = RESULTADOS_VALIDOS.has(campos.resultado) ? campos.resultado : '';
       if (tem('dataReuniao')) novo.dataReuniao = DATA_OK.test(campos.dataReuniao || '') ? campos.dataReuniao : '';
+      if (tem('vendidoNoRd')) novo.vendidoNoRd = String(campos.vendidoNoRd || '').slice(0, 30);
       if (tem('obsReuniao')) novo.obsReuniao = String(campos.obsReuniao || '').replace(/\s+/g, ' ').trim().slice(0, 500);
       if (tem('perfilReal')) novo.perfilReal = chaveDoPerfil(campos.perfilReal) || '';
       if (tem('conscienciaReal')) novo.conscienciaReal = chaveDoNivel(campos.conscienciaReal) || '';

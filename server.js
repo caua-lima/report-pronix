@@ -26,6 +26,7 @@ const crm = require('./src/crm');
 const leads = require('./src/leads');
 const agendaGoogle = require('./src/agendaGoogle');
 const closerAuto = require('./src/closerAuto');
+const vendasRd = require('./src/vendasRd');
 const { gerarResumoRapido } = require('./src/resumoRapido');
 const coachIa = require('./src/coach');
 const inteligencia = require('./src/inteligencia');
@@ -292,6 +293,7 @@ app.get('/api/master/resultados', acesso(['resultados'], SO_MASTER_ERRO), async 
       .map((r) => ({
         id: r.id, lead: r.lead, contato: r.contato, usuarioNome: r.usuarioNome, quando: r.quando, dia: r.dia,
         closerId: r.closerId || '', closerNome: r.closerNome || '', resultado: r.resultado || '', obsReuniao: r.obsReuniao || '',
+        vendidoNoRd: Boolean(r.vendidoNoRd),
         perfil: r.perfil || '', perfilReal: r.perfilReal || '', perfilEvidencia: r.perfilEvidencia || '',
         consciencia: r.consciencia || '', conscienciaReal: r.conscienciaReal || '', conscienciaPorque: r.conscienciaPorque || '',
         versao: Number(r.versao) || 0,
@@ -299,6 +301,15 @@ app.get('/api/master/resultados', acesso(['resultados'], SO_MASTER_ERRO), async 
     res.json({ reports: linhas, closers: (await closers.listar()).map((c) => ({ id: c.id, nome: c.nome })) });
   } catch (err) {
     res.status(500).json({ erro: err.message });
+  }
+});
+
+/** Lê no RD quais leads dos reports do período já foram marcados como vendidos pelo closer (só leitura). */
+app.post('/api/master/vendas-rd', acesso(['resultados'], SO_MASTER_ERRO), async (req, res) => {
+  try {
+    res.json(await vendasRd.sincronizar(await reportsDoEscopo(donoDoEscopo(req), filtroDaQuery(req.query))));
+  } catch (err) {
+    res.status(502).json({ erro: err.message });
   }
 });
 
@@ -585,6 +596,10 @@ app.post('/api/crm/lead', auth, async (req, res) => {
       await closerAuto
         .preencher({ usuario: req.usuario, conversa: conversaDoPedido(conversa, { telefone, nome }), ficha: r.ficha, reuniao })
         .catch((err) => console.error('Falha ao preencher o closer do report:', err.message));
+      // Card marcado como vendido no RD: os reports deste lead ganham o aviso "vendido no RD".
+      await vendasRd
+        .anotarPelaFicha({ usuario: req.usuario, conversa: conversaDoPedido(conversa, { telefone, nome }), ficha: r.ficha })
+        .catch((err) => console.error('Falha ao anotar a venda do RD:', err.message));
     }
     res.json({ ...r, ...extra });
   } catch (err) {

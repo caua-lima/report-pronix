@@ -257,6 +257,7 @@ async function montarFicha(contato, extras = [], preferido = '') {
     responsavel: (d.user && d.user.name) || '',
     criadaEm: quandoBR(d.created_at),
     aberta: estaAberta(d),
+    ganha: d.win === true, // o closer marcou a venda no RD
     escolhida: idDe(d) === idNeg,
   })).reverse(); // o mais novo primeiro
   void nomeDe;
