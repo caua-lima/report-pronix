@@ -38,6 +38,9 @@ test('acha o closer cadastrado pelo nome do RD ou da agenda; ambíguo ou desconh
 test('no RD, o responsável só é o closer depois de "Reunião Realizada" ou no funil dos closers', () => {
   assert.equal(closerAuto.closerDoRd(fichaRd('Reunião Realizada', 'SMQLs Automaticos', 'Paulo Henrique')), 'Paulo Henrique');
   assert.equal(closerAuto.closerDoRd(fichaRd('Proposta', 'Funil de Closers', 'Paulo Henrique')), 'Paulo Henrique');
+  for (const etapa of ['Em contato', 'Fluxo de FUP', 'Negociação Avançada', 'Não Compraram', 'Vendido']) {
+    assert.equal(closerAuto.closerDoRd(fichaRd(etapa, 'Funil Comercial', 'Paulo Henrique')), 'Paulo Henrique', etapa + ': etapa do funil dos closers');
+  }
   assert.equal(closerAuto.closerDoRd(fichaRd('Qualificado', 'SMQLs Automaticos', 'Cauã Lima')), '', 'antes da reunião o responsável é o pré-vendedor');
   assert.equal(closerAuto.closerDoRd({ nome: 'x', negociacao: null }), '');
 });

@@ -127,3 +127,54 @@ test('não comprou no RD: o report é encerrado sozinho com o motivo, sem apagar
     crm.consultarLead = antes;
   }
 });
+
+// ---------------------------------------------------------------- etapas do funil dos closers
+test('funil dos closers: "Vendido" é venda mesmo sem marcar ganho, "Fluxo de FUP" vira em follow-up, "Não Compraram" encerra', async () => {
+  const report = { quando: new Date().toISOString() };
+  const card = (etapa) => ({ id: 'x', ganha: false, perdida: false, etapa, atualizadaEm: new Date(Date.now() + 3600000).toISOString() });
+  assert.deepEqual(vendasRd.desfecho({ negociacoes: [card('Vendido')] }, report), { venda: true });
+  assert.deepEqual(vendasRd.desfecho({ negociacoes: [card('Fluxo de FUP')] }, report), { fup: true });
+  assert.deepEqual(vendasRd.desfecho({ negociacoes: [card('Não Compraram')] }, report), { perda: true, motivo: 'Movido para "Não Compraram" no RD.' });
+  assert.equal(vendasRd.desfecho({ negociacoes: [card('Em contato')] }, report), null);
+  assert.equal(vendasRd.desfecho({ negociacoes: [card('Negociação Avançada')] }, report), null);
+
+  const antes = crm.consultarLead;
+  crm.consultarLead = async () => ({ configurado: true, encontrado: true, ficha: { nome: 'x', negociacoes: [card('Fluxo de FUP')] } });
+  try {
+    await report0('f1');
+    await report0('f2');
+    await stats.atualizarResultado('f2', { resultado: 'pix_compromisso' }); // já tem venda: nem entra
+    const r = await vendasRd.sincronizar((await stats.listar({})).filter((x) => x.id.startsWith('f')));
+    assert.deepEqual(r, { conferidos: 1, vendidos: 0, encerrados: 0, restantes: 0 });
+    assert.equal((await stats.buscarPorId('f1')).resultado, 'em_followup');
+    // continua acompanhado: quando o closer mover para "Vendido", vira o selo de venda
+    crm.consultarLead = async () => ({ configurado: true, encontrado: true, ficha: { nome: 'x', negociacoes: [card('Vendido')] } });
+    assert.equal((await vendasRd.sincronizar((await stats.listar({})).filter((x) => x.id === 'f1'))).vendidos, 1);
+    const f1 = await stats.buscarPorId('f1');
+    assert.ok(f1.vendidoNoRd);
+    assert.equal(f1.resultado, 'em_followup', 'o tipo de venda continua sendo escolha de quem preenche');
+  } finally {
+    crm.consultarLead = antes;
+  }
+});
+const report0 = (id) => stats.registrar({ id, usuarioId: 'u1', usuarioNome: 'Cauã Lima', lead: 'Lead ' + id, contato: 'Contato ' + id, origem: 'extensao' });
+
+test('a conferência no RD também preenche o closer do report quando o card já está com ele no funil dos closers', async () => {
+  const closers = require('../src/closers');
+  const paulo = await closers.criar('Paulo Henrique');
+  const antes = crm.consultarLead;
+  crm.consultarLead = async () => ({ configurado: true, encontrado: true, ficha: {
+    nome: 'x', negociacao: { etapa: 'Em contato', funil: 'Comercial', responsavel: 'Paulo Henrique Pagoti' },
+    negociacoes: [{ id: 'k', ganha: false, perdida: false, etapa: 'Em contato' }],
+  } });
+  try {
+    await stats.registrar({ id: 'k1', usuarioId: 'u1', usuarioNome: 'Cauã Lima', lead: 'Lead k1', contato: 'Contato k1' });
+    await stats.registrar({ id: 'k2', usuarioId: 'u1', usuarioNome: 'Cauã Lima', lead: 'Lead k2', contato: 'Contato k2' });
+    await stats.atualizarResultado('k2', { closerId: 'outro', closerNome: 'Já Marcado' });
+    await vendasRd.sincronizar((await stats.listar({})).filter((x) => x.id.startsWith('k')));
+    assert.deepEqual([(await stats.buscarPorId('k1')).closerId, (await stats.buscarPorId('k1')).closerNome], [paulo.id, 'Paulo Henrique']);
+    assert.equal((await stats.buscarPorId('k2')).closerNome, 'Já Marcado', 'closer já marcado não muda');
+  } finally {
+    crm.consultarLead = antes;
+  }
+});

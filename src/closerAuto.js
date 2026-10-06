@@ -39,7 +39,8 @@ function closerDoRd(ficha) {
   if (!n || !n.responsavel) return '';
   const etapa = normalizar(n.etapa);
   const funil = normalizar(n.funil);
-  return /reuniao realizada/.test(etapa) || /closer/.test(funil) ? n.responsavel : '';
+  const noFunilDosClosers = /^(em contato|fluxo de fup|negociacao avanc|nao compraram|vendido)/.test(etapa);
+  return /reuniao realizada/.test(etapa) || /closer/.test(funil) || noFunilDosClosers ? n.responsavel : '';
 }
 
 /** O report é desta conversa? Pelo telefone (8 últimos dígitos) ou pelo nome do contato. */
