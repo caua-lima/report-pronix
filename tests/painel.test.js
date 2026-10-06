@@ -1268,3 +1268,41 @@ test('Acessos: checklist das abas do painel por pessoa; marcar manda só aquela 
   assert.deepEqual(p.erros, []);
   p.fechar();
 });
+
+test('Resultados: certinho verde na venda finalizada, selo "Vendido no RD" esperando o tipo, e o botão que puxa do RD', async () => {
+  let linhas = { ...LINHAS_RES, reports: [
+    { ...LINHAS_RES.reports[0], id: 'x1', resultado: 'venda_call' },
+    { ...LINHAS_RES.reports[0], id: 'x2', resultado: '', vendidoNoRd: false },
+    { ...LINHAS_RES.reports[0], id: 'x3', resultado: 'sem_venda' },
+  ] };
+  const api = apiBase({ papel: 'master', nome: 'Cauã' })
+    .quando('GET /api/master/resultados', () => ({ corpo: linhas }))
+    .quando('GET /api/master/inteligencia', () => ({ corpo: INTEL }))
+    .quando('POST /api/master/vendas-rd', () => {
+      linhas = { ...linhas, reports: linhas.reports.map((r) => (r.id === 'x2' ? { ...r, vendidoNoRd: true } : r)) };
+      return { corpo: { conferidos: 2, vendidos: 1, restantes: 0 } };
+    })
+    .quando('PATCH /api/admin/reports/x2/resultado', ({ corpo }) => ({ corpo: { ok: true, versao: corpo.versao + 1 } }));
+  const p = abrirPainel(api, { hash: '#resultados' });
+  const linha = (id) => p.document.querySelector('tr[data-res="' + id + '"]');
+  await esperar(() => !!linha('x3'), { motivo: 'linhas' });
+  assert.ok(linha('x1').querySelector('.selo-venda'), 'venda finalizada tem o certinho');
+  assert.equal(linha('x1').querySelector('.selo-venda').textContent, '✓');
+  assert.equal(linha('x2').querySelector('.selo-venda, .selo-rd'), null);
+  assert.equal(linha('x3').querySelector('.selo-venda, .selo-rd'), null, 'não fechou: sem selo');
+
+  p.$('resVendasRd').click();
+  await esperar(() => linha('x2') && !!linha('x2').querySelector('.selo-rd'), { motivo: 'selo do RD' });
+  assert.equal(linha('x2').querySelector('.selo-rd').textContent, 'Vendido no RD');
+  await esperar(() => /2 lead\(s\) conferido\(s\) no RD · 1 vendido\(s\)/.test(p.$('toast').textContent), { motivo: 'aviso' });
+
+  // escolher o tipo de venda troca o selo pelo certinho
+  const campo = linha('x2').querySelector('[data-res-campo="resultado"]');
+  campo.value = 'venda_fup';
+  campo.dispatchEvent(new p.w.Event('change', { bubbles: true }));
+  await esperar(() => !!linha('x2').querySelector('.selo-venda'), { motivo: 'certinho' });
+  assert.equal(linha('x2').querySelector('.selo-rd'), null);
+  await dormir(60);
+  assert.deepEqual(p.erros, []);
+  p.fechar();
+});

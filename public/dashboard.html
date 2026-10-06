@@ -434,6 +434,7 @@
             <label style="display:flex;align-items:center;gap:6px;margin:0"><input id="resPendentes" type="checkbox" style="width:auto" /> Só sem resultado</label>
             <label style="display:flex;align-items:center;gap:6px;margin:0" title="Reunião que não aconteceu sai da lista e do .zip do dia"><input id="resNoShow" type="checkbox" style="width:auto" /> Mostrar no-show</label>
             <button id="resVer" class="btn sec"><i data-ic="refresh"></i>Atualizar</button>
+            <button id="resVendasRd" class="btn sec" title="Confere no RD quais destes leads o closer já marcou como vendidos (só leitura)">Puxar vendas do RD</button>
           </div>
           <div id="statusRes" class="status"></div>
         </div>
@@ -1579,9 +1580,18 @@
       </select>`;
     }
 
+    // Certinho verde = negociação finalizada em venda. Selo amarelo = o closer marcou a venda no RD e
+    // falta dizer se foi em call, follow-up ou pix de compromisso.
+    const VENDAS = ['venda_call', 'venda_fup', 'pix_compromisso'];
+    function selosDoResultado(r) {
+      if (VENDAS.includes(r.resultado)) return '<span class="selo-venda" title="Negociação finalizada: venda" style="display:inline-block;margin-right:6px;color:#25d366;font-weight:800">✓</span>';
+      if (r.vendidoNoRd) return '<span class="selo-rd" title="O closer marcou este card como vendido no RD. Escolha em Resultado se foi em call, follow-up ou pix de compromisso." style="display:inline-block;margin-right:6px;padding:1px 7px;border-radius:10px;background:var(--ouro);color:#121214;font-size:.7rem;font-weight:750">Vendido no RD</span>';
+      return '';
+    }
+
     function linhaResultado(r) {
       return `<tr data-res="${esc(r.id)}" data-versao="${r.versao}">
-        <td><b>${esc(r.lead || r.contato || 'Lead')}</b><div style="color:var(--muted);font-size:.74rem">${esc(r.usuarioNome || '')} · ${esc(diaBR(r.dia || ''))}</div></td>
+        <td>${selosDoResultado(r)}<b>${esc(r.lead || r.contato || 'Lead')}</b><div style="color:var(--muted);font-size:.74rem">${esc(r.usuarioNome || '')} · ${esc(diaBR(r.dia || ''))}</div></td>
         <td>${selectLeitura(r, 'perfilReal', PERFIS_LEAD, r.perfil, r.perfilEvidencia)}</td>
         <td>${selectLeitura(r, 'conscienciaReal', NIVEIS_CONSC, r.consciencia, r.conscienciaPorque)}</td>
         <td><select class="mini-select" data-res-campo="closerId">
@@ -1640,6 +1650,12 @@
             versao: Number(linha.dataset.versao || 0),
           });
           linha.dataset.versao = r.versao;
+          if (campo.dataset.resCampo === 'resultado') {
+            // o certinho / selo da linha acompanha o resultado escolhido
+            const celula = linha.querySelector('td');
+            celula.querySelectorAll('.selo-venda, .selo-rd').forEach((x) => x.remove());
+            if (VENDAS.includes(campo.value)) celula.insertAdjacentHTML('afterbegin', selosDoResultado({ resultado: campo.value }));
+          }
           if (campo.dataset.resCampo === 'resultado' && campo.value === 'no_show' && !$('resNoShow').checked) {
             linha.remove();
             toast('No-show: saiu da lista e do .zip do dia.');
@@ -1673,6 +1689,20 @@
     $('resNoShow').addEventListener('change', carregarResultados);
     $('resEscopo').addEventListener('change', carregarResultados);
     $('resVer').addEventListener('click', carregarResultados);
+    $('resVendasRd').addEventListener('click', async () => {
+      $('resVendasRd').disabled = true;
+      setStatus('statusRes', 'Conferindo no RD…', { loading: true });
+      try {
+        const q = new URLSearchParams({ de: $('resDe').value, ate: $('resAte').value, escopo: $('resEscopo').value });
+        const j = await api('POST', '/api/master/vendas-rd?' + q, {});
+        await carregarResultados();
+        toast(`${j.conferidos} lead(s) conferido(s) no RD · ${j.vendidos} vendido(s)` + (j.restantes ? ` · faltam ${j.restantes}: clique de novo` : ''));
+      } catch (e) {
+        setStatus('statusRes', e.message, { erro: true });
+      } finally {
+        $('resVendasRd').disabled = false;
+      }
+    });
 
     const celula = (v) => (v && v.total ? `<b>${v.vendas}/${v.total}</b> <span style="color:var(--muted)">${pct(v.taxa)}</span>` : '<span style="color:var(--muted)">—</span>');
     const listaHtml = (itens) => (itens && itens.length ? '<ul style="margin:6px 0 12px 18px">' + itens.map((x) => `<li>${esc(x)}</li>`).join('') + '</ul>' : '');
