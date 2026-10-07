@@ -133,6 +133,7 @@ Além do papel, o master liga quatro recursos **por pessoa** na aba Acessos:
 | **Coach** | só o master | Popup do coach: a dica de como seguir, quando você pede. |
 | **Automação RD** | só o master | Mover o card para "Respondeu", etiqueta "Qualificado" e agendamento. |
 | **Etiquetas** | só o master | No cartão, o investimento do formulário ("R$ 3 a 5k", "R$ 5k+") e se o lead já vende. |
+| **Cor na agenda** | nenhuma | A cor com que as reuniões dos leads da pessoa são pintadas no Google Agenda. |
 
 Regras do cadastro (`src/usuarios.js`): o único master não pode ser rebaixado nem removido; enquanto
 não houver nenhum, o usuário cujo nome é `MASTER_NOME` é promovido uma vez. A `ADMIN_PASSWORD` é o acesso
@@ -326,6 +327,10 @@ funciona**.
   se foi call, follow-up ou pix); não comprou vira "Não fechou" com o motivo em "o que deu a
   reunião" e sai da lista. Só vale desfecho registrado depois de o report existir.
 - **Conferir uma pessoa.** Em "Reports de", o master escolhe ver os resultados de um usuário.
+- **Dados da venda.** Na venda, a linha ganha produto (PRONIX Performance ou Acelera), ticket e forma
+  de pagamento. O valor do card vendido no RD já vem como ticket, se o campo estiver vazio.
+- **Etapas do funil dos closers.** "Fluxo de FUP" marca "Em follow-up", "Vendido" vale como venda
+  mesmo sem o card estar marcado como ganho, e o responsável do card vira o closer do report.
 - **No-show não é reunião.** Sai da lista de resultados (volta com "Mostrar no-show"), fica fora
   do .zip do dia e não conta como venda perdida do closer.
 - **Perfil com critério.** A IA testa os perfis em ordem e exige prova na fala do lead;
