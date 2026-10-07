@@ -285,8 +285,12 @@ O texto da conversa não vai ao servidor para isso — só o pedido de mover, a 
 Agenda**), o servidor lê as agendas que essa conta enxerga — as dos closers, compartilhadas com
 ela — e procura o evento em que o **e-mail do lead** é convidado (sem e-mail no RD, o nome inteiro
 no título). O cartão mostra "Agendado: hoje às 14:00 · Vitor", e isso vale mais que o lido na
-conversa. Remarcou pelo link? Vale a próxima reunião. Só leitura (`calendar.readonly`), cache de
-10 min por lead, e uma falha do Google nunca derruba a ficha (`src/agendaGoogle.js`).
+conversa. Remarcou pelo link? Vale a próxima reunião. Cache de 10 min por lead, e uma falha do Google nunca derruba a ficha (`src/agendaGoogle.js`).
+
+**Cor do pré-vendedor na agenda.** O time marca de quem é cada lead pela cor do evento. Em Acessos,
+cada pessoa pode ter uma cor: ao abrir a conversa do lead, a reunião **futura** dele é pintada com
+ela, se o evento ainda não tiver cor (lead já marcado por outro não é trocado). É a única alteração
+que o sistema faz na agenda, e exige que a conta conectada possa editar os eventos dos closers.
 
 ---
 

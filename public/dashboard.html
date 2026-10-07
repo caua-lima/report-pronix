@@ -817,7 +817,7 @@
       </div>
       <div id="googleAgenda" class="card hidden">
         <div class="head"><div class="t"><i data-ic="target"></i>Google Agenda</div><div class="sub">— a reunião do lead no cartão do WhatsApp (dia, hora e closer)</div></div>
-        <div class="hint" style="margin:0 0 12px">O servidor só <b>lê</b> as agendas que a conta conectada enxerga (a sua e as que os closers compartilharam com você) e procura o evento em que o e-mail do lead é convidado. Aparece para quem tem a <b>Automação RD</b> ligada.</div>
+        <div class="hint" style="margin:0 0 12px">O servidor lê as agendas que a conta conectada enxerga (a sua e as que os closers compartilharam com você) e procura o evento em que o e-mail do lead é convidado. A única coisa que ele altera é a <b>cor</b> do evento, para quem tem uma cor escolhida em Acessos. Aparece para quem tem a <b>Automação RD</b> ligada.</div>
         <div class="row">
           <button id="googleConectar" class="btn">Conectar Google Agenda</button>
           <button id="googleConferir" class="btn sec">Conferir</button>
@@ -1051,6 +1051,7 @@
         $('cardCriar').classList.toggle('hidden', !podeMexerEmUsuarios());
         $('avisoSoMaster').classList.toggle('hidden', podeMexerEmUsuarios());
         $('vazio').style.display = usuarios.length ? 'none' : '';
+        const CORES_AGENDA = [['1', 'Lavanda'], ['2', 'Sálvia'], ['3', 'Uva'], ['4', 'Flamingo'], ['5', 'Banana (amarelo)'], ['6', 'Tangerina'], ['7', 'Pavão'], ['8', 'Grafite'], ['9', 'Mirtilo'], ['10', 'Manjericão'], ['11', 'Tomate']];
         const NO_WHATSAPP = [
           ['fichaCrm', 'data-ficha-crm', 'Popup do lead', 'Ficha do RD e resumo rápido ao abrir a conversa'],
           ['coach', 'data-coach', 'Coach', 'Popup do coach da conversa'],
@@ -1084,6 +1085,14 @@
               <div>
                 <div style="font-size:.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">No WhatsApp (extensão)</div>
                 <div style="display:grid;gap:7px">${NO_WHATSAPP.map(([campo, attr, rotulo, dica]) => caixa(`${attr}="${esc(u.id)}"`, u[campo], rotulo, dica)).join('')}</div>
+              </div>
+              <div>
+                <div style="font-size:.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Cor na agenda</div>
+                <select class="mini-select" data-cor-agenda="${esc(u.id)}" ${travado} title="As reuniões dos leads que ${esc(u.nome)} atende ganham esta cor no Google Agenda (precisa da Automação RD ligada)">
+                  <option value="">Não pintar</option>
+                  ${CORES_AGENDA.map(([v, t]) => `<option value="${v}" ${String(u.corAgenda || '') === v ? 'selected' : ''}>${t}</option>`).join('')}
+                </select>
+                <div class="hint" style="margin:6px 0 0;font-size:.74rem">Pinta a reunião do lead ao abrir a conversa dele, se o evento ainda não tiver cor.</div>
               </div>
               <div>
                 <div style="font-size:.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Abas do painel</div>
@@ -1125,6 +1134,19 @@
       if (resumo) resumo.textContent = `${marcadas('[data-ficha-crm],[data-coach],[data-automacao],[data-etiquetas]')} no WhatsApp · ${temAbas ? marcadas('[data-aba-de]') + ' aba(s)' : 'todas as abas'}`;
     });
     $('lista').addEventListener('change', async (ev) => {
+      const cor = ev.target.closest('[data-cor-agenda]');
+      if (cor) {
+        cor.disabled = true;
+        try {
+          await api('PATCH', '/api/admin/usuarios/' + cor.dataset.corAgenda, { corAgenda: cor.value });
+          toast(cor.value ? 'Cor da agenda salva.' : 'Não pinta mais a agenda.');
+        } catch (e) {
+          setStatus('statusCriar', e.message, { erro: true });
+        } finally {
+          cor.disabled = false;
+        }
+        return;
+      }
       const ab = ev.target.closest('[data-aba-de]');
       if (ab) {
         ab.disabled = true;
