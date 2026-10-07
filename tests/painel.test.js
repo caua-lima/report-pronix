@@ -1013,7 +1013,11 @@ test('Resultados da reunião: o master vê a aba, marca closer/resultado/anotaç
   assert.equal(p.document.querySelector('tr[data-res="x2"] [data-res-campo="perfilReal"]').value, 'cetico', 'correção já feita aparece selecionada');
   assert.equal(p.document.querySelector('#listaRes b b'), null, 'nome do lead não vira HTML');
 
-  const mudar = (nome, valor) => { campo(nome).value = valor; campo(nome).dispatchEvent(new p.w.Event('change', { bubbles: true })); };
+  p.$('resVisao').value = 'tudo'; // este teste edita a linha: a visão "Tudo" não tira ela da tela
+  p.$('resVisao').dispatchEvent(new p.w.Event('change', { bubbles: true }));
+  await dormir(60);
+  const linhaT = () => p.document.querySelector('tr[data-res="x1"]');
+  const mudar = (nome, valor) => { const c = linhaT().querySelector('[data-res-campo="' + nome + '"]'); c.value = valor; c.dispatchEvent(new p.w.Event('change', { bubbles: true })); };
   mudar('resultado', 'sem_venda');
   mudar('obsReuniao', 'Travou no sócio');
   mudar('conscienciaReal', 'problema');
@@ -1191,13 +1195,13 @@ test('Resultados: no-show sai da lista (e volta com "Mostrar no-show"); quem já
   await esperar(() => ids().length === 3, { motivo: 'linhas' });
   assert.ok(!ids().includes('x3'), 'no-show fora da lista');
   assert.ok(ids().includes('x4'), 'quem já tem resultado continua na lista');
-  assert.match(p.$('statusRes').textContent, /1 encerrado\(s\) fora da lista/);
+  assert.match(p.$('statusRes').textContent, /1 encerrado\(s\)/);
 
-  p.$('resNoShow').checked = true;
-  p.$('resNoShow').dispatchEvent(new p.w.Event('change', { bubbles: true }));
+  p.$('resVisao').value = 'encerrados';
+  p.$('resVisao').dispatchEvent(new p.w.Event('change', { bubbles: true }));
   await esperar(() => ids().includes('x3'), { motivo: 'no-show à vista' });
-  p.$('resNoShow').checked = false;
-  p.$('resNoShow').dispatchEvent(new p.w.Event('change', { bubbles: true }));
+  p.$('resVisao').value = 'andamento';
+  p.$('resVisao').dispatchEvent(new p.w.Event('change', { bubbles: true }));
   await esperar(() => !ids().includes('x3'), { motivo: 'no-show escondido de novo' });
 
   // marcar no-show numa linha: ela sai na hora
@@ -1360,8 +1364,8 @@ test('Resultados: "Não fechou" também é encerrado — sai da lista ao marcar 
   campo.dispatchEvent(new p.w.Event('change', { bubbles: true }));
   await esperar(() => !ids().includes('a1'), { motivo: 'linha encerrada some' });
   await esperar(() => /Não fechou: encerrado/.test(p.$('toast').textContent), { motivo: 'aviso' });
-  p.$('resNoShow').checked = true;
-  p.$('resNoShow').dispatchEvent(new p.w.Event('change', { bubbles: true }));
+  p.$('resVisao').value = 'encerrados';
+  p.$('resVisao').dispatchEvent(new p.w.Event('change', { bubbles: true }));
   await esperar(() => ids().includes('a2'), { motivo: 'encerrados à vista' });
   await dormir(60);
   assert.deepEqual(p.erros, []);
@@ -1381,6 +1385,10 @@ test('Resultados: produto, ticket e forma de pagamento aparecem na venda e são 
   const campo = (id, nome) => p.document.querySelector('tr[data-res="' + id + '"] [data-res-campo="' + nome + '"]');
   const dados = (id) => p.document.querySelector('tr[data-res="' + id + '"] .dados-venda');
   await esperar(() => !!campo('v2', 'produto'), { motivo: 'linhas' });
+  p.$('resVisao').value = 'tudo'; // este teste edita a linha: a visão "Tudo" não tira ela da tela
+  p.$('resVisao').dispatchEvent(new p.w.Event('change', { bubbles: true }));
+  await dormir(60);
+  await esperar(() => !!campo('v1', 'produto'), { motivo: 'todas as linhas' });
   assert.ok(!dados('v1').classList.contains('hidden'), 'venda: os dados aparecem');
   assert.equal(campo('v1', 'produto').value, 'acelera');
   assert.equal(campo('v1', 'ticket').value, '29.892,00');
@@ -1397,6 +1405,42 @@ test('Resultados: produto, ticket e forma de pagamento aparecem na venda e são 
   await esperar(() => api.contar('PATCH /api/admin/reports/v2/resultado') === 4, { motivo: 'salvou os quatro' });
   assert.deepEqual(api.corpos('PATCH /api/admin/reports/v2/resultado').map((c) => Object.keys(c).filter((k) => k !== 'versao')[0] + '=' + Object.values(c)[0]),
     ['resultado=venda_fup', 'produto=performance', 'ticket=15.984,00', 'pagamento=Pix + cartão']);
+  await dormir(60);
+  assert.deepEqual(p.erros, []);
+  p.fechar();
+});
+
+test('Resultados: venda com tudo preenchido sai de "Em andamento" e vai para "Vendidos"; faltando algo, continua na lista', async () => {
+  const baseLinha = LINHAS_RES.reports[0];
+  const linhas = { ...LINHAS_RES, reports: [
+    { ...baseLinha, id: 'c1', closerId: 'c1', resultado: 'venda_call', produto: 'performance', ticket: 18624, pagamento: 'Cartão de crédito 12x' }, // completa
+    { ...baseLinha, id: 'c2', closerId: 'c1', resultado: 'venda_call', produto: 'performance', ticket: 18624, pagamento: '' }, // falta o pagamento
+    { ...baseLinha, id: 'c3', closerId: 'c1', resultado: 'em_followup' },
+  ] };
+  const api = apiBase({ papel: 'master', nome: 'Cauã', closers: [{ id: 'c1', nome: 'Pedro Pasin' }] })
+    .quando('GET /api/master/resultados', () => ({ corpo: { ...linhas, closers: [{ id: 'c1', nome: 'Pedro Pasin' }] } }))
+    .quando('GET /api/master/inteligencia', () => ({ corpo: INTEL }))
+    .quando('PATCH /api/admin/reports/c2/resultado', ({ corpo }) => ({ corpo: { ok: true, versao: corpo.versao + 1 } }));
+  const p = abrirPainel(api, { hash: '#resultados' });
+  const ids = () => [...p.$('listaRes').querySelectorAll('tr')].map((tr) => tr.dataset.res);
+  await esperar(() => ids().length === 2, { motivo: 'em andamento' });
+  assert.deepEqual(ids().sort(), ['c2', 'c3'], 'a venda completa não fica em "Em andamento"; a incompleta fica');
+  assert.match(p.$('statusRes').textContent, /2 em andamento · 1 vendido\(s\) \(R\$ 18\.624,00\)/);
+
+  // preencher o que faltava: a linha vai para Vendidos
+  const pagamento = p.document.querySelector('tr[data-res="c2"] [data-res-campo="pagamento"]');
+  pagamento.value = 'Pix à vista';
+  pagamento.dispatchEvent(new p.w.Event('change', { bubbles: true }));
+  await esperar(() => !ids().includes('c2'), { motivo: 'venda completa sai da lista' });
+  await esperar(() => /Venda completa: foi para Vendidos/.test(p.$('toast').textContent), { motivo: 'aviso' });
+
+  p.$('resVisao').value = 'vendidos';
+  p.$('resVisao').dispatchEvent(new p.w.Event('change', { bubbles: true }));
+  await esperar(() => ids().includes('c1'), { motivo: 'aba de vendidos' });
+  assert.ok(!ids().includes('c3'));
+  p.$('resVisao').value = 'tudo';
+  p.$('resVisao').dispatchEvent(new p.w.Event('change', { bubbles: true }));
+  await esperar(() => ids().length === 3, { motivo: 'tudo' });
   await dormir(60);
   assert.deepEqual(p.erros, []);
   p.fechar();

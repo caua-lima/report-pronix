@@ -432,7 +432,14 @@
               </select>
             </div>
             <label style="display:flex;align-items:center;gap:6px;margin:0"><input id="resPendentes" type="checkbox" style="width:auto" /> Só sem resultado</label>
-            <label style="display:flex;align-items:center;gap:6px;margin:0" title="No-show e 'Não fechou' são casos encerrados: saem da lista (o no-show também sai do .zip do dia)"><input id="resNoShow" type="checkbox" style="width:auto" /> Mostrar encerrados</label>
+            <div style="min-width:160px"><label for="resVisao">Mostrar</label>
+              <select id="resVisao" title="Em andamento: o que ainda falta resolver ou preencher. Vendidos: vendas com tudo preenchido. Encerrados: no-show e não fechou.">
+                <option value="andamento">Em andamento</option>
+                <option value="vendidos">Vendidos</option>
+                <option value="encerrados">Encerrados</option>
+                <option value="tudo">Tudo</option>
+              </select>
+            </div>
             <button id="resVer" class="btn sec"><i data-ic="refresh"></i>Atualizar</button>
             <button id="resVendasRd" class="btn sec" title="Confere agora no RD o que os closers registraram destes leads: vendido, ou não comprou com o motivo (só leitura). Isso também roda sozinho uma vez por dia.">Puxar do RD</button>
           </div>
@@ -1649,6 +1656,22 @@
     // falta dizer se foi em call, follow-up ou pix de compromisso.
     const VENDAS = ['venda_call', 'venda_fup', 'pix_compromisso'];
     const ENCERRADOS = ['no_show', 'sem_venda']; // encerrados sem venda: saem da lista de Resultados
+    /**
+     * Onde o report aparece na aba Resultados:
+     *  - 'encerrados': no-show ou não fechou;
+     *  - 'vendidos': venda com TUDO preenchido (closer, produto, ticket e forma de pagamento);
+     *  - 'andamento': o resto — inclusive venda em que ainda falta preencher algo.
+     */
+    function visaoDoReport(r) {
+      if (ENCERRADOS.includes(r.resultado)) return 'encerrados';
+      const completa = VENDAS.includes(r.resultado) && r.closerId && r.produto && Number(r.ticket) > 0 && String(r.pagamento || '').trim();
+      return completa ? 'vendidos' : 'andamento';
+    }
+    /** O mesmo, lendo o que está nos campos da linha (depois de uma edição). */
+    function visaoDaLinha(linha) {
+      const v = (nome) => { const c = linha.querySelector('[data-res-campo="' + nome + '"]'); return c ? c.value : ''; };
+      return visaoDoReport({ resultado: v('resultado'), closerId: v('closerId'), produto: v('produto'), ticket: v('ticket').replace(/\./g, '').replace(',', '.').replace(/[^\d.]/g, ''), pagamento: v('pagamento') });
+    }
     function selosDoResultado(r) {
       if (VENDAS.includes(r.resultado)) return '<span class="selo-venda" title="Negociação finalizada: venda" style="display:inline-block;margin-right:6px;color:#25d366;font-weight:800">✓</span>';
       if (r.resultado === 'sem_venda' && r.encerradoPeloRd) return '<span class="selo-fim" title="O closer registrou no RD que não comprou; o motivo está em O que deu a reunião." style="display:inline-block;margin-right:6px;padding:1px 7px;border-radius:10px;border:1px solid var(--border);color:var(--muted);font-size:.7rem;font-weight:700">Encerrado pelo RD</span>';
@@ -1718,14 +1741,15 @@
         mostrarContagemClosers(closersRes.length);
         // No-show (gerou o report, a reunião não aconteceu) sai da lista; quem já tem closer ou resultado continua.
         // Encerrados sem venda (no-show e "não fechou") saem da lista; venda e o que está em andamento ficam.
-        const noShows = (j.reports || []).filter((r) => ENCERRADOS.includes(r.resultado)).length;
-        const linhas = (j.reports || []).filter((r) =>
-          (!$('resPendentes').checked || !r.resultado) && ($('resNoShow').checked || !ENCERRADOS.includes(r.resultado)));
+        const visao = $('resVisao').value;
+        const todos = j.reports || [];
+        const conta = (v) => todos.filter((r) => visaoDoReport(r) === v).length;
+        const linhas = todos.filter((r) => (!$('resPendentes').checked || !r.resultado) && (visao === 'tudo' || visaoDoReport(r) === visao));
         $('listaRes').innerHTML = linhas.map(linhaResultado).join('');
         $('vazioRes').style.display = linhas.length ? 'none' : '';
-        const marcados = (j.reports || []).filter((r) => r.resultado).length;
-        setStatus('statusRes', `${(j.reports || []).length} report(s) no período · ${marcados} com resultado marcado` +
-          (noShows && !$('resNoShow').checked ? ` · ${noShows} encerrado(s) fora da lista` : '') +
+        const totalVendido = todos.filter((r) => visaoDoReport(r) === 'vendidos').reduce((s, r) => s + (Number(r.ticket) || 0), 0);
+        setStatus('statusRes', `${todos.length} report(s) no período · ${conta('andamento')} em andamento · ${conta('vendidos')} vendido(s)` +
+          (totalVendido ? ` (R$ ${totalVendido.toLocaleString('pt-BR', { minimumFractionDigits: 2 })})` : '') + ` · ${conta('encerrados')} encerrado(s)` +
           (closersRes.length ? ` · ${closersRes.length} closer(s) cadastrado(s).` : '. Cadastre os closers na aba Closers para poder escolher.'), {});
       } catch (e) {
         setStatus('statusRes', e.message, { erro: true });
@@ -1755,9 +1779,14 @@
             celula.querySelectorAll('.selo-venda, .selo-rd, .selo-fim').forEach((x) => x.remove());
             if (VENDAS.includes(campo.value)) celula.insertAdjacentHTML('afterbegin', selosDoResultado({ resultado: campo.value }));
           }
-          if (campo.dataset.resCampo === 'resultado' && ENCERRADOS.includes(campo.value) && !$('resNoShow').checked) {
+          // A linha muda de lugar quando deixa de pertencer à visão aberta: encerrou, ou a venda ficou completa.
+          const visao = $('resVisao').value;
+          const agora = visaoDaLinha(linha);
+          if (visao !== 'tudo' && agora !== visao) {
             linha.remove();
-            toast(campo.value === 'no_show' ? 'No-show: saiu da lista e do .zip do dia.' : 'Não fechou: encerrado, saiu da lista.');
+            toast(agora === 'vendidos' ? 'Venda completa: foi para Vendidos.'
+              : agora === 'encerrados' ? (campo.value === 'no_show' ? 'No-show: saiu da lista e do .zip do dia.' : 'Não fechou: encerrado, saiu da lista.')
+              : 'Salvo. Voltou para Em andamento.');
           } else {
             toast(campo.dataset.resCampo === 'conscienciaReal' && campo.value ? 'Salvo. A IA vai usar esta correção.' : 'Salvo.');
           }
@@ -1785,7 +1814,7 @@
       carregarResultados();
     }));
     $('resPendentes').addEventListener('change', carregarResultados);
-    $('resNoShow').addEventListener('change', carregarResultados);
+    $('resVisao').addEventListener('change', carregarResultados);
     $('resEscopo').addEventListener('change', carregarResultados);
     $('resVer').addEventListener('click', carregarResultados);
     $('resVendasRd').addEventListener('click', async () => {
