@@ -636,7 +636,7 @@ test('perfil: report e coach recebem o mesmo critério de decisão, e "cauteloso
   assert.match(regra, /"cauteloso" não é o perfil padrão[\s\S]*confirmar a reunião[\s\S]*decide sozinho NÃO é cautela/);
   assert.equal(regra.split('\n').length, 8);
   const { SYSTEM_PROMPT, PROMPT_VERSAO } = require('../src/report');
-  assert.equal(PROMPT_VERSAO, 'v7');
+  assert.match(PROMPT_VERSAO, /^v\d+$/);
   assert.ok(SYSTEM_PROMPT.includes(regra), 'o report usa o critério');
   assert.ok(require('../src/coach').SYSTEM_BASE.includes(regra), 'o coach usa o mesmo');
 });

@@ -504,13 +504,14 @@ test('report rico: PDF regerado depois de editar mantém os campos novos (e igno
   assert.ok(!t.includes('NÍVEL DE CONSCIÊNCIA'));
 });
 
-test('palavras do lead: fala real que desanima o closer sai do report; a boa fica; no máximo 2', async () => {
+test('palavras do lead: fala real que desanima o closer sai do report; as boas ficam; no máximo 3', async () => {
   const resposta = anthropicPadrao();
   resposta.content[0].input.citacoes = [
     'Achei meio caro, vou pensar',
     'Era exatamente isso que eu estava procurando',
     'Quero começar semana que vem',
     'Preciso começar no Mercado Livre, isso já tá decidido.',
+    'O investimento eu tenho',
   ];
   respostaAnthropic = resposta;
   chamadasAnthropic.length = 0;
@@ -521,12 +522,13 @@ test('palavras do lead: fala real que desanima o closer sai do report; a boa fic
     { from: 'eles', type: 'texto', content: 'Era exatamente isso que eu estava procurando' },
     { from: 'eles', type: 'texto', content: 'Quero começar semana que vem' },
     { from: 'eles', type: 'texto', content: 'Preciso começar no Mercado Livre, isso já tá decidido. ' + Date.now() },
+    { from: 'eles', type: 'texto', content: 'O investimento eu tenho' },
   ];
   const r = await api('POST', '/api/report-direto', { chave: E.ana, corpo: { mensagens: conversa, nome: 'Marcos' } });
   respostaAnthropic = null;
   assert.equal(r.status, 200);
-  assert.deepEqual(r.json.dados.citacoes, ['Era exatamente isso que eu estava procurando', 'Quero começar semana que vem']);
-  assert.match(chamadasAnthropic[0].system[0].text, /SÓ se forem MUITO BOAS para o closer/);
+  assert.deepEqual(r.json.dados.citacoes, ['Era exatamente isso que eu estava procurando', 'Quero começar semana que vem', 'Preciso começar no Mercado Livre, isso já tá decidido.']);
+  assert.match(chamadasAnthropic[0].system[0].text, /1 a 3 FALAS EXATAS\/verbatim do LEAD[\s\S]*deixam o closer ANIMADO[\s\S]*PROCURE ATIVAMENTE/);
   assert.match(chamadasAnthropic[0].system[0].text, /PROIBIDO citar fala que possa desanimar o closer/);
 });
 

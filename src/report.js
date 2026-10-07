@@ -16,7 +16,7 @@ const LLM_PROVIDER = (process.env.LLM_PROVIDER || 'anthropic').toLowerCase();
 // idênticos já gerados (ex.: mudança de tom, de campos obrigatórios). Compõe
 // a reportKey em src/idempotencia.js — sem isso, um prompt novo poderia ser
 // confundido com o antigo e nunca rodar de novo pra mesma conversa.
-const PROMPT_VERSAO = 'v7';
+const PROMPT_VERSAO = 'v8';
 
 // Modo de qualidade só troca o MODELO da Anthropic — nunca inferido sozinho:
 // "standard" é o comportamento de sempre (ANTHROPIC_MODEL), então nenhum
@@ -268,7 +268,7 @@ Preencha pela ferramenta "gerar_relatorio":
 - "lead": SÓ o nome do lead, como ele aparece na conversa (ou ""). Sem parênteses, sem comentário, sem "a confirmar" — este campo vira o título e o nome do arquivo.
 - "resumo": linhas rótulo/valor tiradas da conversa, SEMPRE com Investimento, Motivação e Decisor(es) preenchidos (nunca "a confirmar"), mais o que fizer sentido (status/nicho, urgência quando houver).
 - "secoes": OBRIGATÓRIO ter de 2 a 4 seções, SEMPRE incluindo "O que o closer deve bater" (numerada:true, ações concretas). Título curto e direto (SEM emoji, SEM símbolo) + bullets densos. As demais saem da conversa: "Perfil e momento", "Dor e objetivo", "Como fechar essa call". Nunca devolva secoes vazio nem só uma seção.
-- "citacoes": 0 a 2 FALAS EXATAS/verbatim do LEAD (copiadas literalmente das linhas do LEAD, inclusive áudios), e SÓ se forem MUITO BOAS para o closer: sinal de compra, decisão tomada, urgência, entusiasmo, consciência do que quer ("era exatamente isso que eu procurava", "quero começar logo", "o investimento eu tenho"). PROIBIDO citar fala que possa desanimar o closer: preço caro, dúvida, medo, desconfiança, "vou pensar", falta de dinheiro ou de tempo, reclamação, dor contada em tom negativo. Na dúvida, deixe de fora. Sem paráfrase, sem falas do vendedor; [] é a resposta certa quando não houver fala muito boa.
+- "citacoes" (seção "Nas palavras do lead"): 1 a 3 FALAS EXATAS/verbatim do LEAD (copiadas literalmente das linhas do LEAD, inclusive áudios) que deixam o closer ANIMADO para a reunião. É a vitrine do lead: PROCURE ATIVAMENTE, porque quase toda conversa que chegou à reunião tem pelo menos uma. Servem: vontade de começar ("quero começar logo"), decisão tomada ("isso já tá decidido"), o objetivo ou sonho dito por ele ("quero sair do CLT até o fim do ano"), o motivo de ser agora, confirmação de que tem o investimento ("o investimento eu tenho"), autonomia para decidir, elogio ou identificação com o que foi apresentado ("era exatamente isso que eu procurava"), compromisso com a reunião, algo que ele já construiu e de que se orgulha. Prefira as mais fortes e de assuntos diferentes. PROIBIDO citar fala que possa desanimar o closer: preço caro, dúvida, medo, desconfiança, "vou pensar", falta de dinheiro ou de tempo, reclamação, dor contada em tom negativo. Sem paráfrase e sem falas do vendedor. Só devolva [] se o lead realmente não disse nada de positivo.
 - "abertura": um EXTRA além do relatório completo — a fala com que o CLOSER começa a reunião, para ler quase como está. NÃO é o relatório; o corpo (as seções) continua obrigatório do mesmo jeito. Estilo do handoff: cumprimenta o lead pelo nome, diz que o pré-vendedor repassou o contexto, resume a situação real (se está começando do zero ou já vende, o que vende/quer, a motivação) e TERMINA confirmando com o lead ("é isso mesmo?"). 2 a 4 frases, primeira pessoa, tom cordial. Use SOMENTE o que apareceu na conversa. Não fale de preço nem de proposta. Se souber o nome do pré-vendedor, cite-o; senão, diga "meu time".
 - "consciencia": { "nivel", "porque" } conforme a seção NÍVEL DE CONSCIÊNCIA.
 - "perfil": { "tipo", "evidencia", "conduzir" } conforme a seção PERFIL DO LEAD.
@@ -465,7 +465,7 @@ const REPORT_TOOL = {
       },
       citacoes: {
         type: 'array',
-        description: '0 a 2 falas EXATAS (verbatim) do LEAD, só se forem MUITO boas (sinal de compra, decisão, urgência, entusiasmo). Nada que desanime o closer. [] se não houver.',
+        description: '1 a 3 falas EXATAS (verbatim) do LEAD que animam o closer: vontade de começar, decisão, objetivo, motivo de ser agora, investimento confirmado, identificação com a proposta. Nada que desanime. [] só se não houver nenhuma fala positiva.',
         items: { type: 'string' },
       },
       abertura: {
@@ -669,9 +669,9 @@ function normalizarMensagem(m) {
  */
 function aplicarVerificacaoDeCitacoes(dados, falasDoLead) {
   const { mantidas, removidas } = verificarCitacoes(dados.citacoes, falasDoLead);
-  // "Nas palavras do lead" é vitrine: só fala muito boa, no máximo 2. O que pode desanimar o closer sai.
+  // "Nas palavras do lead" é vitrine: só fala que anima o closer, no máximo 3. O que pode desanimar sai.
   const boas = mantidas.filter((c) => !citacaoDesanimadora(c));
-  dados.citacoes = boas.slice(0, 2);
+  dados.citacoes = boas.slice(0, 3);
   dados._meta = { citacoesRemovidas: removidas.length };
   if (removidas.length) {
     // Só a quantidade: o conteúdo é fala de lead e não vai para log.
