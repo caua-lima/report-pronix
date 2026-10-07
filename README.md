@@ -468,6 +468,7 @@ Tudo tem padrão seguro no código; o `.env.example` traz a lista comentada.
 | `CRM_MOVER_ETAPA` | ligado | `0` desliga a escrita no RD; as etiquetas continuam. |
 | `CRM_ETAPA_RESPONDEU` · `CRM_ETAPA_QUALIFICADO` | `Respondeu` · `Qualificado` | Nome das etapas, se o time renomear. |
 | `CRM_ETAPA_NAO_COMPROU` | `Não compraram` | Etapa dos closers que encerra o report como "não fechou". |
+| `CRM_ETAPA_VENDIDO` · `CRM_ETAPA_FUP` | `Vendido` · `Fluxo de FUP` | Etapas dos closers que viram "Vendido no RD" e "Em follow-up". |
 | `CRON_SECRET` | — | Segredo do agendador diário da Vercel que confere vendas e perdas no RD. |
 
 ### Google Agenda
@@ -527,7 +528,7 @@ Tudo em `src/db.js` (Redis em produção, `data/*.json` local). **A conversa nã
 npm test
 ```
 
-**387 testes**, sem rede, sem chave real, sem custo e sem tocar em `data/` (o banco é uma pasta
+**393 testes**, sem rede, sem chave real, sem custo e sem tocar em `data/` (o banco é uma pasta
 temporária). O `jsdom` roda os scripts **reais** da extensão e do painel.
 
 | Arquivo | O que cobre |
