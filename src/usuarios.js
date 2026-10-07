@@ -30,6 +30,8 @@ const normalizar = (u) => {
     automacao: typeof u.automacao === 'boolean' ? u.automacao : papel === 'master',
     // etiquetas: no cartão do lead, o investimento do formulário e se já vende. Também começa só com o master.
     etiquetas: typeof u.etiquetas === 'boolean' ? u.etiquetas : papel === 'master',
+    // corAgenda: a cor com que as reuniões dos leads desta pessoa são pintadas no Google Agenda ('' = não pinta).
+    corAgenda: /^([1-9]|1[01])$/.test(String(u.corAgenda || '')) ? String(u.corAgenda) : '',
   };
 };
 // Abas do painel que o master libera por pessoa (a de Acessos é sempre só dele). Sem escolha feita, vale
@@ -149,6 +151,18 @@ async function definirEtiquetas(id, ligadas) {
   return true;
 }
 
+/** Cor do Google Agenda (1 a 11) para as reuniões dos leads desta pessoa; '' desliga. */
+async function definirCorAgenda(id, cor) {
+  const c = String(cor || '');
+  if (c && !/^([1-9]|1[01])$/.test(c)) throw new Error('Cor inválida.');
+  const dados = await ler();
+  const u = dados.usuarios.find((x) => x.id === id);
+  if (!u) return false;
+  u.corAgenda = c;
+  await db.setJson(CHAVE_DB, dados);
+  return true;
+}
+
 /** Libera ou tira uma aba do painel para um usuário (o master sempre tem todas). */
 async function definirAba(id, aba, liberada) {
   if (!ABAS.includes(aba)) throw new Error('Aba inválida.');
@@ -177,4 +191,4 @@ async function porChave(chave) {
   return (await ler()).usuarios.find((u) => u.chave === chave) || null;
 }
 
-module.exports = { listar, criar, remover, definirPapel, definirFichaCrm, definirCoach, definirAutomacao, definirEtiquetas, definirAba, podeAba, abasDe, ABAS, porChave, ehAdmin, ehMaster, PAPEIS };
+module.exports = { listar, criar, remover, definirPapel, definirFichaCrm, definirCoach, definirAutomacao, definirEtiquetas, definirCorAgenda, definirAba, podeAba, abasDe, ABAS, porChave, ehAdmin, ehMaster, PAPEIS };

@@ -206,6 +206,7 @@ app.patch('/api/admin/usuarios/:id', master, async (req, res) => {
     else if (typeof corpo.coach === 'boolean') ok = await usuarios.definirCoach(req.params.id, corpo.coach);
     else if (typeof corpo.automacao === 'boolean') ok = await usuarios.definirAutomacao(req.params.id, corpo.automacao);
     else if (typeof corpo.etiquetas === 'boolean') ok = await usuarios.definirEtiquetas(req.params.id, corpo.etiquetas);
+    else if (typeof corpo.corAgenda === 'string') ok = await usuarios.definirCorAgenda(req.params.id, corpo.corAgenda);
     else if (typeof corpo.aba === 'string') ok = await usuarios.definirAba(req.params.id, corpo.aba, corpo.liberada === true);
     else ok = await usuarios.definirPapel(req.params.id, String(corpo.papel || ''));
     if (!ok) return res.status(404).json({ erro: 'Usuário não encontrado.' });
@@ -624,7 +625,14 @@ app.post('/api/crm/lead', auth, async (req, res) => {
         console.error('Falha ao consultar o Google Agenda:', err.message);
         return null;
       });
-      if (reuniao) extra.reuniao = reuniao;
+      if (reuniao) {
+        // Para a extensão vai só o que o cartão mostra.
+        extra.reuniao = { quando: reuniao.quando, closer: reuniao.closer, titulo: reuniao.titulo };
+        // Lead que este pré-vendedor está atendendo: a reunião ganha a cor dele na agenda (se ainda não tiver cor).
+        if (req.usuario.corAgenda) {
+          await agendaGoogle.pintarReuniao(reuniao, req.usuario.corAgenda).catch((err) => console.error('Falha ao pintar a reunião na agenda:', err.message));
+        }
+      }
       // O RD (reunião realizada, card com o closer) ou a agenda dizem quem é o closer: os handoffs
       // deste lead que ainda estão sem closer são preenchidos sozinhos.
       await closerAuto

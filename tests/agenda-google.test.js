@@ -31,7 +31,10 @@ const AGENDAS = [
   { id: 'paulo@pronix.com', summary: 'paulo@pronix.com', summaryOverride: 'Paulo Henrique', accessRole: 'reader' },
   { id: 'pt.brazilian#holiday@group.v.calendar.google.com', summary: 'Feriados', accessRole: 'reader' },
 ];
-const ev = (summary, inicio, convidados = [], extra = {}) => ({ summary, start: { dateTime: inicio }, attendees: convidados.map((email) => ({ email })), ...extra });
+let nEv = 0;
+const ev = (summary, inicio, convidados = [], extra = {}) => ({ id: 'ev' + ++nEv, summary, start: { dateTime: inicio }, attendees: convidados.map((email) => ({ email })), ...extra });
+const pinturas = [];
+let podePintar = true;
 const EVENTOS = {
   'vitor@pronix.com': [
     ev('Diagnóstico Pronix — Giumar Pedroso', '2026-10-06T14:00:00-03:00', ['giumar@exemplo.com', 'vitor@pronix.com']),
@@ -70,6 +73,15 @@ global.fetch = async (url, opts = {}) => {
   if (u.hostname === 'www.googleapis.com') {
     assert.equal(opts.headers.Authorization, 'Bearer acesso-1');
     if (u.pathname.endsWith('/users/me/calendarList')) return json({ items: AGENDAS });
+    const pm = /\/calendars\/([^/]+)\/events\/([^/]+)$/.exec(u.pathname);
+    if (pm && opts.method === 'PATCH') {
+      if (!podePintar) return json({ error: 'forbidden' }, 403);
+      const corpo = JSON.parse(opts.body);
+      pinturas.push({ agenda: decodeURIComponent(pm[1]), evento: pm[2], corpo });
+      const alvo = (EVENTOS[decodeURIComponent(pm[1])] || []).find((e) => e.id === pm[2]);
+      if (alvo) alvo.colorId = corpo.colorId;
+      return json(alvo || {});
+    }
     const m = /\/calendars\/([^/]+)\/events$/.exec(u.pathname);
     if (m) {
       assert.equal(u.searchParams.get('singleEvents'), 'true');
@@ -120,11 +132,11 @@ test('sem conectar: nada é consultado no Google e a ficha vem como sempre', asy
   assert.equal((await chamar('POST', '/api/master/google/conectar', {}, E.sdr)).status, 403);
 });
 
-test('conectar: o master abre a tela do Google (só leitura de agenda) e a volta guarda a autorização', async () => {
+test('conectar: o master abre a tela do Google e a volta guarda a autorização', async () => {
   const c = await chamar('POST', '/api/master/google/conectar', {}, E.master);
   const u = new URL(c.json.url);
   assert.equal(u.origin + u.pathname, 'https://accounts.google.com/o/oauth2/v2/auth');
-  assert.equal(u.searchParams.get('scope'), 'https://www.googleapis.com/auth/calendar.readonly', 'só leitura');
+  assert.equal(u.searchParams.get('scope'), 'https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/calendar.events', 'ler as agendas e alterar eventos (só a cor)');
   assert.equal(u.searchParams.get('access_type'), 'offline');
   assert.match(u.searchParams.get('redirect_uri'), /\/api\/google\/retorno$/);
   const state = u.searchParams.get('state');
@@ -139,11 +151,13 @@ test('conectar: o master abre a tela do Google (só leitura de agenda) e a volta
   assert.deepEqual(s.json.agendas, ['Cauã Lima', 'Vitor Augusto', 'Paulo Henrique'], 'as agendas compartilhadas, sem a de feriados');
 });
 
+const visto = (r) => (r ? { quando: r.quando, closer: r.closer, titulo: r.titulo } : null);
+
 // ---------------------------------------------------------------- achar a reunião
 test('acha a reunião pelo e-mail do lead entre os convidados: dia e hora no fuso do time e o closer dono da agenda', async () => {
   chamadas.length = 0;
   const r = await agendaGoogle.reuniaoDoLead({ emails: ['Giumar@Exemplo.com'], nome: 'Giumar Pedroso' }, AGORA);
-  assert.deepEqual(r, { quando: '2026-10-06T14:00', closer: 'Vitor Augusto', titulo: 'Diagnóstico Pronix — Giumar Pedroso' });
+  assert.deepEqual(visto(r), { quando: '2026-10-06T14:00', closer: 'Vitor Augusto', titulo: 'Diagnóstico Pronix — Giumar Pedroso' });
   const eventos = chamadas.filter((c) => /\/events$/.test(c.url));
   assert.equal(eventos.length, 3, 'uma consulta por agenda (sem a de feriados)');
   assert.ok(eventos.every((c) => c.q === 'giumar@exemplo.com'));
@@ -155,7 +169,7 @@ test('acha a reunião pelo e-mail do lead entre os convidados: dia e hora no fus
 
 test('remarcou: vale a próxima reunião; só passada: a mais recente; cancelada e de outro convidado não contam', async () => {
   assert.equal((await agendaGoogle.reuniaoDoLead({ emails: ['remarcou@exemplo.com'] }, AGORA)).quando, '2026-10-08T16:30');
-  assert.deepEqual(await agendaGoogle.reuniaoDoLead({ emails: ['antigo@exemplo.com'] }, AGORA), { quando: '2026-10-05T10:00', closer: 'Vitor Augusto', titulo: 'Diagnóstico Pronix — Lead Antigo' });
+  assert.deepEqual(visto(await agendaGoogle.reuniaoDoLead({ emails: ['antigo@exemplo.com'] }, AGORA)), { quando: '2026-10-05T10:00', closer: 'Vitor Augusto', titulo: 'Diagnóstico Pronix — Lead Antigo' });
   assert.equal(await agendaGoogle.reuniaoDoLead({ emails: ['cancelado@exemplo.com'] }, AGORA), null);
   assert.equal(await agendaGoogle.reuniaoDoLead({ emails: ['giumar.outro@exemplo.com.br'] }, AGORA), null, 'e-mail parecido não é o mesmo convidado');
   assert.equal(await agendaGoogle.reuniaoDoLead({ emails: ['ninguem@exemplo.com'] }, AGORA), null);
@@ -175,6 +189,42 @@ test('a ficha do lead traz a reunião para quem tem a automação; para os outro
   const s = await chamar('POST', '/api/crm/lead', { telefone: '5511911110001' }, E.sdr);
   assert.equal(s.json.encontrado, true);
   assert.ok(!('reuniao' in s.json));
+});
+
+// ---------------------------------------------------------------- cor do pré-vendedor na agenda
+test('pintar: a reunião futura do lead ganha a cor do pré-vendedor; evento que já tem cor, ou que já passou, não é mexido', async () => {
+  const giumar = await agendaGoogle.reuniaoDoLead({ emails: ['giumar@exemplo.com'] }, AGORA);
+  assert.equal(await agendaGoogle.pintarReuniao(giumar, '5'), 'pintado');
+  assert.deepEqual(pinturas, [{ agenda: 'vitor@pronix.com', evento: giumar.eventoId, corpo: { colorId: '5' } }], 'a única alteração é a cor');
+  assert.equal(await agendaGoogle.pintarReuniao(giumar, '5'), 'ja-tem-cor', 'não repete');
+  assert.equal(await agendaGoogle.pintarReuniao({ ...giumar, eventoId: 'outro', cor: '11' }, '5'), 'ja-tem-cor', 'lead já marcado por outro pré-vendedor: não troca');
+  const antigo = await agendaGoogle.reuniaoDoLead({ emails: ['antigo@exemplo.com'] }, AGORA);
+  assert.equal(await agendaGoogle.pintarReuniao(antigo, '5'), 'passada');
+  assert.equal(await agendaGoogle.pintarReuniao(giumar, '99'), 'sem-evento', 'cor inválida');
+  assert.equal(await agendaGoogle.pintarReuniao(null, '5'), 'sem-evento');
+  assert.equal(pinturas.length, 1);
+
+  // conta que só pode VER a agenda (ou conexão antiga, só de leitura): não quebra nada
+  podePintar = false;
+  const remarcou = await agendaGoogle.reuniaoDoLead({ emails: ['remarcou@exemplo.com'] }, AGORA);
+  assert.equal(await agendaGoogle.pintarReuniao(remarcou, '5'), 'sem-permissao');
+  podePintar = true;
+});
+
+test('ao abrir a conversa: quem tem cor escolhida em Acessos pinta a reunião do lead; quem não tem, não', async () => {
+  pinturas.length = 0;
+  const usuarios = (await chamar('GET', '/api/admin/usuarios', undefined, E.master)).json.usuarios;
+  const idMaster = usuarios.find((u) => u.papel === 'master').id;
+  await db.cacheDel('google:pintado:' + (await agendaGoogle.reuniaoDoLead({ emails: ['giumar@exemplo.com'] }, new Date())).eventoId);
+
+  await chamar('POST', '/api/crm/lead', { telefone: '5511911110001' }, E.master);
+  assert.equal(pinturas.length, 0, 'sem cor escolhida: não mexe na agenda');
+
+  assert.equal((await chamar('PATCH', '/api/admin/usuarios/' + idMaster, { corAgenda: '12' }, E.master)).status, 400, 'cor fora da tabela');
+  assert.equal((await chamar('PATCH', '/api/admin/usuarios/' + idMaster, { corAgenda: '5' }, E.master)).status, 200);
+  const r = await chamar('POST', '/api/crm/lead', { telefone: '5511911110001' }, E.master);
+  assert.deepEqual(Object.keys(r.json.reuniao).sort(), ['closer', 'quando', 'titulo'], 'para a extensão vai só o que o cartão mostra');
+  await chamar('PATCH', '/api/admin/usuarios/' + idMaster, { corAgenda: '' }, E.master);
 });
 
 test('Google recusou a conexão (autorização revogada): a ficha continua vindo, só sem a reunião', async () => {

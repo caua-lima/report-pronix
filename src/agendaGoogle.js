@@ -13,7 +13,15 @@ const crypto = require('crypto');
 const db = require('./db');
 
 const CHAVE_DB = 'google_agenda'; // { refreshToken, conectadoEm, por }
-const ESCOPO = 'https://www.googleapis.com/auth/calendar.readonly';
+// Ler as agendas e os eventos; e alterar eventos só para uma coisa: pintar a reunião com a cor do
+// pré-vendedor (o time marca de quem é cada lead pela cor do evento).
+const ESCOPO = 'https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/calendar.events';
+// Cores de evento do Google Agenda (colorId).
+const CORES = {
+  1: 'Lavanda', 2: 'Sálvia', 3: 'Uva', 4: 'Flamingo', 5: 'Banana', 6: 'Tangerina',
+  7: 'Pavão', 8: 'Grafite', 9: 'Mirtilo', 10: 'Manjericão', 11: 'Tomate',
+};
+const corValida = (c) => (Object.prototype.hasOwnProperty.call(CORES, String(c)) ? String(c) : '');
 const TZ = process.env.TZ_RELATORIO || 'America/Sao_Paulo';
 const MAX_AGENDAS = 40;
 const DIAS_ATRAS = 3; // reunião que já passou ainda aparece como "estava agendado"
@@ -206,10 +214,37 @@ async function reuniaoDoLead(lead = {}, agora = new Date()) {
         // A agenda é do closer: o nome dela é quem atende. Se o evento estiver na agenda do próprio master, fica sem closer.
         closer: escolhida.ag.minha ? '' : String(escolhida.ag.nome).slice(0, 60),
         titulo: String(escolhida.e.summary || '').slice(0, 120),
+        // Para pintar o evento com a cor do pré-vendedor (uso só do servidor).
+        agendaId: escolhida.ag.id, eventoId: String(escolhida.e.id || ''), cor: String(escolhida.e.colorId || ''), futura: escolhida.inicio >= agora.getTime() - 2 * 3600000,
       }
     : null;
   await db.cacheSet(chave, JSON.stringify({ reuniao }), reuniao ? 600 : 180);
   return reuniao;
+}
+
+/**
+ * Pinta a reunião do lead com a cor do pré-vendedor. Só reunião que ainda vai acontecer e só evento
+ * SEM cor: se outro pré-vendedor já marcou o lead como dele, não troca.
+ * @returns {Promise<'pintado'|'ja-tem-cor'|'passada'|'sem-evento'|'sem-permissao'>}
+ */
+async function pintarReuniao(reuniao, cor) {
+  const c = corValida(cor);
+  if (!c || !reuniao || !reuniao.agendaId || !reuniao.eventoId) return 'sem-evento';
+  if (!reuniao.futura) return 'passada';
+  if (reuniao.cor) return 'ja-tem-cor';
+  const chave = `google:pintado:${reuniao.eventoId}`;
+  if (await db.cacheGet(chave)) return 'ja-tem-cor';
+  const token = await tokenDeAcesso();
+  if (!token) return 'sem-evento';
+  const r = await google(
+    `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(reuniao.agendaId)}/events/${encodeURIComponent(reuniao.eventoId)}`,
+    { method: 'PATCH', headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' }, body: JSON.stringify({ colorId: c }) }
+  );
+  // 403: a conta conectada só pode VER esta agenda (ou a conexão é antiga, só de leitura).
+  if (r.status === 403 || r.status === 401) return 'sem-permissao';
+  if (!r.ok) throw new Error(`O Google Agenda não deixou mudar a cor (${r.status}).`);
+  await db.cacheSet(chave, c, 6 * 3600);
+  return 'pintado';
 }
 
 /** Para o painel: está configurado? conectado? quantas agendas enxerga? */
@@ -227,4 +262,4 @@ async function status() {
   return saida;
 }
 
-module.exports = { configurado, urlDeAutorizacao, concluirConexao, desconectar, reuniaoDoLead, status, horaLocal, ehDoLead };
+module.exports = { configurado, urlDeAutorizacao, concluirConexao, desconectar, reuniaoDoLead, pintarReuniao, status, horaLocal, ehDoLead, CORES, corValida };
