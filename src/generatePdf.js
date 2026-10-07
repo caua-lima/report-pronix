@@ -314,16 +314,17 @@ const MAX_PAGINAS = 2;
 // Cortes progressivos para caber no limite, do menos essencial para o mais.
 // O RESUMO (a qualificação) nunca é tocado — é o motivo do relatório existir.
 const CORTES = [
-  (d) => { d.citacoes = (d.citacoes || []).slice(0, 2); },
-  (d) => { d.citacoes = (d.citacoes || []).slice(0, 1); },
   (d) => { d.conversa = (d.conversa || []).slice(0, 4); },
   (d) => { d.secoes = (d.secoes || []).map((s) => ({ ...s, itens: (s.itens || []).slice(0, 3) })); },
-  (d) => { d.citacoes = []; },
+  (d) => { d.citacoes = (d.citacoes || []).slice(0, 2); },
   (d) => { d.conversa = (d.conversa || []).slice(0, 3); d.sinais_compra = (d.sinais_compra || []).slice(0, 3); },
   (d) => { d.secoes = (d.secoes || []).map((s) => ({ ...s, itens: (s.itens || []).slice(0, 2) })); },
   (d) => { d.conversa = (d.conversa || []).slice(0, 2); d.sinais_compra = (d.sinais_compra || []).slice(0, 2); },
   (d) => { d.secoes = (d.secoes || []).slice(0, 3); },
+  // As falas do lead são o que mais anima o closer: ficam até quase o fim, e uma sobrevive sempre que couber.
+  (d) => { d.citacoes = (d.citacoes || []).slice(0, 1); },
   (d) => { d.secoes = (d.secoes || []).slice(0, 2); },
+  (d) => { d.citacoes = []; },
 ];
 
 /** Aplica os cortes 0..n numa CÓPIA (a tela continua mostrando o relatório inteiro). */

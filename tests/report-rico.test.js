@@ -142,3 +142,19 @@ test('PDF: report enorme continua em até 2 páginas, sem perder o resumo nem a 
   assert.ok(t.includes('COMO INICIAR A REUNIÃO'), 'a abertura nunca é cortada');
   assert.ok(t.includes('Como foi a conversa'), 'a conversa encolhe, mas não some');
 });
+
+test('PDF apertado: as falas do lead não são as primeiras a cair — pelo menos uma fica', async () => {
+  const frase = (n, t) => Array.from({ length: n }, (_, i) => `${t} ${i + 1} — ` + 'texto comprido para ocupar bastante espaço na página do relatório '.repeat(3));
+  const cheio = {
+    lead: 'Marcos Pereira', sdr: 'Cauã Lima',
+    resumo: [{ rotulo: 'Investimento', valor: 'R$ 5 mil' }, { rotulo: 'Motivação', valor: 'Sair do CLT' }, { rotulo: 'Decisor(es)', valor: 'Decide sozinho' }],
+    conversa: frase(6, 'Conversa'),
+    sinais_compra: frase(4, 'Sinal'),
+    secoes: [1, 2, 3, 4].map((i) => ({ titulo: 'Seção ' + i, itens: frase(5, 'Item') })),
+    citacoes: ['Quero começar o quanto antes', 'O investimento eu tenho', 'Era exatamente isso que eu procurava'],
+    frase_impacto: 'Lead decidido.', abertura: 'Marcos, o Cauã me passou o seu cenário.',
+  };
+  const buf = await gerarPdfBuffer(cheio);
+  assert.ok(paginas(buf) <= 2, `continua em até 2 páginas (${paginas(buf)})`);
+  assert.match(textoDoPdf(buf), /Nas palavras do lead/, 'a seção sobrevive ao aperto');
+});
