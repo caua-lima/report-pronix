@@ -11,6 +11,20 @@ Detalhes técnicos em [`auditoria-pronix.md`](auditoria-pronix.md) e [`plano-imp
 - [x] 117 testes automáticos (`npm test`), sem rede e sem custo
 - [x] Merge local na `main`
 
+## Novo em 06 e 07/10: agenda, RD e painel (extensão 1.12.6 + servidor)
+
+- [x] Reunião do lead pelo Google Agenda no cartão (dia, hora e closer) e cor do pré-vendedor no evento
+- [x] Closer do handoff preenchido sozinho (RD ou agenda)
+- [x] Desfecho puxado do RD: Vendido, Fluxo de FUP e Não Compraram (com o motivo), sem abrir o WhatsApp
+- [x] Resultados: no-show e "não fechou" saem da lista; certinho na venda; produto, ticket e pagamento; ver os de uma pessoa
+- [x] "Fulano vai melhor com lead X" com o porquê das anotações; perfil do lead com critério (prompt v7)
+- [x] Menu lateral; Acessos com permissões por pessoa (abas, recursos e cor na agenda)
+- [ ] **Você:** enviar a extensão 1.12.6 à loja
+- [ ] **Você:** reconectar o Google (Extensão → Google Agenda → Conectar de novo) para liberar a cor
+- [ ] **Você:** escolher a sua cor e a do Samuel em Acessos; conferir se a conta pode editar as agendas dos closers
+- [ ] **Você:** criar `CRON_SECRET` na Vercel para a conferência diária no RD
+- [ ] **Você:** depois de um closer mover um card para "Não Compraram" ou "Vendido", clicar em "Puxar do RD" e conferir
+
 ## Novo em 04/10 (2): coach em popup e etiqueta mais rígida (extensão 1.12.1 + servidor)
 
 - [x] Mover para "Respondeu" confirmado em uso real (04/10)
