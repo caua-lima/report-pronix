@@ -19,7 +19,7 @@ Detalhes técnicos em [`auditoria-pronix.md`](auditoria-pronix.md) e [`plano-imp
 - [x] Resultados: no-show e "não fechou" saem da lista; certinho na venda; produto, ticket e pagamento; ver os de uma pessoa
 - [x] "Fulano vai melhor com lead X" com o porquê das anotações; perfil do lead com critério (prompt v7)
 - [x] Menu lateral; Acessos com permissões por pessoa (abas, recursos e cor na agenda)
-- [ ] **Você:** enviar a extensão 1.12.7 à loja (cartão da ficha e coach arrastáveis)
+- [ ] **Você:** enviar a extensão 1.12.8 à loja (cartão e coach arrastáveis, etiqueta de profissão)
 - [ ] **Você:** reconectar o Google (Extensão → Google Agenda → Conectar de novo) para liberar a cor
 - [ ] **Você:** escolher a sua cor e a do Samuel em Acessos; conferir se a conta pode editar as agendas dos closers
 - [ ] **Você:** criar `CRON_SECRET` na Vercel para a conferência diária no RD
