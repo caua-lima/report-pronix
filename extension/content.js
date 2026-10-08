@@ -1779,11 +1779,12 @@
   /**
    * Etiquetas tiradas das respostas do formulário (ficha do RD):
    *  - investimento: "R$3.000 a R$5.000" -> "3 a 5k"; "+ de R$5.000" -> "5k+"; "até R$3.000" -> "até 3k";
-   *  - vende: "Já vendo e quero aumentar…" -> "Já vende"; "Quero começar a vender…" -> "Ainda não vende".
+   *  - vende: "Já vendo e quero aumentar…" -> "Já vende"; "Quero começar a vender…" -> "Ainda não vende";
+   *  - profissao: a resposta como o lead marcou ("Lojista/Comerciante"), encurtada se for comprida.
    * Sem o campo no formulário (ou resposta que não dá para ler), a etiqueta não aparece.
    */
   function etiquetasDoFormulario(f) {
-    const saida = { investimento: '', vende: '' };
+    const saida = { investimento: '', vende: '', profissao: '' };
     if (!f) return saida;
     const campos = ((f.formulario && f.formulario.campos) || []).concat(f.campos || []);
     const semAcento = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
@@ -1812,6 +1813,9 @@
     const vende = semAcento(valorDe(/vend/));
     if (/comec|ainda nao|nao vend|do zero|quero vender|^nao\b/.test(vende)) saida.vende = 'Ainda não vende';
     else if (/ja vend|ja tenho|aumentar|^sim\b/.test(vende)) saida.vende = 'Já vende';
+
+    const profissao = valorDe(/profiss|ocupac/).replace(/\s+/g, ' ').trim();
+    if (profissao) saida.profissao = profissao.length > 30 ? profissao.slice(0, 29).trimEnd() + '…' : profissao;
     return saida;
   }
 
@@ -1866,11 +1870,11 @@
       linha.appendChild(elem('span', `${base};border:1px solid ${cor};background:rgba(255,196,0,.1);color:${cor}`, (ag.passou ? 'Estava agendado: ' : 'Agendado: ') + ag.texto));
       linha.appendChild(tirar('Apagar este agendamento', () => mudar({ limparAgenda: true }, { agendadoPara: '' })));
     }
-    // Do formulário do RD, para ver de relance: quanto o lead disse que investe e se já vende.
+    // Do formulário do RD, para ver de relance: quanto o lead disse que investe, se já vende e a profissão.
     // Cheias e maiores que as outras: são o que se bate o olho primeiro, mesmo com o cartão minimizado.
-    const doFormulario = ficha.etiquetas ? etiquetasDoFormulario(estado.ficha) : { investimento: '', vende: '' };
+    const doFormulario = ficha.etiquetas ? etiquetasDoFormulario(estado.ficha) : { investimento: '', vende: '', profissao: '' };
     const cheia = (fundo, cor) => `border-radius:999px;padding:3px 11px;font-size:12px;font-weight:800;line-height:1.5;letter-spacing:.02em;border:1px solid ${fundo};background:${fundo};color:${cor}`;
-    if (doFormulario.investimento || doFormulario.vende) {
+    if (doFormulario.investimento || doFormulario.vende || doFormulario.profissao) {
       const doForm = elem('div', 'flex-basis:100%;display:flex;flex-wrap:wrap;gap:6px');
       if (doFormulario.investimento) {
         const c = elem('span', cheia('#ffc400', '#121214'), 'R$ ' + doFormulario.investimento);
@@ -1881,6 +1885,11 @@
         const jaVende = doFormulario.vende === 'Já vende';
         const c = elem('span', cheia(jaVende ? '#25d366' : '#4c8dff', jaVende ? '#05130c' : '#ffffff'), doFormulario.vende);
         c.title = 'Resposta do formulário sobre vender online';
+        doForm.appendChild(c);
+      }
+      if (doFormulario.profissao) {
+        const c = elem('span', cheia('#b79cff', '#17102b'), doFormulario.profissao);
+        c.title = 'Profissão informada no formulário';
         doForm.appendChild(c);
       }
       linha.appendChild(doForm);

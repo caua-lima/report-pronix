@@ -288,9 +288,9 @@ test('etiquetas do formulário: investimento ("R$ 3 a 5k", "R$ 5k+") e se já ve
   });
   const chips = (p) => [...p.document.getElementById('cr-etiquetas').querySelectorAll('span')].map((x) => x.textContent);
   const casos = [
-    [[{ rotulo: 'Investimento', valor: 'R$3.000 a R$5.000' }, { rotulo: 'Vende online', valor: 'Quero começar a vender no Mercado Livre' }], ['R$ 3 a 5k', 'Ainda não vende']],
+    [[{ rotulo: 'Investimento', valor: 'R$3.000 a R$5.000' }, { rotulo: 'Vende online', valor: 'Quero começar a vender no Mercado Livre' }, { rotulo: 'Profissão', valor: 'Lojista/Comerciante' }], ['R$ 3 a 5k', 'Ainda não vende', 'Lojista/Comerciante']],
     [[{ rotulo: 'Investimento', valor: '+ de R$5.000' }, { rotulo: 'Vende online?', valor: 'Já vendo e quero aumentar meus resultados no Mercado Livre' }], ['R$ 5k+', 'Já vende']],
-    [[{ rotulo: 'Investimento', valor: 'Até R$ 3 mil' }, { rotulo: 'Vende online', valor: 'Não' }], ['R$ até 3k', 'Ainda não vende']],
+    [[{ rotulo: 'Investimento', valor: 'Até R$ 3 mil' }, { rotulo: 'Vende online', valor: 'Não' }, { rotulo: 'Qual a sua profissão?', valor: 'Funcionário  público concursado da prefeitura municipal' }], ['R$ até 3k', 'Ainda não vende', 'Funcionário público concursad…']],
   ];
   for (const [campos, esperado] of casos) {
     // só as etiquetas ligadas (sem a automação): aparecem as do formulário, e nada de "Qualificado"
