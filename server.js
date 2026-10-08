@@ -788,7 +788,7 @@ const retornoDoGoogle = (req) => enderecoDoServidor(req) + '/api/google/retorno'
 
 app.get('/api/master/google', master, async (req, res) => {
   try {
-    res.json({ ...(await agendaGoogle.status()), retorno: retornoDoGoogle(req) });
+    res.json({ ...(await agendaGoogle.status()), retorno: retornoDoGoogle(req), suaCor: req.usuario.corAgenda || '', suaAutomacao: Boolean(req.usuario.automacao) });
   } catch (err) {
     res.status(500).json({ erro: err.message });
   }

@@ -2807,7 +2807,25 @@
           : g.erro ? g.erro
           : !g.conectado ? 'Ainda não conectado.'
           : `Conectado. ${g.agendas.length} agenda(s) à vista: ${g.agendas.join(', ')}.`;
-        setStatus('statusGoogle', texto, { erro: Boolean(g.erro) || !g.configurado, ok: g.conectado && !g.erro });
+        // Por que a cor da reunião pode não mudar: cada motivo, com o que fazer.
+        const avisos = [];
+        const ligado = g.configurado && g.conectado && !g.erro;
+        if (ligado) {
+          if (g.alteraEventos === false) avisos.push('A COR NÃO MUDA: esta conexão só lê as agendas. Clique em "Conectar de novo" e, na tela do Google, deixe marcada a permissão de ver e editar eventos.');
+          if ((g.soLeitura || []).length) avisos.push(`Agendas que a sua conta só pode VER (nelas a cor não muda): ${g.soLeitura.join(', ')}. O dono precisa compartilhar com "Fazer alterações nos eventos".`);
+          if (!g.suaCor) avisos.push('Você ainda não escolheu a sua cor: Acessos → clique no seu nome → Cor na agenda.');
+          if (!g.suaAutomacao) avisos.push('A sua Automação RD está desligada (Acessos → seu nome): sem ela a agenda não é consultada.');
+          const u = g.ultimaPintura;
+          if (u) {
+            const como = u.resultado === 'pintado' ? 'pintou o evento'
+              : u.resultado === 'ja-tem-cor' ? 'o evento já tinha outra cor, então não troquei'
+              : u.resultado === 'sem-permissao' ? (u.motivo === 'conexao' ? 'o Google recusou: a conexão não pode alterar eventos (conecte de novo)' : 'o Google recusou: a sua conta só pode ver essa agenda')
+              : `o Google respondeu erro ${u.motivo || ''}`;
+            avisos.push(`Última tentativa de pintar (${new Date(u.em).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}, agenda ${u.agenda}): ${como}.`);
+          }
+        }
+        const problema = ligado && (g.alteraEventos === false || (g.soLeitura || []).length > 0 || !g.suaCor || !g.suaAutomacao);
+        setStatus('statusGoogle', [texto, ...avisos].join(' • '), { erro: Boolean(g.erro) || !g.configurado || problema, ok: ligado && !problema });
       } catch (e) {
         setStatus('statusGoogle', e.message, { erro: true });
       }
