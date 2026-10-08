@@ -281,6 +281,36 @@ test('minimizado mostra só a dica do momento; arrastar guarda o lugar; × fecha
   await esperar(() => popup(p) !== null, { motivo: 'volta na próxima conversa' });
 });
 
+test('o cartão da ficha também se arrasta: guarda o lugar, o vigia não puxa de volta e o duplo clique devolve', async () => {
+  const srv = servidorFalso();
+  const p = abrir(srv);
+  await esperar(() => cartao(p) !== null && /Respondeu/.test(cartao(p).textContent), { motivo: 'cartão da ficha' });
+  const alca = () => [...cartao(p).querySelectorAll('div')].find((d) => /^Arraste/.test(d.title));
+  alca().dispatchEvent(new p.w.MouseEvent('mousedown', { bubbles: true, button: 0, clientX: 10, clientY: 10 }));
+  p.document.dispatchEvent(new p.w.MouseEvent('mousemove', { bubbles: true, clientX: 310, clientY: 210 }));
+  p.document.dispatchEvent(new p.w.MouseEvent('mouseup', { bubbles: true }));
+  assert.deepEqual(JSON.parse(JSON.stringify(p.storage.fichaPos)), { left: 300, top: 200 });
+  assert.equal(cartao(p).style.left, '300px');
+  assert.equal(cartao(p).style.top, '200px');
+  assert.equal(cartao(p).style.right, 'auto');
+  await dormir(60);
+  assert.equal(cartao(p).style.left, '300px', 'o vigia não puxa o cartão de volta');
+  assert.equal(p.storage.coachPos, undefined, 'mover a ficha não mexe no lugar do coach');
+
+  alca().dispatchEvent(new p.w.MouseEvent('dblclick', { bubbles: true }));
+  assert.equal(p.storage.fichaPos, null);
+  assert.equal(cartao(p).style.left, 'auto');
+  assert.match(cartao(p).style.right, /px$/, 'volta para a direita da conversa');
+});
+
+test('o lugar da ficha fica guardado para a próxima vez', async () => {
+  const srv = servidorFalso();
+  const p = abrir(srv, CONVERSA, { storage: { fichaPos: { left: 80, top: 140 } } });
+  await esperar(() => cartao(p) !== null, { motivo: 'cartão da ficha' });
+  assert.equal(cartao(p).style.left, '80px');
+  assert.equal(cartao(p).style.top, '140px');
+});
+
 test('popup minimizado e posição ficam guardados para a próxima vez', async () => {
   const srv = servidorFalso();
   const p = abrir(srv, CONVERSA, { storage: { coachMinimizado: true, coachPos: { left: 120, top: 200 } } });

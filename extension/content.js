@@ -1113,6 +1113,7 @@
   }
   const ficha = {
     ligada: true, minimizada: false, chave: null, fechadaPara: null, seq: 0, timer: null, vigia: null, ultimoEstado: null, coach: false,
+    pos: null, // { left, top } quando o usuário arrastou o cartão; null = lugar padrão
     automacao: false, // o master ligou a automação para esta chave (mover para "Respondeu", etiqueta e agendamento)
     etiquetas: false, // o master ligou as etiquetas do formulário (investimento e se já vende)
     conversa: null, // { telefone, nome } da conversa aberta: é por ela que o servidor lembra a etiqueta
@@ -1176,7 +1177,17 @@
   function posicionarFicha() {
     const el = document.getElementById(FICHA_ID);
     const main = document.querySelector('#main');
-    if (!el || !main) return;
+    if (!el) return;
+    if (ficha.pos) {
+      // Onde o usuário deixou, sem sair da janela.
+      const dentro = (v, max) => Math.max(4, Math.min(Number(v) || 0, Math.max(4, max)));
+      el.style.right = 'auto';
+      el.style.left = dentro(ficha.pos.left, window.innerWidth - 120) + 'px';
+      el.style.top = dentro(ficha.pos.top, window.innerHeight - 60) + 'px';
+      return;
+    }
+    el.style.left = 'auto';
+    if (!main) return;
     const r = main.getBoundingClientRect();
     if (!r || r.width < 320) {
       el.style.right = '16px';
@@ -1410,12 +1421,18 @@
     el.style.width = Math.min(300, Math.round(r.width - 40)) + 'px';
   }
 
-  /** Arrastar pelo topo muda o popup de lugar (fica guardado); duplo clique devolve ao lugar padrão. */
-  function tornarArrastavel(el, alca) {
+  /** Os pontinhos no canto do topo: avisam que o popup pode ser arrastado. */
+  const pegador = () => elem('span', 'flex:none;color:#8b98a5;font-size:14px;line-height:1;letter-spacing:-1px', '⠿');
+
+  /**
+   * Arrastar pelo topo muda o popup de lugar (fica guardado); duplo clique devolve ao lugar padrão.
+   * `dono` é quem guarda a posição (ficha ou coachUi), `chave` o nome no storage e `posicionar` reaplica na tela.
+   */
+  function tornarArrastavel(el, alca, { dono, chave, posicionar }) {
     alca.style.cursor = 'move';
     const guardar = () => {
       try {
-        chrome.storage.local.set({ coachPos: coachUi.pos });
+        chrome.storage.local.set({ [chave]: dono.pos });
       } catch (_) {
         /* sem storage: vale só nesta aba */
       }
@@ -1426,22 +1443,22 @@
       const dx = ev.clientX - r.left;
       const dy = ev.clientY - r.top;
       const mover = (e) => {
-        coachUi.pos = { left: Math.round(e.clientX - dx), top: Math.round(e.clientY - dy) };
-        posicionarCoach();
+        dono.pos = { left: Math.round(e.clientX - dx), top: Math.round(e.clientY - dy) };
+        posicionar();
       };
       const soltar = () => {
         document.removeEventListener('mousemove', mover);
         document.removeEventListener('mouseup', soltar);
-        if (coachUi.pos) guardar();
+        if (dono.pos) guardar();
       };
       document.addEventListener('mousemove', mover);
       document.addEventListener('mouseup', soltar);
       ev.preventDefault();
     });
     alca.addEventListener('dblclick', () => {
-      coachUi.pos = null;
+      dono.pos = null;
       guardar();
-      posicionarCoach();
+      posicionar();
     });
   }
 
@@ -1488,12 +1505,17 @@
     btnX.title = 'Fechar nesta conversa';
     const alca = elem(
       'div',
-      'flex:1;min-width:0;user-select:none',
-      elem('div', 'font-size:10.5px;color:#25d366;font-weight:700;letter-spacing:.06em', 'COACH'),
-      elem('div', 'font-size:11px;color:#8b98a5', d ? 'dica de ' + hora : 'dica quando você pedir')
+      'flex:1;min-width:0;user-select:none;display:flex;align-items:center;gap:6px',
+      pegador(),
+      elem(
+        'div',
+        'flex:1;min-width:0',
+        elem('div', 'font-size:10.5px;color:#25d366;font-weight:700;letter-spacing:.06em', 'COACH'),
+        elem('div', 'font-size:11px;color:#8b98a5', d ? 'dica de ' + hora : 'dica quando você pedir')
+      )
     );
     alca.title = 'Arraste para mudar de lugar (duplo clique volta ao lugar padrão)';
-    tornarArrastavel(el, alca);
+    tornarArrastavel(el, alca, { dono: coachUi, chave: 'coachPos', posicionar: posicionarCoach });
     el.appendChild(elem('div', 'display:flex;align-items:center;gap:6px', alca, btnMin, btnX));
 
     const agora = d ? d.agora || d.comoAbordar : '';
@@ -1903,17 +1925,18 @@
       esconderFicha();
     });
     btnX.title = 'Fechar nesta conversa';
-    el.appendChild(
-      elem(
-        'div',
-        'display:flex;align-items:center;gap:6px',
-        elem('div', 'flex:1;min-width:0',
-          elem('div', 'font-size:10.5px;color:#ffc400;font-weight:700;letter-spacing:.06em', semCrm ? 'PRONIX' : 'RD STATION'),
-          elem('div', 'font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis', titulo)),
-        btnMin,
-        btnX
-      )
+    // Topo: é por ele que se arrasta o cartão.
+    const alca = elem(
+      'div',
+      'flex:1;min-width:0;user-select:none;display:flex;align-items:center;gap:6px',
+      pegador(),
+      elem('div', 'flex:1;min-width:0',
+        elem('div', 'font-size:10.5px;color:#ffc400;font-weight:700;letter-spacing:.06em', semCrm ? 'PRONIX' : 'RD STATION'),
+        elem('div', 'font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis', titulo))
     );
+    alca.title = 'Arraste para mudar de lugar (duplo clique volta ao lugar padrão)';
+    tornarArrastavel(el, alca, { dono: ficha, chave: 'fichaPos', posicionar: posicionarFicha });
+    el.appendChild(elem('div', 'display:flex;align-items:center;gap:6px', alca, btnMin, btnX));
     // As etiquetas ficam à vista mesmo com o cartão minimizado.
     const etiquetas = blocoEtiquetas(estado);
     if (etiquetas) el.appendChild(etiquetas);
@@ -2088,11 +2111,13 @@
   }
 
   try {
-    chrome.storage.local.get({ fichaCrm: true, fichaCrmMinimizada: false, coachMinimizado: false, coachPos: null }, (c) => {
+    chrome.storage.local.get({ fichaCrm: true, fichaCrmMinimizada: false, fichaPos: null, coachMinimizado: false, coachPos: null }, (c) => {
+      const lugar = (p) => (p && Number.isFinite(p.left) && Number.isFinite(p.top) ? { left: p.left, top: p.top } : null);
       ficha.ligada = c.fichaCrm !== false;
       ficha.minimizada = !!c.fichaCrmMinimizada;
+      ficha.pos = lugar(c.fichaPos);
       coachUi.minimizado = !!c.coachMinimizado;
-      coachUi.pos = c.coachPos && Number.isFinite(c.coachPos.left) && Number.isFinite(c.coachPos.top) ? { left: c.coachPos.left, top: c.coachPos.top } : null;
+      coachUi.pos = lugar(c.coachPos);
       // O Coach não depende da ficha do RD: a permissão vem da chave (e o cartão se redesenha se já estiver na tela).
       try {
         chrome.runtime.sendMessage({ action: 'permissoes' }, (r) => {
