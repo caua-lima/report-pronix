@@ -12,7 +12,9 @@
 const crypto = require('crypto');
 const db = require('./db');
 
-const CHAVE_DB = 'google_agenda'; // { refreshToken, conectadoEm, por }
+const CHAVE_DB = 'google_agenda'; // { refreshToken, conectadoEm, por, escopo }
+const CHAVE_PINTURA = 'google_agenda_pintura'; // última tentativa de pintar: { em, resultado, motivo, agenda }
+const CACHE_AGENDAS = 'google:agendas:v2';
 // Ler as agendas e os eventos; e alterar eventos só para uma coisa: pintar a reunião com a cor do
 // pré-vendedor (o time marca de quem é cada lead pela cor do evento).
 const ESCOPO = 'https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/calendar.events';
@@ -78,15 +80,15 @@ async function concluirConexao(code, redirectUri, por) {
   if (!r.ok || !r.corpo.refresh_token) {
     throw new Error('O Google não devolveu a autorização. Tente conectar de novo.');
   }
-  await db.setJson(CHAVE_DB, { refreshToken: r.corpo.refresh_token, conectadoEm: new Date().toISOString(), por: String(por || '').slice(0, 80) });
+  await db.setJson(CHAVE_DB, { refreshToken: r.corpo.refresh_token, conectadoEm: new Date().toISOString(), por: String(por || '').slice(0, 80), escopo: String(r.corpo.scope || '').slice(0, 400) });
   await db.cacheDel('google:token');
-  await db.cacheDel('google:agendas');
+  await db.cacheDel(CACHE_AGENDAS);
 }
 
 async function desconectar() {
   await db.setJson(CHAVE_DB, {});
   await db.cacheDel('google:token');
-  await db.cacheDel('google:agendas');
+  await db.cacheDel(CACHE_AGENDAS);
 }
 
 /** Token de acesso (vale ~1h): fica em cache para não renovar a cada conversa aberta. */
@@ -122,7 +124,7 @@ async function api(caminho, params) {
 
 /** Agendas que a conta conectada enxerga (as dos closers, compartilhadas), sem as de feriados. Cache de 1h. */
 async function agendas() {
-  const emCache = await db.cacheGet('google:agendas');
+  const emCache = await db.cacheGet(CACHE_AGENDAS);
   if (emCache) {
     try {
       return JSON.parse(emCache);
@@ -134,8 +136,9 @@ async function agendas() {
   const lista = ((r && r.items) || [])
     .filter((c) => c && c.id && !/#(holiday|contacts|weeknum)@/.test(c.id))
     .slice(0, MAX_AGENDAS)
-    .map((c) => ({ id: c.id, nome: String(c.summaryOverride || c.summary || c.id), minha: Boolean(c.primary) }));
-  if (lista.length) await db.cacheSet('google:agendas', JSON.stringify(lista), 3600);
+    // "escreve": a conta conectada pode alterar eventos desta agenda (sem isso a cor não muda).
+    .map((c) => ({ id: c.id, nome: String(c.summaryOverride || c.summary || c.id), minha: Boolean(c.primary), escreve: c.accessRole === 'writer' || c.accessRole === 'owner' }));
+  if (lista.length) await db.cacheSet(CACHE_AGENDAS, JSON.stringify(lista), 3600);
   return lista;
 }
 
@@ -231,7 +234,10 @@ async function pintarReuniao(reuniao, cor) {
   const c = corValida(cor);
   if (!c || !reuniao || !reuniao.agendaId || !reuniao.eventoId) return 'sem-evento';
   if (!reuniao.futura) return 'passada';
-  if (reuniao.cor) return 'ja-tem-cor';
+  if (reuniao.cor) {
+    if (reuniao.cor !== c) await anotarPintura(reuniao, 'ja-tem-cor');
+    return 'ja-tem-cor';
+  }
   const chave = `google:pintado:${reuniao.eventoId}`;
   if (await db.cacheGet(chave)) return 'ja-tem-cor';
   const token = await tokenDeAcesso();
@@ -241,10 +247,49 @@ async function pintarReuniao(reuniao, cor) {
     { method: 'PATCH', headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' }, body: JSON.stringify({ colorId: c }) }
   );
   // 403: a conta conectada só pode VER esta agenda (ou a conexão é antiga, só de leitura).
-  if (r.status === 403 || r.status === 401) return 'sem-permissao';
-  if (!r.ok) throw new Error(`O Google Agenda não deixou mudar a cor (${r.status}).`);
+  if (r.status === 403 || r.status === 401) {
+    // O Google diz qual dos dois: falta de escopo na conexão, ou agenda compartilhada só para ver.
+    const erro = r.corpo && typeof r.corpo.error === 'object' && r.corpo.error ? r.corpo.error : {};
+    const razao = [erro.status, erro.message, ...(Array.isArray(erro.errors) ? erro.errors.map((x) => x && x.reason) : [])].join(' ');
+    await anotarPintura(reuniao, 'sem-permissao', r.status === 401 || /insufficient|scope/i.test(razao) ? 'conexao' : 'agenda');
+    return 'sem-permissao';
+  }
+  if (!r.ok) {
+    await anotarPintura(reuniao, 'erro', String(r.status));
+    throw new Error(`O Google Agenda não deixou mudar a cor (${r.status}).`);
+  }
   await db.cacheSet(chave, c, 6 * 3600);
+  await anotarPintura(reuniao, 'pintado');
   return 'pintado';
+}
+
+/**
+ * Guarda como foi a última tentativa de pintar, para o painel explicar por que a cor não mudou.
+ * Só o resultado e o nome da agenda: nada do lead. Não regrava o mesmo resultado do mesmo evento.
+ */
+async function anotarPintura(reuniao, resultado, motivo = '') {
+  try {
+    const marca = `${resultado}|${motivo}|${reuniao.eventoId}`;
+    if ((await db.cacheGet('google:pintura:ult')) === marca) return;
+    await db.cacheSet('google:pintura:ult', marca, 6 * 3600);
+    await db.setJson(CHAVE_PINTURA, { em: new Date().toISOString(), resultado, motivo, agenda: String(reuniao.closer || 'sua agenda').slice(0, 60) });
+  } catch (_) {
+    /* diagnóstico nunca atrapalha a ficha */
+  }
+}
+
+/** A conexão pode alterar eventos (pintar)? true/false, ou null quando não deu para saber. */
+async function alteraEventos() {
+  const pode = (escopo) => String(escopo || '').split(/\s+/).some((e) => e.endsWith('/auth/calendar') || e.endsWith('/auth/calendar.events'));
+  const g = await guardado();
+  if (g && g.escopo && !String(process.env.GOOGLE_REFRESH_TOKEN || '').trim()) return pode(g.escopo);
+  // Conexão feita antes de o escopo ser guardado: pergunta ao Google o que este acesso permite.
+  const token = await tokenDeAcesso().catch(() => '');
+  if (!token) return null;
+  const r = await google('https://oauth2.googleapis.com/tokeninfo', {
+    method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ access_token: token }),
+  }).catch(() => null);
+  return r && r.ok && r.corpo.scope ? pode(r.corpo.scope) : null;
 }
 
 /** Para o painel: está configurado? conectado? quantas agendas enxerga? */
@@ -254,7 +299,13 @@ async function status() {
   const saida = { configurado: configurado(), conectado, conectadoEm: (g && g.conectadoEm) || '', agendas: [] };
   if (saida.configurado && conectado) {
     try {
-      saida.agendas = (await agendas()).map((a) => a.nome);
+      const lista = await agendas();
+      saida.agendas = lista.map((a) => a.nome);
+      // Para explicar a cor que não mudou: a conexão altera eventos? em quais agendas a conta só pode ver?
+      saida.alteraEventos = await alteraEventos();
+      saida.soLeitura = lista.filter((a) => !a.escreve).map((a) => a.nome);
+      const ult = await db.getJson(CHAVE_PINTURA, null).catch(() => null);
+      saida.ultimaPintura = ult && ult.resultado ? ult : null;
     } catch (e) {
       saida.erro = e.message;
     }

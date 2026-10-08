@@ -35,6 +35,9 @@ let nEv = 0;
 const ev = (summary, inicio, convidados = [], extra = {}) => ({ id: 'ev' + ++nEv, summary, start: { dateTime: inicio }, attendees: convidados.map((email) => ({ email })), ...extra });
 const pinturas = [];
 let podePintar = true;
+const ESCOPO_COMPLETO = 'https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/calendar.events';
+let escopoDoToken = ESCOPO_COMPLETO;
+let erro403 = { error: 'forbidden' };
 const EVENTOS = {
   'vitor@pronix.com': [
     ev('Diagnóstico Pronix — Giumar Pedroso', '2026-10-06T14:00:00-03:00', ['giumar@exemplo.com', 'vitor@pronix.com']),
@@ -66,6 +69,7 @@ global.fetch = async (url, opts = {}) => {
   chamadas.push({ url: u.origin + u.pathname, q: u.searchParams.get('q'), auth: (opts.headers || {}).Authorization || '', corpo: String(opts.body || '') });
   if (u.hostname === 'oauth2.googleapis.com') {
     const b = new URLSearchParams(String(opts.body));
+    if (u.pathname === '/tokeninfo') return json({ scope: escopoDoToken });
     assert.equal(b.get('client_secret'), SEGREDO);
     if (b.get('grant_type') === 'authorization_code') return b.get('code') === 'codigo-bom' ? json({ refresh_token: REFRESH, access_token: 'acesso-1', expires_in: 3600 }) : json({ error: 'invalid_grant' }, 400);
     return refreshValido && b.get('refresh_token') === REFRESH ? json({ access_token: 'acesso-1', expires_in: 3600 }) : json({ error: 'invalid_grant' }, 400);
@@ -75,7 +79,7 @@ global.fetch = async (url, opts = {}) => {
     if (u.pathname.endsWith('/users/me/calendarList')) return json({ items: AGENDAS });
     const pm = /\/calendars\/([^/]+)\/events\/([^/]+)$/.exec(u.pathname);
     if (pm && opts.method === 'PATCH') {
-      if (!podePintar) return json({ error: 'forbidden' }, 403);
+      if (!podePintar) return json(erro403, 403);
       const corpo = JSON.parse(opts.body);
       pinturas.push({ agenda: decodeURIComponent(pm[1]), evento: pm[2], corpo });
       const alvo = (EVENTOS[decodeURIComponent(pm[1])] || []).find((e) => e.id === pm[2]);
@@ -209,6 +213,28 @@ test('pintar: a reunião futura do lead ganha a cor do pré-vendedor; evento que
   const remarcou = await agendaGoogle.reuniaoDoLead({ emails: ['remarcou@exemplo.com'] }, AGORA);
   assert.equal(await agendaGoogle.pintarReuniao(remarcou, '5'), 'sem-permissao');
   podePintar = true;
+});
+
+test('painel explica por que a cor não mudou: conexão só de leitura, agenda só para ver, cor não escolhida e a última tentativa', async () => {
+  let s = (await chamar('GET', '/api/master/google', undefined, E.master)).json;
+  assert.equal(s.alteraEventos, true);
+  assert.deepEqual(s.soLeitura, ['Vitor Augusto', 'Paulo Henrique'], 'agendas compartilhadas só para ver');
+  assert.equal(s.suaCor, '', 'o master ainda não escolheu a cor');
+  assert.deepEqual([s.ultimaPintura.resultado, s.ultimaPintura.motivo, s.ultimaPintura.agenda], ['sem-permissao', 'agenda', 'Paulo Henrique']);
+  assert.ok(!JSON.stringify(s.ultimaPintura).includes('Remarcou'), 'nada do lead fica guardado');
+
+  // conexão antiga, feita só com leitura: o Google recusa por falta de escopo
+  escopoDoToken = 'https://www.googleapis.com/auth/calendar.readonly';
+  erro403 = { error: { status: 'PERMISSION_DENIED', errors: [{ reason: 'insufficientPermissions' }] } };
+  podePintar = false;
+  const lead = await agendaGoogle.reuniaoDoLead({ nome: 'Marcos Pereira Lima' }, AGORA);
+  assert.equal(await agendaGoogle.pintarReuniao(lead, '5'), 'sem-permissao');
+  podePintar = true;
+  s = (await chamar('GET', '/api/master/google', undefined, E.master)).json;
+  assert.equal(s.alteraEventos, false);
+  assert.equal(s.ultimaPintura.motivo, 'conexao');
+  escopoDoToken = ESCOPO_COMPLETO;
+  erro403 = { error: 'forbidden' };
 });
 
 test('ao abrir a conversa: quem tem cor escolhida em Acessos pinta a reunião do lead; quem não tem, não', async () => {
