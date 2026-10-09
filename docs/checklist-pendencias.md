@@ -132,7 +132,7 @@ Para testar a 1.5.3 (além da lista abaixo):
   - [ ] Instagram: gerar 1 report numa conversa longa (e, se der, com áudio). Se faltar mensagem, mandar as linhas `[CR-instagram v1.5.3]` do console (F12)
   - [ ] Ouvir um áudio normalmente depois do report (o som tem que funcionar)
 - [ ] Enviar `PRONIX-extensao-loja.zip` (1.5.3) à Chrome Web Store
-  - [ ] A permissão de hosts diminuiu (só `report-closer.vercel.app`): a loja pode pedir uma justificativa curta
+  - [ ] A permissão de hosts diminuiu (só `report-pronix.vercel.app`): a loja pode pedir uma justificativa curta
   - [ ] Conferir a declaração de privacidade da loja com a política nova
 - [ ] Confirmar `GROQ_API_KEY` na Vercel e testar 1 print (aba manual) e 1 print bem comprido
 - [ ] Mandar a lista limpa de closers (nome completo + e-mail) para cadastrar todos de uma vez

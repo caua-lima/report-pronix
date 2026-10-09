@@ -1348,7 +1348,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 // Na Vercel o app é exportado (api/index.js) e a plataforma cuida da porta.
 if (require.main === module) {
   app.listen(PORT, () => {
-    console.log(`⚡ PRONIX Closer Report em http://localhost:${PORT}`);
+    console.log(`⚡ Report PRONIX em http://localhost:${PORT}`);
     console.log(`   Dashboard (report, acessos e números): http://localhost:${PORT}`);
     console.log(`   Dados: ${db.usandoRedis ? 'Redis (KV)' : 'arquivo local (data/)'}`);
     console.log(`   Transcrição: ${process.env.GROQ_API_KEY ? 'Groq (API)' : 'Whisper local (Python)'}`);

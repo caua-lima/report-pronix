@@ -1,5 +1,5 @@
 {
-  "name": "report-closer",
+  "name": "report-pronix",
   "version": "2.0.0",
   "description": "Extensão do Chrome + servidor local que lê a conversa aberta no WhatsApp Web e gera um relatório de handoff de pré-vendas em .docx.",
   "type": "commonjs",

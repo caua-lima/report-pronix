@@ -1,4 +1,4 @@
-# PRONIX · Closer Report
+# Report PRONIX
 
 Extensão do Chrome + servidor que transformam a conversa de prospecção em um **relatório de
 handoff em PDF** para o closer — com um clique, direto do **WhatsApp Web** ou do **Instagram

@@ -38,7 +38,7 @@ Servidor/painel: só `git push origin main`.
 
 Você pediu para fazer tudo; onde a decisão era necessária, escolhi o mais seguro e deixei anotado:
 
-1. **Domínio de produção:** `report-closer.vercel.app` (é o que já está no popup e no README). Se houver outro domínio em uso, avise.
+1. **Domínio de produção:** `report-pronix.vercel.app` (é o que já está no popup e no README). Se houver outro domínio em uso, avise.
 2. **SDR reabre os próprios PDFs:** sim, só os dele; o admin abre qualquer um; de outra pessoa responde "não encontrado".
 3. **Retenção de PDFs:** sem prazo automático (ficam até o admin excluir), como já era, e descrito na política de privacidade.
 4. **Cache de transcrição:** 24h, só o texto, chaveado por hash do áudio; descrito na política de privacidade. `TRANSCRIPTION_CACHE_TTL_SEG=0` desliga.

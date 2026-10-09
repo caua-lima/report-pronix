@@ -727,7 +727,7 @@
 
     if (mensagens.length === 0) {
       const diag = diagnostico();
-      console.log('[Closer Report] Nenhuma mensagem lida. Diagnóstico:', diag);
+      console.log('[Report PRONIX] Nenhuma mensagem lida. Diagnóstico:', diag);
       throw new Error('Nenhuma mensagem lida. Diag: ' + JSON.stringify(diag));
     }
 
@@ -743,7 +743,7 @@
     logA(`remetentes: ${stats.doVendedor} do vendedor, ${stats.doLead} do lead (estratégia de leitura ${_estrategiaMsg})`);
 
     console.log(
-      `[Closer Report] ${stats.total} mensagens lidas — ` +
+      `[Report PRONIX] ${stats.total} mensagens lidas — ` +
         `${stats.audios} áudios (${stats.audiosTranscritos} com transcrição).`
     );
     // O nome vem do INÍCIO da leitura: lido no fim, podia ser o de outra conversa aberta enquanto os áudios transcreviam.

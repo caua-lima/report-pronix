@@ -1,4 +1,4 @@
-# PRONIX · Closer Report — guia do SDR
+# Report PRONIX — guia do SDR
 
 Como instalar e usar a extensão que lê a conversa do WhatsApp (ou do Instagram Direct) e gera o report de handoff em PDF.
 
