@@ -9,7 +9,7 @@ const { webcrypto } = require('node:crypto');
 const { esperar, dormir } = require('./helpers/dom');
 
 const RAIZ = path.join(__dirname, '..');
-const SERVER = 'https://report-closer.vercel.app';
+const SERVER = 'https://report-pronix.vercel.app';
 
 async function impressao(chave) {
   const buf = await webcrypto.subtle.digest('SHA-256', new TextEncoder().encode(chave));

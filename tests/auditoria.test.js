@@ -180,18 +180,18 @@ function carregarBackground(store, respostas = {}) {
 }
 
 test('A13: o background ignora o server da mensagem e usa o salvo no popup', async () => {
-  const { chamadas, enviar } = carregarBackground({ chave: 'pnx_abc', server: 'https://report-closer.vercel.app/' });
+  const { chamadas, enviar } = carregarBackground({ chave: 'pnx_abc', server: 'https://report-pronix.vercel.app/' });
   const r = await enviar({ action: 'transcreverAudio', server: 'https://evil.example', base64: 'AA' });
   assert.equal(r.ok, true);
   assert.equal(chamadas.length, 1);
-  assert.equal(chamadas[0].url, 'https://report-closer.vercel.app/api/transcrever');
+  assert.equal(chamadas[0].url, 'https://report-pronix.vercel.app/api/transcrever');
   assert.equal(chamadas[0].opts.headers['x-cr-key'], 'pnx_abc');
 });
 
 test('A13: sem server salvo usa o padrão; localhost http é aceito para testes locais', async () => {
   let ctx = carregarBackground({ chave: 'k' });
   await ctx.enviar({ action: 'reportFetch', server: 'https://evil.example', mensagens: [], nome: 'n' });
-  assert.equal(ctx.chamadas[0].url, 'https://report-closer.vercel.app/api/report-direto');
+  assert.equal(ctx.chamadas[0].url, 'https://report-pronix.vercel.app/api/report-direto');
 
   ctx = carregarBackground({ chave: 'k', server: 'http://localhost:3000' });
   await ctx.enviar({ action: 'reportFetch', mensagens: [], nome: 'n' });
@@ -273,7 +273,7 @@ test('automação: o service worker manda só a etiqueta e a data do agendamento
     mensagens: [{ content: 'texto da conversa' }], server: 'https://evil.example',
   });
   assert.deepEqual(JSON.parse(JSON.stringify(r)), { ok: true, marca });
-  assert.equal(chamadas[0].url, 'https://report-closer.vercel.app/api/lead/marca');
+  assert.equal(chamadas[0].url, 'https://report-pronix.vercel.app/api/lead/marca');
   assert.deepEqual(JSON.parse(chamadas[0].opts.body), { telefone: '5571999998888', nome: 'Marcos', agendadoPara: '2026-10-08T15:00', fonteTs: 5, regra: 2 });
 
   await enviar({ action: 'leadMarca', telefone: '5571999998888', qualificado: false, manual: true });
@@ -286,7 +286,7 @@ test('automação: "lead respondeu" vai para a rota de mover o card, só com a i
   const { chamadas, enviar } = carregarBackground({ chave: 'k' }, { corpo: { movido: true, de: 'Contato iniciado', para: 'Respondeu' } });
   const r = await enviar({ action: 'crmRespondeu', telefone: '5571999998888', nome: '', contatoId: '', dealId: 'd1', mensagens: [{ content: 'x' }] });
   assert.deepEqual(JSON.parse(JSON.stringify(r)), { ok: true, movido: true, de: 'Contato iniciado', para: 'Respondeu', motivo: '' });
-  assert.equal(chamadas[0].url, 'https://report-closer.vercel.app/api/crm/respondeu');
+  assert.equal(chamadas[0].url, 'https://report-pronix.vercel.app/api/crm/respondeu');
   assert.equal(chamadas[0].opts.method, 'POST');
   assert.deepEqual(JSON.parse(chamadas[0].opts.body), { telefone: '5571999998888', nome: '', contatoId: '', dealId: 'd1' });
 

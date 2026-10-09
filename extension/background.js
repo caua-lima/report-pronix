@@ -1,7 +1,7 @@
 // Service worker — faz as chamadas ao servidor pelo content script.
 // (Fetch a partir da página do WhatsApp seria bloqueado pela CSP dela.)
 
-const DEFAULT_SERVER = 'https://report-closer.vercel.app';
+const DEFAULT_SERVER = 'https://report-pronix.vercel.app';
 
 const getChave = () =>
   new Promise((r) => chrome.storage.local.get({ chave: '' }, (c) => r((c.chave || '').trim())));

@@ -25,7 +25,7 @@ function criarApi(padroes = {}) {
     contar: (chave) => pedidos.filter((p) => p.chave === chave).length,
     corpos: (chave) => pedidos.filter((p) => p.chave === chave).map((p) => p.corpo),
     async rota(url, opts = {}) {
-      const u = new URL(url, 'https://report-closer.vercel.app');
+      const u = new URL(url, 'https://report-pronix.vercel.app');
       const chave = `${(opts.method || 'GET').toUpperCase()} ${u.pathname}`;
       const corpo = opts.body ? JSON.parse(opts.body) : undefined;
       pedidos.push({ chave, corpo, query: u.searchParams });
@@ -76,7 +76,7 @@ function abrirPainel(api, { hash = '', chave = CHAVE_ANA, session = {} } = {}) {
   const vc = new VirtualConsole();
   vc.on('jsdomError', (e) => erros.push(e.message));
   const dom = new JSDOM(HTML, {
-    url: 'https://report-closer.vercel.app/' + hash,
+    url: 'https://report-pronix.vercel.app/' + hash,
     runScripts: 'dangerously',
     pretendToBeVisual: true,
     virtualConsole: vc,

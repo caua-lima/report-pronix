@@ -2,7 +2,7 @@
 
 const $ = (id) => document.getElementById(id);
 // A equipe usa a nuvem: só cola a chave. Trocar para http://localhost:3000 ao testar local.
-const DEFAULT_SERVER = 'https://report-closer.vercel.app';
+const DEFAULT_SERVER = 'https://report-pronix.vercel.app';
 
 // txt é texto puro (nome, erro de servidor etc. nunca viram HTML). Passe html:true
 // só com HTML que você mesmo montou, escapando o que vem de fora.
