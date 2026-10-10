@@ -420,4 +420,8 @@ async function gerarPdf(dados, jid) {
   return caminho;
 }
 
-module.exports = { gerarPdf, gerarPdfBuffer, renderizarPdf };
+// "visual": o desenho da casa, para os outros PDFs (ver src/afinidadePdf.js) saírem iguais.
+module.exports = {
+  gerarPdf, gerarPdfBuffer, renderizarPdf,
+  visual: { desenharMarca, tituloSecao, faixaNoTopo, bullet, novaPaginaSePreciso, semEmoji, OURO, OURO_ESC, MARCA, PRETO, CLARO, BORDA, TEXTO, VERDE, MARGIN },
+};
