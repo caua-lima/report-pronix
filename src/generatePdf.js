@@ -10,29 +10,51 @@ const { infoDoNivel, mostrarConsciencia, NIVEIS } = require('./consciencia');
 
 const OUTPUT_DIR = path.join(__dirname, '..', 'output');
 
-// Cores PRONIX: preto + dourado.
-const OURO = '#ffc400';
-const OURO_ESC = '#a67c00'; // dourado legível sobre fundo claro
-const PRETO = '#121214';
-const CLARO = '#faf9f5';
-const BORDA = '#e6e2d6';
-const TEXTO = '#1f2937';
+// Sistema visual do Report PRONIX no papel: tinta, âmbar e marca-texto (o mesmo do painel e da extensão).
+const OURO = '#ffb800';
+const OURO_ESC = '#8a5d00'; // âmbar legível sobre fundo claro
+const MARCA = '#ffdf8a'; // o risco de marca-texto atrás dos títulos
+const PRETO = '#18171b';
+const CLARO = '#f7f2e7';
+const BORDA = '#e2dbc9';
+const TEXTO = '#2b2925';
+const VERDE = '#1fbf5c';
 const MARGIN = 46;
 
-// Raio da marca PRONIX (espaço 0..30).
-const RAIO = [
-  [18.2, 2.5], [8.5, 16.8], [14.2, 16.8], [11.6, 27.5], [21.5, 12.6], [15.8, 12.6],
-];
-function desenharRaio(doc, x, y, tam, cor) {
-  const s = tam / 30;
-  doc.save().fillColor(cor);
-  RAIO.forEach(([px, py], i) => {
-    const X = x + px * s;
-    const Y = y + py * s;
-    if (i === 0) doc.moveTo(X, Y);
-    else doc.lineTo(X, Y);
+/** A marca: folha de relatório com o selo de "pronto", no quadrado âmbar (desenhada num espaço 0..128). */
+function desenharMarca(doc, x, y, tam) {
+  const s = tam / 128;
+  const p = (px, py) => [x + px * s, y + py * s];
+  doc.save();
+  doc.roundedRect(x, y, tam, tam, 28 * s).fill(OURO);
+  doc.polygon(p(34, 22), p(72, 22), p(92, 42), p(92, 106), p(34, 106)).fill(PRETO);
+  doc.polygon(p(72, 22), p(92, 42), p(72, 42)).fill('#45424b');
+  doc.lineWidth(7 * s).lineCap('round').strokeColor(OURO);
+  [[46, 56, 80], [46, 72, 74], [46, 88, 62]].forEach(([x0, yy, x1]) => {
+    doc.moveTo(...p(x0, yy)).lineTo(...p(x1, yy)).stroke();
   });
-  doc.closePath().fill();
+  doc.circle(...p(92, 96), 26 * s).fill(OURO);
+  doc.circle(...p(92, 96), 21 * s).fill(VERDE);
+  doc.lineJoin('round').strokeColor('#ffffff')
+    .moveTo(...p(81, 97)).lineTo(...p(89, 105)).lineTo(...p(103, 88)).stroke();
+  doc.restore();
+}
+
+/** Título de seção com o marca-texto atrás (ocupa a mesma altura do título sublinhado de antes). */
+function tituloSecao(doc, texto) {
+  doc.font('Helvetica-Bold').fontSize(12.5);
+  const y = doc.y;
+  const w = Math.min(doc.widthOfString(texto), doc.page.width - MARGIN * 2);
+  doc.save().rect(MARGIN - 2, y + 6, w + 4, 7).fill(MARCA).restore();
+  doc.fillColor(PRETO).text(texto, MARGIN, y);
+  doc.moveDown(0.55);
+}
+
+/** Faixa âmbar no topo de um cartão arredondado (recortada pelo próprio canto do cartão). */
+function faixaNoTopo(doc, y0, larg, altura) {
+  doc.save();
+  doc.roundedRect(MARGIN, y0, larg, altura, 9).clip();
+  doc.rect(MARGIN, y0, larg, 3.5).fill(OURO);
   doc.restore();
 }
 
@@ -60,7 +82,7 @@ function bullet(doc, marcador, texto, x, largura) {
   const y = doc.y;
   const wMarc = 18;
   doc.font('Helvetica-Bold').fillColor(OURO_ESC).text(marcador, x, y, { width: wMarc });
-  doc.font('Helvetica').fillColor('#1f2937').text(texto, x + wMarc, y, {
+  doc.font('Helvetica').fillColor(TEXTO).text(texto, x + wMarc, y, {
     width: largura - wMarc,
     paragraphGap: 2,
   });
@@ -75,13 +97,14 @@ function render(doc, dados) {
   const dataStr = new Date().toLocaleDateString('pt-BR');
   const larg = doc.page.width - MARGIN * 2;
 
-  // ---- Cabeçalho (faixa preta + raio dourado) ----
+  // ---- Cabeçalho (faixa de tinta, a marca e um fio de âmbar fechando a faixa) ----
   doc.save().rect(0, 0, doc.page.width, 84).fill(PRETO).restore();
-  desenharRaio(doc, MARGIN, 26, 32, OURO);
-  const tx = MARGIN + 42;
+  doc.save().rect(0, 81, doc.page.width, 3).fill(OURO).restore();
+  desenharMarca(doc, MARGIN, 22, 38);
+  const tx = MARGIN + 50;
   doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(18).text('HANDOFF DE PRÉ-VENDAS', tx, 24);
   doc.font('Helvetica-Bold').fontSize(12).fillColor(OURO).text(company, tx, 48, { continued: true })
-    .font('Helvetica').fontSize(10.5).fillColor('#c9ced6').text(`     SDR: ${sdr}     ·     ${dataStr}`);
+    .font('Helvetica').fontSize(10.5).fillColor('#d5d0c5').text(`     SDR: ${sdr}     ·     ${dataStr}`);
   doc.y = 104;
   doc.x = MARGIN;
 
@@ -104,8 +127,7 @@ function render(doc, dados) {
     novaPaginaSePreciso(doc, alturaCartao + 10);
     const y0 = doc.y;
     doc.save().roundedRect(MARGIN, y0, larg, alturaCartao, 9).fillAndStroke(CLARO, BORDA).restore();
-    // faixa dourada na lateral esquerda (marca)
-    doc.save().rect(MARGIN + 1, y0 + 1, 4, alturaCartao - 2).fill(OURO).restore();
+    faixaNoTopo(doc, y0, larg, alturaCartao);
     let y = y0 + pad;
     linhas.forEach(([rot, val], i) => {
       doc.font('Helvetica-Bold').fontSize(10).fillColor(PRETO).text(String(rot), MARGIN + pad + 4, y, { width: wLabel });
@@ -148,7 +170,7 @@ function render(doc, dados) {
     novaPaginaSePreciso(doc, h + 12);
     const y0 = doc.y;
     doc.save().roundedRect(MARGIN, y0, larg, h, 9).fill(PRETO).restore();
-    doc.save().rect(MARGIN + 1, y0 + 1, 4, h - 2).fill(OURO).restore();
+    faixaNoTopo(doc, y0, larg, h);
     let y = y0 + pad;
 
     if (verConsciencia) {
@@ -159,14 +181,14 @@ function render(doc, dados) {
       const gap = 4;
       const wSeg = (Math.min(wTxt, 260) - gap * (NIVEIS.length - 1)) / NIVEIS.length;
       NIVEIS.forEach((n, i) => {
-        const cor = n.numero <= info.numero ? OURO : '#3a3a42';
+        const cor = n.numero <= info.numero ? OURO : '#45424b';
         doc.save().roundedRect(xIn + i * (wSeg + gap), y + 2, wSeg, 6, 3).fill(cor).restore();
       });
       y += 16;
       doc.font('Helvetica-Bold').fontSize(12).fillColor('#ffffff').text(info.rotulo, xIn, y, { width: wTxt });
       y = doc.y + 2;
       if (porque) {
-        doc.font('Helvetica').fontSize(10).fillColor('#d6d3cb').text(porque, xIn, y, { width: wTxt });
+        doc.font('Helvetica').fontSize(10).fillColor('#d5d0c5').text(porque, xIn, y, { width: wTxt });
         y = doc.y + 4;
       }
     }
@@ -189,11 +211,8 @@ function render(doc, dados) {
   const conversa = (dados.conversa || []).filter(Boolean);
   if (conversa.length) {
     novaPaginaSePreciso(doc, 60);
-    doc.font('Helvetica-Bold').fontSize(12.5).fillColor('#0f172a').text('Como foi a conversa', MARGIN, doc.y);
-    const lyC = doc.y + 1.5;
-    doc.save().moveTo(MARGIN, lyC).lineTo(MARGIN + 44, lyC).lineWidth(2).strokeColor(OURO).stroke().restore();
-    doc.moveDown(0.55);
-    doc.font('Helvetica').fontSize(10.5).fillColor('#111827');
+    tituloSecao(doc, 'Como foi a conversa');
+    doc.font('Helvetica').fontSize(10.5).fillColor(TEXTO);
     conversa.forEach((item) => {
       novaPaginaSePreciso(doc, 26);
       bullet(doc, '•', semEmoji(item), MARGIN, larg);
@@ -205,11 +224,8 @@ function render(doc, dados) {
   // ---- Seções ----
   (dados.secoes || []).forEach((secao) => {
     novaPaginaSePreciso(doc, 60);
-    doc.font('Helvetica-Bold').fontSize(12.5).fillColor('#0f172a').text(semEmoji(secao.titulo), MARGIN, doc.y);
-    const ly = doc.y + 1.5;
-    doc.save().moveTo(MARGIN, ly).lineTo(MARGIN + 44, ly).lineWidth(2).strokeColor(OURO).stroke().restore();
-    doc.moveDown(0.55);
-    doc.font('Helvetica').fontSize(10.5).fillColor('#111827');
+    tituloSecao(doc, semEmoji(secao.titulo));
+    doc.font('Helvetica').fontSize(10.5).fillColor(TEXTO);
     (secao.itens || []).forEach((item, i) => {
       novaPaginaSePreciso(doc, 26);
       bullet(doc, secao.numerada ? `${i + 1}.` : '•', String(item), MARGIN, larg);
@@ -221,14 +237,11 @@ function render(doc, dados) {
   // ---- Nas palavras do lead (citações) ----
   if (Array.isArray(dados.citacoes) && dados.citacoes.length) {
     novaPaginaSePreciso(doc, 60);
-    doc.font('Helvetica-Bold').fontSize(12.5).fillColor('#0f172a').text('Nas palavras do lead', MARGIN, doc.y);
-    const ly = doc.y + 1.5;
-    doc.save().moveTo(MARGIN, ly).lineTo(MARGIN + 44, ly).lineWidth(2).strokeColor(OURO).stroke().restore();
-    doc.moveDown(0.55);
+    tituloSecao(doc, 'Nas palavras do lead');
     dados.citacoes.forEach((c) => {
       novaPaginaSePreciso(doc, 30);
       const y0 = doc.y;
-      doc.font('Helvetica-Oblique').fontSize(10.5).fillColor('#334155')
+      doc.font('Helvetica-Oblique').fontSize(10.5).fillColor('#4d4a45')
         .text(`“${c}”`, MARGIN + 14, y0, { width: larg - 14, paragraphGap: 5 });
       doc.save().rect(MARGIN, y0, 3, doc.y - y0 - 5).fill(OURO).restore();
     });
@@ -244,7 +257,7 @@ function render(doc, dados) {
     const wTxt = larg - 30;
     const h = doc.heightOfString(`“${dados.frase_impacto}”`, { width: wTxt });
     doc.save().roundedRect(MARGIN, y0, larg, h + 24, 9).fill(PRETO).restore();
-    doc.save().rect(MARGIN + 1, y0 + 1, 4, h + 22).fill(OURO).restore();
+    faixaNoTopo(doc, y0, larg, h + 24);
     doc.font('Helvetica-Oblique').fontSize(11.5).fillColor(OURO)
       .text(`“${dados.frase_impacto}”`, MARGIN + 15, y0 + 12, { width: wTxt });
     doc.y = y0 + h + 24;
@@ -284,10 +297,10 @@ function render(doc, dados) {
     novaPaginaSePreciso(doc, alturaCartao + 12);
     const y0 = doc.y;
     doc.save().roundedRect(MARGIN, y0, larg, alturaCartao, 9).fillAndStroke(CLARO, BORDA).restore();
-    doc.save().rect(MARGIN + 1, y0 + 1, 4, alturaCartao - 2).fill(OURO).restore();
+    faixaNoTopo(doc, y0, larg, alturaCartao);
     doc.font('Helvetica-Bold').fontSize(8.5).fillColor(OURO_ESC)
       .text('COMO INICIAR A REUNIÃO', MARGIN + pad + 4, y0 + pad, { width: wTxt, characterSpacing: 0.5 });
-    doc.font('Helvetica-Oblique').fontSize(10.5).fillColor('#1f2937')
+    doc.font('Helvetica-Oblique').fontSize(10.5).fillColor(TEXTO)
       .text(`“${dados.abertura}”`, MARGIN + pad + 4, doc.y + 6, { width: wTxt, lineGap: 1.5 });
 
     if (pontosChave.length) {
@@ -299,7 +312,7 @@ function render(doc, dados) {
       pontosChave.forEach((p) => {
         doc.font('Helvetica-Bold').fontSize(8.5).fillColor(OURO_ESC)
           .text(`${p.rotulo}: `, MARGIN + pad + 4, doc.y, { continued: true, width: wTxt });
-        doc.font('Helvetica').fontSize(8.5).fillColor('#44403c').text(p.valor, { width: wTxt, lineGap: 1 });
+        doc.font('Helvetica').fontSize(8.5).fillColor('#4d4a45').text(p.valor, { width: wTxt, lineGap: 1 });
         doc.moveDown(0.15);
       });
     }
@@ -380,7 +393,7 @@ function renderizarPdf(dados) {
           yRod + 7,
           { width: doc.page.width - MARGIN * 2, align: 'left', lineBreak: false }
         );
-        doc.font('Helvetica').fontSize(8).fillColor('#8b8b95').text(
+        doc.font('Helvetica').fontSize(8).fillColor('#8f8a7f').text(
           `Handoff de pré-vendas  ·  SDR: ${sdr}  ·  ${i + 1}/${range.count}`,
           MARGIN,
           yRod + 7,
