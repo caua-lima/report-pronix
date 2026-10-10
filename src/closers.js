@@ -51,4 +51,33 @@ async function porId(id) {
   return (await ler()).closers.find((c) => c.id === id) || null;
 }
 
-module.exports = { listar, criar, remover, porId };
+const MAX_INTELIGENCIA = 8000;
+const MAX_APELIDO = 20;
+
+/** Como o botão chama o closer ("Esse lead é bom para o PH?"): o apelido ou o primeiro nome. */
+const apelidoDe = (c) => (c && (c.apelido || String(c.nome || '').trim().split(/\s+/)[0])) || '';
+
+/**
+ * Inteligência do closer: o que as calls dele ensinaram (com que tipo de lead fecha, como conduz,
+ * onde trava). É texto destilado, sem nome nem dado de lead — é o que alimenta a análise de
+ * afinidade (src/afinidade.js). Texto vazio desliga a análise para este closer.
+ */
+async function definirInteligencia(id, { apelido, inteligencia } = {}) {
+  const dados = await ler();
+  const c = dados.closers.find((x) => x.id === id);
+  if (!c) return null;
+  if (apelido !== undefined) c.apelido = String(apelido || '').replace(/\s+/g, ' ').trim().slice(0, MAX_APELIDO);
+  if (inteligencia !== undefined) {
+    c.inteligencia = String(inteligencia || '').replace(/\r\n/g, '\n').trim().slice(0, MAX_INTELIGENCIA);
+    c.inteligenciaEm = c.inteligencia ? new Date().toISOString() : '';
+  }
+  await db.setJson(CHAVE_DB, dados);
+  return c;
+}
+
+/** Closers com análise de afinidade disponível (só id, nome e apelido — a inteligência não sai daqui). */
+async function comAnalise() {
+  return (await listar()).filter((c) => c.inteligencia).map((c) => ({ id: c.id, nome: c.nome, apelido: apelidoDe(c) }));
+}
+
+module.exports = { listar, criar, remover, porId, definirInteligencia, comAnalise, apelidoDe, MAX_INTELIGENCIA };

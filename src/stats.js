@@ -410,6 +410,30 @@ async function atualizarResultado(id, campos = {}, { versaoEsperada } = {}) {
   return achou ? { versao } : false;
 }
 
+/**
+ * Guarda no report a nota de afinidade com um closer (a última pedida). Não mexe na versão do
+ * resultado: é anotação da análise, não edição do master. Serve para, depois, comparar a nota
+ * com o que a reunião deu.
+ */
+async function anotarAfinidade(id, afinidade) {
+  if (!id || !afinidade) return false;
+  const nota = Math.round(Number(afinidade.nota));
+  if (!Number.isFinite(nota)) return false;
+  return db.atualizarNaLista(
+    CHAVE_DB,
+    (r) => r.id === id,
+    (r) => ({
+      ...r,
+      afinidade: {
+        closerId: String(afinidade.closerId || '').slice(0, 40),
+        closerNome: String(afinidade.closerNome || '').slice(0, 80),
+        nota: Math.max(0, Math.min(10, nota)),
+        em: new Date().toISOString(),
+      },
+    })
+  );
+}
+
 /** Consumo de IA que não é report (resumo rápido do cartão): entra no gasto, não na lista de reports. */
 async function registrarResumoRapido({ usuarioNome, uso }) {
   const quando = new Date().toISOString();
@@ -431,6 +455,6 @@ async function registrarResumoRapido({ usuarioNome, uso }) {
 }
 
 module.exports = {
-  registrar, resumo, listar, remover, buscarPorChave, buscarPorId, atualizarResultado, hojeStr, registrarResumoRapido,
+  registrar, resumo, listar, remover, buscarPorChave, buscarPorId, atualizarResultado, anotarAfinidade, hojeStr, registrarResumoRapido,
   RESULTADOS_VALIDOS, PRODUTOS_VALIDOS, valorEmReais, ehVenda, emDiaLocal,
 };
