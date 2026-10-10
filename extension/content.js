@@ -762,40 +762,40 @@
       el.id = BADGE_ID;
       el.style.cssText = [
         'position:fixed', 'bottom:20px', 'right:20px', 'z-index:2147483647',
-        'max-width:320px', 'background:#16212e', 'color:#e6edf3',
-        'border:1px solid #26333f', 'border-left:4px solid #25d366',
-        'border-radius:10px', 'padding:12px 14px', 'font:13px/1.45 -apple-system,Segoe UI,Roboto,sans-serif',
-        'box-shadow:0 6px 24px rgba(0,0,0,.4)', 'display:flex', 'gap:10px', 'align-items:flex-start',
+        'max-width:320px', 'background:#1a191c', 'color:#f3efe6',
+        'border:1px solid #3a373f', 'border-top:3px solid #3ddc84',
+        'border-radius:12px', 'padding:12px 14px', 'font:13px/1.45 Segoe UI Variable Text,Segoe UI,system-ui,-apple-system,Roboto,sans-serif',
+        'box-shadow:0 14px 34px rgba(0,0,0,.5)', 'display:flex', 'gap:10px', 'align-items:flex-start',
       ].join(';');
       document.body.appendChild(el);
     }
     return el;
   }
 
-  function mostrarBadge({ texto, cor = '#25d366', loading = false, arquivo = null, server = null, arquivoBase64 = null, botoes = [], aoEscolher = null, aoFechar = null }) {
+  function mostrarBadge({ texto, cor = '#3ddc84', loading = false, arquivo = null, server = null, arquivoBase64 = null, botoes = [], aoEscolher = null, aoFechar = null }) {
     const el = badgeEl();
-    el.style.borderLeftColor = cor;
+    el.style.borderTopColor = cor;
     const spinner = loading
       ? '<span style="flex:none;width:14px;height:14px;border:2px solid rgba(255,255,255,.25);border-top-color:#fff;border-radius:50%;display:inline-block;animation:crspin .8s linear infinite"></span>'
-      : '<span style="flex:none;display:flex">' + "<svg viewBox=\"0 0 24 24\" width=\"15\" height=\"15\" style=\"vertical-align:-2px;flex:none\" fill=\"none\" stroke=\"#ffc400\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect width=\"8\" height=\"4\" x=\"8\" y=\"2\" rx=\"1\"/><path d=\"M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2\"/></svg>" + '</span>';
+      : '<span style="flex:none;display:flex">' + "<svg viewBox=\"0 0 24 24\" width=\"15\" height=\"15\" style=\"vertical-align:-2px;flex:none\" fill=\"none\" stroke=\"#ffc233\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect width=\"8\" height=\"4\" x=\"8\" y=\"2\" rx=\"1\"/><path d=\"M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2\"/></svg>" + '</span>';
     let acao = '';
     if (arquivoBase64) {
       const url = 'data:application/pdf;base64,' + arquivoBase64;
       acao =
-        `<a href="${escHtml(url)}" download="${escHtml(arquivo || 'report.pdf')}" style="display:inline-block;margin-top:8px;background:#25d366;color:#05130c;` +
-        `font-weight:700;text-decoration:none;padding:6px 10px;border-radius:7px"><svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:-2px;flex:none" fill="none" stroke="#121214" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg> Baixar PDF</a>`;
+        `<a href="${escHtml(url)}" download="${escHtml(arquivo || 'report.pdf')}" style="display:inline-block;margin-top:8px;background:#3ddc84;color:#06180e;` +
+        `font-weight:700;text-decoration:none;padding:6px 10px;border-radius:7px"><svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:-2px;flex:none" fill="none" stroke="#18171b" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg> Baixar PDF</a>`;
     } else if (arquivo && server) {
       const url = server + '/api/download/' + encodeURIComponent(arquivo);
       acao =
-        `<a href="${escHtml(url)}" target="_blank" rel="noopener noreferrer" style="display:inline-block;margin-top:8px;background:#25d366;color:#05130c;` +
-        `font-weight:700;text-decoration:none;padding:6px 10px;border-radius:7px"><svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:-2px;flex:none" fill="none" stroke="#121214" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg> Baixar PDF</a>`;
+        `<a href="${escHtml(url)}" target="_blank" rel="noopener noreferrer" style="display:inline-block;margin-top:8px;background:#3ddc84;color:#06180e;` +
+        `font-weight:700;text-decoration:none;padding:6px 10px;border-radius:7px"><svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:-2px;flex:none" fill="none" stroke="#18171b" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg> Baixar PDF</a>`;
     }
     const htmlBotoes = botoes.length
       ? '<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">' +
         botoes
           .map(
             (b) =>
-              `<button type="button" data-cr-acao="${escHtml(b.acao)}" style="cursor:pointer;border:0;border-radius:7px;padding:6px 10px;font-weight:700;font-size:12px;background:${b.primario ? '#25d366' : '#26333f'};color:${b.primario ? '#05130c' : '#e6edf3'}">${escHtml(b.rotulo)}</button>`
+              `<button type="button" data-cr-acao="${escHtml(b.acao)}" style="cursor:pointer;border:0;border-radius:7px;padding:6px 10px;font-weight:700;font-size:12px;background:${b.primario ? '#3ddc84' : '#3a373f'};color:${b.primario ? '#06180e' : '#f3efe6'}">${escHtml(b.rotulo)}</button>`
           )
           .join('') +
         '</div>'
@@ -804,7 +804,7 @@
       (document.getElementById('crspin-style') ? '' : '<style id="crspin-style">@keyframes crspin{to{transform:rotate(360deg)}}</style>') +
       spinner +
       `<div style="flex:1"><div>${texto}</div>${acao}${htmlBotoes}</div>` +
-      `<span id="cr-x" style="flex:none;cursor:pointer;color:#8b98a5;font-size:15px;line-height:1">×</span>`;
+      `<span id="cr-x" style="flex:none;cursor:pointer;color:#a39e93;font-size:15px;line-height:1">×</span>`;
     el.querySelectorAll('[data-cr-acao]').forEach((b) => {
       b.onclick = () => {
         if (aoEscolher) aoEscolher(b.dataset.crAcao);
@@ -831,12 +831,12 @@
     const alvo = el.querySelector('div[style*="flex:1"]') || el;
     const caixa = document.createElement('div');
     caixa.id = 'cr-closer';
-    caixa.style.cssText = 'margin-top:10px;padding-top:8px;border-top:1px solid #26333f';
+    caixa.style.cssText = 'margin-top:10px;padding-top:8px;border-top:1px solid #3a373f';
     const rotulo = document.createElement('div');
-    rotulo.style.cssText = 'font-size:11px;color:#8b98a5;margin-bottom:4px';
+    rotulo.style.cssText = 'font-size:11px;color:#a39e93;margin-bottom:4px';
     rotulo.textContent = 'Closer desta reunião';
     const sel = document.createElement('select');
-    sel.style.cssText = 'width:100%;background:#0d141c;color:#e6edf3;border:1px solid #26333f;border-radius:7px;padding:6px;font-size:12.5px';
+    sel.style.cssText = 'width:100%;background:#121113;color:#f3efe6;border:1px solid #3a373f;border-radius:7px;padding:6px;font-size:12.5px';
     const sugerido = resp.sugestaoCloser && resp.sugestaoCloser.closerId;
     const opcao = (valor, texto) => {
       const o = document.createElement('option');
@@ -847,19 +847,19 @@
     opcao('', 'Escolher closer…');
     lista.forEach((c) => opcao(c.id, c.id === sugerido ? c.nome + ' (indicado)' : c.nome));
     const nota = document.createElement('div');
-    nota.style.cssText = 'font-size:11px;color:#8b98a5;margin-top:4px';
+    nota.style.cssText = 'font-size:11px;color:#a39e93;margin-top:4px';
     nota.textContent = sugerido ? resp.motivoSugestao || '' : '';
     sel.addEventListener('change', () => {
       sel.disabled = true;
-      nota.style.color = '#8b98a5';
+      nota.style.color = '#a39e93';
       nota.textContent = 'Salvando…';
       const fim = (r) => {
         sel.disabled = false;
         if (r && r.ok) {
-          nota.style.color = '#25d366';
+          nota.style.color = '#3ddc84';
           nota.textContent = sel.value ? 'Closer salvo: ' + (r.closerNome || '') : 'Closer removido.';
         } else {
-          nota.style.color = '#ff6b6b';
+          nota.style.color = '#ff6f5c';
           nota.textContent = (r && r.erro) || 'Não consegui salvar o closer.';
         }
       };
@@ -907,7 +907,7 @@
       botoes.push({ acao: 'gerar', rotulo: 'Gerar de novo (custo extra)', primario: !botoes.length });
       mostrarBadge({
         texto: `<b>Já existe um report igual</b> pra ${escHtml(existente.lead || 'este contato')}, gerado em ${escHtml(quando)}.`,
-        cor: '#f0ad4e',
+        cor: '#f2a93b',
         botoes,
         aoEscolher: resolve,
         aoFechar: () => resolve('cancelar'),
@@ -920,12 +920,12 @@
     mostrarBadge({ texto: 'Buscando o report existente…', loading: true });
     const r = await new Promise((res) => chrome.runtime.sendMessage({ action: 'baixarExistente', id: existente.id }, res));
     if (!r || !r.ok) {
-      mostrarBadge({ texto: escHtml((r && r.erro) || 'Não consegui abrir o report existente.'), cor: '#ff6b6b' });
+      mostrarBadge({ texto: escHtml((r && r.erro) || 'Não consegui abrir o report existente.'), cor: '#ff6f5c' });
       return;
     }
     mostrarBadge({
       texto: '<b>Report existente</b> — nenhuma IA foi usada.',
-      cor: '#25d366',
+      cor: '#3ddc84',
       arquivo: r.arquivo,
       arquivoBase64: r.arquivoBase64,
     });
@@ -937,11 +937,11 @@
   const remetenteSuspeito = (s) => !!s && s.total >= 6 && (s.doVendedor === 0 || s.doLead === 0);
   function linhaRemetentes(s) {
     if (!s || !s.total || s.doVendedor == null) return '';
-    const base = `<span style="color:#8b98a5">${s.total} mensagens · ${s.doVendedor} suas · ${s.doLead} do lead</span><br>`;
+    const base = `<span style="color:#a39e93">${s.total} mensagens · ${s.doVendedor} suas · ${s.doLead} do lead</span><br>`;
     if (!remetenteSuspeito(s)) return base;
     return (
       base +
-      '<span style="color:#f0ad4e"><b>Confira o report:</b> ' +
+      '<span style="color:#f2a93b"><b>Confira o report:</b> ' +
       (s.doVendedor === 0 ? 'nenhuma mensagem sua' : 'nenhuma mensagem do lead') +
       ' foi reconhecida. Se estiver errado, copie o console (F12) e mande para o admin.</span><br>'
     );
@@ -951,7 +951,7 @@
 
   async function gerarReportEmBackground(server) {
     if (jobEmAndamento) {
-      mostrarBadge({ texto: 'Já existe um report sendo gerado…', cor: '#f0ad4e', loading: true });
+      mostrarBadge({ texto: 'Já existe um report sendo gerado…', cor: '#f2a93b', loading: true });
       return;
     }
     jobEmAndamento = true;
@@ -967,23 +967,23 @@
       });
       const { mensagens, nome, stats } = await coletarConversa(server, true);
       if (!mensagens.length) {
-        mostrarBadge({ texto: 'Nenhuma mensagem encontrada nesta conversa.', cor: '#ff6b6b' });
+        mostrarBadge({ texto: 'Nenhuma mensagem encontrada nesta conversa.', cor: '#ff6f5c' });
         jobEmAndamento = false;
         return;
       }
 
       const linhaAudio =
         stats.audios > 0
-          ? `<svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:-2px;flex:none" fill="none" stroke="#ffc400" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/></svg> ${stats.audios} áudio(s), ${stats.audiosTranscritos} com transcrição` +
+          ? `<svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:-2px;flex:none" fill="none" stroke="#ffc233" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/></svg> ${stats.audios} áudio(s), ${stats.audiosTranscritos} com transcrição` +
             (stats.audiosTranscritos < stats.audios
-              ? ' <span style="color:#8b98a5">(os demais entram como [áudio])</span>'
+              ? ' <span style="color:#a39e93">(os demais entram como [áudio])</span>'
               : '')
           : 'Sem áudios nesta conversa';
 
       mostrarBadge({
         texto:
           `<b>Gerando report…</b> (${stats.total} mensagens)<br>` +
-          `${linhaAudio}<br><svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:-2px;flex:none" fill="none" stroke="#25d366" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="m9 11 3 3L22 4"/></svg> Já pode responder outros leads.`,
+          `${linhaAudio}<br><svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:-2px;flex:none" fill="none" stroke="#3ddc84" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="m9 11 3 3L22 4"/></svg> Já pode responder outros leads.`,
         loading: true,
       });
 
@@ -1002,7 +1002,7 @@
       );
 
       if (!resp || !resp.ok) {
-        mostrarBadge({ texto: escHtml((resp && resp.erro) || 'Falha ao gerar o report.'), cor: '#ff6b6b' });
+        mostrarBadge({ texto: escHtml((resp && resp.erro) || 'Falha ao gerar o report.'), cor: '#ff6f5c' });
         jobEmAndamento = false;
         return;
       }
@@ -1019,7 +1019,7 @@
           return;
         }
         if (escolha !== 'gerar') {
-          mostrarBadge({ texto: 'Geração cancelada — já existe um report igual pra esta conversa.', cor: '#f0ad4e' });
+          mostrarBadge({ texto: 'Geração cancelada — já existe um report igual pra esta conversa.', cor: '#f2a93b' });
           return;
         }
         mostrarBadge({ texto: '<b>Gerando de novo…</b>', loading: true });
@@ -1027,7 +1027,7 @@
           chrome.runtime.sendMessage({ action: 'reportFetch', server, mensagens, nome, captureQuality, forcarNovo: true }, resolve)
         );
         if (!resp || !resp.ok) {
-          mostrarBadge({ texto: escHtml((resp && resp.erro) || 'Falha ao gerar o report.'), cor: '#ff6b6b' });
+          mostrarBadge({ texto: escHtml((resp && resp.erro) || 'Falha ao gerar o report.'), cor: '#ff6f5c' });
           jobEmAndamento = false;
           return;
         }
@@ -1038,20 +1038,20 @@
       // demais para dar tempo de ler, e é a dúvida de sempre — transcreveu ou não?
       const resumoAudio =
         stats.audios === 0
-          ? '<span style="color:#8b98a5">Sem áudios nesta conversa</span>'
+          ? '<span style="color:#a39e93">Sem áudios nesta conversa</span>'
           : stats.audiosTranscritos === stats.audios
-            ? `<svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:-2px;flex:none" fill="none" stroke="#ffc400" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/></svg> ${stats.audios} áudio(s) transcrito(s)`
+            ? `<svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:-2px;flex:none" fill="none" stroke="#ffc233" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/></svg> ${stats.audios} áudio(s) transcrito(s)`
             : stats.audiosTranscritos === 0 && !ganchoInstalado()
               ? // Nenhum capturado E sem gancho: não é áudio difícil, é a página.
-                '<svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:-2px;flex:none" fill="none" stroke="#f0ad4e" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m21.7 18-8-14a2 2 0 0 0-3.4 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg> <b>Recarregue a aba do WhatsApp (F5)</b>' +
-                ' <span style="color:#8b98a5">e gere de novo — a leitura de áudio não iniciou</span>'
-              : `<svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:-2px;flex:none" fill="none" stroke="#f0ad4e" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m21.7 18-8-14a2 2 0 0 0-3.4 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg> ${stats.audiosTranscritos} de ${stats.audios} áudio(s) transcrito(s)` +
+                '<svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:-2px;flex:none" fill="none" stroke="#f2a93b" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m21.7 18-8-14a2 2 0 0 0-3.4 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg> <b>Recarregue a aba do WhatsApp (F5)</b>' +
+                ' <span style="color:#a39e93">e gere de novo — a leitura de áudio não iniciou</span>'
+              : `<svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:-2px;flex:none" fill="none" stroke="#f2a93b" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m21.7 18-8-14a2 2 0 0 0-3.4 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg> ${stats.audiosTranscritos} de ${stats.audios} áudio(s) transcrito(s)` +
                 (stats.audiosTranscritos === 0
-                  ? ' <span style="color:#8b98a5">— o WhatsApp não entregou os arquivos de áudio (áudios antigos costumam expirar); entraram como [áudio]</span>'
-                  : ' <span style="color:#8b98a5">— o resto entrou como [áudio]</span>');
+                  ? ' <span style="color:#a39e93">— o WhatsApp não entregou os arquivos de áudio (áudios antigos costumam expirar); entraram como [áudio]</span>'
+                  : ' <span style="color:#a39e93">— o resto entrou como [áudio]</span>');
 
       mostrarBadge({
-        texto: `<svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:-2px;flex:none" fill="none" stroke="#25d366" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="m9 11 3 3L22 4"/></svg> <b>Report pronto!</b> (${escHtml(nome || 'lead')})<br>${linhaRemetentes(stats)}${resumoAudio}`,
+        texto: `<svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:-2px;flex:none" fill="none" stroke="#3ddc84" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="m9 11 3 3L22 4"/></svg> <b>Report pronto!</b> (${escHtml(nome || 'lead')})<br>${linhaRemetentes(stats)}${resumoAudio}`,
         arquivo: resp.arquivo,
         server,
         arquivoBase64: resp.arquivoBase64,
@@ -1064,7 +1064,7 @@
         anotarAgendamento(mensagens, conversaDoJob);
       }
     } catch (e) {
-      mostrarBadge({ texto: escHtml(e.message), cor: '#ff6b6b' });
+      mostrarBadge({ texto: escHtml(e.message), cor: '#ff6f5c' });
     } finally {
       jobEmAndamento = false;
       capturaAtiva = false;
@@ -1159,7 +1159,7 @@
   const botaoFicha = (rotulo, aoClicar, destaque) => {
     const b = elem(
       'button',
-      `cursor:pointer;border:0;border-radius:7px;padding:5px 9px;font-weight:600;font-size:12px;line-height:1.2;font-family:inherit;${destaque ? 'background:#ffc400;color:#121214' : 'background:#26333f;color:#e6edf3'}`,
+      `cursor:pointer;border:0;border-radius:6px;padding:5px 9px;font-weight:600;font-size:12px;line-height:1.2;font-family:inherit;${destaque ? 'background:#ffc233;color:#18171b' : 'background:#3a373f;color:#f3efe6'}`,
       rotulo
     );
     b.type = 'button';
@@ -1170,8 +1170,8 @@
     elem(
       'div',
       'margin:5px 0',
-      elem('div', 'font-size:11px;color:#8b98a5;text-transform:uppercase;letter-spacing:.03em', rotulo),
-      elem('div', `color:${forte ? '#ffc400' : '#e6edf3'};font-weight:${forte ? 700 : 500};word-break:break-word`, valor)
+      elem('div', 'font-size:10.5px;color:#a39e93;text-transform:uppercase;letter-spacing:.1em;font-family:Bahnschrift,DIN Alternate,Roboto Condensed,Arial Narrow,sans-serif', rotulo),
+      elem('div', `color:${forte ? '#ffc233' : '#f3efe6'};font-weight:${forte ? 700 : 500};word-break:break-word`, valor)
     );
 
   function posicionarFicha() {
@@ -1205,7 +1205,7 @@
   }
 
   function formBusca() {
-    const input = elem('input', 'flex:1;min-width:0;background:#0d141c;border:1px solid #26333f;border-radius:7px;color:#e6edf3;padding:5px 8px;font-size:12px;font-family:inherit');
+    const input = elem('input', 'flex:1;min-width:0;background:#121113;border:1px solid #3a373f;border-radius:7px;color:#f3efe6;padding:5px 8px;font-size:12px;font-family:inherit');
     input.placeholder = 'Telefone ou nome no RD';
     const buscar = () => {
       const v = input.value.trim();
@@ -1422,7 +1422,7 @@
   }
 
   /** Os pontinhos no canto do topo: avisam que o popup pode ser arrastado. */
-  const pegador = () => elem('span', 'flex:none;color:#8b98a5;font-size:14px;line-height:1;letter-spacing:-1px', '⠿');
+  const pegador = () => elem('span', 'flex:none;color:#a39e93;font-size:14px;line-height:1;letter-spacing:-1px', '⠿');
 
   /**
    * Arrastar pelo topo muda o popup de lugar (fica guardado); duplo clique devolve ao lugar padrão.
@@ -1474,9 +1474,9 @@
       // Fora do #main, como a ficha: a leitura da conversa nunca confunde o popup com mensagem.
       el.style.cssText = [
         'position:fixed', 'top:70px', 'left:16px', 'z-index:2147483645', 'width:300px',
-        'max-height:calc(100vh - 150px)', 'overflow:auto', 'background:#16212e', 'color:#e6edf3',
-        'border:1px solid #26333f', 'border-left:4px solid #25d366', 'border-radius:10px', 'padding:10px 12px',
-        'font:13px/1.4 -apple-system,Segoe UI,Roboto,sans-serif', 'box-shadow:0 6px 24px rgba(0,0,0,.4)',
+        'max-height:calc(100vh - 150px)', 'overflow:auto', 'background:#1a191c', 'color:#f3efe6',
+        'border:1px solid #3a373f', 'border-top:3px solid #3ddc84', 'border-radius:12px', 'padding:11px 13px 12px',
+        'font:13px/1.4 Segoe UI Variable Text,Segoe UI,system-ui,-apple-system,Roboto,sans-serif', 'box-shadow:0 14px 34px rgba(0,0,0,.5)',
       ].join(';');
       document.body.appendChild(el);
     }
@@ -1510,8 +1510,8 @@
       elem(
         'div',
         'flex:1;min-width:0',
-        elem('div', 'font-size:10.5px;color:#25d366;font-weight:700;letter-spacing:.06em', 'COACH'),
-        elem('div', 'font-size:11px;color:#8b98a5', d ? 'dica de ' + hora : 'dica quando você pedir')
+        elem('div', 'font-size:10.5px;color:#3ddc84;font-weight:600;letter-spacing:.14em;font-family:Bahnschrift,DIN Alternate,Roboto Condensed,Arial Narrow,sans-serif', 'COACH'),
+        elem('div', 'font-size:11px;color:#a39e93', d ? 'dica de ' + hora : 'dica quando você pedir')
       )
     );
     alca.title = 'Arraste para mudar de lugar (duplo clique volta ao lugar padrão)';
@@ -1522,8 +1522,8 @@
     const caixaAgora = () =>
       elem(
         'div',
-        'margin-top:8px;background:#0d141c;border:1px solid #26333f;border-left:3px solid #25d366;border-radius:7px;padding:7px 9px',
-        elem('div', 'font-size:10.5px;color:#25d366;font-weight:700;letter-spacing:.06em', 'AGORA'),
+        'margin-top:8px;background:#121113;border:1px solid #3a373f;border-top:2px solid #3ddc84;border-radius:8px;padding:7px 9px',
+        elem('div', 'font-size:10.5px;color:#3ddc84;font-weight:600;letter-spacing:.14em;font-family:Bahnschrift,DIN Alternate,Roboto Condensed,Arial Narrow,sans-serif', 'AGORA'),
         elem('div', '', agora)
       );
     if (coachUi.minimizado) {
@@ -1533,7 +1533,7 @@
 
     const corpo = elem('div', 'margin-top:2px');
     el.appendChild(corpo);
-    const nota = (t, cor) => elem('div', `margin-top:8px;font-size:12px;color:${cor || '#8b98a5'}`, t);
+    const nota = (t, cor) => elem('div', `margin-top:8px;font-size:12px;color:${cor || '#a39e93'}`, t);
     const controles = (rotuloPedir) => {
       const linha = elem('div', 'display:flex;flex-wrap:wrap;gap:6px;margin-top:8px');
       const mini = (b) => {
@@ -1557,7 +1557,7 @@
     if (r.tipo === 'carregando') return void corpo.appendChild(nota('Lendo as últimas mensagens…'));
     if (r.tipo === 'lendo') return void corpo.appendChild(nota('Lendo a conversa inteira e os áudios… não troque de conversa.'));
     if (r.tipo === 'erro') {
-      corpo.appendChild(nota(r.erro, '#ff6b6b'));
+      corpo.appendChild(nota(r.erro, '#ff6f5c'));
       corpo.appendChild(controles('Tentar de novo'));
       return;
     }
@@ -1569,12 +1569,12 @@
       if (marcados.has(tipo + '|' + textoSug)) b.disabled = true;
       return b;
     };
-    const rotulo = (t) => elem('div', 'font-size:10.5px;color:#8b98a5;text-transform:uppercase;letter-spacing:.04em;margin-top:8px', t);
+    const rotulo = (t) => elem('div', 'font-size:10.5px;color:#a39e93;text-transform:uppercase;letter-spacing:.1em;font-family:Bahnschrift,DIN Alternate,Roboto Condensed,Arial Narrow,sans-serif;margin-top:8px', t);
     const perfil = d.perfil && d.perfil.tipo;
     if (agora) corpo.appendChild(caixaAgora());
     if (d.proximaMensagem) {
       corpo.appendChild(rotulo('Próxima mensagem'));
-      corpo.appendChild(elem('div', 'white-space:pre-wrap;background:#0d141c;border:1px solid #26333f;border-radius:7px;padding:6px 8px;margin-top:2px', d.proximaMensagem));
+      corpo.appendChild(elem('div', 'white-space:pre-wrap;background:#121113;border:1px solid #3a373f;border-radius:7px;padding:6px 8px;margin-top:2px', d.proximaMensagem));
       const copiar = botaoFicha('Copiar', async () => {
         try {
           await navigator.clipboard.writeText(d.proximaMensagem);
@@ -1588,17 +1588,17 @@
       corpo.appendChild(util('mensagem', d.proximaMensagem, perfil));
     }
     if (perfil) {
-      corpo.appendChild(elem('div', 'margin-top:8px', elem('span', 'color:#8b98a5', 'Perfil do lead: '), elem('span', 'color:#ffc400;font-weight:700;text-transform:capitalize', perfil)));
+      corpo.appendChild(elem('div', 'margin-top:8px', elem('span', 'color:#a39e93', 'Perfil do lead: '), elem('span', 'color:#ffc233;font-weight:700;text-transform:capitalize', perfil)));
     }
 
     const det = document.createElement('details');
-    det.style.cssText = 'margin-top:8px;padding-top:6px;border-top:1px solid #26333f';
+    det.style.cssText = 'margin-top:8px;padding-top:6px;border-top:1px solid #3a373f';
     det.open = coachUi.detalhes;
     det.addEventListener('toggle', () => {
       coachUi.detalhes = det.open;
     });
-    det.appendChild(elem('summary', 'cursor:pointer;color:#8b98a5;font-size:12px', 'Análise completa'));
-    if (d.perfil && d.perfil.evidencia) det.appendChild(elem('div', 'font-size:12px;color:#c9ced6;margin-top:6px', d.perfil.evidencia));
+    det.appendChild(elem('summary', 'cursor:pointer;color:#a39e93;font-size:12px', 'Análise completa'));
+    if (d.perfil && d.perfil.evidencia) det.appendChild(elem('div', 'font-size:12px;color:#d5d0c5;margin-top:6px', d.perfil.evidencia));
     if (d.comoAbordar) {
       det.appendChild(rotulo('Como abordar'));
       det.appendChild(elem('div', '', d.comoAbordar));
@@ -1622,32 +1622,32 @@
     }
     corpo.appendChild(det);
 
-    if (r.erro) corpo.appendChild(nota(r.erro, '#ff6b6b'));
+    if (r.erro) corpo.appendChild(nota(r.erro, '#ff6f5c'));
     else if (r.atualizando) corpo.appendChild(nota('Atualizando a dica…'));
-    else if (r.desatualizada) corpo.appendChild(nota('Chegaram mensagens depois desta dica. Clique em Atualizar para ver a nova.', '#f0ad4e'));
+    else if (r.desatualizada) corpo.appendChild(nota('Chegaram mensagens depois desta dica. Clique em Atualizar para ver a nova.', '#f2a93b'));
     if (r.audiosSemLer) {
-      corpo.appendChild(nota(`${r.audiosSemLer} áudio(s) do lead ainda sem leitura: "Ler conversa inteira" transcreve.`, '#f0ad4e'));
+      corpo.appendChild(nota(`${r.audiosSemLer} áudio(s) do lead ainda sem leitura: "Ler conversa inteira" transcreve.`, '#f2a93b'));
     }
     corpo.appendChild(controles('Atualizar'));
   }
 
   function blocoResumo() {
     const r = resumos.get(ficha.chave);
-    const caixa = elem('div', 'margin:2px 0 10px;padding:8px 10px;background:#0d141c;border:1px solid #26333f;border-radius:8px');
-    const titulo = (t) => elem('div', 'font-size:10.5px;color:#ffc400;font-weight:700;letter-spacing:.06em;margin-bottom:4px', t);
+    const caixa = elem('div', 'margin:2px 0 10px;padding:8px 10px;background:#121113;border:1px solid #3a373f;border-radius:8px');
+    const titulo = (t) => elem('div', 'font-size:10.5px;color:#ffc233;font-weight:600;letter-spacing:.14em;font-family:Bahnschrift,DIN Alternate,Roboto Condensed,Arial Narrow,sans-serif;margin-bottom:4px', t);
     if (!r) {
       caixa.appendChild(botaoFicha('Resumo rápido da conversa', pedirResumoRapido, true));
-      caixa.appendChild(elem('div', 'font-size:11px;color:#8b98a5;margin-top:5px', 'Lê a conversa e os áudios (no mudo) e mostra o cenário e onde parou.'));
+      caixa.appendChild(elem('div', 'font-size:11px;color:#a39e93;margin-top:5px', 'Lê a conversa e os áudios (no mudo) e mostra o cenário e onde parou.'));
       return caixa;
     }
     if (r.tipo === 'carregando') {
       caixa.appendChild(titulo('RESUMO RÁPIDO'));
-      caixa.appendChild(elem('div', 'color:#8b98a5', 'Lendo a conversa e os áudios… não troque de conversa.'));
+      caixa.appendChild(elem('div', 'color:#a39e93', 'Lendo a conversa e os áudios… não troque de conversa.'));
       return caixa;
     }
     if (r.tipo === 'erro') {
       caixa.appendChild(titulo('RESUMO RÁPIDO'));
-      caixa.appendChild(elem('div', 'color:#ff6b6b;margin-bottom:6px', r.erro));
+      caixa.appendChild(elem('div', 'color:#ff6f5c;margin-bottom:6px', r.erro));
       caixa.appendChild(botaoFicha('Tentar de novo', pedirResumoRapido));
       return caixa;
     }
@@ -1657,8 +1657,8 @@
     const item = (rotulo, valor, forte) =>
       valor
         ? elem('div', 'margin-top:5px',
-            elem('div', 'font-size:11px;color:#8b98a5;text-transform:uppercase;letter-spacing:.03em', rotulo),
-            elem('div', `color:${forte ? '#ffc400' : '#e6edf3'};font-weight:${forte ? 700 : 500}`, valor))
+            elem('div', 'font-size:10.5px;color:#a39e93;text-transform:uppercase;letter-spacing:.1em;font-family:Bahnschrift,DIN Alternate,Roboto Condensed,Arial Narrow,sans-serif', rotulo),
+            elem('div', `color:${forte ? '#ffc233' : '#f3efe6'};font-weight:${forte ? 700 : 500}`, valor))
         : null;
     [item('Onde parou', d.peQueParou, true), item('Última pergunta', d.ultimaPergunta), item('Próximo passo', d.proximoPasso)]
       .filter(Boolean)
@@ -1667,7 +1667,7 @@
       .filter(Boolean)
       .join(' · ');
     const rodape = elem('div', 'display:flex;align-items:center;gap:8px;margin-top:8px');
-    if (meta) rodape.appendChild(elem('div', 'flex:1;font-size:11px;color:#8b98a5', meta));
+    if (meta) rodape.appendChild(elem('div', 'flex:1;font-size:11px;color:#a39e93', meta));
     const atualizar = botaoFicha('Atualizar', pedirResumoRapido);
     atualizar.title = 'Ler a conversa de novo (se chegaram mensagens novas)';
     rodape.appendChild(atualizar);
@@ -1826,9 +1826,9 @@
     const conversa = ficha.conversa;
     const linha = elem('div', 'display:flex;flex-wrap:wrap;align-items:center;gap:5px;margin-top:7px');
     linha.id = 'cr-etiquetas';
-    const base = 'border-radius:999px;padding:2px 9px;font-size:10.5px;font-weight:700;line-height:1.5;letter-spacing:.04em;font-family:inherit';
+    const base = 'border-radius:5px;padding:2px 8px;font-size:11px;font-weight:600;line-height:1.5;letter-spacing:.07em;font-family:Bahnschrift,DIN Alternate,Roboto Condensed,Arial Narrow,sans-serif';
     const tirar = (titulo, aoClicar) => {
-      const b = elem('button', 'cursor:pointer;border:0;background:transparent;color:#8b98a5;font-size:13px;line-height:1;padding:0 2px;font-family:inherit', '×');
+      const b = elem('button', 'cursor:pointer;border:0;background:transparent;color:#a39e93;font-size:13px;line-height:1;padding:0 2px;font-family:inherit', '×');
       b.type = 'button';
       b.title = titulo;
       b.setAttribute('aria-label', titulo);
@@ -1842,14 +1842,14 @@
       enviarMarca(conversa, campos);
     };
     if (ficha.automacao && marca.qualificado) {
-      const chip = elem('span', `${base};border:1px solid #25d366;background:rgba(37,211,102,.14);color:#25d366`, 'QUALIFICADO');
+      const chip = elem('span', `${base};border:1px solid #3ddc84;background:rgba(61,220,132,.14);color:#3ddc84`, 'QUALIFICADO');
       // De onde a etiqueta veio (passe o mouse): assim dá para confiar nela sem reabrir a conversa.
       const porque = { rd: 'o card esteve na etapa Qualificado do RD', report: 'você gerou o report deste lead', manual: 'você marcou à mão' }[marca.origem];
       chip.title = porque ? 'Qualificado: ' + porque + '.' : 'Lead qualificado.';
       linha.appendChild(chip);
       linha.appendChild(tirar('Tirar a etiqueta Qualificado', () => mudar({ qualificado: false, manual: true }, { qualificado: false })));
     } else if (ficha.automacao) {
-      const b = elem('button', `${base};cursor:pointer;border:1px dashed #3a4a5a;background:transparent;color:#8b98a5`, '+ Qualificado');
+      const b = elem('button', `${base};cursor:pointer;border:1px dashed #55515b;background:transparent;color:#a39e93`, '+ Qualificado');
       b.type = 'button';
       b.title = 'Marcar este lead como qualificado';
       b.addEventListener('click', () => mudar({ qualificado: true, manual: true }, { qualificado: true, origem: 'manual' }));
@@ -1858,32 +1858,32 @@
     // A reunião que está no Google Agenda vale mais que o que foi lido na conversa: é o compromisso de fato.
     const daAgenda = ficha.automacao && estado.reuniao && agendaLib ? agendaLib.descrever(estado.reuniao.quando, new Date()) : null;
     if (daAgenda) {
-      const cor = daAgenda.passou ? '#f0ad4e' : '#ffc400';
+      const cor = daAgenda.passou ? '#f2a93b' : '#ffc233';
       const texto = (daAgenda.passou ? 'Estava agendado: ' : 'Agendado: ') + daAgenda.texto + (estado.reuniao.closer ? ' · ' + estado.reuniao.closer : '');
-      const c = elem('span', `${base};border:1px solid ${cor};background:rgba(255,196,0,.1);color:${cor}`, texto);
+      const c = elem('span', `${base};border:1px solid ${cor};background:rgba(255,194,51,.12);color:${cor}`, texto);
       c.title = 'Do Google Agenda' + (estado.reuniao.titulo ? ': ' + estado.reuniao.titulo : '');
       linha.appendChild(c);
     }
     const ag = !daAgenda && ficha.automacao && marca.agendadoPara && agendaLib ? agendaLib.descrever(marca.agendadoPara, new Date()) : null;
     if (ag) {
-      const cor = ag.passou ? '#f0ad4e' : '#ffc400';
-      linha.appendChild(elem('span', `${base};border:1px solid ${cor};background:rgba(255,196,0,.1);color:${cor}`, (ag.passou ? 'Estava agendado: ' : 'Agendado: ') + ag.texto));
+      const cor = ag.passou ? '#f2a93b' : '#ffc233';
+      linha.appendChild(elem('span', `${base};border:1px solid ${cor};background:rgba(255,194,51,.12);color:${cor}`, (ag.passou ? 'Estava agendado: ' : 'Agendado: ') + ag.texto));
       linha.appendChild(tirar('Apagar este agendamento', () => mudar({ limparAgenda: true }, { agendadoPara: '' })));
     }
     // Do formulário do RD, para ver de relance: quanto o lead disse que investe, se já vende e a profissão.
     // Cheias e maiores que as outras: são o que se bate o olho primeiro, mesmo com o cartão minimizado.
     const doFormulario = ficha.etiquetas ? etiquetasDoFormulario(estado.ficha) : { investimento: '', vende: '', profissao: '' };
-    const cheia = (fundo, cor) => `border-radius:999px;padding:3px 11px;font-size:12px;font-weight:800;line-height:1.5;letter-spacing:.02em;border:1px solid ${fundo};background:${fundo};color:${cor}`;
+    const cheia = (fundo, cor) => `border-radius:5px;padding:3px 10px;font-size:12px;font-weight:800;line-height:1.5;letter-spacing:.01em;border:1px solid ${fundo};background:${fundo};color:${cor}`;
     if (doFormulario.investimento || doFormulario.vende || doFormulario.profissao) {
       const doForm = elem('div', 'flex-basis:100%;display:flex;flex-wrap:wrap;gap:6px');
       if (doFormulario.investimento) {
-        const c = elem('span', cheia('#ffc400', '#121214'), 'R$ ' + doFormulario.investimento);
+        const c = elem('span', cheia('#ffc233', '#18171b'), 'R$ ' + doFormulario.investimento);
         c.title = 'Investimento informado no formulário';
         doForm.appendChild(c);
       }
       if (doFormulario.vende) {
         const jaVende = doFormulario.vende === 'Já vende';
-        const c = elem('span', cheia(jaVende ? '#25d366' : '#4c8dff', jaVende ? '#05130c' : '#ffffff'), doFormulario.vende);
+        const c = elem('span', cheia(jaVende ? '#3ddc84' : '#8aa9ff', jaVende ? '#06180e' : '#0e1730'), doFormulario.vende);
         c.title = 'Resposta do formulário sobre vender online';
         doForm.appendChild(c);
       }
@@ -1894,7 +1894,7 @@
       }
       linha.appendChild(doForm);
     }
-    if (estado.aviso) linha.appendChild(elem('div', `flex-basis:100%;font-size:11px;color:${estado.aviso.erro ? '#ff6b6b' : '#25d366'}`, estado.aviso.texto));
+    if (estado.aviso) linha.appendChild(elem('div', `flex-basis:100%;font-size:11px;color:${estado.aviso.erro ? '#ff6f5c' : '#3ddc84'}`, estado.aviso.texto));
     return linha;
   }
 
@@ -1908,9 +1908,9 @@
       // Fora do #main de propósito: a leitura da conversa (report) nunca pode confundir o cartão com mensagem.
       el.style.cssText = [
         'position:fixed', 'top:70px', 'right:16px', 'z-index:2147483646', 'width:290px',
-        'max-height:calc(100vh - 150px)', 'overflow:auto', 'background:#16212e', 'color:#e6edf3',
-        'border:1px solid #26333f', 'border-left:4px solid #ffc400', 'border-radius:10px', 'padding:10px 12px',
-        'font:13px/1.4 -apple-system,Segoe UI,Roboto,sans-serif', 'box-shadow:0 6px 24px rgba(0,0,0,.4)',
+        'max-height:calc(100vh - 150px)', 'overflow:auto', 'background:#1a191c', 'color:#f3efe6',
+        'border:1px solid #3a373f', 'border-top:3px solid #ffc233', 'border-radius:12px', 'padding:11px 13px 12px',
+        'font:13px/1.4 Segoe UI Variable Text,Segoe UI,system-ui,-apple-system,Roboto,sans-serif', 'box-shadow:0 14px 34px rgba(0,0,0,.5)',
       ].join(';');
       document.body.appendChild(el);
     }
@@ -1940,7 +1940,7 @@
       'flex:1;min-width:0;user-select:none;display:flex;align-items:center;gap:6px',
       pegador(),
       elem('div', 'flex:1;min-width:0',
-        elem('div', 'font-size:10.5px;color:#ffc400;font-weight:700;letter-spacing:.06em', semCrm ? 'PRONIX' : 'RD STATION'),
+        elem('div', 'font-size:10.5px;color:#ffc233;font-weight:600;letter-spacing:.14em;font-family:Bahnschrift,DIN Alternate,Roboto Condensed,Arial Narrow,sans-serif', semCrm ? 'PRONIX' : 'RD STATION'),
         elem('div', 'font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis', titulo))
     );
     alca.title = 'Arraste para mudar de lugar (duplo clique volta ao lugar padrão)';
@@ -1956,22 +1956,22 @@
     if (estado.tipo !== 'carregando') corpo.appendChild(blocoResumo());
 
     if (estado.tipo === 'carregando') {
-      corpo.appendChild(elem('div', 'color:#8b98a5', 'Buscando no RD Station…'));
+      corpo.appendChild(elem('div', 'color:#a39e93', 'Buscando no RD Station…'));
       return;
     }
     if (semCrm) return;
     if (estado.tipo === 'erro') {
-      corpo.appendChild(elem('div', 'color:#ff6b6b', estado.erro));
+      corpo.appendChild(elem('div', 'color:#ff6f5c', estado.erro));
       corpo.appendChild(elem('div', 'margin-top:8px', botaoFicha('Tentar de novo', () => consultarFicha(estado.busca))));
       return;
     }
     if (estado.tipo === 'nao-encontrado') {
-      corpo.appendChild(elem('div', 'color:#8b98a5', 'Não achei este lead no RD Station. Busque pelo telefone ou nome:'));
+      corpo.appendChild(elem('div', 'color:#a39e93', 'Não achei este lead no RD Station. Busque pelo telefone ou nome:'));
       corpo.appendChild(formBusca());
       return;
     }
     if (estado.tipo === 'candidatos') {
-      corpo.appendChild(elem('div', 'color:#8b98a5;margin-bottom:6px', 'Mais de um contato com esse nome. Qual é?'));
+      corpo.appendChild(elem('div', 'color:#a39e93;margin-bottom:6px', 'Mais de um contato com esse nome. Qual é?'));
       estado.candidatos.forEach((c) => {
         const b = botaoFicha([c.nome, c.telefone].filter(Boolean).join(' · '), () => consultarFicha({ contatoId: c.id }));
         b.style.cssText += ';display:block;width:100%;text-align:left;margin:4px 0';
@@ -1987,28 +1987,28 @@
     if (n) {
       const etapa = [n.etapa, n.funil].filter(Boolean).join(' · ');
       if (etapa) corpo.appendChild(elem('div', 'font-weight:600', etapa));
-      if (n.responsavel) corpo.appendChild(elem('div', 'color:#8b98a5;font-size:12px', 'Responsável: ' + n.responsavel));
+      if (n.responsavel) corpo.appendChild(elem('div', 'color:#a39e93;font-size:12px', 'Responsável: ' + n.responsavel));
     } else {
-      corpo.appendChild(elem('div', 'color:#8b98a5', 'Contato sem negociação no RD.'));
+      corpo.appendChild(elem('div', 'color:#a39e93', 'Contato sem negociação no RD.'));
     }
     if (f.formulario && f.formulario.campos.length) {
-      const bloco = elem('div', 'margin-top:8px;padding-top:6px;border-top:1px solid #26333f');
+      const bloco = elem('div', 'margin-top:8px;padding-top:6px;border-top:1px solid #3a373f');
       f.formulario.campos.forEach((c) => bloco.appendChild(linhaCampo(c.rotulo, c.valor, /invest/i.test(c.rotulo))));
       const meta = [f.formulario.autor, f.formulario.quando].filter(Boolean).join(' · ');
-      if (meta) bloco.appendChild(elem('div', 'font-size:11px;color:#8b98a5;margin-top:4px', 'Anotado por ' + meta));
+      if (meta) bloco.appendChild(elem('div', 'font-size:11px;color:#a39e93;margin-top:4px', 'Anotado por ' + meta));
       corpo.appendChild(bloco);
     }
     if (f.campos && f.campos.length) {
-      const bloco = elem('div', 'margin-top:8px;padding-top:6px;border-top:1px solid #26333f');
+      const bloco = elem('div', 'margin-top:8px;padding-top:6px;border-top:1px solid #3a373f');
       f.campos.forEach((c) => bloco.appendChild(linhaCampo(c.rotulo, c.valor)));
       corpo.appendChild(bloco);
     }
     if (f.anotacoes && f.anotacoes.length) {
       const det = document.createElement('details');
-      det.style.cssText = 'margin-top:8px;padding-top:6px;border-top:1px solid #26333f';
-      det.appendChild(elem('summary', 'cursor:pointer;color:#8b98a5;font-size:12px', `Outras anotações (${f.anotacoes.length})`));
+      det.style.cssText = 'margin-top:8px;padding-top:6px;border-top:1px solid #3a373f';
+      det.appendChild(elem('summary', 'cursor:pointer;color:#a39e93;font-size:12px', `Outras anotações (${f.anotacoes.length})`));
       f.anotacoes.forEach((a) => {
-        det.appendChild(elem('div', 'font-size:11px;color:#8b98a5;margin-top:6px', [a.autor, a.quando].filter(Boolean).join(' · ')));
+        det.appendChild(elem('div', 'font-size:11px;color:#a39e93;margin-top:6px', [a.autor, a.quando].filter(Boolean).join(' · ')));
         det.appendChild(elem('div', 'white-space:pre-wrap;word-break:break-word', a.texto));
       });
       corpo.appendChild(det);
@@ -2016,7 +2016,7 @@
     if ((f.negociacoes || []).length > 1) {
       // Lead com mais de um card (inscreveu de novo, contato duplicado): o SDR troca para o certo e o servidor lembra.
       const sel = document.createElement('select');
-      sel.style.cssText = 'width:100%;margin-top:4px;background:#0d141c;color:#e6edf3;border:1px solid #26333f;border-radius:7px;padding:5px 6px;font-size:12px';
+      sel.style.cssText = 'width:100%;margin-top:4px;background:#121113;color:#f3efe6;border:1px solid #3a373f;border-radius:7px;padding:5px 6px;font-size:12px';
       f.negociacoes.forEach((c) => {
         const o = document.createElement('option');
         o.value = c.id;
@@ -2025,11 +2025,11 @@
         sel.appendChild(o);
       });
       sel.addEventListener('change', () => consultarFicha({ ...estado.busca, dealId: sel.value, lembrar: true }));
-      corpo.appendChild(elem('div', 'font-size:11px;color:#8b98a5;margin-top:8px', `Este lead tem ${f.negociacoes.length} cards no RD — mostrando o que parece ser o certo. Trocou? Escolha aqui (fica lembrado):`));
+      corpo.appendChild(elem('div', 'font-size:11px;color:#a39e93;margin-top:8px', `Este lead tem ${f.negociacoes.length} cards no RD — mostrando o que parece ser o certo. Trocou? Escolha aqui (fica lembrado):`));
       corpo.appendChild(sel);
     }
     if (n && /^https:\/\/crm\.rdstation\.com\//.test(n.url || '')) {
-      const a = elem('a', 'display:inline-block;margin-top:8px;color:#ffc400;font-weight:600;text-decoration:none', 'Abrir no RD Station ↗');
+      const a = elem('a', 'display:inline-block;margin-top:8px;color:#ffc233;font-weight:600;text-decoration:none', 'Abrir no RD Station ↗');
       a.href = n.url;
       a.target = '_blank';
       a.rel = 'noopener noreferrer';

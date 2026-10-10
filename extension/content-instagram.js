@@ -646,35 +646,35 @@
       el.id = BADGE_ID;
       el.style.cssText = [
         'position:fixed', 'bottom:20px', 'right:20px', 'z-index:2147483647',
-        'max-width:320px', 'background:#16212e', 'color:#e6edf3',
-        'border:1px solid #26333f', 'border-left:4px solid #ffc400',
-        'border-radius:10px', 'padding:12px 14px', 'font:13px/1.45 -apple-system,Segoe UI,Roboto,sans-serif',
-        'box-shadow:0 6px 24px rgba(0,0,0,.4)', 'display:flex', 'gap:10px', 'align-items:flex-start',
+        'max-width:320px', 'background:#1a191c', 'color:#f3efe6',
+        'border:1px solid #3a373f', 'border-top:3px solid #ffc233',
+        'border-radius:12px', 'padding:12px 14px', 'font:13px/1.45 Segoe UI Variable Text,Segoe UI,system-ui,-apple-system,Roboto,sans-serif',
+        'box-shadow:0 14px 34px rgba(0,0,0,.5)', 'display:flex', 'gap:10px', 'align-items:flex-start',
       ].join(';');
       document.body.appendChild(el);
     }
     return el;
   }
 
-  function mostrarBadge({ texto, cor = '#ffc400', loading = false, arquivo = null, arquivoBase64 = null, botoes = [], aoEscolher = null, aoFechar = null }) {
+  function mostrarBadge({ texto, cor = '#ffc233', loading = false, arquivo = null, arquivoBase64 = null, botoes = [], aoEscolher = null, aoFechar = null }) {
     const el = badgeEl();
-    el.style.borderLeftColor = cor;
+    el.style.borderTopColor = cor;
     const spinner = loading
       ? '<span style="flex:none;width:14px;height:14px;border:2px solid rgba(255,255,255,.25);border-top-color:#fff;border-radius:50%;display:inline-block;animation:crspin .8s linear infinite"></span>'
-      : '<span style="flex:none;display:flex">' + "<svg viewBox=\"0 0 24 24\" width=\"15\" height=\"15\" style=\"vertical-align:-2px;flex:none\" fill=\"none\" stroke=\"#ffc400\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect width=\"8\" height=\"4\" x=\"8\" y=\"2\" rx=\"1\"/><path d=\"M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2\"/></svg>" + '</span>';
+      : '<span style="flex:none;display:flex">' + "<svg viewBox=\"0 0 24 24\" width=\"15\" height=\"15\" style=\"vertical-align:-2px;flex:none\" fill=\"none\" stroke=\"#ffc233\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect width=\"8\" height=\"4\" x=\"8\" y=\"2\" rx=\"1\"/><path d=\"M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2\"/></svg>" + '</span>';
     let acao = '';
     if (arquivoBase64) {
       const url = 'data:application/pdf;base64,' + arquivoBase64;
       acao =
-        `<a href="${escHtml(url)}" download="${escHtml(arquivo || 'report.pdf')}" style="display:inline-block;margin-top:8px;background:#ffc400;color:#121214;` +
-        `font-weight:700;text-decoration:none;padding:6px 10px;border-radius:7px"><svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:-2px;flex:none" fill="none" stroke="#121214" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg> Baixar PDF</a>`;
+        `<a href="${escHtml(url)}" download="${escHtml(arquivo || 'report.pdf')}" style="display:inline-block;margin-top:8px;background:#ffc233;color:#18171b;` +
+        `font-weight:700;text-decoration:none;padding:6px 10px;border-radius:7px"><svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:-2px;flex:none" fill="none" stroke="#18171b" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg> Baixar PDF</a>`;
     }
     const htmlBotoes = botoes.length
       ? '<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">' +
         botoes
           .map(
             (b) =>
-              `<button type="button" data-cr-acao="${escHtml(b.acao)}" style="cursor:pointer;border:0;border-radius:7px;padding:6px 10px;font-weight:700;font-size:12px;background:${b.primario ? '#ffc400' : '#26333f'};color:${b.primario ? '#121214' : '#e6edf3'}">${escHtml(b.rotulo)}</button>`
+              `<button type="button" data-cr-acao="${escHtml(b.acao)}" style="cursor:pointer;border:0;border-radius:7px;padding:6px 10px;font-weight:700;font-size:12px;background:${b.primario ? '#ffc233' : '#3a373f'};color:${b.primario ? '#18171b' : '#f3efe6'}">${escHtml(b.rotulo)}</button>`
           )
           .join('') +
         '</div>'
@@ -683,7 +683,7 @@
       (document.getElementById('crspin-style') ? '' : '<style id="crspin-style">@keyframes crspin{to{transform:rotate(360deg)}}</style>') +
       spinner +
       `<div style="flex:1"><div>${texto}</div>${acao}${htmlBotoes}</div>` +
-      `<span id="cr-x" style="flex:none;cursor:pointer;color:#8b98a5;font-size:15px;line-height:1">×</span>`;
+      `<span id="cr-x" style="flex:none;cursor:pointer;color:#a39e93;font-size:15px;line-height:1">×</span>`;
     el.querySelectorAll('[data-cr-acao]').forEach((b) => {
       b.onclick = () => {
         if (aoEscolher) aoEscolher(b.dataset.crAcao);
@@ -710,12 +710,12 @@
     const alvo = el.querySelector('div[style*="flex:1"]') || el;
     const caixa = document.createElement('div');
     caixa.id = 'cr-closer';
-    caixa.style.cssText = 'margin-top:10px;padding-top:8px;border-top:1px solid #26333f';
+    caixa.style.cssText = 'margin-top:10px;padding-top:8px;border-top:1px solid #3a373f';
     const rotulo = document.createElement('div');
-    rotulo.style.cssText = 'font-size:11px;color:#8b98a5;margin-bottom:4px';
+    rotulo.style.cssText = 'font-size:11px;color:#a39e93;margin-bottom:4px';
     rotulo.textContent = 'Closer desta reunião';
     const sel = document.createElement('select');
-    sel.style.cssText = 'width:100%;background:#0d141c;color:#e6edf3;border:1px solid #26333f;border-radius:7px;padding:6px;font-size:12.5px';
+    sel.style.cssText = 'width:100%;background:#121113;color:#f3efe6;border:1px solid #3a373f;border-radius:7px;padding:6px;font-size:12.5px';
     const sugerido = resp.sugestaoCloser && resp.sugestaoCloser.closerId;
     const opcao = (valor, texto) => {
       const o = document.createElement('option');
@@ -726,19 +726,19 @@
     opcao('', 'Escolher closer…');
     lista.forEach((c) => opcao(c.id, c.id === sugerido ? c.nome + ' (indicado)' : c.nome));
     const nota = document.createElement('div');
-    nota.style.cssText = 'font-size:11px;color:#8b98a5;margin-top:4px';
+    nota.style.cssText = 'font-size:11px;color:#a39e93;margin-top:4px';
     nota.textContent = sugerido ? resp.motivoSugestao || '' : '';
     sel.addEventListener('change', () => {
       sel.disabled = true;
-      nota.style.color = '#8b98a5';
+      nota.style.color = '#a39e93';
       nota.textContent = 'Salvando…';
       const fim = (r) => {
         sel.disabled = false;
         if (r && r.ok) {
-          nota.style.color = '#ffc400';
+          nota.style.color = '#ffc233';
           nota.textContent = sel.value ? 'Closer salvo: ' + (r.closerNome || '') : 'Closer removido.';
         } else {
-          nota.style.color = '#ff6b6b';
+          nota.style.color = '#ff6f5c';
           nota.textContent = (r && r.erro) || 'Não consegui salvar o closer.';
         }
       };
@@ -787,7 +787,7 @@
       botoes.push({ acao: 'gerar', rotulo: 'Gerar de novo (custo extra)', primario: !botoes.length });
       mostrarBadge({
         texto: `<b>Já existe um report igual</b> pra ${escHtml(existente.lead || 'este contato')}, gerado em ${escHtml(quando)}.`,
-        cor: '#f0ad4e',
+        cor: '#f2a93b',
         botoes,
         aoEscolher: resolve,
         aoFechar: () => resolve('cancelar'),
@@ -800,12 +800,12 @@
     mostrarBadge({ texto: 'Buscando o report existente…', loading: true });
     const r = await new Promise((res) => chrome.runtime.sendMessage({ action: 'baixarExistente', id: existente.id }, res));
     if (!r || !r.ok) {
-      mostrarBadge({ texto: escHtml((r && r.erro) || 'Não consegui abrir o report existente.'), cor: '#ff6b6b' });
+      mostrarBadge({ texto: escHtml((r && r.erro) || 'Não consegui abrir o report existente.'), cor: '#ff6f5c' });
       return;
     }
     mostrarBadge({
       texto: '<b>Report existente</b> — nenhuma IA foi usada.',
-      cor: '#ffc400',
+      cor: '#ffc233',
       arquivo: r.arquivo,
       arquivoBase64: r.arquivoBase64,
     });
@@ -817,11 +817,11 @@
   const remetenteSuspeito = (s) => !!s && s.total >= 6 && (s.doVendedor === 0 || s.doLead === 0);
   function linhaRemetentes(s) {
     if (!s || !s.total || s.doVendedor == null) return '';
-    const base = `<span style="color:#8b98a5">${s.total} mensagens · ${s.doVendedor} suas · ${s.doLead} do lead</span><br>`;
+    const base = `<span style="color:#a39e93">${s.total} mensagens · ${s.doVendedor} suas · ${s.doLead} do lead</span><br>`;
     if (!remetenteSuspeito(s)) return base;
     return (
       base +
-      '<span style="color:#f0ad4e"><b>Confira o report:</b> ' +
+      '<span style="color:#f2a93b"><b>Confira o report:</b> ' +
       (s.doVendedor === 0 ? 'nenhuma mensagem sua' : 'nenhuma mensagem do lead') +
       ' foi reconhecida. Se estiver errado, copie o console (F12) e mande para o admin.</span><br>'
     );
@@ -831,7 +831,7 @@
 
   async function gerarReportEmBackground(server) {
     if (jobEmAndamento) {
-      mostrarBadge({ texto: 'Já existe um report sendo gerado…', cor: '#f0ad4e', loading: true });
+      mostrarBadge({ texto: 'Já existe um report sendo gerado…', cor: '#f2a93b', loading: true });
       return;
     }
     jobEmAndamento = true;
@@ -848,12 +848,12 @@
       const linhaAudio =
         stats.audios > 0
           ? `${stats.audios} áudio(s), ${stats.audiosTranscritos} com transcrição` +
-            (stats.audiosTranscritos < stats.audios ? ' <span style="color:#8b98a5">(o resto entra como [áudio])</span>' : '')
+            (stats.audiosTranscritos < stats.audios ? ' <span style="color:#a39e93">(o resto entra como [áudio])</span>' : '')
           : 'Sem áudios nesta conversa';
 
       mostrarBadge({
         texto: `<b>Gerando report…</b> (${mensagens.length} mensagens)<br>${linhaAudio}<br>` +
-          '<svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:-2px;flex:none" fill="none" stroke="#25d366" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="m9 11 3 3L22 4"/></svg> Já pode responder outras conversas.',
+          '<svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:-2px;flex:none" fill="none" stroke="#3ddc84" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="m9 11 3 3L22 4"/></svg> Já pode responder outras conversas.',
         loading: true,
       });
 
@@ -872,7 +872,7 @@
       );
 
       if (!resp || !resp.ok) {
-        mostrarBadge({ texto: escHtml((resp && resp.erro) || 'Falha ao gerar o report.'), cor: '#ff6b6b' });
+        mostrarBadge({ texto: escHtml((resp && resp.erro) || 'Falha ao gerar o report.'), cor: '#ff6f5c' });
         jobEmAndamento = false;
         return;
       }
@@ -887,7 +887,7 @@
           return;
         }
         if (escolha !== 'gerar') {
-          mostrarBadge({ texto: 'Geração cancelada — já existe um report igual.', cor: '#f0ad4e' });
+          mostrarBadge({ texto: 'Geração cancelada — já existe um report igual.', cor: '#f2a93b' });
           return;
         }
         mostrarBadge({ texto: '<b>Gerando de novo…</b>', loading: true });
@@ -895,7 +895,7 @@
           chrome.runtime.sendMessage({ action: 'reportFetch', server, mensagens, nome, captureQuality, forcarNovo: true }, resolve)
         );
         if (!resp2 || !resp2.ok) {
-          mostrarBadge({ texto: escHtml((resp2 && resp2.erro) || 'Falha ao gerar o report.'), cor: '#ff6b6b' });
+          mostrarBadge({ texto: escHtml((resp2 && resp2.erro) || 'Falha ao gerar o report.'), cor: '#ff6f5c' });
           jobEmAndamento = false;
           return;
         }
@@ -904,7 +904,7 @@
 
       finalizar(resp, nome, server, stats);
     } catch (e) {
-      mostrarBadge({ texto: escHtml(e.message), cor: '#ff6b6b' });
+      mostrarBadge({ texto: escHtml(e.message), cor: '#ff6f5c' });
     } finally {
       jobEmAndamento = false;
       capturaAtiva = false;
@@ -919,13 +919,13 @@
     const s = stats || { audios: 0, audiosTranscritos: 0 };
     const resumoAudio =
       s.audios === 0
-        ? '<span style="color:#8b98a5">Sem áudios nesta conversa</span>'
+        ? '<span style="color:#a39e93">Sem áudios nesta conversa</span>'
         : s.audiosTranscritos === s.audios
           ? `${s.audios} áudio(s) transcrito(s)`
-          : `<span style="color:#f0ad4e">${s.audiosTranscritos} de ${s.audios} áudio(s) transcrito(s)</span>` +
-            ' <span style="color:#8b98a5">— o resto entrou como [áudio]</span>';
+          : `<span style="color:#f2a93b">${s.audiosTranscritos} de ${s.audios} áudio(s) transcrito(s)</span>` +
+            ' <span style="color:#a39e93">— o resto entrou como [áudio]</span>';
     mostrarBadge({
-      texto: `<svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:-2px;flex:none" fill="none" stroke="#25d366" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="m9 11 3 3L22 4"/></svg> <b>Report pronto!</b> (${escHtml(nome || 'contato')})<br>${linhaRemetentes(s)}${resumoAudio}`,
+      texto: `<svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:-2px;flex:none" fill="none" stroke="#3ddc84" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="m9 11 3 3L22 4"/></svg> <b>Report pronto!</b> (${escHtml(nome || 'contato')})<br>${linhaRemetentes(s)}${resumoAudio}`,
       arquivo: resp.arquivo,
       arquivoBase64: resp.arquivoBase64,
     });
