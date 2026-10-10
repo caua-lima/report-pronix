@@ -8,50 +8,98 @@
   <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png" />
   <link rel="icon" type="image/png" sizes="48x48" href="/icons/favicon-48.png" />
   <link rel="apple-touch-icon" href="/icons/icon128.png" />
+  <script>
+    // Mesmo tema escolhido no painel (auto, claro ou escuro).
+    try { var t = localStorage.getItem('crTema'); if (t === 'claro' || t === 'escuro') document.documentElement.dataset.tema = t; } catch (_) { /* segue o sistema */ }
+  </script>
   <style>
+    /* tokens:inicio
+     * Sistema visual do Report PRONIX: papel, tinta e marca-texto.
+     * O papel e a tinta carregam a estrutura; o âmbar é o marca-texto — só destaca o que está ativo
+     * ou o número que importa. Este bloco é IDÊNTICO no painel, no Report do Dia, na política de
+     * privacidade e no popup da extensão (tests/design.test.js confere): mudou aqui, mude nos quatro.
+     */
     :root {
       color-scheme: light dark;
-      --preto: #0c0c0e; --ouro: #ffc400;
-      --bg: #f4f4f6; --card: #fff; --border: #e7e7ee;
-      --text: #16161a; --text-2: #55555f; --muted: #8a8a96;
+      --f-titulo: Bahnschrift, "DIN Alternate", "Roboto Condensed", "Arial Narrow", system-ui, sans-serif;
+      --f-texto: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, Roboto, Helvetica, Arial, sans-serif;
+      --f-mono: "Cascadia Mono", ui-monospace, "SF Mono", Consolas, monospace;
+      --ouro: #ffb800; --ouro-claro: #ffcc45; --ouro-tinta: #8a5d00; --marca: rgba(255,184,0,.45);
+      --preto: #18171b;
+      --bg: #f3efe6; --lateral: #eae5d8; --card: #fffdf7; --card-2: #f7f2e7; --campo: #ffffff;
+      --border: #e2dbc9; --border-forte: #c9c0a9;
+      --text: #18171b; --text-2: #4d4a45; --muted: #6f6a60;
+      --danger: #c2331f; --ok: #0f7a43; --info: #2b59c3; --roxo: #6247c9;
+      --ring: rgba(255,184,0,.5);
+      --shadow: none; --shadow-2: 0 14px 34px -14px rgba(24,23,27,.28);
+      --r: 10px; --r-sm: 7px;
     }
     @media (prefers-color-scheme: dark) {
-      :root { --bg: #0d0d0f; --card: #151519; --border: #26262e; --text: #f3f3f5; --text-2: #a6a6b2; --muted: #7b7b87; }
+      :root:not([data-tema="claro"]) {
+        --ouro: #ffc233; --ouro-claro: #ffd466; --ouro-tinta: #ffc233; --marca: rgba(255,194,51,.28);
+        --preto: #0d0c0e;
+        --bg: #121113; --lateral: #0d0c0e; --card: #1a191c; --card-2: #222125; --campo: #141316;
+        --border: #2f2d32; --border-forte: #47444c;
+        --text: #f3efe6; --text-2: #bcb7ab; --muted: #8f8a7f;
+        --danger: #ff6f5c; --ok: #3ddc84; --info: #8aa9ff; --roxo: #b79cff;
+        --ring: rgba(255,194,51,.45);
+        --shadow-2: 0 16px 40px -12px rgba(0,0,0,.75);
+      }
     }
+    :root[data-tema="claro"] { color-scheme: light; }
+    :root[data-tema="escuro"] {
+      color-scheme: dark;
+      --ouro: #ffc233; --ouro-claro: #ffd466; --ouro-tinta: #ffc233; --marca: rgba(255,194,51,.28);
+      --preto: #0d0c0e;
+      --bg: #121113; --lateral: #0d0c0e; --card: #1a191c; --card-2: #222125; --campo: #141316;
+      --border: #2f2d32; --border-forte: #47444c;
+      --text: #f3efe6; --text-2: #bcb7ab; --muted: #8f8a7f;
+      --danger: #ff6f5c; --ok: #3ddc84; --info: #8aa9ff; --roxo: #b79cff;
+      --ring: rgba(255,194,51,.45);
+      --shadow-2: 0 16px 40px -12px rgba(0,0,0,.75);
+    }
+    /* O marca-texto: um risco de âmbar atrás do texto, como num relatório sublinhado à mão. */
+    .marca {
+      background: linear-gradient(transparent 54%, var(--marca) 54%, var(--marca) 93%, transparent 93%);
+      padding: 0 .16em; margin: 0 -.16em; border-radius: 2px;
+      -webkit-box-decoration-break: clone; box-decoration-break: clone;
+    }
+    /* tokens:fim */
+
     * { box-sizing: border-box; }
     html, body { margin: 0; }
-    body {
-      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-      background: var(--bg); color: var(--text); line-height: 1.65;
-      -webkit-font-smoothing: antialiased;
-    }
-    header { background: var(--preto); color: #fff; }
-    .header-in { max-width: 760px; margin: 0 auto; padding: 20px 24px; display: flex; align-items: center; gap: 11px; }
-    .brand b { font-size: .98rem; letter-spacing: .12em; display: block; line-height: 1.1; font-weight: 800; }
-    .brand small { font-size: .74rem; color: rgba(255,255,255,.5); }
-    main { max-width: 760px; margin: 0 auto; padding: 32px 24px 64px; }
-    h1 { font-size: 1.5rem; letter-spacing: -.02em; margin: 0 0 6px; }
-    .data { color: var(--muted); font-size: .85rem; margin-bottom: 28px; }
-    h2 { font-size: 1.02rem; margin: 30px 0 8px; letter-spacing: -.01em; }
-    p, li { color: var(--text-2); font-size: .94rem; }
+    body { font-family: var(--f-texto); background: var(--bg); color: var(--text); line-height: 1.7; -webkit-font-smoothing: antialiased; }
+    ::selection { background: var(--ouro); color: #18171b; }
+    :focus-visible { outline: 2px solid var(--ouro-tinta); outline-offset: 2px; }
+    header { background: var(--lateral); border-bottom: 1px solid var(--border); }
+    .header-in { max-width: 760px; margin: 0 auto; padding: 16px 24px; display: flex; align-items: center; gap: 11px; }
+    .header-in > svg { flex: none; }
+    .brand b { font-family: var(--f-titulo); font-size: 1.14rem; letter-spacing: .01em; display: block; line-height: 1.05; font-weight: 700; }
+    .brand small { font-family: var(--f-titulo); font-size: .66rem; color: var(--muted); letter-spacing: .16em; text-transform: uppercase; }
+    /* Folha de documento: a política é lida como um papel sobre a mesa. */
+    main { max-width: 760px; margin: 28px auto 64px; padding: 36px 40px 44px; background: var(--card); border: 1px solid var(--border); border-radius: var(--r); }
+    h1 { font-family: var(--f-titulo); font-size: 2rem; line-height: 1.1; margin: 0 0 8px; }
+    .data { color: var(--muted); font-size: .85rem; margin-bottom: 26px; }
+    h2 { font-family: var(--f-titulo); font-size: 1.15rem; margin: 32px 0 8px; padding-top: 18px; border-top: 1px solid var(--border); }
+    p, li { color: var(--text-2); font-size: .95rem; }
     ul { padding-left: 20px; }
     li { margin: 6px 0; }
     strong { color: var(--text); }
-    .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 18px 20px; margin: 18px 0; }
-    a { color: var(--ouro); }
-    @media (prefers-color-scheme: light) { a { color: #8a6a00; } }
+    .card { background: var(--card-2); border: 1px solid var(--border); border-left: 4px solid var(--ouro); border-radius: 0 var(--r-sm) var(--r-sm) 0; padding: 16px 20px; margin: 18px 0; }
+    a { color: var(--ouro-tinta); }
+    @media (max-width: 640px) { main { margin: 0; border: 0; border-radius: 0; padding: 26px 18px 48px; } }
   </style>
 </head>
 <body>
   <header>
     <div class="header-in">
-      <svg width="26" height="26" viewBox="0 0 30 30"><path d="M18.2 2.5 L8.5 16.8 L14.2 16.8 L11.6 27.5 L21.5 12.6 L15.8 12.6 Z" fill="#ffc400"/></svg>
-      <div class="brand"><b>PRONIX</b><small>Report</small></div>
+      <svg class="logo-rp" width="30" height="30" viewBox="0 0 128 128" aria-hidden="true"><rect width="128" height="128" rx="28" fill="#ffb800"/><path d="M34 22h38l20 20v64H34z" fill="#18171b"/><path d="M72 22l20 20H72z" fill="#45424b"/><path d="M46 56h34M46 72h28M46 88h16" fill="none" stroke="#ffb800" stroke-width="7" stroke-linecap="round"/><circle cx="92" cy="96" r="26" fill="#ffb800"/><circle cx="92" cy="96" r="21" fill="#1fbf5c"/><path d="M81 97l8 8 14-17" fill="none" stroke="#fff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <div class="brand"><b>Report <span class="marca">PRONIX</span></b><small>Pré-vendas</small></div>
     </div>
   </header>
 
   <main>
-    <h1>Política de Privacidade</h1>
+    <h1><span class="marca">Política de Privacidade</span></h1>
     <div class="data">Extensão <strong>Report PRONIX</strong> · atualizada em 29 de setembro de 2026</div>
 
     <div class="card">
