@@ -18,7 +18,7 @@ Você recebe duas coisas do admin: o arquivo **PRONIX-extensao.zip** e a **sua c
 ## 2. Entrar (uma vez só)
 
 1. Abra o [WhatsApp Web](https://web.whatsapp.com) (ou o [Instagram Direct](https://www.instagram.com/direct/inbox/), se você for social seller) e **atualize a página** (F5).
-2. Clique no ícone da PRONIX (o raio dourado).
+2. Clique no ícone do Report PRONIX (a folha escura no quadrado âmbar, com o selo verde).
 3. O **servidor já vem preenchido** — não mexa nele.
 4. Cole a **sua chave** no campo de chave e clique em **Validar**.
 5. Tem que aparecer o **seu nome**. Apareceu? Está pronto.

@@ -677,8 +677,8 @@ public/
   privacidade.html            Política de privacidade
   PRONIX-extensao.zip         Gerado por `npm run empacotar`
 
-tests/                        18 arquivos; helpers/dom.js simula WhatsApp e Instagram
-docs/                         Auditoria, plano, checklist e análise das calls
+tests/                        22 arquivos; helpers/dom.js simula WhatsApp e Instagram
+docs/                         Sistema visual, auditoria, plano, checklist e análise das calls
 scripts/transcribe.py         faster-whisper local (só sem GROQ_API_KEY)
 ```
 
@@ -687,6 +687,7 @@ scripts/transcribe.py         faster-whisper local (só sem GROQ_API_KEY)
 ## Documentação relacionada
 
 - [`GUIA-SDR.md`](GUIA-SDR.md) — instalação e uso para quem só gera reports.
+- [`docs/design.md`](docs/design.md) — o sistema visual (papel, tinta e marca-texto): tokens, regras e onde vale.
 - [`docs/analise-calls-vendas.md`](docs/analise-calls-vendas.md) — o que 12 reuniões que viraram
   venda ensinam (sem dados de clientes).
 - [`docs/checklist-pendencias.md`](docs/checklist-pendencias.md) — o que entrou em cada versão e
