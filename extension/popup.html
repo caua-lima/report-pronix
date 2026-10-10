@@ -3,118 +3,157 @@
 <head>
   <meta charset="UTF-8" />
   <style>
-    /* Mesmo sistema visual do dashboard: preto e neutros na estrutura, dourado como acento. */
+    /* tokens:inicio
+     * Sistema visual do Report PRONIX: papel, tinta e marca-texto.
+     * O papel e a tinta carregam a estrutura; o âmbar é o marca-texto — só destaca o que está ativo
+     * ou o número que importa. Este bloco é IDÊNTICO no painel, no Report do Dia, na política de
+     * privacidade e no popup da extensão (tests/design.test.js confere): mudou aqui, mude nos quatro.
+     */
     :root {
       color-scheme: light dark;
-      --preto: #0c0c0e;
-      --ouro: #ffc400; --ouro-claro: #ffd449; --ouro-tinta: #8a6a00;
-      --bg: #f4f4f6; --card: #ffffff; --card-2: #fafafb;
-      --border: #e7e7ee; --border-forte: #d5d5df;
-      --text: #16161a; --text-2: #55555f; --muted: #8a8a96;
-      --danger: #d92d20; --ring: rgba(255,196,0,.3);
-      --r: 10px;
+      --f-titulo: Bahnschrift, "DIN Alternate", "Roboto Condensed", "Arial Narrow", system-ui, sans-serif;
+      --f-texto: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, Roboto, Helvetica, Arial, sans-serif;
+      --f-mono: "Cascadia Mono", ui-monospace, "SF Mono", Consolas, monospace;
+      --ouro: #ffb800; --ouro-claro: #ffcc45; --ouro-tinta: #8a5d00; --marca: rgba(255,184,0,.45);
+      --preto: #18171b;
+      --bg: #f3efe6; --lateral: #eae5d8; --card: #fffdf7; --card-2: #f7f2e7; --campo: #ffffff;
+      --border: #e2dbc9; --border-forte: #c9c0a9;
+      --text: #18171b; --text-2: #4d4a45; --muted: #6f6a60;
+      --danger: #c2331f; --ok: #0f7a43; --info: #2b59c3; --roxo: #6247c9;
+      --ring: rgba(255,184,0,.5);
+      --shadow: none; --shadow-2: 0 14px 34px -14px rgba(24,23,27,.28);
+      --r: 10px; --r-sm: 7px;
     }
     @media (prefers-color-scheme: dark) {
-      :root {
-        --bg: #0d0d0f; --card: #151519; --card-2: #1b1b21;
-        --border: #26262e; --border-forte: #34343f;
-        --text: #f3f3f5; --text-2: #a6a6b2; --muted: #7b7b87;
-        --ouro-tinta: #ffc400; --danger: #ff6b6b;
+      :root:not([data-tema="claro"]) {
+        --ouro: #ffc233; --ouro-claro: #ffd466; --ouro-tinta: #ffc233; --marca: rgba(255,194,51,.28);
+        --preto: #0d0c0e;
+        --bg: #121113; --lateral: #0d0c0e; --card: #1a191c; --card-2: #222125; --campo: #141316;
+        --border: #2f2d32; --border-forte: #47444c;
+        --text: #f3efe6; --text-2: #bcb7ab; --muted: #8f8a7f;
+        --danger: #ff6f5c; --ok: #3ddc84; --info: #8aa9ff; --roxo: #b79cff;
+        --ring: rgba(255,194,51,.45);
+        --shadow-2: 0 16px 40px -12px rgba(0,0,0,.75);
       }
     }
+    :root[data-tema="claro"] { color-scheme: light; }
+    :root[data-tema="escuro"] {
+      color-scheme: dark;
+      --ouro: #ffc233; --ouro-claro: #ffd466; --ouro-tinta: #ffc233; --marca: rgba(255,194,51,.28);
+      --preto: #0d0c0e;
+      --bg: #121113; --lateral: #0d0c0e; --card: #1a191c; --card-2: #222125; --campo: #141316;
+      --border: #2f2d32; --border-forte: #47444c;
+      --text: #f3efe6; --text-2: #bcb7ab; --muted: #8f8a7f;
+      --danger: #ff6f5c; --ok: #3ddc84; --info: #8aa9ff; --roxo: #b79cff;
+      --ring: rgba(255,194,51,.45);
+      --shadow-2: 0 16px 40px -12px rgba(0,0,0,.75);
+    }
+    /* O marca-texto: um risco de âmbar atrás do texto, como num relatório sublinhado à mão. */
+    .marca {
+      background: linear-gradient(transparent 54%, var(--marca) 54%, var(--marca) 93%, transparent 93%);
+      padding: 0 .16em; margin: 0 -.16em; border-radius: 2px;
+      -webkit-box-decoration-break: clone; box-decoration-break: clone;
+    }
+    /* tokens:fim */
+
     * { box-sizing: border-box; }
     body {
       width: 380px; margin: 0; font-size: 14px; line-height: 1.5;
-      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      font-family: var(--f-texto);
       background: var(--bg); color: var(--text); -webkit-font-smoothing: antialiased;
     }
-    ::selection { background: var(--ouro); color: #121214; }
+    ::selection { background: var(--ouro); color: #18171b; }
+    :focus-visible { outline: 2px solid var(--ouro-tinta); outline-offset: 2px; }
 
     /* ---------- Topo ---------- */
-    .topbar { background: var(--preto); padding: 14px 16px; display: flex; align-items: center; gap: 11px; color: #fff; }
+    .topbar { background: var(--lateral); border-bottom: 1px solid var(--border); padding: 13px 16px; display: flex; align-items: center; gap: 10px; }
     .logo { flex: none; display: flex; }
-    .brand b { font-size: 14px; font-weight: 800; letter-spacing: .12em; display: block; line-height: 1.1; }
-    .brand small { font-size: 10.5px; color: rgba(255,255,255,.5); }
+    .brand b { font-family: var(--f-titulo); font-size: 16px; font-weight: 700; letter-spacing: .01em; display: block; line-height: 1.05; white-space: nowrap; }
+    .brand small { font-family: var(--f-titulo); font-size: 9.5px; color: var(--muted); letter-spacing: .16em; text-transform: uppercase; }
     .sdr {
-      margin-left: auto; text-align: right; font-size: 10px; line-height: 1.3;
-      color: rgba(255,255,255,.45); text-transform: uppercase; letter-spacing: .06em; font-weight: 600;
+      margin-left: auto; text-align: right; font-family: var(--f-titulo); font-size: 9.5px; line-height: 1.3;
+      color: var(--muted); text-transform: uppercase; letter-spacing: .14em; font-weight: 600; min-width: 0;
     }
-    .sdr b { display: block; font-size: 12px; color: var(--ouro); text-transform: none; letter-spacing: 0; }
+    .sdr b { display: block; font-family: var(--f-texto); font-size: 12.5px; color: var(--text); text-transform: none; letter-spacing: 0; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 150px; }
 
     .body { padding: 16px; }
-    label { display: block; font-size: 11px; font-weight: 600; color: var(--text-2); margin-bottom: 6px; }
+    label { display: block; font-size: 11.5px; font-weight: 600; color: var(--text-2); margin-bottom: 6px; }
     .row { display: flex; gap: 8px; align-items: center; }
 
     input {
-      flex: 1; width: 100%; padding: 9px 11px; border-radius: var(--r);
-      border: 1px solid var(--border-forte); background: var(--card-2); color: var(--text);
+      flex: 1; width: 100%; padding: 9px 11px; border-radius: var(--r-sm);
+      border: 1px solid var(--border-forte); background: var(--campo); color: var(--text);
       font-size: 12.5px; font-family: inherit; transition: border-color .15s, box-shadow .15s;
     }
+    input[type="checkbox"] { accent-color: var(--ouro-tinta); }
     input::placeholder { color: var(--muted); }
     input:hover { border-color: var(--muted); }
-    input:focus { outline: none; border-color: var(--ouro); box-shadow: 0 0 0 3px var(--ring); }
+    input:focus { outline: none; border-color: var(--text); box-shadow: 0 0 0 3px var(--ring); }
 
+    /* Botão: tinta. Só a ação principal (gerar o report) e o PDF pronto levam o âmbar. */
     button {
-      padding: 9px 14px; border-radius: var(--r); border: 1px solid transparent;
-      background: var(--ouro); color: #121214; font-weight: 650; cursor: pointer;
-      font-size: 13px; font-family: inherit; transition: background .15s, transform .06s;
+      padding: 9px 14px; border-radius: var(--r-sm); border: 1px solid var(--text);
+      background: var(--text); color: var(--bg); font-weight: 650; cursor: pointer;
+      font-size: 13px; font-family: inherit; transition: background .15s, transform .06s, box-shadow .15s, border-color .15s;
     }
-    button:hover { background: var(--ouro-claro); }
+    button:hover { box-shadow: inset 0 -3px 0 var(--ouro); }
     button:active { transform: translateY(1px); }
-    button:disabled { opacity: .5; cursor: not-allowed; }
-    button.ghost { background: var(--card); color: var(--text-2); border-color: var(--border-forte); font-weight: 600; }
-    button.ghost:hover { background: var(--card-2); color: var(--text); border-color: var(--muted); }
+    button:disabled { opacity: .45; cursor: not-allowed; box-shadow: none; }
+    button.ghost { background: transparent; color: var(--text); border-color: var(--border-forte); font-weight: 600; }
+    button.ghost:hover { border-color: var(--text); box-shadow: inset 0 -3px 0 var(--marca); }
 
-    #gerar { width: 100%; margin-top: 14px; padding: 12px; font-size: 14px; font-weight: 700; }
+    #gerar, #dl {
+      width: 100%; padding: 13px; font-family: var(--f-titulo); font-size: 16px; font-weight: 700; letter-spacing: .02em;
+      background: var(--ouro); color: #18171b; border-color: var(--ouro);
+    }
+    #gerar { margin-top: 14px; }
+    #gerar:hover, #dl:hover { background: var(--ouro-claro); border-color: var(--ouro-claro); box-shadow: inset 0 -3px 0 #18171b; }
+    #zipDia { width: 100%; }
     .hint { font-size: 11px; color: var(--muted); margin-top: 8px; line-height: 1.5; }
 
     .status { min-height: 18px; margin: 12px 0 0; color: var(--muted); font-size: 12px; display: flex; align-items: center; gap: 8px; }
     .status.erro { color: var(--danger); }
-    .status.ok { color: var(--ouro-tinta); font-weight: 600; }
+    .status.ok { color: var(--ok); font-weight: 600; }
     .spinner { width: 13px; height: 13px; border: 2px solid color-mix(in srgb, var(--muted) 30%, transparent); border-top-color: var(--ouro); border-radius: 50%; animation: spin .7s linear infinite; flex: none; }
     @keyframes spin { to { transform: rotate(360deg); } }
     .hidden { display: none !important; }
 
-    /* Servidor: já vem certo, então fica fora do caminho. */
+    /* Opções que ficam fora do caminho: uma linha fina separa do que se usa todo dia. */
+    .opcoes { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
     details { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 12px; }
     summary { font-size: 11px; color: var(--muted); cursor: pointer; list-style: none; user-select: none; font-weight: 600; }
     summary::-webkit-details-marker { display: none; }
-    summary::before { content: ''; }
     summary:hover { color: var(--text-2); }
     details[open] summary { margin-bottom: 8px; }
 
-    #dl { display: block; width: 100%; margin-top: 12px; }
+    #dl { display: block; margin-top: 12px; }
     /* Campos editáveis do report */
-    #report [data-edit] { border-radius: 4px; outline: none; transition: background .12s, box-shadow .12s; }
-    #report [data-edit]:hover { background: color-mix(in srgb, var(--ouro) 14%, transparent); }
-    #report [data-edit]:focus { background: color-mix(in srgb, var(--ouro) 18%, transparent); box-shadow: 0 0 0 2px var(--ring); }
+    #report [data-edit] { border-radius: 3px; outline: none; transition: background .12s, box-shadow .12s; }
+    #report [data-edit]:hover { background: color-mix(in srgb, var(--ouro) 16%, transparent); }
+    #report [data-edit]:focus { background: color-mix(in srgb, var(--ouro) 22%, transparent); box-shadow: 0 0 0 2px var(--ring); }
     .edit-dica { font-size: 10.5px; color: var(--muted); margin-top: 10px; }
 
     /* ---------- Report ---------- */
     .report {
       max-height: 300px; overflow: auto; background: var(--card); border: 1px solid var(--border);
-      border-radius: 12px; padding: 13px; margin-top: 12px;
+      border-radius: var(--r); padding: 13px; margin-top: 12px;
     }
-    .report h2 { font-size: 12px; margin: 13px 0 5px; letter-spacing: -.01em; }
+    .report h2 { font-family: var(--f-titulo); font-size: 13.5px; margin: 13px 0 5px; }
     .report h2:first-child { margin-top: 0; }
-    .report table { border-collapse: collapse; width: 100%; margin-bottom: 10px; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+    .report table { border-collapse: collapse; width: 100%; margin-bottom: 10px; border: 1px solid var(--border); border-radius: var(--r-sm); overflow: hidden; }
     .report td { border-bottom: 1px solid var(--border); padding: 6px 9px; font-size: 11.5px; }
     .report tr:last-child td { border-bottom: none; }
     .report td.rot { font-weight: 650; width: 34%; background: var(--card-2); color: var(--text-2); }
     .report ul, .report ol { margin: 3px 0 8px; padding-left: 18px; }
     .report li { margin: 3px 0; font-size: 11.5px; }
-    .frase { font-style: italic; color: var(--text-2); background: var(--card-2); border-left: 2px solid var(--ouro); padding: 7px 10px; border-radius: 0 8px 8px 0; font-size: 11.5px; margin: 6px 0; }
-    code { background: var(--card-2); border: 1px solid var(--border); padding: 1px 5px; border-radius: 5px; font-size: 11px; font-family: ui-monospace, Consolas, monospace; }
+    .frase { font-style: italic; color: var(--text-2); background: var(--card-2); border-left: 3px solid var(--ouro); padding: 7px 10px; border-radius: 0 var(--r-sm) var(--r-sm) 0; font-size: 11.5px; margin: 6px 0; }
+    code { background: var(--card-2); border: 1px solid var(--border); padding: 1px 5px; border-radius: 4px; font-size: 11px; font-family: var(--f-mono); }
   </style>
 </head>
 <body>
   <div class="topbar">
-    <span class="logo">
-      <svg width="28" height="28" viewBox="0 0 30 30">
-        <path d="M18.2 2.5 L8.5 16.8 L14.2 16.8 L11.6 27.5 L21.5 12.6 L15.8 12.6 Z" fill="#ffc400"/>
-      </svg>
-    </span>
-    <div class="brand"><b>PRONIX</b><small>Report</small></div>
+    <span class="logo"><svg class="logo-rp" width="30" height="30" viewBox="0 0 128 128" aria-hidden="true"><rect width="128" height="128" rx="28" fill="#ffb800"/><path d="M34 22h38l20 20v64H34z" fill="#18171b"/><path d="M72 22l20 20H72z" fill="#45424b"/><path d="M46 56h34M46 72h28M46 88h16" fill="none" stroke="#ffb800" stroke-width="7" stroke-linecap="round"/><circle cx="92" cy="96" r="26" fill="#ffb800"/><circle cx="92" cy="96" r="21" fill="#1fbf5c"/><path d="M81 97l8 8 14-17" fill="none" stroke="#fff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+    <div class="brand"><b>Report <span class="marca">PRONIX</span></b><small>Pré-vendas</small></div>
     <div class="sdr">SDR<b id="sdrNome">—</b></div>
   </div>
 
@@ -125,23 +164,25 @@
       <button id="testar" class="ghost" title="Validar chave e conexão">Validar</button>
     </div>
 
-    <button id="gerar">Gerar Report da conversa aberta</button>
+    <button id="gerar">Gerar report da conversa aberta</button>
     <div class="hint">Abra a conversa do lead (WhatsApp Web ou Instagram Direct) e clique acima. Não troque de conversa até o aviso mudar para "Gerando report…".</div>
 
-    <label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-weight:500;cursor:pointer">
-      <input id="fichaCrm" type="checkbox" checked style="width:auto;margin:0" />
-      Mostrar a ficha do RD Station ao abrir uma conversa no WhatsApp
-    </label>
-
-    <button id="zipDia" class="ghost" style="margin-top:10px">Baixar meus reports de hoje (.zip)</button>
-    <div class="hint">Leva o último report de cada lead (os refeitos ficam de fora). Para escolher um por um, use a aba "Reports do dia" no site.</div>
-
     <div id="status" class="status"></div>
-    <div id="infoExt" class="hint" style="margin-top:6px"></div>
 
     <div id="report" class="report hidden"></div>
     <div class="edit-dica hidden" id="editDica">Clique em qualquer trecho do report para editar. O PDF sai com as suas alterações.</div>
-    <button id="dl" class="hidden"><svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:-2px;flex:none" fill="none" stroke="#121214" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg> Baixar PDF</button>
+    <button id="dl" class="hidden"><svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:-2px;flex:none" fill="none" stroke="#18171b" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg> Baixar PDF</button>
+
+    <div class="opcoes">
+      <label style="display:flex;align-items:center;gap:8px;margin:0 0 10px;font-weight:500;cursor:pointer">
+        <input id="fichaCrm" type="checkbox" checked style="width:auto;margin:0;flex:none" />
+        Mostrar a ficha do RD Station ao abrir uma conversa no WhatsApp
+      </label>
+
+      <button id="zipDia" class="ghost">Baixar meus reports de hoje (.zip)</button>
+      <div class="hint">Leva o último report de cada lead (os refeitos ficam de fora). Para escolher um por um, use a aba "Reports do dia" no site.</div>
+      <div id="infoExt" class="hint" style="margin-top:6px"></div>
+    </div>
 
     <details>
       <summary><svg viewBox="0 0 24 24" width="12" height="12" style="vertical-align:-2px;flex:none" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9 2 2 0 1 1-2.8 2.8 1.7 1.7 0 0 0-2.9 1.2 2 2 0 1 1-4 0 1.7 1.7 0 0 0-2.9-1.2 2 2 0 1 1-2.8-2.8A1.7 1.7 0 0 0 3 13a2 2 0 1 1 0-4 1.7 1.7 0 0 0 1.2-2.9 2 2 0 1 1 2.8-2.8A1.7 1.7 0 0 0 10 3a2 2 0 1 1 4 0 1.7 1.7 0 0 0 2.9 1.2 2 2 0 1 1 2.8 2.8A1.7 1.7 0 0 0 21 10a2 2 0 1 1 0 4 1.7 1.7 0 0 0-1.6 1"/></svg> Servidor</summary>
