@@ -30,6 +30,8 @@ const vendasRd = require('./src/vendasRd');
 const { gerarResumoRapido } = require('./src/resumoRapido');
 const coachIa = require('./src/coach');
 const inteligencia = require('./src/inteligencia');
+const afinidadeIa = require('./src/afinidade');
+const { gerarAfinidadePdfBuffer, nomeDoArquivo: nomeDoArquivoAfinidade } = require('./src/afinidadePdf');
 const aprendizado = require('./src/aprendizado');
 const { normalizarConsciencia } = require('./src/consciencia');
 
@@ -166,13 +168,16 @@ app.get('/api/status', (_req, res) => {
 });
 
 /** Quem sou eu (valida a chave e devolve nome e papel). */
-app.get('/api/eu', auth, (req, res) => {
+app.get('/api/eu', auth, async (req, res) => {
+  // Closers com análise de afinidade: é daqui que o popup tira o botão "Esse lead é bom para o …?".
+  const analises = await closers.comAnalise().catch(() => []);
   res.json({
     ok: true, nome: req.usuario.nome, id: req.usuario.id, papel: req.usuario.papel,
     // O que o master liberou para esta chave (a extensão mostra no popup).
     coach: Boolean(req.usuario.coach), fichaCrm: Boolean(req.usuario.fichaCrm), automacao: Boolean(req.usuario.automacao),
     abas: usuarios.abasDe(req.usuario), // abas do painel liberadas para esta chave
     etiquetas: Boolean(req.usuario.etiquetas),
+    analises,
   });
 });
 
@@ -296,6 +301,34 @@ app.post('/api/reports/:id/closer', auth, async (req, res) => {
   }
 });
 
+/**
+ * "Esse lead é bom para o closer?" — nota de 0 a 10 com os motivos, os pontos de atenção e como
+ * conduzir a call, mais o PDF. Vem depois do report: a extensão manda o que o report levantou e a
+ * conversa. IA gratuita (Groq) e PDF montado aqui: não entra no gasto.
+ */
+app.post('/api/afinidade', auth, async (req, res) => {
+  try {
+    const { closerId, reportId, dados, mensagens, nome } = req.body || {};
+    const closer = await closers.porId(String(closerId || ''));
+    if (!closer) return res.status(404).json({ erro: 'Closer não encontrado.' });
+    // O histórico do closer é dele, não de quem gerou o report: master e gestor cruzam com a equipe toda.
+    const reports = await reportsDoEscopo(usuarios.ehAdmin(req.usuario) ? null : req.usuario.id).catch(() => []);
+    const r = await afinidadeIa.analisar({ closer, dados, mensagens, nome, reports });
+    const lead = String((dados && dados.lead) || nome || '').slice(0, 80);
+    const buffer = await gerarAfinidadePdfBuffer({ afinidade: r.afinidade, lead, sdr: req.usuario.nome });
+    // A nota fica no report (só no do próprio usuário, ou de qualquer um para master/gestor).
+    if (reportId) {
+      const rep = await stats.buscarPorId(String(reportId)).catch(() => null);
+      if (rep && (rep.usuarioId === req.usuario.id || usuarios.ehAdmin(req.usuario))) {
+        await stats.anotarAfinidade(rep.id, r.afinidade).catch((err) => console.error('Falha ao anotar a afinidade:', err.message));
+      }
+    }
+    res.json({ ok: true, afinidade: r.afinidade, cache: r.cache, arquivo: nomeDoArquivoAfinidade(r.afinidade, lead), arquivoBase64: buffer.toString('base64') });
+  } catch (err) {
+    res.status(/inteligência cadastrada|Sem dados do lead/.test(err.message) ? 400 : 502).json({ erro: err.message });
+  }
+});
+
 // ---------------------------------------------------------------------------
 // Master: resultados da reunião e inteligência (closer × perfil, prospecção que funciona)
 // ---------------------------------------------------------------------------
@@ -380,6 +413,21 @@ app.get('/api/admin/closers', acesso(['closers', 'numeros', 'resultados']), asyn
 app.post('/api/admin/closers', acesso(['closers'], SO_MASTER_ERRO), async (req, res) => {
   try {
     const c = await closers.criar(req.body && req.body.nome, req.body && req.body.email);
+    res.json({ ok: true, closer: c });
+  } catch (err) {
+    res.status(400).json({ erro: err.message });
+  }
+});
+
+/** Apelido e inteligência do closer (o que as calls dele ensinaram): alimenta a análise de afinidade. */
+app.patch('/api/admin/closers/:id', acesso(['closers'], SO_MASTER_ERRO), async (req, res) => {
+  try {
+    const corpo = req.body || {};
+    const campos = {};
+    if (typeof corpo.apelido === 'string') campos.apelido = corpo.apelido;
+    if (typeof corpo.inteligencia === 'string') campos.inteligencia = corpo.inteligencia;
+    const c = await closers.definirInteligencia(req.params.id, campos);
+    if (!c) return res.status(404).json({ erro: 'Closer não encontrado.' });
     res.json({ ok: true, closer: c });
   } catch (err) {
     res.status(400).json({ erro: err.message });
