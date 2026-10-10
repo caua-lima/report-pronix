@@ -9,3 +9,6 @@ auth/
 *.zip
 # ...menos o que o dashboard serve para o time baixar
 !public/PRONIX-extensao.zip
+
+# Material bruto com dado de cliente (transcrições de call etc.): fica só na máquina, nunca no GitHub
+privado/
