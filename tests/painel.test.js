@@ -142,6 +142,39 @@ test('A14: a senha reserva de admin não fica no sessionStorage (e valor antigo 
   p.fechar();
 });
 
+test('primeiro acesso: sem chave nenhuma, a senha do servidor libera o menu e abre Acessos para criar a primeira', async () => {
+  const api = criarApi({
+    'GET /api/eu': () => ({ status: 401, corpo: { erro: 'Chave inválida.' } }),
+    'GET /api/admin/usuarios': () => ({ corpo: { usuarios: [] } }),
+  });
+  let senhaCerta = false;
+  api.quando('POST /api/admin/login', () => (senhaCerta ? { corpo: { ok: true } } : { status: 401, corpo: { erro: 'Senha de admin incorreta.' } }));
+  const p = abrirPainel(api, { chave: '' });
+  await dormir(60);
+  const abaAcessos = p.document.querySelector('.tab[data-aba="acessos"]');
+  assert.ok(!visivel(abaAcessos), 'sem chave, a aba Acessos fica escondida');
+
+  // senha errada: fica onde está, com o aviso
+  p.$('senhaPrimeiro').value = 'errada';
+  p.$('entrarPrimeiro').click();
+  await esperar(() => /Senha incorreta/.test(p.$('statusPrimeiro').textContent), { motivo: 'aviso de senha errada' });
+  assert.ok(!visivel(abaAcessos));
+  assert.ok(visivel(p.$('aba-report')));
+
+  // senha certa: o menu aparece e a aba Acessos abre com o formulário de criar acesso
+  senhaCerta = true;
+  p.$('senhaPrimeiro').value = 'senha-do-servidor';
+  p.$('entrarPrimeiro').click();
+  await esperar(() => visivel(p.$('aba-acessos')), { motivo: 'aba Acessos aberta' });
+  assert.ok(visivel(abaAcessos), 'a aba aparece no menu');
+  assert.ok(visivel(p.$('cardCriar')), 'dá para criar o primeiro acesso');
+  assert.equal(p.$('senhaPrimeiro').value, '', 'a senha não fica no campo');
+  assert.equal(p.w.sessionStorage.getItem('adminPass'), null);
+  assert.equal(p.w.localStorage.getItem('adminPass'), null);
+  assert.deepEqual(p.erros, []);
+  p.fechar();
+});
+
 // ---------------------------------------------------------------- A16: abas sob demanda
 test('A16: abrir Números carrega só closers e números; cada aba carrega o que é dela', async () => {
   const api = apiBase({ stats: statsVazio({ ultimos: [reportNaTabela()] }) });

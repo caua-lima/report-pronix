@@ -374,6 +374,16 @@
           <button id="validar" class="btn sec">Validar</button>
         </div>
         <div id="statusChave" class="status"></div>
+        <!-- Primeiro acesso: sem nenhuma chave, as abas de gestão ficam escondidas — é por aqui que se entra para criar a primeira. -->
+        <details id="primeiroAcesso" style="margin-top:10px">
+          <summary style="cursor:pointer;color:var(--text-2);font-size:.85rem">Ainda não tem chave? Entrar com a senha do servidor</summary>
+          <div class="row" style="margin-top:10px">
+            <input id="senhaPrimeiro" class="grow" type="password" placeholder="Senha de admin (ADMIN_PASSWORD)" autocomplete="off" />
+            <button id="entrarPrimeiro" class="btn sec" type="button">Entrar</button>
+          </div>
+          <div id="statusPrimeiro" class="status"></div>
+          <div class="hint" style="margin-top:4px">Serve para criar o primeiro acesso ou recuperar o seu: ao entrar, a aba <b>Acessos</b> abre para você criar a chave. A senha não fica guardada no navegador.</div>
+        </details>
       </div>
 
       <div class="card">
@@ -1135,6 +1145,19 @@
     document.querySelectorAll('.senha-admin').forEach((i) =>
       i.addEventListener('keydown', (e) => { if (e.key === 'Enter') entrarAdmin(i.value); })
     );
+    // Primeiro acesso (banco vazio ou chave perdida): a senha do servidor libera o menu e abre Acessos.
+    async function entrarPrimeiro() {
+      const senha = $('senhaPrimeiro').value;
+      if (!senha) return setStatus('statusPrimeiro', 'Digite a senha de admin do servidor.', { erro: true });
+      setStatus('statusPrimeiro', 'Conferindo…', { loading: true });
+      const ok = await entrarAdmin(senha);
+      $('senhaPrimeiro').value = '';
+      if (!ok) return setStatus('statusPrimeiro', 'Senha incorreta (ou o servidor está sem ADMIN_PASSWORD).', { erro: true });
+      setStatus('statusPrimeiro', 'Entrou. Crie o seu acesso na aba Acessos.', { ok: true });
+      abrir('acessos');
+    }
+    $('entrarPrimeiro').addEventListener('click', entrarPrimeiro);
+    $('senhaPrimeiro').addEventListener('keydown', (e) => { if (e.key === 'Enter') entrarPrimeiro(); });
 
     // ---------- Aba: Acessos ----------
     // A chave completa não fica exposta na tela: só o começo e o fim (clique mostra; "Copiar chave" copia a inteira).
