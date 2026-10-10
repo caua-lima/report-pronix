@@ -325,6 +325,7 @@
     }
     /* Tela estreita: o menu fica no topo e quebra em linhas em vez de esconder abas fora da tela. */
     @media (max-width: 899px) {
+      header { position: static; }
       .menu { flex-wrap: wrap; overflow: visible; row-gap: 0; }
     }
   </style>
@@ -337,7 +338,7 @@
       <button id="tema" class="tema" type="button" title="Trocar entre tema automático, claro e escuro">Tema: auto</button>
       <div class="quem" id="quem"></div>
     </div>
-    <nav class="menu">
+    <nav class="menu" aria-label="Seções do painel">
       <div class="grupo">
         <div class="grupo-rotulo">Dia a dia</div>
         <button class="tab on" data-aba="report"><i data-ic="file-text"></i>Gerar report</button>
@@ -1032,7 +1033,11 @@
       // (Isto é só a tela: quem barra de verdade é o servidor.)
       if (SO_ADMIN.includes(aba) && !podeAba(aba)) aba = 'report';
       ABAS.forEach((a) => $('aba-' + a).classList.toggle('hidden', a !== aba));
-      document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('on', t.dataset.aba === aba));
+      document.querySelectorAll('.tab').forEach((t) => {
+        t.classList.toggle('on', t.dataset.aba === aba);
+        if (t.dataset.aba === aba) t.setAttribute('aria-current', 'page');
+        else t.removeAttribute('aria-current');
+      });
       $('tituloPagina').textContent = PAGINAS[aba][0];
       $('subPagina').textContent = PAGINAS[aba][1];
       location.hash = aba;
@@ -1757,8 +1762,8 @@
     }
     function selosDoResultado(r) {
       if (VENDAS.includes(r.resultado)) return '<span class="selo-venda" title="Negociação finalizada: venda" style="display:inline-block;margin-right:6px;color:var(--ok);font-weight:800">✓</span>';
-      if (r.resultado === 'sem_venda' && r.encerradoPeloRd) return '<span class="selo-fim" title="O closer registrou no RD que não comprou; o motivo está em O que deu a reunião." style="display:inline-block;margin-right:6px;padding:1px 7px;border-radius:10px;border:1px solid var(--border);color:var(--muted);font-size:.7rem;font-weight:700">Encerrado pelo RD</span>';
-      if (r.vendidoNoRd) return '<span class="selo-rd" title="O closer marcou este card como vendido no RD. Escolha em Resultado se foi em call, follow-up ou pix de compromisso." style="display:inline-block;margin-right:6px;padding:1px 7px;border-radius:10px;background:var(--ouro);color:#121214;font-size:.7rem;font-weight:750">Vendido no RD</span>';
+      if (r.resultado === 'sem_venda' && r.encerradoPeloRd) return '<span class="selo-fim" title="O closer registrou no RD que não comprou; o motivo está em O que deu a reunião." style="display:inline-block;margin-right:6px;padding:1px 7px;border-radius:4px;border:1px solid var(--border-forte);color:var(--text-2);font-size:.7rem;font-weight:700">Encerrado pelo RD</span>';
+      if (r.vendidoNoRd) return '<span class="selo-rd" title="O closer marcou este card como vendido no RD. Escolha em Resultado se foi em call, follow-up ou pix de compromisso." style="display:inline-block;margin-right:6px;padding:1px 7px;border-radius:4px;background:var(--ouro);color:#18171b;font-size:.7rem;font-weight:700">Vendido no RD</span>';
       return '';
     }
 
