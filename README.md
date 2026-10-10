@@ -525,6 +525,20 @@ Tudo em `src/db.js` (Redis em produção, `data/*.json` local). **A conversa nã
 | `insights_ultimo` | Últimos insights gerados. |
 | `cache:*` | Temporários: transcrições, ficha do RD (5 min), funis (1 h), resumos (7 dias), coach (24 h). |
 
+### Copiar os dados de um banco para outro
+
+`scripts/migrar-dados.js` copia todas as chaves permanentes de um banco Upstash/KV para outro
+(usuários, reports, resultados, base de aprendizado...). As credenciais ficam só em variáveis de
+ambiente da janela do terminal: `ORIGEM_URL`, `ORIGEM_TOKEN`, `DESTINO_URL` e `DESTINO_TOKEN`.
+
+```
+node scripts/migrar-dados.js            # só lista o que seria copiado
+node scripts/migrar-dados.js --copiar   # copia de fato
+```
+
+Não apaga nada na origem; no destino, substitui a chave de mesmo nome. Chaves temporárias (cache e
+travas) ficam de fora.
+
 ---
 
 ## Testes
