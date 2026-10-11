@@ -118,16 +118,16 @@ async function abaAtiva() {
 // Qual site está aberto: cada um tem seu content script e sua leitura de DOM.
 // "arquivos" = o que injetar se a página ainda não tiver o script, na mesma ordem do manifest.
 const PLATAFORMAS = [
-  { regex: /^https:\/\/web\.whatsapp\.com\//, arquivos: ['agenda.js', 'content.js'], nome: 'WhatsApp Web' },
-  { regex: /^https:\/\/www\.instagram\.com\/direct\//, arquivos: ['content-instagram.js'], nome: 'Instagram Direct' },
+  { regex: /^https:\/\/web\.whatsapp\.com\//, arquivos: ['agenda.js', 'afinidade.js', 'content.js'], nome: 'WhatsApp Web' },
+  { regex: /^https:\/\/www\.instagram\.com\/direct\//, arquivos: ['afinidade.js', 'content-instagram.js'], nome: 'Instagram Direct' },
 ];
 const plataformaDaAba = (url) => PLATAFORMAS.find((p) => p.regex.test(url || ''));
 
 // Envia "start" ao content script; injeta-o se ainda não estiver presente.
-async function enviarStart(tabId, server, arquivosContentScript) {
+async function enviarStart(tabId, server, arquivosContentScript, afinidade) {
   const enviar = () =>
     new Promise((resolve) => {
-      chrome.tabs.sendMessage(tabId, { action: 'start', server }, (resp) => {
+      chrome.tabs.sendMessage(tabId, { action: 'start', server, afinidade: afinidade || null }, (resp) => {
         if (chrome.runtime.lastError) resolve({ __semScript: true });
         else resolve(resp);
       });
@@ -170,6 +170,8 @@ async function testarConexao() {
     if (!r.ok) throw new Error(j.erro || 'Chave inválida.');
     $('sdrNome').textContent = j.nome;
     mostrarInfoExt(j);
+    mostrarAnalises(j.analises);
+    chrome.storage.local.set({ analises: Array.isArray(j.analises) ? j.analises : [] });
     const dono = await impressaoDaChave(chave);
     chrome.storage.local.get({ ultimoReport: null }, ({ ultimoReport }) => {
       if (ultimoReport && ultimoReport.dono !== dono) {
@@ -185,8 +187,37 @@ async function testarConexao() {
   }
 }
 
-async function gerar() {
-  $('gerar').disabled = true;
+/**
+ * Botões "Esse lead é bom para o <closer>?": um por closer com inteligência cadastrada no painel.
+ * Clicar gera o report normal e, junto, a análise de afinidade com esse closer (nota de 0 a 10 e PDF).
+ */
+function mostrarAnalises(lista) {
+  const caixa = $('analises');
+  if (!caixa) return;
+  const closers = (Array.isArray(lista) ? lista : []).filter((c) => c && c.id).slice(0, 6);
+  caixa.textContent = '';
+  caixa.classList.toggle('hidden', !closers.length);
+  closers.forEach((c) => {
+    const apelido = String(c.apelido || c.nome || '').slice(0, 20);
+    const b = document.createElement('button');
+    b.className = 'ghost analise';
+    b.dataset.closer = c.id;
+    b.textContent = `Esse lead é bom para o ${apelido}?`; // texto puro: nome de closer nunca vira HTML
+    b.title = `Gera o report e a análise de afinidade com ${c.nome || apelido}`;
+    b.addEventListener('click', () => gerar({ id: c.id, apelido, nome: String(c.nome || '').slice(0, 80) }));
+    caixa.appendChild(b);
+  });
+  if (closers.length) {
+    const dica = document.createElement('div');
+    dica.className = 'hint';
+    dica.textContent = 'Gera o report normal e mais um PDF com a nota de 0 a 10, os motivos, os pontos de atenção e como conduzir a call.';
+    caixa.appendChild(dica);
+  }
+}
+
+async function gerar(afinidade) {
+  const botoes = [$('gerar'), ...document.querySelectorAll('#analises button')];
+  botoes.forEach((b) => { b.disabled = true; });
   try {
     const tab = await abaAtiva();
     const plataforma = tab && plataformaDaAba(tab.url);
@@ -195,16 +226,17 @@ async function gerar() {
     }
     const server = getServer();
     setStatus('Iniciando…', { loading: true });
-    await enviarStart(tab.id, server, plataforma.arquivos);
+    await enviarStart(tab.id, server, plataforma.arquivos, afinidade);
     setStatus(
       '<b>Report iniciado!</b> Acompanhe o aviso no canto inferior direito da tela. ' +
-        'Você pode fechar este popup, mas não troque de conversa até o report ficar pronto.',
+        'Você pode fechar este popup, mas não troque de conversa até o report ficar pronto.' +
+        (afinidade ? ` A análise para o ${escapeHtml(afinidade.apelido)} aparece no mesmo aviso.` : ''),
       { html: true }
     );
   } catch (err) {
     setStatus(err.message, { erro: true });
   } finally {
-    $('gerar').disabled = false;
+    botoes.forEach((b) => { b.disabled = false; });
   }
 }
 
@@ -338,9 +370,11 @@ function carregarUltimo() {
 }
 
 // Inicialização: carrega servidor e chave salvos.
-chrome.storage.local.get({ server: DEFAULT_SERVER, chave: '' }, (cfg) => {
+chrome.storage.local.get({ server: DEFAULT_SERVER, chave: '', analises: [] }, (cfg) => {
   $('server').value = cfg.server || DEFAULT_SERVER;
   $('chave').value = cfg.chave || '';
+  // Os botões de análise aparecem na hora (do último acesso); a validação da chave atualiza a lista.
+  if (cfg.chave) mostrarAnalises(cfg.analises);
   if (cfg.chave) testarConexao();
 });
 $('server').addEventListener('change', () => {
@@ -352,7 +386,7 @@ $('chave').addEventListener('change', () => {
 $('testar').addEventListener('click', () => {
   chrome.storage.local.set({ server: getServer(), chave: getChave() }, testarConexao);
 });
-$('gerar').addEventListener('click', gerar);
+$('gerar').addEventListener('click', () => gerar());
 $('zipDia').addEventListener('click', baixarZipDoDia);
 
 // Ficha do RD Station no WhatsApp: ligada por padrão; o content script escuta a mudança na hora.
