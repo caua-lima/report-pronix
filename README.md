@@ -342,6 +342,27 @@ funciona**.
 - **Escopo.** Resultados e inteligência usam os reports de quem está olhando; o seletor "Toda a
   equipe" inclui os demais.
 
+### Afinidade com o closer ("Esse lead é bom para o PH?")
+
+Para cada closer com **inteligência cadastrada** (aba Closers → Inteligência), o popup da extensão
+ganha um botão **"Esse lead é bom para o {apelido}?"**. Clicar gera o report normal e, logo abaixo
+do "Report pronto!", a análise:
+
+- **nota de 0 a 10** da combinação lead × closer (não é "o lead é bom?", é "é bom *para ele*?");
+- o veredito, **por que essa nota**, **pontos de atenção**, **como conduzir a call** e o que
+  **confirmar antes**;
+- um **segundo PDF** com tudo isso, de uso do pré-vendedor.
+
+A nota cruza três coisas: a inteligência do closer (o que as calls dele ensinaram: com que tipo de
+lead fecha — sozinho, casal, com sócio; perfil —, como conduz, onde trava), o histórico dele em
+Resultados (vendas e reuniões por perfil de lead) e o que o report levantou do lead, mais o fim da
+conversa. A inteligência é texto destilado, **sem nome nem dado de lead**; o material bruto
+(transcrições) fica na pasta `privado/`, fora do Git.
+
+Custo zero: a análise roda no Groq e o PDF é montado no servidor. Se a análise falhar, o report
+continua pronto e o aviso oferece tentar de novo. A nota fica guardada no report, para comparar
+depois com o que a reunião deu.
+
 ### Base de conhecimento
 
 Seis campos na aba **Base**: empresa, oferta e valores, perfil de cliente, roteiro, régua de
@@ -412,6 +433,7 @@ Autenticação por cabeçalho `x-cr-key` (a chave do usuário). `gestor+` = mast
 | `POST /api/lead/marca` | chave + automação | Etiqueta "Qualificado" e agendamento. |
 | `POST /api/resumo-rapido` | chave + popup do lead | Resumo rápido da conversa. |
 | `POST /api/coach` · `POST /api/coach/feedback` | chave + coach | Coach e o "Funcionou". |
+| `POST /api/afinidade` | chave | Nota de 0 a 10 do lead para um closer, com motivos e o PDF. |
 
 ### Dia a dia e gestão
 
@@ -428,6 +450,7 @@ Autenticação por cabeçalho `x-cr-key` (a chave do usuário). `gestor+` = mast
 | `GET /api/admin/closers` | gestor+ | Lista completa de closers. |
 | `POST /api/admin/crm/teste` | gestor+ | Busca no RD sem cache, com o passo a passo. |
 | `POST/DELETE /api/admin/closers` | master | Adiciona e remove closers. |
+| `PATCH /api/admin/closers/:id` | master | Apelido e inteligência do closer (alimenta a afinidade). |
 | `GET/POST/PATCH/DELETE /api/admin/usuarios` | master | Acessos da equipe. |
 | `GET /api/master/resultados` · `GET /api/master/inteligencia` · `POST /api/master/insights` | master | Resultados, inteligência e insights. |
 | `GET /api/status` | pública | Verificação de conexão. |
@@ -515,7 +538,7 @@ Tudo em `src/db.js` (Redis em produção, `data/*.json` local). **A conversa nã
 | `consumo` | Custo por geração — continua valendo se o report for removido. |
 | `pdf_<id>` | O PDF de cada report. |
 | `base` | Base de conhecimento (com os textos anteriores, para restaurar). |
-| `closers` | Lista de closers. |
+| `closers` | Lista de closers, com o apelido e a inteligência de cada um. |
 | `crm_cards` | Card escolhido para cada lead com mais de um. |
 | `google_agenda` | Autorização da conta conectada ao Google Agenda (só no servidor). |
 | `lead_marcas` | Etiqueta "Qualificado" e agendamento por lead (até 4.000). |
