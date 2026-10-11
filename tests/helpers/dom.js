@@ -109,8 +109,8 @@ function abrirPagina({ arquivo, url, aoEnviar, blobs = new Map(), intervaloRapid
     enviadas,
     storage,
     blobs,
-    /** Dispara o clique em "Gerar Report" do popup. */
-    iniciar: (server = 'https://servidor.teste') => ouvintes.forEach((fn) => fn({ action: 'start', server }, {}, () => {})),
+    /** Dispara o clique em "Gerar Report" do popup (extra: o que mais o popup manda, como o closer da análise). */
+    iniciar: (server = 'https://servidor.teste', extra = {}) => ouvintes.forEach((fn) => fn({ action: 'start', server, ...extra }, {}, () => {})),
     badge: () => {
       const el = w.document.getElementById('closer-report-badge');
       return el ? el.textContent : '';
