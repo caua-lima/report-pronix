@@ -1124,6 +1124,58 @@ test('Closers: aba própria do master para adicionar e remover', async () => {
   p.fechar();
 });
 
+test('Abordagens do primeiro contato: placar com quem dá mais resposta e mais venda; textos para copiar e editar', async () => {
+  const LISTA = [
+    { id: 'A', nome: 'Controle <b>x</b>', hipotese: 'A referência.', mensagens: ['Boa tarde, [NOME]!', 'Posso confirmar, [NOME]?'], assinaturas: ['posso confirmar'] },
+    { id: 'B', nome: 'Pergunta de situação', hipotese: 'Pergunta de duas opções.', mensagens: ['Boa tarde, [NOME]!', 'Você já vende ou vai começar do zero?'], assinaturas: ['vai começar do zero'] },
+  ];
+  const PLACAR = {
+    linhas: [
+      { id: 'A', nome: 'Controle <b>x</b>', enviadas: 20, respostas: 16, comReport: 5, vendas: 1, taxaResposta: 0.8, taxaVenda: 0.05, amostraPequena: false },
+      { id: 'B', nome: 'Pergunta de situação', enviadas: 12, respostas: 7, comReport: 4, vendas: 3, taxaResposta: 0.5833, taxaVenda: 0.25, amostraPequena: false },
+    ],
+    total: 32, semAbordagemAtual: 0, melhorEmResposta: 'A', melhorEmVenda: 'B', minAmostra: 10,
+  };
+  const api = apiMaster()
+    .quando('GET /api/master/abordagens', () => ({ corpo: { lista: LISTA, placar: PLACAR } }))
+    .quando('PUT /api/master/abordagens', () => ({ corpo: { ok: true } }));
+  const p = abrirPainel(api, { hash: '#resultados' });
+  const copiados = [];
+  Object.defineProperty(p.w.navigator, 'clipboard', { value: { writeText: async (t) => { copiados.push(t); } }, configurable: true });
+  await esperar(() => p.$('abPlacar').querySelectorAll('tr').length === 2, { motivo: 'placar' });
+
+  const linhas = [...p.$('abPlacar').querySelectorAll('tr')].map((tr) => tr.textContent.replace(/\s+/g, ' ').trim());
+  assert.match(linhas[0], /^A ?Controle <b>x<\/b> mais respostas 20 16 \(80%\) 5 1 \(5%\)$/);
+  assert.match(linhas[1], /^B ?Pergunta de situação mais vendas 12 7 \(58%\) 4 3 \(25%\)$/);
+  assert.equal(p.$('abPlacar').querySelector('b b'), null, 'nome de abordagem nunca vira HTML');
+  assert.match(p.$('statusAb').textContent, /32 primeiro\(s\) contato\(s\) reconhecido/);
+
+  // os textos: um bloco por abordagem, com um botão de copiar por mensagem
+  const blocos = [...p.$('abLista').querySelectorAll('.ab')];
+  assert.equal(blocos.length, 2);
+  assert.equal(blocos[1].querySelector('[data-ab-mensagens]').value, 'Boa tarde, [NOME]!\nVocê já vende ou vai começar do zero?');
+  blocos[1].querySelector('[data-copiar-msg="1"]').click();
+  await esperar(() => copiados.length === 1, { motivo: 'mensagem copiada' });
+  assert.equal(copiados[0], 'Você já vende ou vai começar do zero?');
+
+  // editar e salvar manda a lista inteira
+  blocos[1].querySelector('[data-ab-mensagens]').value = 'Boa tarde, [NOME]!\nMe conta: você já vende ou vai começar do zero?';
+  p.$('abSalvar').click();
+  await esperar(() => api.contar('PUT /api/master/abordagens') === 1, { motivo: 'salvar' });
+  const enviado = api.corpos('PUT /api/master/abordagens')[0].lista;
+  assert.deepEqual(enviado.map((a) => a.id), ['A', 'B']);
+  assert.deepEqual(enviado[1].mensagens, ['Boa tarde, [NOME]!', 'Me conta: você já vende ou vai começar do zero?']);
+  assert.deepEqual(enviado[1].assinaturas, ['vai começar do zero']);
+
+  // trocar o período refaz a conta com ?dias=
+  p.$('abPeriodo').value = '30';
+  p.$('abPeriodo').dispatchEvent(new p.w.Event('change', { bubbles: true }));
+  await esperar(() => api.pedidos.some((x) => x.chave === 'GET /api/master/abordagens' && x.query.get('dias') === '30'), { motivo: 'período' });
+  await dormir(60);
+  assert.deepEqual(p.erros, []);
+  p.fechar();
+});
+
 test('Closers: o master cadastra o apelido e a inteligência do closer (alimenta "esse lead é bom para o PH?")', async () => {
   let lista = [{ id: 'c1', nome: 'Paulo Henrique Pagoti', email: '' }, { id: 'c2', nome: 'Vitor <b>x</b>', email: '', apelido: 'Vi', inteligencia: 'Fecha com casal. <script>alert(1)</script>', inteligenciaEm: '2026-10-10T12:00:00.000Z' }];
   const api = apiMaster()
