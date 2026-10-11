@@ -1124,6 +1124,40 @@ test('Closers: aba própria do master para adicionar e remover', async () => {
   p.fechar();
 });
 
+test('Closers: o master cadastra o apelido e a inteligência do closer (alimenta "esse lead é bom para o PH?")', async () => {
+  let lista = [{ id: 'c1', nome: 'Paulo Henrique Pagoti', email: '' }, { id: 'c2', nome: 'Vitor <b>x</b>', email: '', apelido: 'Vi', inteligencia: 'Fecha com casal. <script>alert(1)</script>', inteligenciaEm: '2026-10-10T12:00:00.000Z' }];
+  const api = apiMaster()
+    .quando('GET /api/admin/closers', () => ({ corpo: { closers: lista } }))
+    .quando('PATCH /api/admin/closers/c1', ({ corpo }) => {
+      lista = lista.map((c) => (c.id === 'c1' ? { ...c, ...corpo, inteligenciaEm: '2026-10-11T12:00:00.000Z' } : c));
+      return { corpo: { ok: true } };
+    });
+  const p = abrirPainel(api, { hash: '#closers' });
+  await esperar(() => p.$('listaClosers').textContent.includes('Paulo Henrique'), { motivo: 'lista de closers' });
+  const editor = (id) => p.$('listaClosers').querySelector(`[data-editor-closer="${id}"]`);
+  const tags = () => [...p.$('listaClosers').querySelectorAll('.tag')].map((t) => t.textContent);
+
+  // quem já tem inteligência aparece marcado; o texto guardado nunca vira HTML
+  assert.deepEqual(tags(), ['análise: Vi']);
+  assert.equal(p.$('listaClosers').querySelector('script'), null);
+  assert.equal(editor('c2').querySelector('[data-inteligencia]').value, 'Fecha com casal. <script>alert(1)</script>');
+  assert.match(editor('c2').textContent, /Atualizada em 10\/10\/2026/);
+
+  // o editor fica fechado até clicar em "Inteligência"
+  assert.ok(!visivel(editor('c1')));
+  p.document.querySelector('[data-inteligencia-closer="c1"]').click();
+  assert.ok(visivel(editor('c1')));
+  assert.match(editor('c1').textContent, /Esse lead é bom para o Paulo\?/, 'sem apelido, o botão usa o primeiro nome');
+
+  editor('c1').querySelector('[data-apelido]').value = 'PH';
+  editor('c1').querySelector('[data-inteligencia]').value = 'Fecha mais com casal na call.';
+  editor('c1').querySelector('[data-salvar-inteligencia]').click();
+  await esperar(() => tags().includes('análise: PH'), { motivo: 'inteligência salva e lista refeita' });
+  assert.deepEqual(api.corpos('PATCH /api/admin/closers/c1'), [{ apelido: 'PH', inteligencia: 'Fecha mais com casal na call.' }]);
+  assert.deepEqual(p.erros, []);
+  p.fechar();
+});
+
 test('Base: mostra os seis campos, avisa quando é a recomendada e deixa voltar aos textos anteriores', async () => {
   const cheia = { empresa: 'E', qualificacao: 'Q', script: 'S', oferta: 'O', objecoes: 'OB', perfil: 'P', recomendada: true, temAnterior: true, atualizadoEm: '2026-10-01T10:00:00Z' };
   const api = apiBase()

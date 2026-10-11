@@ -1488,9 +1488,24 @@
         $('vazioClosers').style.display = closersCache.length ? 'none' : '';
         $('listaClosers').innerHTML = closersCache.map((c) => `
           <tr>
-            <td><b>${esc(c.nome)}</b></td>
+            <td><b>${esc(c.nome)}</b>${c.inteligencia ? ` <span class="tag" title="Com análise de afinidade: o botão aparece na extensão">análise: ${esc(c.apelido || String(c.nome).split(' ')[0])}</span>` : ''}</td>
             <td style="color:var(--muted)">${esc(c.email || '—')}</td>
-            <td><div class="acoes"><button class="mini del" data-remover-closer="${esc(c.id)}" data-desc="${esc(c.nome)}">Remover</button></div></td>
+            <td><div class="acoes"><button class="mini" data-inteligencia-closer="${esc(c.id)}">Inteligência</button><button class="mini del" data-remover-closer="${esc(c.id)}" data-desc="${esc(c.nome)}">Remover</button></div></td>
+          </tr>
+          <tr class="hidden" data-editor-closer="${esc(c.id)}">
+            <td colspan="3" style="background:var(--card-2);padding:14px 12px">
+              <div class="row">
+                <div style="min-width:170px"><label>Apelido no botão</label><input type="text" data-apelido maxlength="20" placeholder="Ex.: PH" value="${esc(c.apelido || '')}" /></div>
+                <div class="hint" style="flex:1;min-width:200px;margin:0">Na extensão o botão fica <b>"Esse lead é bom para o ${esc(c.apelido || String(c.nome).split(' ')[0])}?"</b>. Sem apelido, usa o primeiro nome.</div>
+              </div>
+              <label style="margin-top:12px">Inteligência do closer</label>
+              <textarea data-inteligencia maxlength="8000" style="min-height:220px" placeholder="O que as calls dele ensinaram: com que tipo de lead fecha (sozinho, casal, com sócio; perfil), como conduz, onde trava. Sem nome nem dado de lead.">${esc(c.inteligencia || '')}</textarea>
+              <div class="row" style="margin-top:10px;align-items:center">
+                <button class="btn" data-salvar-inteligencia="${esc(c.id)}">Salvar inteligência</button>
+                <div class="status" data-status-inteligencia style="margin:0"></div>
+              </div>
+              <div class="hint">É este texto que a IA cruza com o lead para dar a nota de 0 a 10. Vazio = sem análise para este closer.${c.inteligenciaEm ? ' Atualizada em ' + esc(new Date(c.inteligenciaEm).toLocaleDateString('pt-BR')) + '.' : ''}</div>
+            </td>
           </tr>`).join('');
       } catch (e) {
         setStatus('statusCloser', e.message, { erro: true });
@@ -1513,6 +1528,33 @@
         setStatus('statusCloser', e.message, { erro: true });
       } finally {
         $('addCloser').disabled = false;
+      }
+    });
+
+    // Inteligência do closer: abre o editor na linha de baixo e salva o apelido e o texto.
+    $('listaClosers').addEventListener('click', async (ev) => {
+      const abrirEditor = ev.target.closest('[data-inteligencia-closer]');
+      if (abrirEditor) {
+        const linha = $('listaClosers').querySelector(`[data-editor-closer="${abrirEditor.dataset.inteligenciaCloser}"]`);
+        if (linha) linha.classList.toggle('hidden');
+        return;
+      }
+      const salvar = ev.target.closest('[data-salvar-inteligencia]');
+      if (!salvar) return;
+      const linha = salvar.closest('[data-editor-closer]');
+      const st = linha.querySelector('[data-status-inteligencia]');
+      salvar.disabled = true;
+      setStatus(st, 'Salvando…', { loading: true });
+      try {
+        await api('PATCH', '/api/admin/closers/' + salvar.dataset.salvarInteligencia, {
+          apelido: linha.querySelector('[data-apelido]').value,
+          inteligencia: linha.querySelector('[data-inteligencia]').value,
+        });
+        toast('Inteligência salva.');
+        await carregarClosers();
+      } catch (e) {
+        salvar.disabled = false;
+        setStatus(st, e.message, { erro: true });
       }
     });
 
