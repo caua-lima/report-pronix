@@ -949,7 +949,21 @@
 
   let jobEmAndamento = false;
 
-  async function gerarReportEmBackground(server) {
+  // "Esse lead é bom para o closer?" (afinidade.js, carregado antes deste arquivo).
+  const afinidadeUi = (typeof globalThis !== 'undefined' && globalThis.__crAfinidade) || null;
+  /** O closer pedido no popup, conferido: só id e nomes curtos entram no job. */
+  const closerPedido = (a) =>
+    a && typeof a.id === 'string' && a.id
+      ? { id: a.id.slice(0, 40), apelido: String(a.apelido || '').slice(0, 20), nome: String(a.nome || '').slice(0, 80) }
+      : null;
+  /** Acrescenta ao aviso final a análise de afinidade (se o report foi pedido por esse botão). */
+  function anexarAfinidade(closer, resp, mensagens, nome) {
+    if (!closer || !afinidadeUi) return;
+    afinidadeUi.anexar({ aviso: document.getElementById(BADGE_ID), closer, resp, mensagens, nome });
+  }
+
+  async function gerarReportEmBackground(server, opcoes = {}) {
+    const closerDaAnalise = closerPedido(opcoes.afinidade);
     if (jobEmAndamento) {
       mostrarBadge({ texto: 'Já existe um report sendo gerado…', cor: '#f2a93b', loading: true });
       return;
@@ -1016,6 +1030,8 @@
         const escolha = await perguntarDuplicado(resp.existente);
         if (escolha === 'abrir') {
           await abrirExistente(resp.existente);
+          // O report já existia: a análise sai da conversa lida agora, e a nota fica nesse report.
+          anexarAfinidade(closerDaAnalise, { id: resp.existente && resp.existente.id, dados: null }, mensagens, nome);
           return;
         }
         if (escolha !== 'gerar') {
@@ -1057,6 +1073,7 @@
         arquivoBase64: resp.arquivoBase64,
       });
       anexarEscolhaDeCloser(resp);
+      anexarAfinidade(closerDaAnalise, resp, mensagens, nome);
       // Report gerado = lead qualificado: a etiqueta entra no cartão. E a leitura completa (com os áudios
       // transcritos) pode trazer o agendamento que não estava em texto.
       if (ficha.automacao && conversaDoJob) {
@@ -2164,7 +2181,7 @@
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (msg && msg.action === 'start') {
       // Dispara em background e responde na hora para o popup poder fechar.
-      gerarReportEmBackground(msg.server);
+      gerarReportEmBackground(msg.server, { afinidade: msg.afinidade });
       sendResponse({ ok: true, iniciado: true });
       return false;
     }

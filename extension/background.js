@@ -176,6 +176,22 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
+  // "Esse lead é bom para o closer?": a nota de 0 a 10 e o segundo PDF, depois que o report ficou pronto.
+  if (msg && msg.action === 'afinidade') {
+    (async () => {
+      const r = await chamar('/api/afinidade', {
+        closerId: String(msg.closerId || '').slice(0, 40),
+        reportId: String(msg.reportId || '').slice(0, 40),
+        dados: msg.dados || null,
+        mensagens: Array.isArray(msg.mensagens) ? msg.mensagens : [],
+        nome: String(msg.nome || '').slice(0, 120),
+      });
+      if (!r.ok) return sendResponse({ ok: false, erro: r.erro });
+      sendResponse({ ok: true, afinidade: r.data.afinidade, arquivo: r.data.arquivo, arquivoBase64: r.data.arquivoBase64 });
+    })();
+    return true;
+  }
+
   if (msg && msg.action === 'reportFetch') {
     (async () => {
       const r = await chamar('/api/report-direto', {
