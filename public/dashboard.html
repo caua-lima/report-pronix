@@ -2908,10 +2908,14 @@
       if (!c) { setStatus('statusChave', 'Cole a chave que o admin te passou.', { erro: true }); return false; }
       localStorage.setItem('crChave', c);
       validacaoPendente = true;
+      let recusada = false; // o servidor respondeu que a chave não vale (diferente de rede fora do ar)
       try {
         const r = await fetchComTempo('/api/eu', { headers: hdr() }, 20000);
         const j = await r.json();
-        if (!r.ok) throw new Error(j.erro || 'Chave inválida.');
+        if (!r.ok) {
+          recusada = true;
+          throw new Error(j.erro || 'Chave inválida.');
+        }
         souMaster = j.papel === 'master';
         papelConhecido = true;
         souGestor = j.papel === 'gestor';
@@ -2936,8 +2940,23 @@
         minhasAbas = new Set();
         papelConhecido = true;
         aplicarPapel();
-        setStatus('statusChave', e.message, { erro: true });
         $('quem').textContent = '';
+        // Toda chave começa com "pnx_". Quem digitou outra coisa aqui quase sempre colocou a SENHA do
+        // servidor no campo errado: ela sai do campo e do navegador, e vale como primeiro acesso.
+        if (recusada && !/^pnx_/i.test(c)) {
+          $('chave').value = '';
+          try { localStorage.removeItem('crChave'); } catch (_) { /* sem storage */ }
+          if (await entrarAdmin(c)) {
+            setStatus('statusChave', 'Você entrou com a senha do servidor. Crie o seu acesso em Acessos e depois cole aqui a chave (começa com "pnx_").', {});
+            abrir('acessos');
+            return false;
+          }
+          setStatus('statusChave', 'Isso não é uma chave: as chaves começam com "pnx_". Para o primeiro acesso, digite a senha do servidor logo abaixo.', { erro: true });
+        } else {
+          setStatus('statusChave', e.message, { erro: true });
+        }
+        // Chave recusada: o caminho do primeiro acesso fica à vista.
+        if (recusada) $('primeiroAcesso').open = true;
         return false;
       } finally {
         validacaoPendente = false;

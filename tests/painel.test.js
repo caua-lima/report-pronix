@@ -175,6 +175,43 @@ test('primeiro acesso: sem chave nenhuma, a senha do servidor libera o menu e ab
   p.fechar();
 });
 
+test('senha do servidor digitada no campo da chave: vale como primeiro acesso e não fica guardada no navegador', async () => {
+  let senhaCerta = true;
+  const api = criarApi({
+    'GET /api/eu': () => ({ status: 401, corpo: { erro: 'Chave inválida ou ausente.' } }),
+    'GET /api/admin/usuarios': () => ({ corpo: { usuarios: [] } }),
+    'POST /api/admin/login': () => (senhaCerta ? { corpo: { ok: true } } : { status: 401, corpo: { erro: 'Senha de admin incorreta.' } }),
+  });
+  // abre com a senha salva no lugar da chave (foi o que aconteceu: digitada no campo errado)
+  const p = abrirPainel(api, { chave: 'senha-do-servidor' });
+  await esperar(() => visivel(p.$('aba-acessos')), { motivo: 'aba Acessos aberta' });
+  assert.ok(visivel(p.$('cardCriar')), 'dá para criar o primeiro acesso');
+  assert.equal(p.$('chave').value, '', 'a senha sai do campo da chave');
+  assert.equal(p.w.localStorage.getItem('crChave'), null, 'e não fica guardada no navegador');
+  assert.match(p.$('statusChave').textContent, /Você entrou com a senha do servidor/);
+  assert.deepEqual(p.erros, []);
+  p.fechar();
+
+  // texto que não é chave nem a senha certa: explica e abre o caminho do primeiro acesso
+  senhaCerta = false;
+  const q = abrirPainel(api, { chave: 'qualquer coisa' });
+  await esperar(() => /as chaves começam com "pnx_"/.test(q.$('statusChave').textContent), { motivo: 'aviso' });
+  assert.equal(q.$('primeiroAcesso').open, true);
+  assert.equal(q.w.localStorage.getItem('crChave'), null);
+  assert.ok(visivel(q.$('aba-report')));
+  q.fechar();
+
+  // chave de verdade (pnx_) recusada: não é tentada como senha
+  const tentativas = api.contar('POST /api/admin/login');
+  const r = abrirPainel(api, { chave: 'pnx_chave_antiga_que_nao_existe' });
+  await esperar(() => /Chave inválida/.test(r.$('statusChave').textContent), { motivo: 'chave recusada' });
+  await dormir(60);
+  assert.equal(r.$('primeiroAcesso').open, true, 'o caminho do primeiro acesso fica à vista');
+  assert.equal(api.contar('POST /api/admin/login'), tentativas, 'chave com cara de chave nunca é enviada como senha');
+  assert.equal(r.w.localStorage.getItem('crChave'), 'pnx_chave_antiga_que_nao_existe');
+  r.fechar();
+});
+
 // ---------------------------------------------------------------- A16: abas sob demanda
 test('A16: abrir Números carrega só closers e números; cada aba carrega o que é dela', async () => {
   const api = apiBase({ stats: statsVazio({ ultimos: [reportNaTabela()] }) });
