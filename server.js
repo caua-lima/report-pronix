@@ -35,6 +35,7 @@ const abordagens = require('./src/abordagens');
 const { gerarAfinidadePdfBuffer, nomeDoArquivo: nomeDoArquivoAfinidade } = require('./src/afinidadePdf');
 const aprendizado = require('./src/aprendizado');
 const { normalizarConsciencia } = require('./src/consciencia');
+const { normalizarDores } = require('./src/dores');
 
 const QUALIDADES_VALIDAS = new Set(['eco', 'standard', 'premium']);
 const qualidadeValida = (q) => (QUALIDADES_VALIDAS.has(q) ? q : 'standard');
@@ -1278,6 +1279,7 @@ function saneadorDeReport(d) {
     consciencia: normalizarConsciencia(d.consciencia),
     conversa: arr(d.conversa).map(txt).map((t) => t.trim()).filter(Boolean).slice(0, 6),
     sinais_compra: arr(d.sinais_compra).map(txt).map((t) => t.trim()).filter(Boolean).slice(0, 5),
+    dores: normalizarDores(d.dores),
     abertura: txt(d.abertura).trim(),
     frase_impacto: txt(d.frase_impacto).trim(),
   };

@@ -292,6 +292,12 @@
     .report td.rot { font-weight: 650; width: 32%; background: var(--card-2); color: var(--text-2); }
     .report ul, .report ol { margin: 4px 0 12px; padding-left: 20px; }
     .report li { margin: 5px 0; font-size: .9rem; }
+    /* Termômetro de dores na prévia do report: cinco degraus, mais quente quanto mais dói. */
+    .termo { display: inline-flex; gap: 3px; vertical-align: middle; margin-right: 8px; }
+    .termo i { width: 14px; height: 6px; border-radius: 3px; background: var(--border-forte); }
+    .termo i.on { background: var(--ouro); }
+    .termo i.on.n4 { background: color-mix(in srgb, var(--ouro) 50%, var(--danger)); }
+    .termo i.on.n5 { background: var(--danger); }
     .frase { font-style: italic; color: var(--text-2); background: var(--card-2); border-left: 3px solid var(--ouro); padding: 11px 15px; border-radius: 0 var(--r-sm) var(--r-sm) 0; margin: 8px 0; }
     /* Campos editáveis do report gerado */
     .editavel [data-edit] { border-radius: 3px; transition: background .12s, box-shadow .12s; outline: none; }
@@ -2697,8 +2703,15 @@
       const abertura = d.abertura ? `<h2><i data-ic="message"></i>Como iniciar a reunião</h2><p class="frase">"${ed('abertura', d.abertura)}"</p>` : '';
       const nivel = d.consciencia && NIVEIS_VISIVEIS[d.consciencia.nivel];
       const sinais = d.sinais_compra || [];
-      const temperatura = nivel || sinais.length
+      // Termômetro de dores: só dor de fato (3 ou mais), na ordem em que vieram (da mais forte para a mais fraca).
+      const dores = (d.dores || []).map((x, i) => ({ ...x, i })).filter((x) => x && x.dor && x.intensidade >= 3);
+      const termo = (n) => `<span class="termo" title="${n} de 5">${[1, 2, 3, 4, 5].map((k) => `<i class="${k <= n ? 'on n' + n : ''}"></i>`).join('')}</span>`;
+      const blocoDores = dores.length
+        ? '<p><b>Termômetro de dores</b></p>' + dores.map((x) => `<p style="margin:6px 0 2px">${termo(x.intensidade)}<b>${ed('dores.' + x.i + '.dor', x.dor)}</b></p>` + (x.porque ? `<p class="frase">${ed('dores.' + x.i + '.porque', x.porque)}</p>` : '')).join('')
+        : '';
+      const temperatura = nivel || sinais.length || dores.length
         ? '<h2><i data-ic="target"></i>Temperatura do lead</h2>' +
+          blocoDores +
           (nivel ? `<p><b>Nível de consciência:</b> ${esc(nivel)}</p><p class="frase">${ed('consciencia.porque', d.consciencia.porque)}</p>` : '') +
           (sinais.length ? `<p><b>Sinais de compra</b></p>${listaEditavel(sinais, false, 'sinais_compra')}` : '')
         : '';
