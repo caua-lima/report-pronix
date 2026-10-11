@@ -87,8 +87,15 @@ function renderReport(d) {
     : '';
   const nivel = d.consciencia && NIVEIS_VISIVEIS[d.consciencia.nivel];
   const sinais = d.sinais_compra || [];
-  const temperatura = nivel || sinais.length
+  // Termômetro de dores: só dor de fato (3 ou mais), na ordem em que vieram (da mais forte para a mais fraca).
+  const dores = (d.dores || []).map((x, i) => ({ ...x, i })).filter((x) => x && x.dor && x.intensidade >= 3);
+  const termo = (n) => `<span class="termo" title="${n} de 5">${[1, 2, 3, 4, 5].map((k) => `<i class="${k <= n ? 'on n' + n : ''}"></i>`).join('')}</span>`;
+  const blocoDores = dores.length
+    ? '<p><b>Termômetro de dores</b></p>' + dores.map((x) => `<p style="margin:6px 0 2px">${termo(x.intensidade)}<b>${ed('dores.' + x.i + '.dor', x.dor)}</b></p>` + (x.porque ? `<p class="frase">${ed('dores.' + x.i + '.porque', x.porque)}</p>` : '')).join('')
+    : '';
+  const temperatura = nivel || sinais.length || dores.length
     ? `<h2>${svgIc('<path d="M14 14.8V4a2 2 0 0 0-4 0v10.8a4 4 0 1 0 4 0z"/>')} Temperatura do lead</h2>` +
+      blocoDores +
       (nivel ? `<p><b>Nível de consciência:</b> ${escapeHtml(nivel)}</p><p class="frase">${ed('consciencia.porque', d.consciencia.porque)}</p>` : '') +
       (sinais.length ? `<p><b>Sinais de compra</b></p>${listaEditavel(sinais, false, 'sinais_compra')}` : '')
     : '';
