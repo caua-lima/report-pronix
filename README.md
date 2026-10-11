@@ -150,6 +150,10 @@ reserva (cria o primeiro master).
   ("tenho uma distribuidora há 12 anos" já responde investimento).
 - **Perfil do lead** — dominante, analítico, cético, relacional, cauteloso ou entusiasta — com
   a evidência e uma frase de **como conduzir** a reunião (`src/perfil.js`).
+- **Termômetro de dores:** até 3 dores que o lead demonstrou, cada uma com a intensidade de 1 a
+  5 (cinco degraus, mais quentes quanto mais dói) e a prova do que ele disse. É o motivo da
+  compra, então abre o cartão do topo. Só entra **dor de fato** (3 ou mais): a citada de passagem
+  fica fora, e na dúvida a IA dá a intensidade menor (`src/dores.js`).
 - **Temperatura do lead:** nível de consciência (inconsciente → problema → solução → nossa
   entrega → pronto para decidir) com o porquê, e os sinais de compra com a prova da conversa.
   O selo só aparece **de "consciente da solução" para cima** (`src/consciencia.js`) e cada nível
@@ -342,6 +346,27 @@ funciona**.
 - **Escopo.** Resultados e inteligência usam os reports de quem está olhando; o seletor "Toda a
   equipe" inclui os demais.
 
+### Abordagens do primeiro contato (qual mensagem dá mais resposta e mais venda)
+
+O pré-vendedor testa variações do primeiro contato — cada uma cadastrada como **mensagem rápida**
+no WhatsApp — e o sistema conta sozinho, por abordagem: **enviadas**, **responderam**, **viraram
+report** e **vendas**. O placar fica em Resultados → "Abordagens do primeiro contato", com os
+textos para copiar e editar.
+
+- **Como reconhece:** cada abordagem tem uma **assinatura**, o trecho que só ela tem. Ao abrir a
+  conversa, a extensão procura a assinatura nas primeiras mensagens do pré-vendedor (no próprio
+  navegador) e avisa o servidor **só a letra** da abordagem. Vale a assinatura mais longa, e a
+  primeira reconhecida é a do primeiro contato. O cartão mostra a etiqueta "ABORDAGEM B".
+- **Respondeu:** existe mensagem do lead depois da do pré-vendedor.
+- **Venda:** o report do mesmo lead tem venda marcada em Resultados (ou vendido no RD).
+- **Comparação honesta:** só disputa "mais respostas" e "mais vendas" a abordagem com 10 envios
+  ou mais; as outras aparecem como "amostra pequena".
+- As cinco de partida (`src/abordagens.js`) são a mensagem de hoje (controle) e quatro variações
+  que mudam uma coisa cada. Todas mantêm "Você agendou sua reunião para [DIA] às [HORA]", que é a
+  frase que o cartão lê para mostrar o agendamento.
+
+Sem IA e sem custo: é contagem. Precisa da **Automação RD** ligada para o usuário.
+
 ### Afinidade com o closer ("Esse lead é bom para o PH?")
 
 Para cada closer com **inteligência cadastrada** (aba Closers → Inteligência), o popup da extensão
@@ -434,6 +459,7 @@ Autenticação por cabeçalho `x-cr-key` (a chave do usuário). `gestor+` = mast
 | `POST /api/resumo-rapido` | chave + popup do lead | Resumo rápido da conversa. |
 | `POST /api/coach` · `POST /api/coach/feedback` | chave + coach | Coach e o "Funcionou". |
 | `POST /api/afinidade` | chave | Nota de 0 a 10 do lead para um closer, com motivos e o PDF. |
+| `POST /api/lead/abordagem` | chave + automação | Anota a letra da abordagem do primeiro contato e/ou que o lead respondeu. |
 
 ### Dia a dia e gestão
 
@@ -539,6 +565,8 @@ Tudo em `src/db.js` (Redis em produção, `data/*.json` local). **A conversa nã
 | `pdf_<id>` | O PDF de cada report. |
 | `base` | Base de conhecimento (com os textos anteriores, para restaurar). |
 | `closers` | Lista de closers, com o apelido e a inteligência de cada um. |
+| `abordagens` | Os textos e as assinaturas das abordagens em teste. |
+| `abordagem_contatos` | Por lead: a letra da abordagem, a data e se respondeu (até 6.000). Nenhum texto de conversa. |
 | `crm_cards` | Card escolhido para cada lead com mais de um. |
 | `google_agenda` | Autorização da conta conectada ao Google Agenda (só no servidor). |
 | `lead_marcas` | Etiqueta "Qualificado" e agendamento por lead (até 4.000). |
