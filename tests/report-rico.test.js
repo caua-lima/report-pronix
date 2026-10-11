@@ -158,3 +158,82 @@ test('PDF apertado: as falas do lead não são as primeiras a cair — pelo meno
   assert.ok(paginas(buf) <= 2, `continua em até 2 páginas (${paginas(buf)})`);
   assert.match(textoDoPdf(buf), /Nas palavras do lead/, 'a seção sobrevive ao aperto');
 });
+
+// ---------------------------------------------------------------- termômetro de dores
+const { normalizarDores, doresVisiveis, rotuloDaIntensidade } = require('../src/dores');
+const { SYSTEM_PROMPT } = require('../src/report');
+const DORES = [
+  { dor: 'Vende no improviso', intensidade: 3, porque: 'Disse que as vendas saem na correria.' },
+  { dor: 'R$100 mil de estoque parado', intensidade: 5, porque: 'Contou do giro lento parado.' },
+  { dor: 'Citada de passagem', intensidade: 2, porque: 'Só comentou uma vez.' },
+];
+
+test('dores: a resposta da IA é limpa — da mais forte para a mais fraca, no máximo 3, intensidade de 1 a 5', () => {
+  const limpas = normalizarDores([
+    ...DORES, { dor: '   ', intensidade: 4 }, { dor: 'Sem número', intensidade: 'muito' }, 'texto solto', null,
+    { dor: '  Forte   demais ', intensidade: 9, porque: '  prova  ' },
+  ]);
+  assert.deepEqual(limpas.map((d) => [d.dor, d.intensidade]), [['R$100 mil de estoque parado', 5], ['Forte demais', 5], ['Vende no improviso', 3]]);
+  assert.equal(limpas[1].porque, 'prova');
+  assert.deepEqual(normalizarDores('não é lista'), []);
+  assert.deepEqual(normalizarDores([{ dor: 'Fraquinha', intensidade: -3 }]), [{ dor: 'Fraquinha', intensidade: 1, porque: '' }]);
+  // só dor de fato (3 ou mais) vai para o report
+  assert.deepEqual(doresVisiveis(DORES).map((d) => d.intensidade), [5, 3]);
+  assert.deepEqual(doresVisiveis([{ dor: 'Citada', intensidade: 2 }]), []);
+  assert.equal(rotuloDaIntensidade(5), 'Dói agora');
+
+  // entra na resposta normalizada do report; sem o campo, lista vazia (report antigo não quebra)
+  const d = normalizarDados({ lead: 'X', resumo: [], secoes: [], dores: DORES });
+  assert.equal(d.dores[0].dor, 'R$100 mil de estoque parado');
+  assert.deepEqual(normalizarDados({ lead: 'X', resumo: [], secoes: [] }).dores, []);
+});
+
+test('PDF: o termômetro de dores abre o cartão do topo, só com dor de fato', async () => {
+  const buf = await gerarPdfBuffer({ ...BASE, dores: DORES });
+  const t = textoDoPdf(buf);
+  for (const trecho of ['TERMÔMETRO DE DORES', 'R$100 mil de estoque parado', 'Contou do giro lento parado.', 'Vende no improviso']) {
+    assert.ok(t.includes(trecho), 'faltou no PDF: ' + trecho);
+  }
+  assert.ok(!t.includes('Citada de passagem'), 'dor citada de passagem não vai para o closer');
+  const pos = (x) => t.indexOf(x);
+  assert.ok(pos('Mais de R$5.000') < pos('TERMÔMETRO DE DORES'), 'logo depois do resumo');
+  assert.ok(pos('TERMÔMETRO DE DORES') < pos('NÍVEL DE CONSCIÊNCIA'), 'as dores vêm antes do nível de consciência');
+  assert.ok(pos('R$100 mil de estoque parado') < pos('Vende no improviso'), 'a dor mais forte primeiro');
+  assert.ok(pos('SINAIS DE COMPRA') < pos('Como foi a conversa'));
+  assert.ok(paginas(buf) <= 2);
+});
+
+test('PDF: sem dor de fato o termômetro não aparece; só com dores, o cartão do topo aparece do mesmo jeito', async () => {
+  const fracas = textoDoPdf(await gerarPdfBuffer({ ...BASE, dores: [{ dor: 'Citada de passagem', intensidade: 2, porque: 'x' }] }));
+  assert.ok(!fracas.includes('TERMÔMETRO DE DORES'));
+  assert.ok(fracas.includes('NÍVEL DE CONSCIÊNCIA'), 'o resto do cartão continua');
+  const semCampo = textoDoPdf(await gerarPdfBuffer(BASE));
+  assert.ok(!semCampo.includes('TERMÔMETRO DE DORES'), 'report antigo sai igual');
+
+  const soDores = textoDoPdf(await gerarPdfBuffer({ ...BASE, consciencia: null, sinais_compra: [], dores: DORES }));
+  assert.ok(soDores.includes('TERMÔMETRO DE DORES') && soDores.includes('R$100 mil de estoque parado'));
+  assert.ok(!soDores.includes('NÍVEL DE CONSCIÊNCIA') && !soDores.includes('SINAIS DE COMPRA'));
+});
+
+test('PDF enorme com dores: continua em até 2 páginas e pelo menos uma dor fica', async () => {
+  const longo = (n, base) => Array.from({ length: n }, (_, i) => `${base} ${i + 1}: ` + 'detalhe importante da conversa com o lead '.repeat(3));
+  const buf = await gerarPdfBuffer({
+    ...BASE,
+    dores: [5, 4, 3].map((n) => ({ dor: 'Dor comprida que ocupa bastante espaço na linha do termômetro ' + n, intensidade: n, porque: 'prova longa da dor que o lead contou na conversa '.repeat(3) })),
+    conversa: longo(6, 'Passo'),
+    sinais_compra: longo(4, 'Sinal'),
+    secoes: [1, 2, 3, 4].map((i) => ({ titulo: 'Seção ' + i, itens: longo(5, 'Item') })),
+    citacoes: ['Quero começar o quanto antes', 'O investimento eu tenho'],
+  });
+  assert.ok(paginas(buf) <= 2, `saiu com ${paginas(buf)} páginas`);
+  const t = textoDoPdf(buf);
+  assert.ok(t.includes('TERMÔMETRO DE DORES') && t.includes('ocupa bastante'), 'a dor mais forte sobrevive ao aperto');
+  assert.ok(t.includes('COMO INICIAR A REUNIÃO'));
+});
+
+test('o prompt pede as dores do LEAD com prova, e manda ficar com a intensidade menor na dúvida', () => {
+  assert.match(SYSTEM_PROMPT, /TERMÔMETRO DE DORES \(campo "dores"\)/);
+  assert.match(SYSTEM_PROMPT, /tiradas das falas do LEAD/);
+  assert.match(SYSTEM_PROMPT, /NA DÚVIDA, a intensidade menor/);
+  assert.match(SYSTEM_PROMPT, /Sem dor demonstrada, devolva \[\]/);
+});

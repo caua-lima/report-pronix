@@ -492,11 +492,13 @@ test('report rico: PDF regerado depois de editar mantém os campos novos (e igno
     consciencia: { nivel: 'solucao', porque: 'Editado pelo SDR: já busca estrutura' },
     conversa: ['Editado: Ana explicou a entrega completa'],
     sinais_compra: ['Editado: pediu a reunião'],
+    dores: [{ dor: 'Editada: estoque parado', intensidade: 4, porque: 'Editado: contou do giro lento' }, { dor: 'Fraca demais', intensidade: 1, porque: 'x' }, { dor: 'Sem intensidade' }],
   };
   let r = await api('POST', '/api/pdf', { chave: E.ana, corpo: { dados } });
   assert.equal(r.status, 200);
   let t = textoDoPdf(r.json.arquivoBase64);
-  for (const x of ['Consciente da solução', 'Editado pelo SDR: já busca estrutura', 'Editado: Ana explicou a entrega completa', 'Editado: pediu a reunião']) {
+  assert.ok(!t.includes('Fraca demais') && !t.includes('Sem intensidade'), 'dor fraca ou inválida não vai para o PDF');
+  for (const x of ['Consciente da solução', 'Editado pelo SDR: já busca estrutura', 'Editado: Ana explicou a entrega completa', 'Editado: pediu a reunião', 'TERMÔMETRO DE DORES', 'Editada: estoque parado', 'Editado: contou do giro lento']) {
     assert.ok(t.includes(x), 'faltou: ' + x);
   }
   r = await api('POST', '/api/pdf', { chave: E.ana, corpo: { dados: { ...dados, consciencia: { nivel: 'hackeado', porque: '<script>' } } } });
