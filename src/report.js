@@ -16,7 +16,9 @@ const LLM_PROVIDER = (process.env.LLM_PROVIDER || 'anthropic').toLowerCase();
 // idênticos já gerados (ex.: mudança de tom, de campos obrigatórios). Compõe
 // a reportKey em src/idempotencia.js — sem isso, um prompt novo poderia ser
 // confundido com o antigo e nunca rodar de novo pra mesma conversa.
-const PROMPT_VERSAO = 'v8';
+const { normalizarDores } = require('./dores');
+
+const PROMPT_VERSAO = 'v9';
 
 // Modo de qualidade só troca o MODELO da Anthropic — nunca inferido sozinho:
 // "standard" é o comportamento de sempre (ANTHROPIC_MODEL), então nenhum
@@ -100,6 +102,10 @@ const EXEMPLO_PEQUENO = {
     'Aceitou o investimento mínimo de R$3 mil sem pedir desconto',
     'Já tem tração: 104 vendas em 15 dias',
   ],
+  dores: [
+    { dor: 'Preso ao CLT, sem qualidade de vida', intensidade: 4, porque: 'Disse que o que quer mesmo é sair do CLT e ter qualidade de vida.' },
+    { dor: 'Vende no improviso, sem previsibilidade', intensidade: 3, porque: 'Contou que as vendas saem na correria e que ainda está sem estrutura.' },
+  ],
   frase_impacto:
     'Ele já vendeu muito rápido no começo; agora a reunião precisa mostrar como transformar tração em estrutura para ele sair do CLT com segurança.',
 };
@@ -171,6 +177,10 @@ const EXEMPLO_GRANDE = {
   sinais_compra: [
     'Canal já decidido internamente: "isso aí já tá decidido"',
     'Pediu a reunião depois da explicação sobre linha separada',
+  ],
+  dores: [
+    { dor: 'R$100 mil de estoque parado', intensidade: 5, porque: 'Contou dos R$100 mil de giro lento parados e quer começar já no mês que vem para escoar.' },
+    { dor: 'Receio de o varejo brigar com o atacado', intensidade: 3, porque: 'Perguntou como evitar que o cliente do atacado veja o preço do varejo.' },
   ],
   frase_impacto:
     'Ela não precisa ser vendida no canal — precisa de um caminho que não brigue com o atacado e que o sócio aprove sem estar na sala.',
@@ -262,6 +272,8 @@ ANÁLISE DA PROSPECÇÃO (campo "analise") — uso interno da gestão, NÃO apar
 
 SINAIS DE COMPRA (campo "sinais_compra") — 1 a 4 sinais concretos e curtos de que o lead quer avançar, cada um com a prova da conversa ("Aceitou o investimento de R$3 mil sem pedir desconto"; "Pediu para a esposa entrar na reunião"). Só o que aconteceu. Se não houver nenhum sinal claro, devolva [].
 
+TERMÔMETRO DE DORES (campo "dores") — a dor é o motivo da compra: o problema que o LEAD disse que o incomoda, custa ou trava HOJE (não é objeção, nem desejo genérico, nem algo que só o vendedor afirmou). Liste de 0 a 3 dores REAIS, tiradas das falas do LEAD (texto ou áudio transcrito), da mais forte para a mais fraca. Para cada uma: "dor" = a dor em poucas palavras, do jeito do lead ("R$100 mil de estoque parado"; "Preso ao CLT, sem tempo com os filhos"); "intensidade" = de 1 a 5 pelo quanto o LEAD mostrou que dói: 5 = dói agora, com prazo, custo ou consequência concreta; 4 = descreveu o prejuízo ou o incômodo com detalhe ou emoção; 3 = disse claramente que incomoda; 2 = citou de passagem; 1 = só dá para deduzir; "porque" = a prova em uma frase, o que ele disse ou contou. Escreva a dor como motivo para agir, não como defeito do lead. NA DÚVIDA, a intensidade menor: termômetro alto sem prova faz o closer errar o tom. Sem dor demonstrada, devolva [].
+
 TAMANHO (é um handoff, não um dossiê): resumo com 4 a 7 linhas; de 2 a 4 seções; no máximo 4 bullets por seção, cada um de 1 a 2 linhas. Não encha para parecer completo, mas também não colapse o corpo: as seções sempre existem.
 
 Preencha pela ferramenta "gerar_relatorio":
@@ -275,6 +287,7 @@ Preencha pela ferramenta "gerar_relatorio":
 - "conversa": 4 a 6 frases do desenrolar, com o nome do pré-vendedor e do lead (seção COMO FOI A CONVERSA).
 - "analise": { "bant", "spin", "perguntas_chave", "abordagem" } conforme a seção ANÁLISE DA PROSPECÇÃO.
 - "sinais_compra": 1 a 4 sinais concretos de compra, ou [].
+- "dores": 0 a 3 dores do lead, cada uma com { "dor", "intensidade", "porque" }, conforme a seção TERMÔMETRO DE DORES.
 - "frase_impacto": uma frase única e afiada de fechamento (pode parafrasear).`;
 
 function montarHistoricoFormatado(historico) {
@@ -419,6 +432,7 @@ function normalizarDados(dados) {
     Array.isArray(v) ? v.map((x) => String(x == null ? '' : x).trim()).filter(Boolean).slice(0, max) : [];
   out.conversa = listaDeTextos(dados.conversa, 6);
   out.sinais_compra = listaDeTextos(dados.sinais_compra, 5);
+  out.dores = normalizarDores(dados.dores);
   out.perfil = normalizarPerfil(dados.perfil);
   out.analise = normalizarAnalise(dados.analise);
 
@@ -531,6 +545,19 @@ const REPORT_TOOL = {
         type: 'array',
         items: { type: 'string' },
         description: '1 a 4 sinais concretos de que o lead quer avançar, cada um com a prova da conversa. [] se não houver.',
+      },
+      dores: {
+        type: 'array',
+        description: 'Termômetro de dores: 0 a 3 dores REAIS que o lead demonstrou, da mais forte para a mais fraca. [] se não houver.',
+        items: {
+          type: 'object',
+          properties: {
+            dor: { type: 'string', description: 'A dor em poucas palavras, do jeito do lead.' },
+            intensidade: { type: 'integer', enum: [1, 2, 3, 4, 5], description: '1 = só deduzida; 3 = disse que incomoda; 5 = dói agora, com prazo, custo ou consequência.' },
+            porque: { type: 'string', description: 'A prova em uma frase: o que o lead disse ou contou.' },
+          },
+          required: ['dor', 'intensidade', 'porque'],
+        },
       },
       frase_impacto: { type: 'string' },
     },
