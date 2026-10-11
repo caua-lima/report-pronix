@@ -7,6 +7,7 @@ const path = require('path');
 const PDFDocument = require('pdfkit');
 const { slugify } = require('./generateDoc');
 const { infoDoNivel, mostrarConsciencia, NIVEIS } = require('./consciencia');
+const { doresVisiveis } = require('./dores');
 
 const OUTPUT_DIR = path.join(__dirname, '..', 'output');
 
@@ -142,7 +143,11 @@ function render(doc, dados) {
   // ---- Temperatura do lead: nível de consciência (só quando é bom) + sinais de compra ----
   const verConsciencia = mostrarConsciencia(dados.consciencia);
   const sinais = (dados.sinais_compra || []).filter(Boolean);
-  if (verConsciencia || sinais.length) {
+  // Termômetro de dores: só dor de fato (intensidade 3 ou mais). É o motivo da compra, então abre o cartão.
+  const dores = doresVisiveis(dados.dores);
+  const corDaDor = (n) => (n >= 5 ? '#ff5f45' : n === 4 ? '#ff9a3d' : OURO);
+  const W_TERMO = 5 * 15 + 4 * 3; // cinco degraus de 15 com 3 de vão
+  if (verConsciencia || sinais.length || dores.length) {
     const pad = 13;
     const xIn = MARGIN + pad + 4;
     const wTxt = larg - pad * 2 - 4;
@@ -151,6 +156,19 @@ function render(doc, dados) {
 
     // Mede antes de desenhar (o cartão tem fundo).
     let h = pad;
+    const wDor = wTxt - W_TERMO - 14;
+    const medidasDores = dores.map((d) => {
+      doc.font('Helvetica-Bold').fontSize(10.5);
+      const hDor = Math.max(doc.heightOfString(d.dor, { width: wDor }), 9);
+      doc.font('Helvetica').fontSize(9.5);
+      const hPq = d.porque ? doc.heightOfString(d.porque, { width: wTxt }) + 2 : 0;
+      return { hDor, hPq };
+    });
+    if (dores.length) {
+      h += 14; // rótulo
+      medidasDores.forEach((m) => { h += m.hDor + m.hPq + 7; });
+      if (verConsciencia) h += 6;
+    }
     if (verConsciencia) {
       h += 12 + 16; // rótulo + barra
       doc.font('Helvetica-Bold').fontSize(12);
@@ -161,7 +179,7 @@ function render(doc, dados) {
       }
     }
     if (sinais.length) {
-      h += (verConsciencia ? 10 : 0) + 14;
+      h += (verConsciencia || dores.length ? 10 : 0) + 14;
       doc.font('Helvetica').fontSize(10);
       sinais.forEach((s) => { h += doc.heightOfString(String(s), { width: wTxt - 16 }) + 4; });
     }
@@ -172,6 +190,28 @@ function render(doc, dados) {
     doc.save().roundedRect(MARGIN, y0, larg, h, 9).fill(PRETO).restore();
     faixaNoTopo(doc, y0, larg, h);
     let y = y0 + pad;
+
+    if (dores.length) {
+      doc.font('Helvetica-Bold').fontSize(8.5).fillColor(OURO)
+        .text('TERMÔMETRO DE DORES', xIn, y, { width: wTxt, characterSpacing: 0.5 });
+      y += 14;
+      dores.forEach((d, i) => {
+        const m = medidasDores[i];
+        doc.font('Helvetica-Bold').fontSize(10.5).fillColor('#ffffff').text(d.dor, xIn, y, { width: wDor });
+        // O termômetro: cinco degraus, acesos até a intensidade; quanto mais dói, mais quente a cor.
+        const xT = xIn + wTxt - W_TERMO;
+        for (let k = 0; k < 5; k++) {
+          doc.save().roundedRect(xT + k * 18, y + 3, 15, 6, 3).fill(k < d.intensidade ? corDaDor(d.intensidade) : '#45424b').restore();
+        }
+        y += m.hDor;
+        if (d.porque) {
+          doc.font('Helvetica').fontSize(9.5).fillColor('#d5d0c5').text(d.porque, xIn, y + 1, { width: wTxt });
+          y += m.hPq;
+        }
+        y += 7;
+      });
+      if (verConsciencia) y += 6;
+    }
 
     if (verConsciencia) {
       doc.font('Helvetica-Bold').fontSize(8.5).fillColor(OURO)
@@ -193,7 +233,7 @@ function render(doc, dados) {
       }
     }
     if (sinais.length) {
-      if (verConsciencia) y += 10;
+      if (verConsciencia || dores.length) y += 10;
       doc.font('Helvetica-Bold').fontSize(8.5).fillColor(OURO)
         .text('SINAIS DE COMPRA', xIn, y, { width: wTxt, characterSpacing: 0.5 });
       y += 14;
@@ -330,6 +370,7 @@ const CORTES = [
   (d) => { d.conversa = (d.conversa || []).slice(0, 4); },
   (d) => { d.secoes = (d.secoes || []).map((s) => ({ ...s, itens: (s.itens || []).slice(0, 3) })); },
   (d) => { d.citacoes = (d.citacoes || []).slice(0, 2); },
+  (d) => { d.dores = (d.dores || []).slice(0, 2); },
   (d) => { d.conversa = (d.conversa || []).slice(0, 3); d.sinais_compra = (d.sinais_compra || []).slice(0, 3); },
   (d) => { d.secoes = (d.secoes || []).map((s) => ({ ...s, itens: (s.itens || []).slice(0, 2) })); },
   (d) => { d.conversa = (d.conversa || []).slice(0, 2); d.sinais_compra = (d.sinais_compra || []).slice(0, 2); },
@@ -337,6 +378,7 @@ const CORTES = [
   // As falas do lead são o que mais anima o closer: ficam até quase o fim, e uma sobrevive sempre que couber.
   (d) => { d.citacoes = (d.citacoes || []).slice(0, 1); },
   (d) => { d.secoes = (d.secoes || []).slice(0, 2); },
+  (d) => { d.dores = (d.dores || []).slice(0, 1); },
   (d) => { d.citacoes = []; },
 ];
 
