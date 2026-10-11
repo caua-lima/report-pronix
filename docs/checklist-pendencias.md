@@ -19,7 +19,7 @@ Detalhes técnicos em [`auditoria-pronix.md`](auditoria-pronix.md) e [`plano-imp
 - [x] Resultados: no-show e "não fechou" saem da lista; certinho na venda; produto, ticket e pagamento; ver os de uma pessoa
 - [x] "Fulano vai melhor com lead X" com o porquê das anotações; perfil do lead com critério (prompt v7)
 - [x] Menu lateral; Acessos com permissões por pessoa (abas, recursos e cor na agenda)
-- [ ] **Você:** enviar a extensão 1.2.0 (visual novo + "Esse lead é bom para o closer?") à Chrome Web Store
+- [ ] **Você:** enviar a extensão 1.3.0 (visual novo, afinidade com o closer, teste de abordagens e termômetro de dores) à Chrome Web Store
 - [ ] **Você:** reconectar o Google (Extensão → Google Agenda → Conectar de novo) para liberar a cor
 - [ ] **Você:** escolher a sua cor e a do Samuel em Acessos; conferir se a conta pode editar as agendas dos closers
 - [ ] **Você:** criar `CRON_SECRET` na Vercel para a conferência diária no RD
