@@ -31,6 +31,7 @@ const { gerarResumoRapido } = require('./src/resumoRapido');
 const coachIa = require('./src/coach');
 const inteligencia = require('./src/inteligencia');
 const afinidadeIa = require('./src/afinidade');
+const abordagens = require('./src/abordagens');
 const { gerarAfinidadePdfBuffer, nomeDoArquivo: nomeDoArquivoAfinidade } = require('./src/afinidadePdf');
 const aprendizado = require('./src/aprendizado');
 const { normalizarConsciencia } = require('./src/consciencia');
@@ -390,6 +391,26 @@ app.get('/api/master/inteligencia', acesso(['resultados'], SO_MASTER_ERRO), asyn
   }
 });
 
+/** Abordagens do primeiro contato: os textos em teste e o placar (enviadas, respostas, reports e vendas). */
+app.get('/api/master/abordagens', acesso(['resultados'], SO_MASTER_ERRO), async (req, res) => {
+  try {
+    const dono = donoDoEscopo(req);
+    const dias = Math.max(0, Math.min(365, Math.floor(Number(req.query.dias)) || 0));
+    const desde = dias ? new Date(Date.now() - dias * 86400000).toISOString().slice(0, 10) : '';
+    res.json({ lista: await abordagens.ler(), placar: await abordagens.placar({ usuarioId: dono, reports: await reportsDoEscopo(dono), desde }) });
+  } catch (err) {
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+app.put('/api/master/abordagens', master, async (req, res) => {
+  try {
+    res.json({ ok: true, lista: await abordagens.salvar((req.body || {}).lista) });
+  } catch (err) {
+    res.status(400).json({ erro: err.message });
+  }
+});
+
 /** Texto de insights escrito pela IA gratuita (Groq) em cima dos números — sem custo. */
 app.post('/api/master/insights', acesso(['resultados'], SO_MASTER_ERRO), async (req, res) => {
   try {
@@ -723,6 +744,13 @@ async function automacaoDoLead(r, conversa, usuario) {
   } catch (err) {
     console.error('Falha ao ler a marca do lead:', err.message);
   }
+  // Teste das abordagens de primeiro contato: o que a extensão precisa para reconhecer e o que já foi anotado.
+  try {
+    saida.abordagens = abordagens.paraExtensao(await abordagens.ler());
+    saida.contato = await abordagens.doLead(usuario.id, conversa);
+  } catch (err) {
+    console.error('Falha ao ler as abordagens:', err.message);
+  }
   saida.podeResponder = r.encontrado ? await crm.antesDeRespondeu(r.ficha).catch(() => false) : false;
   return saida;
 }
@@ -765,6 +793,27 @@ app.post('/api/lead/marca', auth, async (req, res) => {
     const marca = await leads.marcar(conversa, campos);
     if (!marca) return res.status(400).json({ erro: 'Conversa sem telefone nem nome.' });
     res.json({ ok: true, marca: leads.publica(marca) });
+  } catch (err) {
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+/**
+ * Teste das abordagens de primeiro contato: a extensão avisa a letra da abordagem que reconheceu na
+ * conversa e/ou que o lead respondeu. Nenhum texto de conversa passa por aqui.
+ */
+app.post('/api/lead/abordagem', auth, async (req, res) => {
+  try {
+    if (semAutomacao(req, res)) return;
+    const b = req.body || {};
+    const conversa = conversaDoPedido({ telefone: b.telefone, nome: b.nome });
+    const contato = await abordagens.anotar({
+      usuarioId: req.usuario.id, conversa,
+      abordagem: typeof b.abordagem === 'string' ? b.abordagem.slice(0, 3) : '',
+      respondeu: b.respondeu === true,
+    });
+    if (!contato) return res.status(400).json({ erro: 'Conversa sem telefone nem nome.' });
+    res.json({ ok: true, contato });
   } catch (err) {
     res.status(500).json({ erro: err.message });
   }
