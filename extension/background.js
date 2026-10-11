@@ -107,6 +107,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 
   // Etiqueta "Qualificado" e o dia/horário agendado do lead (vai só a data lida — nunca o texto da conversa).
+  // Abordagem do primeiro contato: vai só a letra reconhecida e/ou "respondeu" — nenhum texto da conversa.
+  if (msg && msg.action === 'abordagem') {
+    (async () => {
+      const corpo = { telefone: String(msg.telefone || '').slice(0, 30), nome: String(msg.nome || '').slice(0, 80) };
+      if (msg.abordagem) corpo.abordagem = String(msg.abordagem).slice(0, 3);
+      if (msg.respondeu === true) corpo.respondeu = true;
+      const r = await chamar('/api/lead/abordagem', corpo, { timeoutMs: 20000 });
+      sendResponse(r.ok ? { ok: true, contato: r.data.contato || null } : { ok: false, erro: r.erro });
+    })();
+    return true;
+  }
+
   if (msg && msg.action === 'leadMarca') {
     (async () => {
       const corpo = { telefone: String(msg.telefone || '').slice(0, 30), nome: String(msg.nome || '').slice(0, 80) };
