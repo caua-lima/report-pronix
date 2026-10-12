@@ -1,5 +1,5 @@
 'use strict';
-// "Esse lead é bom para o closer?": inteligência do closer cadastrada no painel, análise (IA gratuita
+// "Analisar Match com o closer": inteligência do closer cadastrada no painel, análise (IA gratuita
 // simulada), PDF e a nota guardada no report. Banco em pasta temporária, sem rede e sem IA de verdade.
 const os = require('os');
 const fs = require('fs');
@@ -142,7 +142,7 @@ test('análise: nota de 0 a 10 com motivos, atenção e como conduzir; PDF junto
   assert.equal(a.comoConduzir.length, 2);
   assert.deepEqual(a.faltaSaber, ['Se a esposa participa da decisão financeira.']);
   assert.deepEqual([a.base.reunioes, a.base.vendas], [2, 1], 'o histórico do closer entra na conta');
-  assert.match(r.json.arquivo, /^Afinidade_PH_Marcos-Pereira_\d\d-\d\d-\d{4}\.pdf$/);
+  assert.match(r.json.arquivo, /^Match_PH_Marcos-Pereira_\d\d-\d\d-\d{4}\.pdf$/);
 
   // o que foi para a IA: inteligência, histórico, lead e conversa, cada um no seu bloco
   assert.equal(pedidosIa.length, 1);
@@ -158,7 +158,7 @@ test('análise: nota de 0 a 10 com motivos, atenção e como conduzir; PDF junto
   const pdf = Buffer.from(r.json.arquivoBase64, 'base64');
   assert.equal(pdf.subarray(0, 5).toString(), '%PDF-');
   const t = textoDoPdf(pdf);
-  for (const trecho of ['AFINIDADE COM O CLOSER', 'AFINIDADE ALTA', 'Paulo Henrique Pagoti', 'QUEM DECIDE', 'Por que essa nota', 'Pontos de atenção', 'Como conduzir a call', 'Confirmar antes da call', 'Base da análise']) {
+  for (const trecho of ['MATCH COM O CLOSER', 'MATCH ALTO', 'Paulo Henrique Pagoti', 'QUEM DECIDE', 'Por que essa nota', 'Pontos de atenção', 'Como conduzir a call', 'Confirmar antes da call', 'Base da análise']) {
     assert.ok(t.includes(trecho), 'faltou no PDF: ' + trecho);
   }
 
@@ -242,15 +242,15 @@ test('ligar e desligar: desligada, o botão some para todos e a rota recusa; a i
 // ---------------------------------------------------------------- peças soltas
 test('faixas da nota, nome do arquivo e PDF de nota baixa em 1 página', async () => {
   assert.deepEqual([0, 3, 4, 6, 7, 10].map(afinidade.faixaDaNota), ['baixa', 'baixa', 'media', 'media', 'alta', 'alta']);
-  assert.match(nomeDoArquivo({ apelido: 'PH', closerNome: 'Paulo' }, 'José da Silva Júnior Neto'), /^Afinidade_PH_Jose-da-Silva_/);
-  assert.match(nomeDoArquivo({ closerNome: 'Paulo Henrique Pagoti' }, ''), /^Afinidade_Paulo-Henrique_Lead_/);
+  assert.match(nomeDoArquivo({ apelido: 'PH', closerNome: 'Paulo' }, 'José da Silva Júnior Neto'), /^Match_PH_Jose-da-Silva_/);
+  assert.match(nomeDoArquivo({ closerNome: 'Paulo Henrique Pagoti' }, ''), /^Match_Paulo-Henrique_Lead_/);
   const buf = await gerarAfinidadePdfBuffer({
     afinidade: { closerNome: 'Closer', apelido: 'C', nota: 2, faixa: 'baixa', veredito: 'Combinação fraca.', composicao: '', motivos: ['m'], atencao: [], comoConduzir: [], faltaSaber: [], base: {} },
     lead: 'Lead', sdr: 'SDR',
   });
   assert.equal((buf.toString('latin1').match(/\/Type \/Page\b/g) || []).length, 1);
   const t = textoDoPdf(buf);
-  assert.ok(t.includes('AFINIDADE BAIXA') && !t.includes('Pontos de atenção'), 'seção sem item não aparece');
+  assert.ok(t.includes('MATCH BAIXO') && !t.includes('Pontos de atenção'), 'seção sem item não aparece');
   assert.ok(t.includes('ainda sem histórico de resultados'));
 });
 

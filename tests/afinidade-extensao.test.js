@@ -1,5 +1,5 @@
 'use strict';
-// "Esse lead é bom para o closer?" na extensão: content scripts REAIS (WhatsApp e Instagram), popup real
+// "Analisar Match com o closer" na extensão: content scripts REAIS (WhatsApp e Instagram), popup real
 // e background, tudo em DOM simulado. Sem rede e sem IA.
 const fs = require('fs');
 const path = require('path');
@@ -19,9 +19,11 @@ const AFINIDADE = {
   afinidade: {
     closerId: 'c1', closerNome: 'Paulo Henrique Pagoti', apelido: 'PH', nota: 8, faixa: 'alta',
     veredito: 'Casal decidido: é o cenário em que ele mais fecha. <img src=x onerror=alert(1)>',
-    motivos: ['m1'], atencao: ['Nunca vendeu online.'], comoConduzir: ['c1'], faltaSaber: [],
+    motivos: ['Decide com a esposa e os dois vão à call: casal junto fecha 9 de 17.', 'Loja física em queda. <b>x</b>', 'Tem cartão próprio.', 'Quarto motivo fica só no PDF.'],
+    atencao: ['Nunca vendeu online.'], comoConduzir: ['c1'], faltaSaber: [],
+    base: { inteligenciaEm: '2026-10-12T12:00:00.000Z', reunioes: 0, vendas: 0, casos: 87, casosVendas: 33 },
   },
-  arquivo: 'Afinidade_PH_Marcos_11-10-2026.pdf', arquivoBase64: 'CCCC',
+  arquivo: 'Match_PH_Marcos_11-10-2026.pdf', arquivoBase64: 'CCCC',
 };
 const PH = { id: 'c1', apelido: 'PH', nome: 'Paulo Henrique Pagoti' };
 
@@ -70,7 +72,7 @@ test('WhatsApp: pedido pelo botão do closer, o aviso final traz a nota, o vered
   const p = whatsapp(servidor);
   p.iniciar('https://servidor.teste', { afinidade: PH });
   await pronto(p);
-  await esperar(() => caixa(p) && /para o PH/.test(caixa(p).textContent), { motivo: 'análise no aviso' });
+  await esperar(() => caixa(p) && /Match com PH/.test(caixa(p).textContent), { motivo: 'análise no aviso' });
 
   // o que foi pedido: o closer, o report recém-gerado, o que ele levantou e a conversa
   assert.equal(servidor.pedidos.afinidade.length, 1);
@@ -82,16 +84,22 @@ test('WhatsApp: pedido pelo botão do closer, o aviso final traz a nota, o vered
 
   // o que aparece
   const t = caixa(p).textContent;
-  assert.match(t, /8\/10para o PHafinidade alta/);
+  assert.match(t, /8\/10Match com PHalto/);
   assert.match(t, /Casal decidido/);
   assert.match(t, /Atenção: Nunca vendeu online\./);
+  // o porquê da nota fica no próprio aviso (até 3 motivos), com a base em que ela se apoia
+  assert.match(t, /• Decide com a esposa e os dois vão à call: casal junto fecha 9 de 17\./);
+  assert.match(t, /• Tem cartão próprio\./);
+  assert.ok(!t.includes('Quarto motivo'), 'o quarto motivo fica para o PDF');
+  assert.match(t, /Base: 87 calls dele analisadas, 33 vendas/);
+  assert.equal(caixa(p).querySelector('b'), null, 'motivo nunca vira HTML');
   assert.equal(caixa(p).querySelector('img'), null, 'texto da análise nunca vira HTML');
   const link = caixa(p).querySelector('a[download]');
-  assert.equal(link.getAttribute('download'), 'Afinidade_PH_Marcos_11-10-2026.pdf');
+  assert.equal(link.getAttribute('download'), 'Match_PH_Marcos_11-10-2026.pdf');
   assert.equal(link.getAttribute('href'), 'data:application/pdf;base64,CCCC');
   // o report normal continua lá, com o próprio botão
   const baixar = [...p.document.querySelectorAll('#closer-report-badge a[download]')].map((a) => a.getAttribute('download'));
-  assert.deepEqual(baixar, ['Report_Marcos.pdf', 'Afinidade_PH_Marcos_11-10-2026.pdf']);
+  assert.deepEqual(baixar, ['Report_Marcos.pdf', 'Match_PH_Marcos_11-10-2026.pdf']);
 });
 
 test('WhatsApp: pelo "Gerar report" comum, nada de análise (nem pedido, nem bloco no aviso)', async () => {
@@ -112,7 +120,7 @@ test('WhatsApp: se a análise falha, o report continua pronto e dá para tentar 
   await esperar(() => caixa(p) && /chegou no limite/.test(caixa(p).textContent), { motivo: 'erro da análise' });
   assert.ok(p.document.querySelector('#closer-report-badge a[download="Report_Marcos.pdf"]'), 'o report não some por causa da análise');
   [...caixa(p).querySelectorAll('button')].find((b) => b.textContent === 'Tentar de novo').click();
-  await esperar(() => /para o PH/.test(caixa(p).textContent), { motivo: 'análise na segunda tentativa' });
+  await esperar(() => /Match com PH/.test(caixa(p).textContent), { motivo: 'análise na segunda tentativa' });
   assert.equal(servidor.pedidos.afinidade.length, 2);
 });
 
@@ -127,7 +135,7 @@ test('WhatsApp: report que já existia — a análise sai da conversa lida e a n
   assert.deepEqual([pedido.reportId, pedido.dados], ['abc', null]);
   assert.equal(pedido.mensagens.length, 4);
   assert.equal(servidor.pedidos.reports.length, 1, 'nenhuma geração nova (sem custo)');
-  await esperar(() => caixa(p) && /para o PH/.test(caixa(p).textContent), { motivo: 'análise no aviso' });
+  await esperar(() => caixa(p) && /Match com PH/.test(caixa(p).textContent), { motivo: 'análise no aviso' });
 });
 
 test('pedido de análise malformado vindo de fora (sem id) é ignorado', async () => {
@@ -147,9 +155,9 @@ test('Instagram: o mesmo botão funciona — nota e segundo PDF no aviso', async
   montarInstagram(p, CONVERSA.map((m) => ({ from: m.from, texto: m.texto })), { visiveis: 6 });
   p.iniciar('https://servidor.teste', { afinidade: PH });
   await pronto(p);
-  await esperar(() => caixa(p) && /para o PH/.test(caixa(p).textContent), { motivo: 'análise no aviso' });
+  await esperar(() => caixa(p) && /Match com PH/.test(caixa(p).textContent), { motivo: 'análise no aviso' });
   assert.deepEqual([servidor.pedidos.afinidade[0].closerId, servidor.pedidos.afinidade[0].reportId], ['c1', 'rep123']);
-  assert.ok(caixa(p).querySelector('a[download="Afinidade_PH_Marcos_11-10-2026.pdf"]'));
+  assert.ok(caixa(p).querySelector('a[download="Match_PH_Marcos_11-10-2026.pdf"]'));
 });
 
 // ---------------------------------------------------------------- background
@@ -214,7 +222,7 @@ test('popup: um botão por closer com inteligência; clicar manda gerar o report
   const eu = { ok: true, nome: 'Cauã Lima', coach: true, analises: [PH, { id: 'c2', apelido: 'Vi<b>x</b>', nome: 'Vitor' }] };
   const p = await abrirPopup({ chave: 'pnx_caua', server: 'https://report-pronix.vercel.app' }, eu);
   await esperar(() => p.botoes().length === 2, { motivo: 'botões de análise' });
-  assert.deepEqual(p.botoes().map((b) => b.textContent), ['Esse lead é bom para o PH?', 'Esse lead é bom para o Vi<b>x</b>?']);
+  assert.deepEqual(p.botoes().map((b) => b.textContent), ['Analisar Match com PH', 'Analisar Match com Vi<b>x</b>']);
   assert.equal(p.document.querySelector('#analises b'), null, 'apelido nunca vira HTML');
   assert.ok(!p.document.getElementById('analises').classList.contains('hidden'));
   assert.deepEqual(p.storage.analises, eu.analises, 'fica guardado para aparecer na hora da próxima vez');
@@ -223,7 +231,7 @@ test('popup: um botão por closer com inteligência; clicar manda gerar o report
   await esperar(() => p.enviadas.length === 1, { motivo: 'start enviado' });
   assert.deepEqual(p.enviadas[0], { action: 'start', server: 'https://report-pronix.vercel.app', afinidade: PH });
   await esperar(() => /Report iniciado/.test(p.document.getElementById('status').textContent), { motivo: 'status' });
-  assert.match(p.document.getElementById('status').textContent, /A análise para o PH aparece no mesmo aviso/);
+  assert.match(p.document.getElementById('status').textContent, /O match com PH aparece no mesmo aviso/);
 
   // o botão comum continua mandando só o report
   p.document.getElementById('gerar').click();
@@ -236,7 +244,7 @@ test('popup: um botão por closer com inteligência; clicar manda gerar o report
 test('popup: para o master sem nenhum botão, explica o que falta (a inteligência do closer, ou o próprio closer)', async () => {
   const p = await abrirPopup({ chave: 'pnx_caua', server: 'https://report-pronix.vercel.app' }, { ok: true, nome: 'Cauã Lima', analises: [], analisesFaltando: ['PH<b>x</b>', 'Vitor'] });
   await esperar(() => !!p.document.getElementById('analisesFalta'), { motivo: 'aviso do que falta' });
-  assert.equal(p.document.getElementById('analisesFalta').textContent, 'Botão "Esse lead é bom para o PH<b>x</b>?": falta cadastrar a inteligência dele no painel (Closers → Inteligência).');
+  assert.equal(p.document.getElementById('analisesFalta').textContent, 'Botão "Analisar Match com PH<b>x</b>": falta cadastrar a inteligência dele no painel (Closers → Inteligência).');
   assert.equal(p.document.querySelector('#analises b'), null, 'apelido nunca vira HTML');
   assert.equal(p.botoes().length, 0);
   assert.ok(!p.document.getElementById('analises').classList.contains('hidden'));

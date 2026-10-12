@@ -1317,7 +1317,7 @@ test('Diagnóstico das automações: mostra o que está ok, o que falta e o vere
   p.fechar();
 });
 
-test('Closers: o master cadastra o apelido e a inteligência do closer (alimenta "esse lead é bom para o PH?")', async () => {
+test('Closers: o master cadastra o apelido e a inteligência do closer (alimenta "Analisar Match com PH")', async () => {
   let lista = [{ id: 'c1', nome: 'Paulo Henrique Pagoti', email: '' }, { id: 'c2', nome: 'Vitor <b>x</b>', email: '', apelido: 'Vi', inteligencia: 'Fecha com casal. <script>alert(1)</script>', inteligenciaEm: '2026-10-10T12:00:00.000Z' }];
   const api = apiMaster()
     .quando('GET /api/admin/closers', () => ({ corpo: { closers: lista } }))
@@ -1340,7 +1340,7 @@ test('Closers: o master cadastra o apelido e a inteligência do closer (alimenta
   assert.ok(!visivel(editor('c1')));
   p.document.querySelector('[data-inteligencia-closer="c1"]').click();
   assert.ok(visivel(editor('c1')));
-  assert.match(editor('c1').textContent, /Esse lead é bom para o Paulo\?/, 'sem apelido, o botão usa o primeiro nome');
+  assert.match(editor('c1').textContent, /Analisar Match com Paulo/, 'sem apelido, o botão usa o primeiro nome');
 
   editor('c1').querySelector('[data-apelido]').value = 'PH';
   editor('c1').querySelector('[data-inteligencia]').value = 'Fecha mais com casal na call.';
@@ -1417,7 +1417,7 @@ test('Closers: importar o pacote cria o closer com inteligência e casos; o edit
   escolher(JSON.stringify(pacote));
   p.$('importarPacote').click();
   await esperar(() => /Closer criado/.test(p.$('statusPacote').textContent), { motivo: 'pacote importado' });
-  assert.match(p.$('statusPacote').textContent, /Inteligência gravada e 2 caso\(s\) das calls\. O botão "Esse lead é bom para o CF\?"/);
+  assert.match(p.$('statusPacote').textContent, /Inteligência gravada e 2 caso\(s\) das calls\. O botão "Analisar Match com CF"/);
   assert.equal(p.$('statusPacote').querySelector('b'), null, 'nome que vem do pacote nunca vira HTML');
   assert.deepEqual(api.corpos('POST /api/admin/closers/importar').pop(), pacote);
   await esperar(() => p.$('listaClosers').textContent.includes('análise: CF'), { motivo: 'lista refeita com o closer novo' });
