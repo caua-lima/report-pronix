@@ -1161,6 +1161,69 @@ test('Closers: aba própria do master para adicionar e remover', async () => {
   p.fechar();
 });
 
+test('Limpeza do funil no RD: prévia sem alterar nada, teste com 5, execução em lotes, relatório por motivo e desfazer', async () => {
+  const ids = Array.from({ length: 32 }, (_, i) => 'd' + (i + 1));
+  const PREVIA = {
+    dias: 15, escopo: 'meus', total: 32, ids,
+    contexto: { funil: 'Funil SDR', destino: 'Desqualificados', sdr: 'Cauã', responsavel: 'Cauã Lima', avisos: [], motivos: [{ etapa: 'Contato iniciado', motivo: 'Nunca Respondeu (SDR)' }, { etapa: 'Respondeu', motivo: 'Parou de Responder (SDR/Closer)' }] },
+    porMotivo: [{ rotulo: 'Nunca respondeu', etapa: 'Contato iniciado', total: 20, naEtapa: 761 }, { rotulo: 'Parou de responder', etapa: 'Respondeu', total: 12, naEtapa: 505 }],
+    cards: [{ id: 'd1', nome: 'PRXC | Lead <b>Um</b>', etapa: 'Contato iniciado', motivo: 'Nunca respondeu', dias: 111, responsavel: 'Cauã Lima' }],
+  };
+  let relatorio = { total: 0, texto: '' };
+  const lotes = [];
+  const api = apiMaster()
+    .quando('GET /api/master/google', () => ({ corpo: { configurado: false, conectado: false, agendas: [] } }))
+    .quando('GET /api/master/limpeza-rd/previa', () => ({ corpo: PREVIA }))
+    .quando('GET /api/master/limpeza-rd/relatorio', () => ({ corpo: relatorio }))
+    .quando('POST /api/master/limpeza-rd/executar', ({ corpo }) => {
+      lotes.push(corpo.ids);
+      relatorio = { total: 32, texto: '• Nunca respondeu - 20\n• Parou de responder - 12\nTotal: 32' };
+      return { corpo: { feitos: corpo.ids.map((id) => ({ id, nome: id, motivo: 'Nunca respondeu' })), pulados: [], erros: [], limite: false } };
+    })
+    .quando('POST /api/master/limpeza-rd/desfazer', ({ corpo }) => ({ corpo: { desfeitos: corpo.ids.map((id) => ({ id })), erros: [] } }));
+  const p = abrirPainel(api, { hash: '#extensao' });
+  const copiados = [];
+  Object.defineProperty(p.w.navigator, 'clipboard', { value: { writeText: async (t) => { copiados.push(t); } }, configurable: true });
+  await esperar(() => visivel(p.$('limpezaRd')), { motivo: 'cartão da limpeza' });
+  assert.equal(api.contar('GET /api/master/limpeza-rd/previa'), 0, 'abrir a aba não consulta o RD sozinho');
+
+  p.$('lzPrevia').click();
+  await esperar(() => /32 card\(s\) parado/.test(p.$('statusLz').textContent), { motivo: 'prévia' });
+  assert.match(p.$('statusLz').textContent, /Nada foi alterado ainda/);
+  assert.match(p.$('lzResumo').textContent, /Nunca respondeu: 20 de 761 card\(s\) em "Contato iniciado"/);
+  assert.match(p.$('lzResumo').textContent, /Campo SDR: Cauã/);
+  assert.equal(p.$('lzLista').querySelector('b b'), null, 'nome do card nunca vira HTML');
+  assert.equal(p.$('lzTudo').textContent, 'Executar todos (32)');
+  assert.equal(lotes.length, 0);
+  const q = api.pedidos.find((x) => x.chave === 'GET /api/master/limpeza-rd/previa').query;
+  assert.deepEqual([q.get('dias'), q.get('escopo')], ['15', 'meus']);
+
+  // teste com 5: só os 5 primeiros da prévia
+  p.$('lzTeste').click();
+  await esperar(() => lotes.length === 1, { motivo: 'lote de teste' });
+  assert.deepEqual(lotes[0], ids.slice(0, 5));
+  await esperar(() => visivel(p.$('lzRelatorio')), { motivo: 'relatório' });
+  assert.match(p.$('lzTexto').textContent, /• Nunca respondeu - 20\n• Parou de responder - 12\nTotal: 32/);
+  p.$('lzCopiar').click();
+  await esperar(() => copiados.length === 1, { motivo: 'relatório copiado' });
+  assert.match(copiados[0], /^Limpeza do funil — \d\d\/\d\d\/\d{4}\n• Nunca respondeu - 20/);
+
+  // executar todos: vai em lotes de 15
+  await esperar(() => !p.$('lzTudo').disabled && /32 card/.test(p.$('statusLz').textContent), { motivo: 'prévia refeita' });
+  lotes.length = 0;
+  p.$('lzTudo').click();
+  await esperar(() => lotes.length === 3, { motivo: 'três lotes' });
+  assert.deepEqual(lotes.map((l) => l.length), [15, 15, 2]);
+
+  // desfazer o último lote
+  await esperar(() => visivel(p.$('lzDesfazer')) && !p.$('lzDesfazer').disabled, { motivo: 'botão de desfazer' });
+  p.$('lzDesfazer').click();
+  await esperar(() => api.contar('POST /api/master/limpeza-rd/desfazer') === 3, { motivo: 'desfazer em lotes' });
+  await dormir(80);
+  assert.deepEqual(p.erros, []);
+  p.fechar();
+});
+
 test('Abordagens do primeiro contato: placar com quem dá mais resposta e mais venda; textos para copiar e editar', async () => {
   const LISTA = [
     { id: 'A', nome: 'Controle <b>x</b>', hipotese: 'A referência.', mensagens: ['Boa tarde, [NOME]!', 'Posso confirmar, [NOME]?'], assinaturas: ['posso confirmar'] },
