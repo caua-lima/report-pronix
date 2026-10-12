@@ -263,6 +263,8 @@ async function montarFicha(contato, extras = [], preferido = '') {
     valor: Number(d.amount_total) || 0, // valor da negociação no RD
     motivoPerda: consertarAcentos((d.deal_lost_reason && d.deal_lost_reason.name) || ''),
     notaPerda: consertarAcentos(d.deal_lost_note || '').slice(0, 300),
+    // Produtos que o closer colocou no card (é de onde sai o produto da venda).
+    produtos: (Array.isArray(d.deal_products) ? d.deal_products : []).map((p) => consertarAcentos(String((p && (p.name || (p.product && p.product.name))) || '')).trim().slice(0, 80)).filter(Boolean).slice(0, 5),
     fechadaEm: d.closed_at || '',
     atualizadaEm: d.updated_at || '',
     escolhida: idDe(d) === idNeg,
@@ -304,6 +306,7 @@ async function montarFicha(contato, extras = [], preferido = '') {
 
   const id = deal && (deal.id || deal._id);
   return {
+    contatoId: idDe(contato),
     nome: consertarAcentos(contato.name || ''),
     telefones: (contato.phones || []).map((p) => p.phone).filter(Boolean).slice(0, 3),
     emails: (contato.emails || []).map((e) => e.email).filter(Boolean).slice(0, 2),
@@ -396,11 +399,37 @@ const pareceTelefone = (s) => soDigitos(s).length >= 8 && !/[a-zA-ZÀ-ÿ]/.test(
 const candidato = (c) => ({ id: c.id || c._id, nome: c.name || '', telefone: ((c.phones || [])[0] || {}).phone || '' });
 
 /** Identifica o lead da busca (já com telefone só em dígitos e nome limpo): é a chave do cache e do card lembrado. */
-const chaveDaBusca = ({ telefone, nome, contatoId }) =>
-  contatoId ? `id:${contatoId}` : telefone.length >= 8 ? `tel:${final8(telefone)}` : nome ? `nome:${nome.toLowerCase()}` : '';
+const chaveDaBusca = ({ telefone, nome, contatoId, email }) =>
+  contatoId ? `id:${contatoId}` : telefone.length >= 8 ? `tel:${final8(telefone)}` : email ? `email:${email}` : nome ? `nome:${nome.toLowerCase()}` : '';
+
+const EMAIL_OK = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+const emailsDoContato = (c) => ((c && c.emails) || []).map((e) => String((e && (e.email || e)) || '').trim().toLowerCase()).filter(Boolean);
 
 /**
- * @param {{telefone?: string, nome?: string, contatoId?: string}} busca
+ * Vários contatos com o mesmo nome são a MESMA pessoa quando se ligam por telefone (8 últimos dígitos)
+ * ou e-mail em comum — é o lead que se inscreveu mais de uma vez. Contato sem telefone nem e-mail não prova nada.
+ */
+function saoAMesmaPessoa(contatos) {
+  const lista = (contatos || []).filter(Boolean);
+  if (lista.length < 2) return lista.length === 1;
+  const chaves = lista.map((c) => new Set(
+    ((c.phones || []).map((p) => soDigitos(p && p.phone)).filter((d) => d.length >= 8).map((d) => 't' + final8(d))).concat(emailsDoContato(c).map((e) => 'e' + e))
+  ));
+  if (chaves.some((k) => !k.size)) return false;
+  const ligados = new Set([0]);
+  let cresceu = true;
+  while (cresceu) {
+    cresceu = false;
+    lista.forEach((_, i) => {
+      if (ligados.has(i)) return;
+      if ([...ligados].some((j) => [...chaves[i]].some((k) => chaves[j].has(k)))) { ligados.add(i); cresceu = true; }
+    });
+  }
+  return ligados.size === lista.length;
+}
+
+/**
+ * @param {{telefone?: string, nome?: string, contatoId?: string, email?: string}} busca
  * @param {{diagnostico?: boolean, semCache?: boolean}} opcoes
  * @returns {Promise<{configurado: boolean, encontrado?: boolean, ficha?: object, candidatos?: object[], buscaPor?: string, diagnostico?: object}>}
  */
@@ -410,9 +439,10 @@ async function consultarLead(busca = {}, opcoes = {}) {
   const nome = String(busca.nome || '').trim().slice(0, 80);
   const contatoId = /^[A-Za-z0-9_-]{1,40}$/.test(String(busca.contatoId || '')) ? String(busca.contatoId) : '';
   const dealPedido = /^[A-Za-z0-9_-]{1,40}$/.test(String(busca.dealId || '')) ? String(busca.dealId) : '';
+  const email = EMAIL_OK.test(String(busca.email || '').trim()) ? String(busca.email).trim().toLowerCase().slice(0, 120) : '';
   const diag = { tentativas: [] };
 
-  const chaveBase = chaveDaBusca({ telefone, nome, contatoId });
+  const chaveBase = chaveDaBusca({ telefone, nome, contatoId, email });
   if (!chaveBase) return { configurado: true, encontrado: false };
   const chave = 'crm:' + chaveBase;
   // O card que o SDR escolheu para este lead fica lembrado (vale para todos): da próxima vez abre o certo.
@@ -460,10 +490,24 @@ async function consultarLead(busca = {}, opcoes = {}) {
         resultado = { configurado: true, encontrado: true, buscaPor: 'telefone', ficha: await montarFicha(iguais[0], iguais.slice(1), preferido) };
       }
     }
+    // Pelo e-mail do lead (o que o report guardou do card): só vale contato que tem mesmo esse e-mail.
+    if (!contato && email) {
+      for (const params of [{ email, limit: 10 }, { q: email, limit: 10 }]) {
+        const r = await rd('/contacts', params);
+        const achados = (r && r.contacts) || [];
+        const certos = achados.filter((c) => emailsDoContato(c).includes(email));
+        diag.tentativas.push({ email: params.email ? 'filtro' : 'busca', resultados: achados.length, bateu: certos.length > 0 });
+        if (!certos.length) continue;
+        contato = certos[0];
+        resultado = { configurado: true, encontrado: true, buscaPor: 'email', ficha: await montarFicha(certos[0], certos.slice(1), preferido) };
+        break;
+      }
+    }
     // Sem telefone (contato salvo com nome) ou telefone não achado: tenta pelo nome.
     if (!contato && nome && !pareceTelefone(nome)) {
       const { consultas, palavras } = consultasPorNome(nome);
       let candidatos = null;
+      let repetidos = [];
       for (const q of consultas) {
         const r = await rd('/contacts', { q, limit: 20 });
         const achados = (r && r.contacts) || [];
@@ -475,6 +519,10 @@ async function consultarLead(busca = {}, opcoes = {}) {
         const soPrimeiroNome = palavras.length > 1 && normalizarNome(q) === palavras[0];
         if (comTodas.length === 1) {
           contato = comTodas[0];
+        } else if (comTodas.length > 1 && saoAMesmaPessoa(comTodas)) {
+          // O mesmo lead cadastrado mais de uma vez: as negociações de todos os cadastros entram.
+          contato = comTodas[0];
+          repetidos = comTodas.slice(1);
         } else if (achados.length === 1 && !soPrimeiroNome) {
           contato = achados[0];
         } else if (!candidatos) {
@@ -486,7 +534,7 @@ async function consultarLead(busca = {}, opcoes = {}) {
         }
       }
       if (contato) {
-        resultado = { configurado: true, encontrado: true, buscaPor: 'nome', ficha: await montarFicha(contato, [], preferido) };
+        resultado = { configurado: true, encontrado: true, buscaPor: 'nome', ficha: await montarFicha(contato, repetidos, preferido) };
       } else if (candidatos) {
         resultado = { configurado: true, encontrado: false, buscaPor: 'nome', candidatos };
       }
@@ -496,6 +544,18 @@ async function consultarLead(busca = {}, opcoes = {}) {
   // Não achou também fica em cache (menos tempo): trocar de conversa e voltar não repete a busca toda.
   if (ttl) await db.cacheSet(chave, JSON.stringify(resultado), resultado.encontrado ? ttl : Math.min(ttl, 120));
   return opcoes.diagnostico ? { ...resultado, diagnostico: diag } : resultado;
+}
+
+/** Nomes dos produtos de um card (rota própria do RD): usado quando a ficha do card vendido veio sem eles. */
+async function produtosDoCard(dealId) {
+  if (!configurado() || !/^[A-Za-z0-9_-]{1,40}$/.test(String(dealId || ''))) return [];
+  try {
+    const r = await rd(`/deals/${encodeURIComponent(dealId)}/deal_products`);
+    const lista = Array.isArray(r) ? r : (r && (r.deal_products || r.products)) || [];
+    return lista.map((p) => consertarAcentos(String((p && (p.name || (p.product && p.product.name))) || '')).trim()).filter(Boolean).slice(0, 5);
+  } catch (_) {
+    return []; // sem produto não se inventa: o campo fica para quem preenche
+  }
 }
 
 // ---------------------------------------------------------------- etapas do funil (mover para "Respondeu")
@@ -625,6 +685,8 @@ module.exports = {
   usuariosRd: usuarios,
   moverLigado,
   consultarLead,
+  produtosDoCard,
+  saoAMesmaPessoa,
   antesDeRespondeu,
   moverParaRespondeu,
   ehEtapaQualificado,
