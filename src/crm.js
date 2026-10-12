@@ -26,7 +26,8 @@ function ttlFicha() {
 
 /**
  * Chamada à API do RD. Erro nunca carrega a URL (que tem o token).
- * Sem `corpo` é leitura (GET); com `corpo` é a única escrita que o sistema faz: mudar o card de etapa.
+ * Sem `corpo` é leitura (GET); com `corpo` é escrita num card: mudar de etapa (automação do cartão) ou,
+ * na limpeza do funil pedida pelo master, desqualificar com perda (src/limpezaRd.js).
  */
 async function rd(caminho, params = {}, { metodo = 'GET', corpo } = {}) {
   const q = new URLSearchParams({ token: token() });
@@ -499,7 +500,7 @@ async function consultarLead(busca = {}, opcoes = {}) {
 
 // ---------------------------------------------------------------- etapas do funil (mover para "Respondeu")
 //
-// A única escrita no RD: quando o lead responde no WhatsApp, o card que ainda está ANTES de "Respondeu"
+// A escrita automática no RD: quando o lead responde no WhatsApp, o card que ainda está ANTES de "Respondeu"
 // (ex.: "Contato iniciado") avança para "Respondeu". Nunca volta um card, nunca mexe em card fechado e
 // nunca troca de funil. CRM_MOVER_ETAPA=0 desliga; CRM_ETAPA_RESPONDEU troca o nome da etapa de destino.
 
@@ -618,6 +619,11 @@ async function moverParaRespondeu(busca = {}, { usuarioNome = '' } = {}) {
 }
 
 module.exports = {
+  // Para a limpeza do funil (src/limpezaRd.js): a chamada crua ao RD, os funis, os usuários e a chave geral de escrita.
+  rd,
+  funis,
+  usuariosRd: usuarios,
+  moverLigado,
   consultarLead,
   antesDeRespondeu,
   moverParaRespondeu,
