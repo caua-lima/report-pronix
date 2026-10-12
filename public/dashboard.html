@@ -947,6 +947,41 @@
         <div id="statusCrm" class="status"></div>
         <pre id="resultadoCrm" class="hint hidden" style="white-space:pre-wrap;margin:8px 0 0"></pre>
       </div>
+      <div id="limpezaRd" class="card hidden">
+        <div class="head"><div class="t"><i data-ic="filter"></i>Limpeza do funil no RD</div><div class="sub">— card parado vira perda em Desqualificados, com o motivo</div></div>
+        <div class="hint" style="margin:0 0 12px">
+          Card em <b>Contato iniciado</b> sem movimento há mais dias que o limite vai para <b>Desqualificados</b> com perda <b>"Nunca respondeu"</b>;
+          card em <b>Respondeu</b>, com perda <b>"Parou de responder"</b>. O campo SDR recebe o seu nome. <b>Nada muda no RD até você executar</b>: veja a prévia e teste com 5 cards antes.
+        </div>
+        <div class="row">
+          <div style="min-width:150px"><label for="lzDias">Parado há mais de (dias)</label><input id="lzDias" type="number" min="1" max="365" value="15" /></div>
+          <div style="min-width:210px"><label for="lzEscopo">Cards de</label>
+            <select id="lzEscopo">
+              <option value="meus">Só os meus (sou o responsável)</option>
+              <option value="todos">Todos da etapa</option>
+            </select>
+          </div>
+          <button id="lzPrevia" class="btn sec"><i data-ic="refresh"></i>Ver prévia</button>
+        </div>
+        <div id="statusLz" class="status"></div>
+        <div id="lzResumo" class="hint hidden" style="margin-top:6px"></div>
+        <div id="lzTabela" class="hidden" style="max-height:340px;overflow:auto;margin-top:8px;border:1px solid var(--border);border-radius:var(--r-sm);padding:0 10px">
+          <table>
+            <thead><tr><th>Card</th><th>Etapa</th><th>Parado há</th><th>Motivo da perda</th><th>Responsável</th></tr></thead>
+            <tbody id="lzLista"></tbody>
+          </table>
+        </div>
+        <div id="lzAcoes" class="row hidden" style="margin-top:12px">
+          <button id="lzTeste" class="btn sec">Testar com 5 cards</button>
+          <button id="lzTudo" class="btn">Executar todos</button>
+          <button id="lzDesfazer" class="btn sec hidden">Desfazer o último lote</button>
+        </div>
+        <div id="lzRelatorio" class="hidden" style="margin-top:14px">
+          <div class="sec-t" style="margin-top:0">Relatório da limpeza de hoje</div>
+          <pre id="lzTexto" style="white-space:pre-wrap;margin:0 0 8px;padding:12px;background:var(--card-2);border:1px solid var(--border);border-radius:var(--r-sm);font-family:var(--f-mono);font-size:.86rem"></pre>
+          <button id="lzCopiar" class="mini" type="button">Copiar relatório</button>
+        </div>
+      </div>
       <div id="googleAgenda" class="card hidden">
         <div class="head"><div class="t"><i data-ic="target"></i>Google Agenda</div><div class="sub">— a reunião do lead no cartão do WhatsApp (dia, hora e closer)</div></div>
         <div class="hint" style="margin:0 0 12px">O servidor lê as agendas que a conta conectada enxerga (a sua e as que os closers compartilharam com você) e procura o evento em que o e-mail do lead é convidado. A única coisa que ele altera é a <b>cor</b> do evento, para quem tem uma cor escolhida em Acessos. Aparece para quem tem a <b>Automação RD</b> ligada.</div>
@@ -3098,7 +3133,128 @@
 
     // ---------- Aba Extensão: teste da ficha do RD Station CRM (admin) ----------
     // ---------- Google Agenda (só o master): reunião do lead no cartão ----------
+    // ---------- Limpeza do funil no RD (só o master): prévia, teste com 5, execução em lotes e relatório ----------
+    let lzAtual = null; // a última prévia: { ids, total, dias, escopo }
+    let lzUltimoLote = []; // ids movidos na última execução (para desfazer)
+    const lzHoje = () => new Date().toLocaleDateString('en-CA');
+    function prepararLimpeza() {
+      $('limpezaRd').classList.toggle('hidden', !podeMexerEmUsuarios());
+      if (podeMexerEmUsuarios()) lzCarregarRelatorio();
+    }
+    async function lzCarregarRelatorio() {
+      try {
+        const r = await api('GET', '/api/master/limpeza-rd/relatorio?de=' + lzHoje() + '&ate=' + lzHoje());
+        $('lzRelatorio').classList.toggle('hidden', !r.total);
+        $('lzTexto').textContent = 'Limpeza do funil — ' + new Date().toLocaleDateString('pt-BR') + '\n' + r.texto;
+      } catch (_) {
+        /* relatório é complemento: sem ele a tela segue */
+      }
+    }
+    async function lzVerPrevia() {
+      $('lzPrevia').disabled = true;
+      setStatus('statusLz', 'Consultando o RD… (pode levar alguns segundos)', { loading: true });
+      try {
+        const q = new URLSearchParams({ dias: $('lzDias').value || '15', escopo: $('lzEscopo').value });
+        const p = await api('GET', '/api/master/limpeza-rd/previa?' + q);
+        lzAtual = { ids: p.ids || [], total: p.total || 0, dias: p.dias, escopo: p.escopo };
+        const c = p.contexto || {};
+        $('lzResumo').classList.remove('hidden');
+        $('lzResumo').innerHTML =
+          `Funil <b>${esc(c.funil || '')}</b> → etapa <b>${esc(c.destino || '')}</b>. ` +
+          (p.porMotivo || []).map((m) => `<b>${esc(m.rotulo)}</b>: ${m.total} de ${m.naEtapa} card(s) em "${esc(m.etapa)}"`).join(' · ') + '. ' +
+          (c.motivos || []).map((m) => `Perda de "${esc(m.etapa)}": "${esc(m.motivo)}"`).join('; ') + '. ' +
+          (c.sdr ? `Campo SDR: <b>${esc(c.sdr)}</b>. ` : '') + (p.escopo === 'meus' && c.responsavel ? `Só os cards de <b>${esc(c.responsavel)}</b>. ` : '') +
+          (c.avisos || []).map((a) => `<span style="color:var(--danger)">${esc(a)}</span>`).join(' ');
+        $('lzLista').innerHTML = (p.cards || []).map((x) => `<tr><td><b>${esc(x.nome)}</b></td><td>${esc(x.etapa)}</td><td class="num">${x.dias} dias</td><td>${esc(x.motivo)}</td><td style="color:var(--muted)">${esc(x.responsavel || '—')}</td></tr>`).join('');
+        $('lzTabela').classList.toggle('hidden', !p.total);
+        $('lzAcoes').classList.toggle('hidden', !p.total);
+        $('lzTudo').textContent = `Executar todos (${p.total})`;
+        $('lzTeste').classList.toggle('hidden', p.total <= 5);
+        setStatus('statusLz', p.total
+          ? `${p.total} card(s) parado(s) há mais de ${p.dias} dias.` + (p.total > (p.cards || []).length ? ` A lista mostra os ${p.cards.length} mais antigos.` : '') + ' Nada foi alterado ainda.'
+          : `Nenhum card parado há mais de ${p.dias} dias. Funil em dia.`, { ok: !p.total });
+      } catch (e) {
+        lzAtual = null;
+        $('lzAcoes').classList.add('hidden');
+        setStatus('statusLz', e.message, { erro: true });
+      } finally {
+        $('lzPrevia').disabled = false;
+      }
+    }
+    /** Move os cards em lotes de 15 e vai mostrando o andamento; para se o RD recusar um lote inteiro. */
+    async function lzExecutar(ids) {
+      const botoes = [$('lzTeste'), $('lzTudo'), $('lzPrevia'), $('lzDesfazer')];
+      botoes.forEach((b) => { b.disabled = true; });
+      const soma = { feitos: [], pulados: 0, erros: [] };
+      try {
+        for (let i = 0; i < ids.length; i += 15) {
+          setStatus('statusLz', `Movendo no RD… ${Math.min(i, ids.length)} de ${ids.length}`, { loading: true });
+          const r = await api('POST', '/api/master/limpeza-rd/executar', { ids: ids.slice(i, i + 15), dias: lzAtual.dias, escopo: lzAtual.escopo });
+          soma.feitos.push(...(r.feitos || []));
+          soma.pulados += (r.pulados || []).length;
+          soma.erros.push(...(r.erros || []));
+          // Lote inteiro recusado: não adianta insistir nos próximos (token sem permissão, RD fora do ar, limite).
+          if (!(r.feitos || []).length && (r.erros || []).length) break;
+        }
+        lzUltimoLote = soma.feitos.map((f) => f.id);
+        $('lzDesfazer').classList.toggle('hidden', !lzUltimoLote.length);
+        $('lzDesfazer').textContent = `Desfazer o último lote (${lzUltimoLote.length})`;
+        setStatus('statusLz',
+          `${soma.feitos.length} card(s) movido(s) para Desqualificados com perda.` +
+          (soma.pulados ? ` ${soma.pulados} pulado(s) por terem mudado desde a prévia.` : '') +
+          (soma.erros.length ? ` ${soma.erros.length} com erro: ${soma.erros[0].erro}.` : ''),
+          { ok: !soma.erros.length, erro: Boolean(soma.erros.length) });
+        await lzCarregarRelatorio();
+      } catch (e) {
+        setStatus('statusLz', e.message, { erro: true });
+      } finally {
+        botoes.forEach((b) => { b.disabled = false; });
+      }
+    }
+    $('lzPrevia').addEventListener('click', lzVerPrevia);
+    $('lzTeste').addEventListener('click', () => {
+      if (!lzAtual || !lzAtual.ids.length) return;
+      if (!confirm('Mover 5 cards para Desqualificados e marcar perda no RD, como teste?\nDepois confira esses 5 no RD antes de executar o resto.')) return;
+      lzExecutar(lzAtual.ids.slice(0, 5)).then(lzVerPrevia);
+    });
+    $('lzTudo').addEventListener('click', () => {
+      if (!lzAtual || !lzAtual.ids.length) return;
+      if (!confirm(`Mover ${lzAtual.ids.length} card(s) para Desqualificados e marcar perda no RD?\nSe a empresa tiver automação disparada por perda, ela vai rodar para cada card.`)) return;
+      lzExecutar(lzAtual.ids).then(lzVerPrevia);
+    });
+    $('lzDesfazer').addEventListener('click', async () => {
+      if (!lzUltimoLote.length || !confirm(`Voltar ${lzUltimoLote.length} card(s) para a etapa de onde saíram e tirar a perda?`)) return;
+      $('lzDesfazer').disabled = true;
+      let desfeitos = 0;
+      let erro = '';
+      try {
+        for (let i = 0; i < lzUltimoLote.length; i += 15) {
+          setStatus('statusLz', `Desfazendo… ${i} de ${lzUltimoLote.length}`, { loading: true });
+          const r = await api('POST', '/api/master/limpeza-rd/desfazer', { ids: lzUltimoLote.slice(i, i + 15) });
+          desfeitos += (r.desfeitos || []).length;
+          if ((r.erros || []).length) erro = r.erros[0].erro;
+        }
+        lzUltimoLote = [];
+        $('lzDesfazer').classList.add('hidden');
+        setStatus('statusLz', `${desfeitos} card(s) de volta à etapa anterior, em aberto.` + (erro ? ' Alguns falharam: ' + erro + '.' : ''), { ok: !erro, erro: Boolean(erro) });
+        await lzCarregarRelatorio();
+      } catch (e) {
+        setStatus('statusLz', e.message, { erro: true });
+      } finally {
+        $('lzDesfazer').disabled = false;
+      }
+    });
+    $('lzCopiar').addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText($('lzTexto').textContent);
+        toast('Relatório copiado.');
+      } catch (_) {
+        toast('Não consegui copiar: selecione o texto e copie à mão.');
+      }
+    });
+
     async function carregarGoogle() {
+      prepararLimpeza();
       const caixa = $('googleAgenda');
       if (!caixa) return;
       caixa.classList.toggle('hidden', !podeMexerEmUsuarios());
