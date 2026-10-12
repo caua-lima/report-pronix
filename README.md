@@ -355,8 +355,8 @@ Card parado no começo do funil vira **perda em "Desqualificados"**, com o motiv
 | Contato iniciado | 15 dias (ajustável) | Nunca respondeu |
 | Respondeu | 15 dias (ajustável) | Parou de responder |
 
-O campo **SDR** do card recebe o nome de quem pediu a limpeza. Fica em Extensão e integrações →
-"Limpeza do funil no RD", só para o master, e nada acontece sozinho:
+O campo **SDR** do card recebe o nome de quem pediu a limpeza. Fica na aba **Limpeza do RD** do menu
+(Gestão comercial), só para o master, e nada acontece sozinho:
 
 1. **Prévia** — lista o que seria mexido e de onde, sem alterar nada.
 2. **Testar com 5 cards** — para conferir no RD antes do resto.

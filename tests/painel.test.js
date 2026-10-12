@@ -1181,10 +1181,13 @@ test('Limpeza do funil no RD: prévia sem alterar nada, teste com 5, execução 
       return { corpo: { feitos: corpo.ids.map((id) => ({ id, nome: id, motivo: 'Nunca respondeu' })), pulados: [], erros: [], limite: false } };
     })
     .quando('POST /api/master/limpeza-rd/desfazer', ({ corpo }) => ({ corpo: { desfeitos: corpo.ids.map((id) => ({ id })), erros: [] } }));
-  const p = abrirPainel(api, { hash: '#extensao' });
+  const p = abrirPainel(api, { hash: '#funil' });
   const copiados = [];
   Object.defineProperty(p.w.navigator, 'clipboard', { value: { writeText: async (t) => { copiados.push(t); } }, configurable: true });
   await esperar(() => visivel(p.$('limpezaRd')), { motivo: 'cartão da limpeza' });
+  assert.ok(visivel(p.$('aba-funil')), 'tem aba própria');
+  assert.ok(visivel(p.document.querySelector('.tab[data-aba="funil"]')), 'e item no menu');
+  assert.equal(p.$('tituloPagina').textContent, 'Limpeza do RD');
   assert.equal(api.contar('GET /api/master/limpeza-rd/previa'), 0, 'abrir a aba não consulta o RD sozinho');
 
   p.$('lzPrevia').click();
