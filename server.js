@@ -272,13 +272,28 @@ const donoDoEscopo = (req) => {
 
 /**
  * Leva para os reports o desfecho que os closers registraram no RD (vendido / não comprou, com o motivo).
- * Roda sozinho no máximo a cada 30 min quando alguém abre a aba Resultados, e uma vez por dia pelo
- * agendador da Vercel — a perda pode vir semanas depois, sem ninguém abrir a conversa.
+ * Roda sozinho no máximo a cada 30 min: quando alguém abre a aba Resultados, de hora em hora pela
+ * extensão (enquanto o Chrome está aberto) e uma vez por dia pelo agendador da Vercel — a perda pode
+ * vir semanas depois, sem ninguém abrir a conversa. Para não gastar consulta à toa, report recente
+ * conferido há menos de 50 min e report antigo conferido há menos de 20 h ficam para a próxima.
  */
 async function conferirDesfechosNoRd({ porVez } = {}) {
   if (!crm.configurado() || !(await db.travar('rd-desfechos', 1800))) return null;
-  return vendasRd.sincronizar(await stats.listar({}), { porVez });
+  return vendasRd.sincronizar(await stats.listar({}), { porVez, minutosQuente: 50, horasFrio: 20 });
 }
+
+/**
+ * Batida de hora em hora da extensão: mantém venda, follow-up, perda e closer dos reports em dia com o
+ * RD. Qualquer chave válida pode bater; a trava de 30 min vale para todos, então não acumula.
+ */
+app.post('/api/rd/atualizar', auth, async (_req, res) => {
+  try {
+    const r = await conferirDesfechosNoRd({ porVez: 10 });
+    res.json(r ? { ok: true, ...r } : { ok: true, emDia: true });
+  } catch (err) {
+    res.status(502).json({ erro: err.message });
+  }
+});
 
 /** Lista de closers (só id e nome) para quem gera report; com ?perfil= vem a sugestão. */
 app.get('/api/closers', auth, async (req, res) => {
@@ -361,6 +376,8 @@ app.get('/api/master/resultados', acesso(['resultados'], SO_MASTER_ERRO), async 
         id: r.id, lead: r.lead, contato: r.contato, usuarioNome: r.usuarioNome, quando: r.quando, dia: r.dia,
         closerId: r.closerId || '', closerNome: r.closerNome || '', resultado: r.resultado || '', obsReuniao: r.obsReuniao || '',
         vendidoNoRd: Boolean(r.vendidoNoRd), encerradoPeloRd: Boolean(r.encerradoPeloRd),
+        // O que a última conferência achou no RD (etapa, funil, responsável) e por onde o lead está vinculado.
+        rdSituacao: r.rdSituacao || '', rdConferidoEm: r.rdConferidoEm || '', vinculado: Boolean(r.rdContatoId || r.telefone || r.leadEmail),
         produto: r.produto || '', ticket: Number(r.ticket) || 0, pagamento: r.pagamento || '',
         perfil: r.perfil || '', perfilReal: r.perfilReal || '', perfilEvidencia: r.perfilEvidencia || '',
         consciencia: r.consciencia || '', conscienciaReal: r.conscienciaReal || '', conscienciaPorque: r.conscienciaPorque || '',
@@ -653,7 +670,7 @@ app.patch('/api/admin/reports/:id/resultado', acesso(['numeros', 'resultados']),
     // Só entra no que veio no pedido: mudar um campo não apaga os outros. Se vier
     // "versao", o servidor recusa (409) quando o report já foi alterado por outra pessoa.
     const campos = {};
-    ['leadEmail', 'resultado', 'dataReuniao', 'dataFechamento', 'obsReuniao', 'perfilReal', 'conscienciaReal', 'produto', 'ticket', 'pagamento'].forEach((k) => {
+    ['leadEmail', 'telefone', 'resultado', 'dataReuniao', 'dataFechamento', 'obsReuniao', 'perfilReal', 'conscienciaReal', 'produto', 'ticket', 'pagamento'].forEach((k) => {
       if (tem(k)) campos[k] = body[k];
     });
     const antes = tem('conscienciaReal') ? await stats.buscarPorId(req.params.id) : null;
@@ -667,6 +684,10 @@ app.patch('/api/admin/reports/:id/resultado', acesso(['numeros', 'resultados']),
       campos.closerNome = closer ? closer.nome : '';
       campos.closerEmail = closer ? closer.email : '';
     }
+    // E-mail ou telefone do lead digitado na linha vira a única pista: o outro dado (que tinha vindo de um
+    // contato do RD que não era o certo) sai, e a busca recomeça só com o que foi informado.
+    if (tem('telefone') && !tem('leadEmail')) campos.leadEmail = '';
+    if (tem('leadEmail') && !tem('telefone')) campos.telefone = '';
     const feito = await stats.atualizarResultado(req.params.id, campos, {
       versaoEsperada: tem('versao') ? body.versao : undefined,
     });
@@ -679,6 +700,14 @@ app.patch('/api/admin/reports/:id/resultado', acesso(['numeros', 'resultados']),
           evidencia: antes.conscienciaPorque, nota: body.notaConsciencia,
         })
         .catch((err) => console.error('Falha ao guardar a calibragem:', err.message));
+    }
+    // Informou o e-mail ou o telefone do lead: procura no RD agora, com o dado novo (o vínculo antigo sai).
+    if ((tem('leadEmail') || tem('telefone')) && crm.configurado()) {
+      await stats.atualizarResultado(req.params.id, { rdContatoId: '' });
+      const atual = await stats.buscarPorId(req.params.id);
+      if (atual) await vendasRd.sincronizar([atual], { porVez: 1 }).catch((err) => console.error('Falha ao vincular o report no RD:', err.message));
+      const depois = await stats.buscarPorId(req.params.id);
+      return res.json({ ok: true, versao: Number(depois && depois.versao) || feito.versao, rdSituacao: (depois && depois.rdSituacao) || '', recarregar: true });
     }
     res.json({ ok: true, versao: feito.versao });
   } catch (err) {
@@ -1208,7 +1237,24 @@ function sanitizarCaptura(c) {
   };
 }
 
-async function responderReport(req, res, dados, nome, origem, reportKey, captura) {
+/**
+ * O vínculo do report com o lead no RD. A extensão manda o que leu do card aberto (id do contato e do
+ * card, e-mail, telefone); sem isso, tenta achar pelo contato da conversa — a ficha costuma estar em
+ * cache, porque o cartão estava na tela — e desiste em 3 segundos para não segurar o report.
+ */
+async function vinculoDoReport(vinculo, nome) {
+  const v = stats.vinculoLimpo(vinculo);
+  if (v.contatoId || v.telefone || v.email || !crm.configurado()) return v;
+  const busca = vendasRd.buscaDoReport({ contato: nome });
+  if (!busca) return v;
+  const lead = await Promise.race([crm.consultarLead(busca).catch(() => null), new Promise((r) => setTimeout(() => r(null), 3000))]);
+  const ficha = lead && lead.encontrado !== false && lead.ficha;
+  if (!ficha) return v;
+  const escolhido = (ficha.negociacoes || []).find((c) => c.escolhida);
+  return stats.vinculoLimpo({ telefone: (ficha.telefones || [])[0], email: (ficha.emails || [])[0], contatoId: ficha.contatoId, dealId: escolhido && escolhido.id });
+}
+
+async function responderReport(req, res, dados, nome, origem, reportKey, captura, vinculo) {
   // Quem assina o report é o dono da chave, não uma variável do servidor.
   dados.sdr = req.usuario.nome;
   const uso = dados.uso;
@@ -1247,6 +1293,7 @@ async function responderReport(req, res, dados, nome, origem, reportKey, captura
       captura,
       citacoesRemovidas: meta.citacoesRemovidas || 0,
       leitura,
+      vinculo: await vinculoDoReport(vinculo, nome).catch(() => null),
     })
     .catch((err) => console.error('Falha ao registrar o report:', err.message));
   await pdfStorage
@@ -1306,7 +1353,7 @@ async function checarDuplicataETravar(req, res, reportKey) {
 app.post('/api/report-direto', auth, async (req, res) => {
   let reportKey = null;
   try {
-    const { mensagens, nome, qualidade, captureQuality } = req.body || {};
+    const { mensagens, nome, qualidade, captureQuality, vinculo } = req.body || {};
     const qualidadeFinal = qualidadeValida(qualidade);
     const { historico: normalizadas } = normalizarConversa(Array.isArray(mensagens) ? mensagens : []);
     reportKey = calcularReportKey({ historicoNormalizado: normalizadas, promptVersao: PROMPT_VERSAO, qualidade: qualidadeFinal });
@@ -1314,7 +1361,7 @@ app.post('/api/report-direto', auth, async (req, res) => {
     if (!(await checarDuplicataETravar(req, res, reportKey))) return;
 
     const dados = await dadosDireto({ mensagens, nome, sdr: req.usuario.nome, qualidade: qualidadeFinal });
-    await responderReport(req, res, dados, nome, 'extensao', reportKey, sanitizarCaptura(captureQuality));
+    await responderReport(req, res, dados, nome, 'extensao', reportKey, sanitizarCaptura(captureQuality), vinculo);
   } catch (err) {
     res.status(/Nenhuma mensagem/i.test(err.message) ? 400 : 500).json({ erro: err.message });
   } finally {
