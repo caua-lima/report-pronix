@@ -67,3 +67,10 @@ test('o painel tem o botão de tema, o título da página e o menu em grupos', (
   const paginas = /const PAGINAS = \{([\s\S]*?)\n {4}\};/.exec(html)[1];
   abas.forEach((a) => assert.match(paginas, new RegExp(`\\b${a}: \\['`), 'aba sem título: ' + a));
 });
+
+test('o script do painel não tem erro de sintaxe (um erro ali deixa a tela inteira sem funcionar)', () => {
+  const vm = require('vm');
+  const blocos = [...ler('public/dashboard.html').matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
+  assert.ok(blocos.length >= 2);
+  blocos.forEach((codigo) => assert.doesNotThrow(() => new vm.Script(codigo)));
+});
