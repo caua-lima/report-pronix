@@ -20,6 +20,9 @@ const papelValido = (p) => (p === 'admin' ? 'gestor' : PAPEIS.includes(p) ? p : 
 // o master vê; ele liga para quem quiser na aba Acessos (e a escolha dele é respeitada).
 // automacao: no cartão do lead, mover o card para "Respondeu" no RD quando o lead responde e mostrar a
 // etiqueta "Qualificado" e o dia/horário agendado. Mexe no RD, então também começa só com o master.
+const COR_OK = /^([1-9]|1[01])$/;
+// 5 = Banana, na tabela de cores de evento do Google Agenda. AGENDA_COR_MASTER troca o padrão (1 a 11).
+const COR_DO_MASTER = COR_OK.test(String(process.env.AGENDA_COR_MASTER || '')) ? String(process.env.AGENDA_COR_MASTER) : '5';
 const normalizar = (u) => {
   const papel = papelValido(u.papel);
   return {
@@ -31,7 +34,11 @@ const normalizar = (u) => {
     // etiquetas: no cartão do lead, o investimento do formulário e se já vende. Também começa só com o master.
     etiquetas: typeof u.etiquetas === 'boolean' ? u.etiquetas : papel === 'master',
     // corAgenda: a cor com que as reuniões dos leads desta pessoa são pintadas no Google Agenda ('' = não pinta).
-    corAgenda: /^([1-9]|1[01])$/.test(String(u.corAgenda || '')) ? String(u.corAgenda) : '',
+    // Quem nunca escolheu: o master já começa na Banana (a cor do dono da ferramenta); os outros, sem pintar.
+    // "Não pintar" escolhido à mão fica guardado como '' e é respeitado.
+    corAgenda: typeof u.corAgenda === 'string'
+      ? (COR_OK.test(u.corAgenda) ? u.corAgenda : '')
+      : papel === 'master' ? COR_DO_MASTER : '',
   };
 };
 // Abas do painel que o master libera por pessoa (a de Acessos é sempre só dele). Sem escolha feita, vale

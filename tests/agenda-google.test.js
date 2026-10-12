@@ -110,6 +110,9 @@ test.before(async () => {
   })).json()).usuario.chave;
   E.master = await criar('Cauã Lima', 'master');
   E.sdr = await criar('Bia SDR', 'sdr');
+  const admin = { 'Content-Type': 'application/json', 'x-admin-pass': 'senha-de-teste' };
+  const lista = (await (await fetchReal(base + '/api/admin/usuarios', { headers: admin })).json()).usuarios;
+  await fetchReal(base + '/api/admin/usuarios/' + lista.find((u) => u.papel === 'master').id, { method: 'PATCH', headers: admin, body: JSON.stringify({ corAgenda: '' }) });
 });
 test.after(async () => {
   await new Promise((r) => servidor.close(r));
@@ -219,7 +222,7 @@ test('painel explica por que a cor não mudou: conexão só de leitura, agenda s
   let s = (await chamar('GET', '/api/master/google', undefined, E.master)).json;
   assert.equal(s.alteraEventos, true);
   assert.deepEqual(s.soLeitura, ['Vitor Augusto', 'Paulo Henrique'], 'agendas compartilhadas só para ver');
-  assert.equal(s.suaCor, '', 'o master ainda não escolheu a cor');
+  assert.equal(s.suaCor, '', 'este master escolheu não pintar');
   assert.deepEqual([s.ultimaPintura.resultado, s.ultimaPintura.motivo, s.ultimaPintura.agenda], ['sem-permissao', 'agenda', 'Paulo Henrique']);
   assert.ok(!JSON.stringify(s.ultimaPintura).includes('Remarcou'), 'nada do lead fica guardado');
 
@@ -243,14 +246,27 @@ test('ao abrir a conversa: quem tem cor escolhida em Acessos pinta a reunião do
   const idMaster = usuarios.find((u) => u.papel === 'master').id;
   await db.cacheDel('google:pintado:' + (await agendaGoogle.reuniaoDoLead({ emails: ['giumar@exemplo.com'] }, new Date())).eventoId);
 
+  // quem escolheu "Não pintar" (o master deste arquivo): não mexe na agenda
   await chamar('POST', '/api/crm/lead', { telefone: '5511911110001' }, E.master);
-  assert.equal(pinturas.length, 0, 'sem cor escolhida: não mexe na agenda');
+  assert.equal(pinturas.length, 0, 'sem cor: não mexe na agenda');
+  assert.equal(usuarios.find((u) => u.papel === 'sdr').corAgenda, '', 'quem não é master começa sem pintar');
+
+  // master que NUNCA escolheu cor: já começa na Banana (5) e pinta sozinho, sem configurar nada
+  const admin = { 'Content-Type': 'application/json', 'x-admin-pass': 'senha-de-teste' };
+  const novo = (await (await fetchReal(base + '/api/admin/usuarios', { method: 'POST', headers: admin, body: JSON.stringify({ nome: 'Master Novo', papel: 'master' }) })).json()).usuario;
+  const listaAgora = (await chamar('GET', '/api/admin/usuarios', undefined, E.master)).json.usuarios;
+  assert.equal(listaAgora.find((u) => u.id === novo.id).corAgenda, '5', 'Banana por padrão');
+  await chamar('POST', '/api/crm/lead', { telefone: '5511911110001' }, novo.chave);
+  assert.deepEqual(pinturas.map((x) => x.corpo.colorId), ['5'], 'pintou de Banana sem ninguém configurar');
 
   assert.equal((await chamar('PATCH', '/api/admin/usuarios/' + idMaster, { corAgenda: '12' }, E.master)).status, 400, 'cor fora da tabela');
   assert.equal((await chamar('PATCH', '/api/admin/usuarios/' + idMaster, { corAgenda: '5' }, E.master)).status, 200);
   const r = await chamar('POST', '/api/crm/lead', { telefone: '5511911110001' }, E.master);
   assert.deepEqual(Object.keys(r.json.reuniao).sort(), ['closer', 'quando', 'titulo'], 'para a extensão vai só o que o cartão mostra');
+  // "Não pintar" escolhido à mão é respeitado: não volta para a Banana sozinho
   await chamar('PATCH', '/api/admin/usuarios/' + idMaster, { corAgenda: '' }, E.master);
+  const depois = (await chamar('GET', '/api/admin/usuarios', undefined, E.master)).json.usuarios;
+  assert.equal(depois.find((u) => u.id === idMaster).corAgenda, '');
 });
 
 test('Google recusou a conexão (autorização revogada): a ficha continua vindo, só sem a reunião', async () => {
