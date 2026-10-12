@@ -266,7 +266,7 @@ Três coisas, sem IA e sem custo, para quem o master ligou:
 
 1. **Mover para "Respondeu" no RD.** Com a conversa aberta, se há mensagem do lead depois de uma
    mensagem sua e o card está em aberto e **antes** de "Respondeu" no mesmo funil, o servidor
-   avança o card. É a **única escrita** que o sistema faz no RD: nunca volta um card, não mexe em
+   avança o card. É a única escrita **automática** que o sistema faz no RD (a outra é a limpeza do funil, pedida pelo master): nunca volta um card, não mexe em
    card fechado nem em funil sem essa etapa, confere tudo de novo no RD na hora e registra cada
    movimento. O RD só aceita se o dono do token for o responsável pelo card ou do mesmo time; se
    recusar, o cartão mostra o motivo.
@@ -345,6 +345,30 @@ funciona**.
   prompt dos próximos reports (os 8 mais recentes). Não há treino de modelo.
 - **Escopo.** Resultados e inteligência usam os reports de quem está olhando; o seletor "Toda a
   equipe" inclui os demais.
+
+### Limpeza do funil no RD
+
+Card parado no começo do funil vira **perda em "Desqualificados"**, com o motivo certo:
+
+| Onde o card está | Parado há mais de | Motivo de perda |
+|---|---|---|
+| Contato iniciado | 15 dias (ajustável) | Nunca respondeu |
+| Respondeu | 15 dias (ajustável) | Parou de responder |
+
+O campo **SDR** do card recebe o nome de quem pediu a limpeza. Fica em Extensão e integrações →
+"Limpeza do funil no RD", só para o master, e nada acontece sozinho:
+
+1. **Prévia** — lista o que seria mexido e de onde, sem alterar nada.
+2. **Testar com 5 cards** — para conferir no RD antes do resto.
+3. **Executar todos** — em lotes de 15. Cada card é lido de novo antes de mudar: se saiu da etapa,
+   teve movimento, foi fechado ou é de outro responsável (em "só os meus"), é pulado.
+4. **Relatório** — quantos cards por motivo ("• Nunca respondeu - 110"), com botão de copiar.
+5. **Desfazer o último lote** — volta para a etapa de onde saiu e reabre o card.
+
+"Parado" conta do movimento mais recente entre a última atividade, a última atualização e a criação
+do card. É uma leitura conservadora do "esfriando" da tela do RD: na dúvida, não mexe. Os outros
+campos personalizados do card são reenviados como estavam (`src/limpezaRd.js`).
+`CRM_MOVER_ETAPA=0` desliga também esta escrita.
 
 ### Abordagens do primeiro contato (qual mensagem dá mais resposta e mais venda)
 
@@ -455,6 +479,7 @@ Autenticação por cabeçalho `x-cr-key` (a chave do usuário). `gestor+` = mast
 | --- | --- | --- |
 | `POST /api/crm/lead` | chave + popup do lead | Ficha do RD do lead da conversa. |
 | `POST /api/crm/respondeu` | chave + automação | Avança o card para "Respondeu". |
+| `GET /api/master/limpeza-rd/previa` · `POST …/executar` · `POST …/desfazer` · `GET …/relatorio` | master | Limpeza do funil no RD: prévia, lotes, desfazer e relatório por motivo. |
 | `POST /api/lead/marca` | chave + automação | Etiqueta "Qualificado" e agendamento. |
 | `POST /api/resumo-rapido` | chave + popup do lead | Resumo rápido da conversa. |
 | `POST /api/coach` · `POST /api/coach/feedback` | chave + coach | Coach e o "Funcionou". |
@@ -571,6 +596,7 @@ Tudo em `src/db.js` (Redis em produção, `data/*.json` local). **A conversa nã
 | `google_agenda` | Autorização da conta conectada ao Google Agenda (só no servidor). |
 | `lead_marcas` | Etiqueta "Qualificado" e agendamento por lead (até 4.000). |
 | `crm_movimentos` | Registro de cada card movido para "Respondeu" (últimos 500). |
+| `rd_limpeza_log` | Cada card desqualificado pela limpeza do funil: de que etapa saiu, o motivo e quando (últimos 8.000). É o que permite desfazer. |
 | `coach_feedback` | Sugestões marcadas como úteis ou não. |
 | `aprendizado_consciencia` | Correções do nível de consciência (até 200). |
 | `insights_ultimo` | Últimos insights gerados. |
