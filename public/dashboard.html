@@ -632,10 +632,39 @@
           <div class="hint" style="margin:0 0 6px">Cada execução fica guardada aqui, com o dia, o funil e quantos cards por motivo. Card desfeito sai da conta.</div>
           <div style="max-height:320px;overflow:auto;border:1px solid var(--border);border-radius:var(--r-sm);padding:0 10px">
             <table>
-              <thead><tr><th>Quando</th><th>Funil</th><th>Nunca respondeu</th><th>Parou de responder</th><th>Total</th><th></th></tr></thead>
+              <thead><tr><th>Quando</th><th>Funil</th><th>Nunca respondeu</th><th>Parou de responder</th><th>Duplicado</th><th>Total</th><th></th></tr></thead>
               <tbody id="lzSalvosLista"></tbody>
             </table>
           </div>
+        </div>
+      </div>
+
+      <div id="duplicadosRd" class="card hidden">
+        <div class="head"><div class="t"><i data-ic="users"></i>Cadastros duplicados</div><div class="sub">— o mesmo lead com mais de um card em aberto no funil escolhido acima</div></div>
+        <div class="hint" style="margin:0 0 12px">
+          Procura, só nos <b>seus cards em aberto</b>, leads com o mesmo <b>e-mail ou telefone</b> em mais de um card. <b>Um card fica</b> (o da etapa mais adiantada; no empate, o de movimento mais recente)
+          e os outros vão para <b>Desqualificados</b> com a perda <b>"Duplicado"</b> e o campo SDR com o seu nome. Card já fechado não conta: lead perdido que se inscreveu de novo não é duplicado.
+          <b>Nada muda no RD até você executar.</b>
+        </div>
+        <div class="row">
+          <button id="dpProcurar" class="btn sec"><i data-ic="refresh"></i>Procurar duplicados</button>
+        </div>
+        <div id="statusDp" class="status"></div>
+        <div id="dpResumo" class="hint hidden" style="margin-top:6px"></div>
+        <div id="dpTabela" class="hidden" style="max-height:380px;overflow:auto;margin-top:8px;border:1px solid var(--border);border-radius:var(--r-sm);padding:0 10px">
+          <table>
+            <thead><tr><th>Lead</th><th>Igual por</th><th>Fica</th><th>Sai como Duplicado</th></tr></thead>
+            <tbody id="dpLista"></tbody>
+          </table>
+        </div>
+        <div id="dpAcoes" class="row hidden" style="margin-top:12px">
+          <button id="dpTeste" class="btn sec">Testar com 5 cards</button>
+          <button id="dpTudo" class="btn">Fechar todos como Duplicado</button>
+          <button id="dpDesfazer" class="btn sec hidden">Desfazer o último lote</button>
+        </div>
+        <div id="dpFeitos" class="hidden" style="margin-top:14px">
+          <div class="sec-t" style="margin-top:0">Cards fechados agora como Duplicado — confira no RD</div>
+          <div id="dpFeitosLista" style="max-height:300px;overflow:auto;border:1px solid var(--border);border-radius:var(--r-sm);padding:0 10px"></div>
         </div>
       </div>
     </section>
@@ -3144,6 +3173,7 @@
     const lzHoje = () => new Date().toLocaleDateString('en-CA');
     function prepararLimpeza() {
       $('limpezaRd').classList.toggle('hidden', !podeMexerEmUsuarios());
+      $('duplicadosRd').classList.toggle('hidden', !podeMexerEmUsuarios());
       if (!podeMexerEmUsuarios()) return;
       lzCarregarFunis();
       lzCarregarRelatorio();
@@ -3162,6 +3192,7 @@
             <td>${esc(r.funil || '—')}</td>
             <td class="num">${n(r, 'Nunca respondeu')}</td>
             <td class="num">${n(r, 'Parou de responder')}</td>
+            <td class="num">${n(r, 'Duplicado')}</td>
             <td class="num"><b>${r.total}</b>${r.desfeitos ? ` <span style="color:var(--muted)">(${r.desfeitos} desfeito${r.desfeitos > 1 ? 's' : ''})</span>` : ''}</td>
             <td><div class="acoes"><button class="mini" type="button" data-copiar-salvo="${i}">Copiar</button></div></td>
           </tr>`).join('');
@@ -3203,8 +3234,10 @@
     $('lzFunil').addEventListener('change', () => {
       try { localStorage.setItem('crLzFunil', $('lzFunil').value); } catch (_) { /* sem storage */ }
       lzAtual = null;
-      ['lzResumo', 'lzTabela', 'lzAcoes', 'lzFeitos'].forEach((id) => $(id).classList.add('hidden'));
+      dpAtual = null;
+      ['lzResumo', 'lzTabela', 'lzAcoes', 'lzFeitos', 'dpResumo', 'dpTabela', 'dpAcoes', 'dpFeitos'].forEach((id) => $(id).classList.add('hidden'));
       setStatus('statusLz', $('lzFunil').value ? 'Funil trocado: clique em "Ver prévia".' : 'Escolha o funil.', {});
+      setStatus('statusDp', '', {});
     });
     async function lzCarregarRelatorio() {
       try {
@@ -3348,6 +3381,125 @@
         toast('Relatório copiado.');
       } catch (_) {
         toast('Não consegui copiar: selecione o texto e copie à mão.');
+      }
+    });
+
+    // ---------- Cadastros duplicados (só o master): o mesmo lead com mais de um card em aberto no funil ----------
+    let dpAtual = null; // a última busca: { pares, total, funil }
+    let dpUltimoLote = []; // ids fechados na última execução (para desfazer)
+    // Link só para o endereço do RD: nada que venha do servidor vira outro destino.
+    const dpLink = (c, texto) => (/^https:\/\/crm\.rdstation\.com\//.test(String((c && c.link) || '')) ? `<a href="${esc(c.link)}" target="_blank" rel="noopener noreferrer">${esc(texto)}</a>` : esc(texto));
+    const dpCard = (c) => `${dpLink(c, c.etapa || 'card')} <span style="color:var(--muted)">· criado em ${esc(c.criadoEm || '—')}${c.dias != null ? ' · parado há ' + c.dias + ' dia(s)' : ''}</span>`;
+    async function dpProcurar() {
+      if (!$('lzFunil').value && $('lzFunil').options.length > 1) {
+        setStatus('statusDp', 'Escolha o funil lá em cima antes de procurar.', { erro: true });
+        return;
+      }
+      $('dpProcurar').disabled = true;
+      setStatus('statusDp', 'Lendo os seus cards em aberto no RD… (pode levar alguns segundos)', { loading: true });
+      try {
+        const p = await api('GET', '/api/master/limpeza-rd/duplicados?' + new URLSearchParams({ funil: $('lzFunil').value }));
+        dpAtual = { pares: p.pares || [], total: p.total || 0, funil: p.funilId || $('lzFunil').value };
+        const c = p.contexto || {};
+        $('dpResumo').classList.remove('hidden');
+        $('dpResumo').innerHTML =
+          `Funil <b>${esc(c.funil || '')}</b>, cards de <b>${esc(c.responsavel || '')}</b>: ${p.analisados} em aberto analisado(s). ` +
+          `Perda: <b>"${esc(c.motivo || '')}"</b>, etapa <b>${esc(c.destino || '')}</b>. ` + (c.sdr ? `Campo SDR: <b>${esc(c.sdr)}</b>. ` : '') +
+          (p.suspeitos || []).map((s) => `<span style="color:var(--danger)">${s.tipo === 'grupo' ? 'Grupo' : esc(s.tipo === 'e-mail' ? 'E-mail' : 'Telefone')} "${esc(s.dado)}" aparece em ${s.cards} cards: parece dado genérico, ficou de fora.</span>`).join(' ') + ' ' +
+          (c.avisos || []).map((a) => `<span style="color:var(--danger)">${esc(a)}</span>`).join(' ');
+        $('dpLista').innerHTML = (p.grupos || []).map((g) => `
+          <tr>
+            <td><b>${esc(g.fica.nome)}</b><div style="color:var(--text-2)">${esc(g.fica.email || g.fica.telefone || '—')}</div>${g.reinscritoHaDias != null ? `<div style="color:var(--ouro-tinta)">cadastrou de novo há ${g.reinscritoHaDias} dia(s)</div>` : ''}</td>
+            <td style="color:var(--muted)">${esc(g.por)}</td>
+            <td>${dpCard(g.fica)}</td>
+            <td>${g.saem.map((s) => `<div>${dpCard(s)}</div>`).join('')}</td>
+          </tr>`).join('');
+        $('dpTabela').classList.toggle('hidden', !p.total);
+        $('dpAcoes').classList.toggle('hidden', !p.total);
+        $('dpTudo').textContent = `Fechar todos como Duplicado (${p.total})`;
+        $('dpTeste').classList.toggle('hidden', p.total <= 5);
+        setStatus('statusDp', p.total
+          ? `${p.totalGrupos} lead(s) com cadastro duplicado: ${p.total} card(s) sairiam como "Duplicado".` + (p.totalGrupos > (p.grupos || []).length ? ` A lista mostra ${p.grupos.length}.` : '') + ' Nada foi alterado ainda.'
+          : 'Nenhum cadastro duplicado nos seus cards em aberto deste funil.', { ok: !p.total });
+      } catch (e) {
+        dpAtual = null;
+        $('dpAcoes').classList.add('hidden');
+        setStatus('statusDp', e.message, { erro: true });
+      } finally {
+        $('dpProcurar').disabled = false;
+      }
+    }
+    /** Fecha os duplicados em lotes de 10 e vai mostrando o andamento; para se o RD recusar um lote inteiro. */
+    async function dpExecutar(pares) {
+      const botoes = [$('dpTeste'), $('dpTudo'), $('dpProcurar'), $('dpDesfazer')];
+      botoes.forEach((b) => { b.disabled = true; });
+      const soma = { feitos: [], pulados: [], erros: [] };
+      const execucao = 'dp' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+      try {
+        for (let i = 0; i < pares.length; i += 10) {
+          setStatus('statusDp', `Fechando no RD… ${Math.min(i, pares.length)} de ${pares.length}`, { loading: true });
+          const r = await api('POST', '/api/master/limpeza-rd/duplicados', { pares: pares.slice(i, i + 10), funil: dpAtual.funil, execucao });
+          soma.feitos.push(...(r.feitos || []));
+          soma.pulados.push(...(r.pulados || []));
+          soma.erros.push(...(r.erros || []));
+          if (!(r.feitos || []).length && (r.erros || []).length) break;
+        }
+        dpUltimoLote = soma.feitos.map((f) => f.id);
+        $('dpFeitos').classList.toggle('hidden', !soma.feitos.length);
+        $('dpFeitosLista').innerHTML = '<table><tbody>' + soma.feitos.map((f) => `
+          <tr>
+            <td><b>${esc(f.nome || f.id)}</b></td>
+            <td>${f.email ? esc(f.email) : '<span style="color:var(--muted)">sem e-mail no card</span>'}</td>
+            <td>${dpLink(f, 'Abrir o fechado')}</td>
+            <td style="color:var(--muted)">ficou: ${dpLink(f.fica, (f.fica && f.fica.etapa) || 'o outro card')}</td>
+          </tr>`).join('') + '</tbody></table>';
+        $('dpDesfazer').classList.toggle('hidden', !dpUltimoLote.length);
+        $('dpDesfazer').textContent = `Desfazer o último lote (${dpUltimoLote.length})`;
+        setStatus('statusDp',
+          `${soma.feitos.length} card(s) fechado(s) como "Duplicado".` + (soma.feitos.length ? ' Relatório salvo.' : '') +
+          (soma.pulados.length ? ` ${soma.pulados.length} pulado(s): ${soma.pulados[0].porque}.` : '') +
+          (soma.erros.length ? ` ${soma.erros.length} com erro: ${soma.erros[0].erro}.` : ''),
+          { ok: !soma.erros.length, erro: Boolean(soma.erros.length) });
+        await lzCarregarRelatorio();
+        await lzCarregarSalvos();
+      } catch (e) {
+        setStatus('statusDp', e.message, { erro: true });
+      } finally {
+        botoes.forEach((b) => { b.disabled = false; });
+      }
+    }
+    $('dpProcurar').addEventListener('click', dpProcurar);
+    $('dpTeste').addEventListener('click', () => {
+      if (!dpAtual || !dpAtual.pares.length) return;
+      if (!confirm('Fechar 5 cards como "Duplicado" no RD, como teste?\nDepois confira esses 5 no RD antes de fechar o resto.')) return;
+      dpExecutar(dpAtual.pares.slice(0, 5)).then(dpProcurar);
+    });
+    $('dpTudo').addEventListener('click', () => {
+      if (!dpAtual || !dpAtual.pares.length) return;
+      if (!confirm(`Fechar ${dpAtual.pares.length} card(s) como "Duplicado" no RD?\nDe cada lead fica um card em aberto. Se a empresa tiver automação disparada por perda, ela vai rodar para cada card fechado.`)) return;
+      dpExecutar(dpAtual.pares).then(dpProcurar);
+    });
+    $('dpDesfazer').addEventListener('click', async () => {
+      if (!dpUltimoLote.length || !confirm(`Reabrir ${dpUltimoLote.length} card(s) na etapa de onde saíram?`)) return;
+      $('dpDesfazer').disabled = true;
+      let desfeitos = 0;
+      let erro = '';
+      try {
+        for (let i = 0; i < dpUltimoLote.length; i += 15) {
+          setStatus('statusDp', `Desfazendo… ${i} de ${dpUltimoLote.length}`, { loading: true });
+          const r = await api('POST', '/api/master/limpeza-rd/desfazer', { ids: dpUltimoLote.slice(i, i + 15) });
+          desfeitos += (r.desfeitos || []).length;
+          if ((r.erros || []).length) erro = r.erros[0].erro;
+        }
+        dpUltimoLote = [];
+        $('dpDesfazer').classList.add('hidden');
+        setStatus('statusDp', `${desfeitos} card(s) reaberto(s) na etapa anterior.` + (erro ? ' Alguns falharam: ' + erro + '.' : ''), { ok: !erro, erro: Boolean(erro) });
+        await lzCarregarRelatorio();
+        await lzCarregarSalvos();
+      } catch (e) {
+        setStatus('statusDp', e.message, { erro: true });
+      } finally {
+        $('dpDesfazer').disabled = false;
       }
     });
 
