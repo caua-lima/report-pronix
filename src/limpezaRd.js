@@ -70,6 +70,12 @@ async function emCache(chave, buscar) {
   return v;
 }
 
+/** Os motivos de perda cadastrados no RD. */
+const motivosDePerda = () =>
+  emCache('crm:motivos-perda', async () =>
+    lista(await crm.rd('/deal_lost_reasons', { limit: 200 }), 'deal_lost_reasons', 'lost_reasons').map((m) => ({ id: idDe(m), nome: crm.consertarAcentos(m.name || '') }))
+  );
+
 const acharEtapa = (f, alvo) => f.etapas.find((e) => norm(e.nome).startsWith(alvo));
 const elegivel = (f) => REGRAS.every((r) => acharEtapa(f, r.etapa())) && Boolean(acharEtapa(f, destino()));
 
@@ -98,9 +104,7 @@ async function contexto(usuario, funilId) {
       ? 'O funil escolhido não existe mais no RD (ou não tem as etapas da limpeza). Atualize a página e escolha de novo.'
       : `Escolha em qual funil fazer a limpeza. Funis possíveis: ${elegiveis.map((f) => f.nome).join(', ')}.`);
   }
-  const motivos = await emCache('crm:motivos-perda', async () =>
-    lista(await crm.rd('/deal_lost_reasons', { limit: 200 }), 'deal_lost_reasons', 'lost_reasons').map((m) => ({ id: idDe(m), nome: crm.consertarAcentos(m.name || '') }))
-  );
+  const motivos = await motivosDePerda();
   const regras = REGRAS.map((r) => {
     const m = motivos.find((x) => norm(x.nome).startsWith(r.motivo()));
     if (!m) throw new Error(`Não achei no RD o motivo de perda "${r.rotulo}". Motivos que existem: ${motivos.map((x) => x.nome).join(', ') || 'nenhum'}.`);
@@ -267,6 +271,228 @@ async function executar({ usuario, ids, dias, escopo, funil, execucao }) {
 const idDaExecucao = (v) =>
   (/^[A-Za-z0-9_-]{6,40}$/.test(String(v || '')) ? String(v) : 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8));
 
+// ---------------------------------------------------------------- cadastros duplicados
+// O mesmo lead com mais de um card EM ABERTO no funil, no nome de quem pediu (inscreveu-se de novo,
+// contato criado duas vezes). Um card fica; os outros vão para "Desqualificados" com a perda "Duplicado".
+//   - É o mesmo lead quando dois cards têm um e-mail ou um telefone em comum (DDD + 8 últimos dígitos).
+//   - Fica o card na etapa mais adiantada; empate, o de movimento mais recente.
+//   - Card já fechado não entra: lead perdido que se inscreveu de novo NÃO é duplicado, é lead de volta.
+//   - E-mail ou telefone repetido em cards demais é dado genérico (teste, número de preenchimento): não mexe.
+// A execução confere tudo de novo, card a card, e usa o mesmo registro (desfazer e relatório).
+const ROTULO_DUPLICADO = 'Duplicado';
+const motivoDuplicado = () => norm(process.env.CRM_LIMPEZA_MOTIVO_DUPLICADO || 'duplic');
+const LOTE_DUPLICADOS = 10; // cada card custa 3 chamadas ao RD: o duplicado, o que fica e a escrita
+const MAX_NO_GRUPO = 6;
+
+/** Telefone -> DDD + 8 últimos dígitos ("5571999998888" e "(71) 9999-8888" são o mesmo). '' se não der para confiar. */
+function chaveDoTelefone(v) {
+  let d = String(v == null ? '' : v).replace(/\D/g, '');
+  if (d.length >= 12 && d.startsWith('55')) d = d.slice(2);
+  d = d.replace(/^0+/, '');
+  if (d.length < 10 || d.length > 11) return '';
+  if (/^(\d)\1+$/.test(d.slice(-8))) return ''; // 9999-9999, 0000-0000: número de preenchimento
+  return d.slice(0, 2) + d.slice(-8);
+}
+
+const contatosDe = (deal) => (Array.isArray(deal && deal.contacts) ? deal.contacts : []);
+const telefonesDoCard = (deal) =>
+  contatosDe(deal).flatMap((c) => (Array.isArray(c && c.phones) ? c.phones : [])).map((p) => String((p && (p.phone || p)) || '').trim()).filter(Boolean);
+
+/** O que identifica o lead no card: os e-mails e os telefones de todos os contatos dele. */
+function chavesDoCard(deal) {
+  const emails = contatosDe(deal)
+    .flatMap((c) => (Array.isArray(c && c.emails) ? c.emails : []))
+    .map((e) => String((e && (e.email || e)) || '').trim().toLowerCase())
+    .filter((e) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e));
+  const fones = telefonesDoCard(deal).map(chaveDoTelefone).filter(Boolean);
+  return [...new Set(emails.map((e) => 'e:' + e).concat(fones.map((f) => 't:' + f)))];
+}
+
+const ultimoMovimento = (d) => Math.max(0, ...[d.last_activity_at, d.updated_at, d.created_at].map((x) => Date.parse(x || '')).filter(Number.isFinite));
+
+/** O contexto da limpeza mais o que os duplicados precisam: o motivo "Duplicado" e a ordem das etapas do funil. */
+async function contextoDuplicados(usuario, funilId) {
+  const ctx = await contexto(usuario, funilId);
+  if (!ctx.usuarioRd) throw new Error(`Não achei no RD um usuário com o seu nome ("${usuario.nome}"): a busca de duplicados olha só os cards em que você é o responsável.`);
+  const motivos = await motivosDePerda();
+  const motivo = motivos.find((x) => norm(x.nome).includes(motivoDuplicado()));
+  if (!motivo) throw new Error(`Não achei no RD o motivo de perda "Duplicado". Motivos que existem: ${motivos.map((x) => x.nome).join(', ') || 'nenhum'}.`);
+  const funil = (await crm.funis()).find((f) => f.id === ctx.funil.id);
+  const etapas = new Map(((funil && funil.etapas) || []).map((e) => [e.id, e]));
+  return { ...ctx, motivoDuplicado: motivo, etapas };
+}
+
+/** Os cards em aberto do funil no nome de um usuário (todas as páginas). */
+async function cardsDoFunil(funilId, usuarioRdId) {
+  const todos = [];
+  for (let page = 1; page <= MAX_PAGINAS; page++) {
+    const r = await crm.rd('/deals', { deal_pipeline_id: funilId, win: 'null', limit: 200, page, user_id: usuarioRdId });
+    const pagina = lista(r, 'deals');
+    todos.push(...pagina);
+    if (pagina.length < 200 || (r && r.has_more === false)) break;
+  }
+  return todos;
+}
+
+/** Entre os cards do mesmo lead, qual fica: etapa mais adiantada; empate, movimento mais recente; empate, o mais antigo. */
+function escolherQuemFica(cards, etapas) {
+  const ordem = (d) => { const e = etapas.get(idDe(d.deal_stage)); return e ? e.ordem : -1; };
+  return cards.slice().sort((a, b) =>
+    ordem(b) - ordem(a) || ultimoMovimento(b) - ultimoMovimento(a) || (Date.parse(a.created_at || '') || 0) - (Date.parse(b.created_at || '') || 0) || idDe(a).localeCompare(idDe(b)))[0];
+}
+
+const dataBR = (iso) => { const t = Date.parse(iso || ''); return Number.isFinite(t) ? new Date(t).toLocaleDateString('pt-BR', { timeZone: process.env.TZ_RELATORIO || 'America/Sao_Paulo' }) : ''; };
+const cardDuplicado = (d, etapas, agora) => ({
+  id: idDe(d), nome: crm.consertarAcentos(d.name || '').slice(0, 120), etapa: (etapas.get(idDe(d.deal_stage)) || {}).nome || crm.consertarAcentos((d.deal_stage && d.deal_stage.name) || ''),
+  email: emailDoCard(d), telefone: (telefonesDoCard(d)[0] || '').slice(0, 30), criadoEm: dataBR(d.created_at), dias: diasParado(d, agora), link: linkDoCard(idDe(d)),
+});
+
+/**
+ * Os cadastros duplicados do funil, sem alterar nada: para cada lead com mais de um card em aberto,
+ * qual fica e quais sairiam como "Duplicado".
+ * @param {{usuario: object, funil?: string}} o  funil = id do funil no RD
+ */
+async function previaDuplicados({ usuario, funil }) {
+  const ctx = await contextoDuplicados(usuario, funil);
+  const agora = Date.now();
+  const cards = (await cardsDoFunil(ctx.funil.id, ctx.usuarioRd.id))
+    .filter((d) => aberto(d) && idDe(d.user) === ctx.usuarioRd.id && ctx.etapas.has(idDe(d.deal_stage)) && idDe(d.deal_stage) !== ctx.destino.id);
+
+  // E-mail ou telefone que aparece em cards demais não identifica ninguém: fica de fora da comparação.
+  const porChave = new Map();
+  cards.forEach((d, i) => chavesDoCard(d).forEach((k) => { if (!porChave.has(k)) porChave.set(k, []); porChave.get(k).push(i); }));
+  const suspeitos = [];
+  // Junta os cards que dividem alguma chave (um lead pode ter dois e-mails e um telefone em comum).
+  const pai = cards.map((_, i) => i);
+  const raiz = (i) => { while (pai[i] !== i) { pai[i] = pai[pai[i]]; i = pai[i]; } return i; };
+  porChave.forEach((indices, chave) => {
+    if (indices.length < 2) return;
+    if (indices.length > MAX_NO_GRUPO) { suspeitos.push({ dado: chave.slice(2), tipo: chave[0] === 'e' ? 'e-mail' : 'telefone', cards: indices.length }); return; }
+    indices.slice(1).forEach((i) => { pai[raiz(i)] = raiz(indices[0]); });
+  });
+  const montes = new Map();
+  cards.forEach((_, i) => { const r = raiz(i); if (!montes.has(r)) montes.set(r, []); montes.get(r).push(i); });
+
+  const grupos = [];
+  montes.forEach((indices) => {
+    if (indices.length < 2) return;
+    const doGrupo = indices.map((i) => cards[i]);
+    if (doGrupo.length > MAX_NO_GRUPO) { suspeitos.push({ dado: crm.consertarAcentos(doGrupo[0].name || '').slice(0, 60), tipo: 'grupo', cards: doGrupo.length }); return; }
+    const fica = escolherQuemFica(doGrupo, ctx.etapas);
+    const saem = doGrupo.filter((d) => d !== fica).sort((a, b) => ultimoMovimento(b) - ultimoMovimento(a));
+    const comum = new Set(chavesDoCard(fica));
+    const tipos = new Set(saem.flatMap((d) => chavesDoCard(d).filter((k) => comum.has(k)).map((k) => k[0])));
+    // Cadastro mais novo que o card que fica: o lead se inscreveu de novo — vale olhar o card que fica.
+    const maisNovo = Math.max(...saem.map((d) => Date.parse(d.created_at || '') || 0));
+    const reinscrito = maisNovo > (Date.parse(fica.created_at || '') || 0) ? Math.floor((agora - maisNovo) / 86400000) : null;
+    grupos.push({
+      fica: cardDuplicado(fica, ctx.etapas, agora), saem: saem.map((d) => cardDuplicado(d, ctx.etapas, agora)),
+      por: tipos.has('e') && tipos.has('t') ? 'e-mail e telefone' : tipos.has('t') ? 'telefone' : tipos.has('e') ? 'e-mail' : 'contato em comum com outro card do grupo',
+      reinscritoHaDias: reinscrito,
+    });
+  });
+  grupos.sort((a, b) => b.saem.length - a.saem.length || a.fica.nome.localeCompare(b.fica.nome));
+  // Card ligado ao que fica só por meio de um terceiro (c1-c2 pelo e-mail, c2-c3 pelo telefone) leva a
+  // "ponte" no par: na hora de fechar, é por ela que se confere que continua sendo o mesmo lead.
+  const porId = new Map(cards.map((d) => [idDe(d), d]));
+  const divide = (a, b) => { const ka = new Set(chavesDoCard(a)); return chavesDoCard(b).some((k) => ka.has(k)); };
+  const pares = grupos.flatMap((g) => g.saem.map((s) => {
+    const fica = porId.get(g.fica.id);
+    const dup = porId.get(s.id);
+    if (divide(dup, fica)) return { id: s.id, fica: g.fica.id };
+    const ponte = g.saem.map((x) => porId.get(x.id)).find((x) => x !== dup && divide(x, dup) && divide(x, fica));
+    return ponte ? { id: s.id, fica: g.fica.id, via: idDe(ponte) } : { id: s.id, fica: g.fica.id };
+  }));
+  return {
+    funilId: ctx.funil.id,
+    contexto: { funil: ctx.funil.nome, destino: ctx.destino.nome, motivo: ctx.motivoDuplicado.nome, sdr: ctx.sdr ? ctx.sdr.valor : '', responsavel: ctx.usuarioRd.nome, avisos: ctx.avisos },
+    analisados: cards.length, totalGrupos: grupos.length, total: pares.length, pares, grupos: grupos.slice(0, MAX_NA_TELA), suspeitos: suspeitos.slice(0, 20),
+  };
+}
+
+/**
+ * Fecha como "Duplicado" os cards de um lote (no máximo LOTE_DUPLICADOS pares {id, fica}). Cada par é
+ * lido de novo: só fecha se o duplicado e o que fica continuam em aberto, neste funil, no nome de quem
+ * pediu e com e-mail ou telefone em comum — e se o que fica não ficou para trás na etapa.
+ */
+async function fecharDuplicados({ usuario, pares, funil, execucao }) {
+  if (!crm.moverLigado()) throw new Error('A escrita no RD está desligada no servidor (CRM_MOVER_ETAPA=0).');
+  const idOk = (x) => /^[A-Za-z0-9_-]{1,40}$/.test(String(x || ''));
+  const vistos = new Set();
+  const pedidos = (Array.isArray(pares) ? pares : [])
+    .map((p) => ({ id: String((p && p.id) || ''), fica: String((p && p.fica) || ''), via: idOk(p && p.via) ? String(p.via) : '' }))
+    .filter((p) => idOk(p.id) && idOk(p.fica) && p.id !== p.fica && !vistos.has(p.id) && vistos.add(p.id))
+    .slice(0, LOTE_DUPLICADOS);
+  if (!pedidos.length) throw new Error('Nenhum card duplicado para fechar.');
+  const ctx = await contextoDuplicados(usuario, funil);
+  const rodada = idDaExecucao(execucao);
+  const saida = { feitos: [], pulados: [], erros: [], limite: false, execucao: rodada };
+  const noFunil = (d) => ctx.etapas.has(idDe(d.deal_stage));
+  const ordem = (d) => (ctx.etapas.get(idDe(d.deal_stage)) || { ordem: -1 }).ordem;
+  const emComum = (a, b) => { const ka = new Set(chavesDoCard(a)); return chavesDoCard(b).some((k) => ka.has(k)); };
+  for (const { id, fica: idFica, via } of pedidos) {
+    try {
+      const deal = await crm.rd(`/deals/${encodeURIComponent(id)}`);
+      const pular = (porque) => saida.pulados.push({ id, nome: (deal && deal.name) || '', porque });
+      if (!deal) { pular('o card não existe mais'); continue; }
+      if (!aberto(deal)) { pular('já foi fechado'); continue; }
+      if (!noFunil(deal) || idDe(deal.deal_stage) === ctx.destino.id) { pular('mudou de etapa ou de funil'); continue; }
+      if (idDe(deal.user) !== ctx.usuarioRd.id) { pular('é de outro responsável'); continue; }
+      // Nunca fecha o duplicado sem ter certeza de que sobra um card vivo do mesmo lead.
+      const fica = await crm.rd(`/deals/${encodeURIComponent(idFica)}`);
+      if (!fica || !aberto(fica) || !noFunil(fica) || idDe(fica.deal_stage) === ctx.destino.id) { pular('o card que ficaria não está mais em aberto neste funil'); continue; }
+      if (idDe(fica.user) !== ctx.usuarioRd.id) { pular('o card que ficaria mudou de responsável'); continue; }
+      // Mesmo lead: contato em comum com o que fica, direto ou pela ponte (outro card do lead, que pode até
+      // ter sido fechado agora há pouco nesta mesma rodada: o que vale é o contato dele).
+      let mesmoLead = emComum(deal, fica);
+      if (!mesmoLead && via && via !== id && via !== idFica) {
+        const ponte = await crm.rd(`/deals/${encodeURIComponent(via)}`);
+        mesmoLead = Boolean(ponte) && idDe(ponte.user) === ctx.usuarioRd.id && emComum(ponte, deal) && emComum(ponte, fica);
+      }
+      if (!mesmoLead) { pular('os dois cards não têm mais e-mail ou telefone em comum'); continue; }
+      if (ordem(deal) > ordem(fica)) { pular('passou a ser o card mais adiantado do lead'); continue; }
+
+      const resp = await crm.rd(`/deals/${encodeURIComponent(id)}`, {}, {
+        metodo: 'PUT',
+        corpo: { deal_stage_id: ctx.destino.id, deal: { win: false, deal_lost_reason_id: ctx.motivoDuplicado.id, deal_custom_fields: camposComSdr(deal, ctx.sdr) } },
+      });
+      if (!resp) throw new Error('o RD não achou o card na hora de gravar');
+      const etapaNova = idDe(resp.deal_stage);
+      if (etapaNova && etapaNova !== ctx.destino.id) throw new Error('o RD respondeu, mas o card não mudou de etapa');
+      if (resp.win !== undefined && resp.win !== false) throw new Error('o RD moveu o card, mas não marcou a perda');
+
+      const nome = crm.consertarAcentos(deal.name || '').slice(0, 120);
+      const de = ctx.etapas.get(idDe(deal.deal_stage));
+      await db.push(CHAVE_LOG, {
+        dealId: id, nome, funil: ctx.funil.nome, de: { id: de.id, nome: de.nome }, motivo: ROTULO_DUPLICADO, fica: idFica,
+        em: new Date().toISOString(), por: String(usuario.nome || '').slice(0, 80), usuarioId: usuario.id, execucao: rodada,
+      }, LIMITE_LOG);
+      saida.feitos.push({
+        id, nome, motivo: ROTULO_DUPLICADO, email: emailDoCard(deal), link: linkDoCard(id),
+        fica: { id: idFica, nome: crm.consertarAcentos(fica.name || '').slice(0, 120), etapa: (ctx.etapas.get(idDe(fica.deal_stage)) || {}).nome || '', link: linkDoCard(idFica) },
+      });
+    } catch (e) {
+      saida.erros.push({ id, erro: e.message });
+      if (/limitou as consultas/.test(e.message)) {
+        saida.limite = true;
+        break;
+      }
+    }
+  }
+  await somarNoRelatorio(rodada, { funil: ctx.funil.nome, dias: null, escopo: 'meus', por: String(usuario.nome || '').slice(0, 80), usuarioId: usuario.id }, saida)
+    .catch((err) => console.error('Falha ao salvar o relatório da limpeza:', err.message));
+  return saida;
+}
+
+/** As linhas "motivo - total" de um relatório: as duas da limpeza de parados e, quando houve, a de duplicados. */
+function linhasPorMotivo(totalDe) {
+  const linhas = REGRAS.map((regra) => ({ rotulo: regra.rotulo, total: totalDe(regra.rotulo) || 0 }));
+  const dup = totalDe(ROTULO_DUPLICADO) || 0;
+  return dup ? linhas.concat([{ rotulo: ROTULO_DUPLICADO, total: dup }]) : linhas;
+}
+/** No texto, rodada só de duplicados não mostra as linhas zeradas dos outros motivos. */
+const linhasDoTexto = (linhas) => (linhas.some((l) => l.rotulo === ROTULO_DUPLICADO) ? linhas.filter((l) => l.total > 0) : linhas);
+
 /** Soma o resultado de um lote no relatório da rodada (cria na primeira vez que algo foi movido). */
 async function somarNoRelatorio(rodada, base, saida) {
   const porMotivo = {};
@@ -287,7 +513,7 @@ async function somarNoRelatorio(rodada, base, saida) {
 /** O texto do relatório, do jeito que vai para o líder: um motivo por linha e o total. */
 function textoDoRelatorio(r) {
   const quando = new Date(r.inicio).toLocaleString('pt-BR', { timeZone: process.env.TZ_RELATORIO || 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-  const linhas = REGRAS.map((regra) => ({ rotulo: regra.rotulo, total: (r.porMotivo && r.porMotivo[regra.rotulo]) || 0 })).sort((a, b) => b.total - a.total);
+  const linhas = linhasDoTexto(linhasPorMotivo((rotulo) => r.porMotivo && r.porMotivo[rotulo])).sort((a, b) => b.total - a.total);
   return `Limpeza do funil — ${quando}${r.funil ? ' — ' + r.funil : ''}\n` + linhas.map((m) => `• ${m.rotulo} - ${m.total}`).join('\n') + `\nTotal: ${r.total || 0}`;
 }
 
@@ -297,7 +523,7 @@ async function relatoriosSalvos({ limite = 60 } = {}) {
   return todos.filter((r) => r && r.id).reverse().slice(0, limite).map((r) => ({
     id: r.id, inicio: r.inicio, fim: r.fim, funil: r.funil || '', dias: r.dias, escopo: r.escopo, por: r.por || '',
     total: r.total || 0, pulados: r.pulados || 0, erros: r.erros || 0, desfeitos: r.desfeitos || 0,
-    porMotivo: REGRAS.map((regra) => ({ rotulo: regra.rotulo, total: (r.porMotivo && r.porMotivo[regra.rotulo]) || 0 })),
+    porMotivo: linhasPorMotivo((rotulo) => r.porMotivo && r.porMotivo[rotulo]),
     texto: textoDoRelatorio(r),
   }));
 }
@@ -351,11 +577,13 @@ async function relatorio({ de, ate } = {}) {
     const dia = emDiaLocal(r.em);
     return (!de || dia >= de) && (!ate || dia <= ate);
   });
-  const porMotivo = REGRAS.map((regra) => ({ rotulo: regra.rotulo, total: validos.filter((r) => r.motivo === regra.rotulo).length }))
-    .sort((a, b) => b.total - a.total);
+  const porMotivo = linhasPorMotivo((rotulo) => validos.filter((r) => r.motivo === rotulo).length).sort((a, b) => b.total - a.total);
   const total = validos.length;
-  const texto = porMotivo.map((m) => `• ${m.rotulo} - ${m.total}`).join('\n') + `\nTotal: ${total}`;
+  const texto = linhasDoTexto(porMotivo).map((m) => `• ${m.rotulo} - ${m.total}`).join('\n') + `\nTotal: ${total}`;
   return { porMotivo, total, texto };
 }
 
-module.exports = { previa, executar, desfazer, relatorio, relatoriosSalvos, contexto, funisElegiveis, emailDoCard, diasParado, camposComSdr, DIAS_PADRAO, LOTE_MAX };
+module.exports = {
+  previa, executar, desfazer, relatorio, relatoriosSalvos, contexto, funisElegiveis, emailDoCard, diasParado, camposComSdr, DIAS_PADRAO, LOTE_MAX,
+  previaDuplicados, fecharDuplicados, chaveDoTelefone, chavesDoCard, escolherQuemFica, LOTE_DUPLICADOS,
+};
