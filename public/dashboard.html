@@ -645,7 +645,7 @@
         <div id="lzResumo" class="hint hidden" style="margin-top:6px"></div>
         <div id="lzTabela" class="hidden" style="max-height:340px;overflow:auto;margin-top:8px;border:1px solid var(--border);border-radius:var(--r-sm);padding:0 10px">
           <table>
-            <thead><tr><th>Card</th><th>Etapa</th><th>Parado há</th><th>Motivo da perda</th><th>Responsável</th></tr></thead>
+            <thead><tr><th>Card</th><th>E-mail</th><th>Etapa</th><th>Parado há</th><th>Motivo da perda</th><th>Responsável</th></tr></thead>
             <tbody id="lzLista"></tbody>
           </table>
         </div>
@@ -653,6 +653,14 @@
           <button id="lzTeste" class="btn sec">Testar com 5 cards</button>
           <button id="lzTudo" class="btn">Executar todos</button>
           <button id="lzDesfazer" class="btn sec hidden">Desfazer o último lote</button>
+        </div>
+        <div id="lzFeitos" class="hidden" style="margin-top:14px">
+          <div class="sec-t" style="margin-top:0">Cards movidos agora — confira no RD</div>
+          <div id="lzFeitosLista" style="max-height:300px;overflow:auto;border:1px solid var(--border);border-radius:var(--r-sm);padding:0 10px"></div>
+          <div class="row" style="margin-top:8px;align-items:center">
+            <button id="lzCopiarEmails" class="mini" type="button">Copiar os e-mails</button>
+            <div class="hint" style="margin:0">Busque o e-mail no RD ou clique em "Abrir no RD": o card deve estar em Desqualificados, com perda e o campo SDR preenchido.</div>
+          </div>
         </div>
         <div id="lzRelatorio" class="hidden" style="margin-top:14px">
           <div class="sec-t" style="margin-top:0">Relatório da limpeza de hoje</div>
@@ -3176,7 +3184,7 @@
     $('lzFunil').addEventListener('change', () => {
       try { localStorage.setItem('crLzFunil', $('lzFunil').value); } catch (_) { /* sem storage */ }
       lzAtual = null;
-      ['lzResumo', 'lzTabela', 'lzAcoes'].forEach((id) => $(id).classList.add('hidden'));
+      ['lzResumo', 'lzTabela', 'lzAcoes', 'lzFeitos'].forEach((id) => $(id).classList.add('hidden'));
       setStatus('statusLz', $('lzFunil').value ? 'Funil trocado: clique em "Ver prévia".' : 'Escolha o funil.', {});
     });
     async function lzCarregarRelatorio() {
@@ -3207,7 +3215,7 @@
           (c.motivos || []).map((m) => `Perda de "${esc(m.etapa)}": "${esc(m.motivo)}"`).join('; ') + '. ' +
           (c.sdr ? `Campo SDR: <b>${esc(c.sdr)}</b>. ` : '') + (p.escopo === 'meus' && c.responsavel ? `Só os cards de <b>${esc(c.responsavel)}</b>. ` : '') +
           (c.avisos || []).map((a) => `<span style="color:var(--danger)">${esc(a)}</span>`).join(' ');
-        $('lzLista').innerHTML = (p.cards || []).map((x) => `<tr><td><b>${esc(x.nome)}</b></td><td>${esc(x.etapa)}</td><td class="num">${x.dias} dias</td><td>${esc(x.motivo)}</td><td style="color:var(--muted)">${esc(x.responsavel || '—')}</td></tr>`).join('');
+        $('lzLista').innerHTML = (p.cards || []).map((x) => `<tr><td><b>${esc(x.nome)}</b></td><td style="color:var(--text-2)">${esc(x.email || '—')}</td><td>${esc(x.etapa)}</td><td class="num">${x.dias} dias</td><td>${esc(x.motivo)}</td><td style="color:var(--muted)">${esc(x.responsavel || '—')}</td></tr>`).join('');
         $('lzTabela').classList.toggle('hidden', !p.total);
         $('lzAcoes').classList.toggle('hidden', !p.total);
         $('lzTudo').textContent = `Executar todos (${p.total})`;
@@ -3223,6 +3231,31 @@
         $('lzPrevia').disabled = false;
       }
     }
+    /** A lista do que acabou de ser movido, com o e-mail do lead e o link do card: é o que se usa para conferir no RD. */
+    let lzEmails = [];
+    function lzMostrarFeitos(feitos) {
+      lzEmails = feitos.map((f) => f.email).filter(Boolean);
+      $('lzFeitos').classList.toggle('hidden', !feitos.length);
+      $('lzCopiarEmails').classList.toggle('hidden', !lzEmails.length);
+      // Link só para o endereço do RD: nada que venha do servidor vira outro destino.
+      const linkOk = (u) => (/^https:\/\/crm\.rdstation\.com\//.test(String(u || '')) ? u : '');
+      $('lzFeitosLista').innerHTML = '<table><tbody>' + feitos.map((f) => `
+        <tr>
+          <td><b>${esc(f.nome || f.id)}</b></td>
+          <td>${f.email ? esc(f.email) : '<span style="color:var(--muted)">sem e-mail no card</span>'}</td>
+          <td style="color:var(--muted)">${esc(f.motivo || '')}</td>
+          <td>${linkOk(f.link) ? `<a href="${esc(linkOk(f.link))}" target="_blank" rel="noopener noreferrer">Abrir no RD</a>` : ''}</td>
+        </tr>`).join('') + '</tbody></table>';
+    }
+    $('lzCopiarEmails').addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(lzEmails.join('\n'));
+        toast(lzEmails.length + ' e-mail(s) copiado(s).');
+      } catch (_) {
+        toast('Não consegui copiar: selecione os e-mails e copie à mão.');
+      }
+    });
+
     /** Move os cards em lotes de 15 e vai mostrando o andamento; para se o RD recusar um lote inteiro. */
     async function lzExecutar(ids) {
       const botoes = [$('lzTeste'), $('lzTudo'), $('lzPrevia'), $('lzDesfazer')];
@@ -3239,6 +3272,7 @@
           if (!(r.feitos || []).length && (r.erros || []).length) break;
         }
         lzUltimoLote = soma.feitos.map((f) => f.id);
+        lzMostrarFeitos(soma.feitos);
         $('lzDesfazer').classList.toggle('hidden', !lzUltimoLote.length);
         $('lzDesfazer').textContent = `Desfazer o último lote (${lzUltimoLote.length})`;
         setStatus('statusLz',
