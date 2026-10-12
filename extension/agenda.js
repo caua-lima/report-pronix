@@ -249,35 +249,6 @@
     return false;
   }
 
-  // Só o começo do que está na tela conta como "primeiro contato".
-  const JANELA_ABORDAGEM = 12;
-  const soLetras = (s) => semAcento(s).replace(/[^a-z0-9]+/g, ' ').trim();
-
-  /**
-   * Qual abordagem de primeiro contato foi usada: procura, nas MINHAS primeiras mensagens, o trecho
-   * que só aquela abordagem tem (a "assinatura", cadastrada no painel). Vale a assinatura mais longa
-   * encontrada — assim "posso confirmar a sua presença" não cai na abordagem que só tem "posso
-   * confirmar". Cada mensagem é olhada sozinha: assinatura não casa atravessando duas mensagens.
-   * @param {{id: string, assinaturas: string[]}[]} abordagens
-   * @returns {string} a letra da abordagem, ou ''
-   */
-  function detectarAbordagem(mensagens, abordagens) {
-    const minhas = (Array.isArray(mensagens) ? mensagens : [])
-      .slice(0, JANELA_ABORDAGEM)
-      .filter((m) => m && m.from === 'eu' && m.type !== 'audio' && typeof m.content === 'string')
-      .map((m) => soLetras(m.content))
-      .filter(Boolean);
-    if (!minhas.length) return '';
-    let melhor = { id: '', tam: 0 };
-    for (const a of Array.isArray(abordagens) ? abordagens : []) {
-      for (const s of a && Array.isArray(a.assinaturas) ? a.assinaturas : []) {
-        const alvo = soLetras(s);
-        if (alvo.length >= 8 && alvo.length > melhor.tam && minhas.some((m) => m.includes(alvo))) melhor = { id: String(a.id || ''), tam: alvo.length };
-      }
-    }
-    return melhor.id;
-  }
-
   const DIA_CURTO = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
 
   /** 'AAAA-MM-DDTHH:mm' -> { texto: 'qui, 09/10 às 15:00' | 'hoje às 15:00', passou } para o cartão. */
@@ -292,7 +263,7 @@
     return { texto: `${dia} às ${m[4]}:${m[5]}`, passou: d.getTime() < ref.getTime() };
   }
 
-  const api = { lerAgendamento, detectarAgendamento, leadRespondeu, detectarAbordagem, descrever, REGRA };
+  const api = { lerAgendamento, detectarAgendamento, leadRespondeu, descrever, REGRA };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else raiz.__crAgenda = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

@@ -1791,38 +1791,6 @@
     const mensagens = mensagensVisiveis(els);
     avancarParaRespondeu(est, mensagens);
     anotarAgendamento(mensagens, ficha.conversa);
-    anotarAbordagem(est, mensagens, ficha.conversa);
-  }
-
-  /**
-   * Teste das abordagens de primeiro contato: reconhece qual foi usada nesta conversa (pela assinatura)
-   * e se o lead respondeu, e avisa o servidor — só a letra e o "respondeu", nenhum texto. A abordagem é
-   * anotada uma vez só: a primeira reconhecida é a do primeiro contato.
-   */
-  function anotarAbordagem(est, mensagens, conversa) {
-    if (!agendaLib || !agendaLib.detectarAbordagem || !conversa || !Array.isArray(est.abordagens) || !est.abordagens.length) return;
-    const c = est.contato || (est.contato = { abordagem: '', respondeu: false });
-    const campos = {};
-    if (!c.abordagem) {
-      const letra = agendaLib.detectarAbordagem(mensagens, est.abordagens);
-      if (letra) campos.abordagem = letra;
-    }
-    if ((c.abordagem || campos.abordagem) && !c.respondeu && agendaLib.leadRespondeu(mensagens)) campos.respondeu = true;
-    if (!Object.keys(campos).length) return;
-    // Marca na hora (para não reenviar a cada tique) e mostra a etiqueta; o servidor confirma depois.
-    Object.assign(c, campos);
-    if (ficha.ultimoEstado === est) redesenharFicha();
-    try {
-      chrome.runtime.sendMessage({ action: 'abordagem', telefone: conversa.telefone, nome: conversa.nome, ...campos }, (r) => {
-        if (chrome.runtime.lastError || !r || !r.ok || !r.contato) return;
-        if (ficha.ultimoEstado === est) {
-          est.contato = r.contato;
-          redesenharFicha();
-        }
-      });
-    } catch (_) {
-      /* extensão recarregada: fica para a próxima vez que a conversa abrir */
-    }
   }
 
   /**
@@ -1942,11 +1910,6 @@
         doForm.appendChild(c);
       }
       linha.appendChild(doForm);
-    }
-    if (ficha.automacao && estado.contato && estado.contato.abordagem) {
-      const c = elem('span', `${base};border:1px dashed #55515b;color:#a39e93`, 'ABORDAGEM ' + estado.contato.abordagem);
-      c.title = 'Primeiro contato reconhecido: entra no teste de abordagens' + (estado.contato.respondeu ? ' (o lead respondeu)' : '');
-      linha.appendChild(c);
     }
     if (estado.aviso) linha.appendChild(elem('div', `flex-basis:100%;font-size:11px;color:${estado.aviso.erro ? '#ff6f5c' : '#3ddc84'}`, estado.aviso.texto));
     return linha;
@@ -2110,13 +2073,7 @@
     // Automação (mover para "Respondeu", etiqueta e agendamento): o servidor diz se o master ligou para esta chave.
     ficha.automacao = r.automacao === true;
     ficha.etiquetas = r.etiquetas === true; // etiquetas do formulário: permissão própria
-    const extras = ficha.automacao
-      ? {
-          marca: r.marca || null, podeResponder: r.podeResponder === true, reuniao: r.reuniao || null,
-          // Abordagens em teste (letra + trecho que identifica) e o que já foi anotado para este lead.
-          abordagens: Array.isArray(r.abordagens) ? r.abordagens : [], contato: r.contato || null,
-        }
-      : {};
+    const extras = ficha.automacao ? { marca: r.marca || null, podeResponder: r.podeResponder === true, reuniao: r.reuniao || null } : {};
     // Sem ficha do RD para este usuário (CRM desligado no servidor ou popup do lead desligado):
     // quem tem o Coach continua vendo o cartão, só com o resumo e o coach.
     if (!r.configurado) return ficha.coach ? renderFicha({ tipo: 'sem-crm', busca, ...extras }) : esconderFicha();
