@@ -395,6 +395,21 @@ Custo zero: a análise roda no Groq e o PDF é montado no servidor. Se a anális
 continua pronto e o aviso oferece tentar de novo. A nota fica guardada no report, para comparar
 depois com o que a reunião deu.
 
+**Casos das calls e padrão.** Além do texto, a análise usa números medidos: cada negociação do
+closer vira um *caso* com quem decidia (sozinho, casal, sócios, família), se todos os decisores
+estavam na call, o momento do lead (loja física, já vende online, do zero), quantas reuniões e como
+terminou. Os casos vêm de dois lugares (`src/casos.js`):
+
+- do **pacote do closer** (aba Closers → Importar pacote): um `.json` com o cadastro, o apelido, a
+  inteligência e os casos classificados das transcrições. Cria o closer se ele não existe; importar
+  de novo troca os casos das transcrições, sem duplicar. Os casos não levam nome nem contato de lead,
+  e o pacote, como as transcrições, fica em `privado/`, fora do Git;
+- dos **reports**: lead analisado para aquele closer que teve o resultado da reunião marcado
+  (venda ou não comprou) entra na conta sozinho, com o que a análise leu dele.
+
+O padrão ("casal com os dois na call: 9 de 17") vai dentro do histórico no pedido à IA e aparece no
+painel, em Closers → Inteligência.
+
 **Ligar e desligar.** Na aba Closers, cada closer com inteligência tem o botão **Desligar análise**
 (e depois **Ligar análise**). Desligada, o botão some do popup de todo mundo e `POST /api/afinidade`
 responde 403, sem chamar a IA; o texto da inteligência continua guardado, é só ligar de novo.
@@ -489,6 +504,8 @@ Autenticação por cabeçalho `x-cr-key` (a chave do usuário). `gestor+` = mast
 | `POST /api/admin/crm/teste` | gestor+ | Busca no RD sem cache, com o passo a passo. |
 | `POST/DELETE /api/admin/closers` | master | Adiciona e remove closers. |
 | `PATCH /api/admin/closers/:id` | master | Apelido e inteligência do closer (alimenta a afinidade); `analiseAtiva` liga e desliga a análise. |
+| `POST /api/admin/closers/importar` | master | Pacote do closer: cadastro, apelido, inteligência e casos das calls. |
+| `GET /api/admin/closers/:id/padrao` | master | As contas dos casos do closer (transcrições + reuniões com resultado). |
 | `GET/POST/PATCH/DELETE /api/admin/usuarios` | master | Acessos da equipe. |
 | `GET /api/master/resultados` · `GET /api/master/inteligencia` · `POST /api/master/insights` | master | Resultados, inteligência e insights. |
 | `GET /api/status` | pública | Verificação de conexão. |
