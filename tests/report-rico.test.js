@@ -6,7 +6,7 @@ process.env.PDF_SEM_COMPRESSAO = '1'; // PDF sem compressão: dá para ler o tex
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { normalizarDados } = require('../src/report');
-const { normalizarConsciencia, mostrarConsciencia, chaveDoNivel } = require('../src/consciencia');
+const { normalizarConsciencia, mostrarConsciencia, mostrarBarra, tituloDoMomento, chaveDoNivel, TITULOS } = require('../src/consciencia');
 const { gerarPdfBuffer } = require('../src/generatePdf');
 
 /** Texto de um PDF do pdfkit sem compressão: junta os trechos em hex de cada TJ (WinAnsi ~ latin1). */
@@ -55,13 +55,33 @@ test('consciência: aceita o nível com ou sem acento e rejeita o que não é da
   assert.equal(normalizarConsciencia(null), null);
 });
 
-test('consciência só aparece quando é boa: de "consciente da solução" para cima', () => {
-  assert.equal(mostrarConsciencia({ nivel: 'inconsciente' }), false);
-  assert.equal(mostrarConsciencia({ nivel: 'problema' }), false);
-  assert.equal(mostrarConsciencia({ nivel: 'solucao' }), true);
-  assert.equal(mostrarConsciencia({ nivel: 'produto' }), true);
-  assert.equal(mostrarConsciencia({ nivel: 'pronto' }), true);
+test('momento do lead: o selo aparece em qualquer nível lido; a barra de degraus só quando o nível é bom', () => {
+  const niveis = ['inconsciente', 'problema', 'solucao', 'produto', 'pronto'];
+  assert.deepEqual(niveis.map((nivel) => mostrarConsciencia({ nivel })), [true, true, true, true, true]);
+  assert.deepEqual(niveis.map((nivel) => mostrarBarra({ nivel })), [false, false, true, true, true]);
   assert.equal(mostrarConsciencia(null), false);
+  assert.equal(mostrarBarra(null), false);
+});
+
+test('momento do lead: título escrito para o lead vale; nome da régua não; sem título, um de reserva que varia de lead para lead', () => {
+  // o que a IA manda: título e fala limpos; rótulo de livro e número de nível são recusados
+  assert.deepEqual(normalizarConsciencia({ nivel: 'solucao', porque: 'p', titulo: '  Quer sair do CLT ainda este ano. ', fala: ' "quero sair do CLT esse ano" ' }),
+    { nivel: 'solucao', porque: 'p', titulo: 'Quer sair do CLT ainda este ano', fala: 'quero sair do CLT esse ano' });
+  for (const ruim of ['Consciente do problema', 'consciente da solução', 'Inconsciente', 'Nível 3 de 5', 'Lead no nível 2', 'ok']) {
+    assert.equal(normalizarConsciencia({ nivel: 'problema', porque: 'p', titulo: ruim }).titulo, undefined, ruim);
+  }
+  assert.equal(tituloDoMomento({ nivel: 'pronto', porque: 'p', titulo: 'Perguntou quando pode começar' }, 'Marcos'), 'Perguntou quando pode começar');
+  // reserva: sempre do nível certo, sempre positivo, e diferente entre leads
+  for (const nivel of Object.keys(TITULOS)) {
+    const usados = new Set(['Ana', 'Bruno', 'Carla', 'Diego', 'Edu', 'Fabi', 'Gil', 'Hugo', 'Iara', 'João'].map((lead) => tituloDoMomento({ nivel, porque: '' }, lead)));
+    assert.ok(usados.size >= 2, nivel + ': o título de reserva tem de variar');
+    for (const t of usados) {
+      assert.ok(TITULOS[nivel].includes(t));
+      assert.doesNotMatch(t, /consciente|inconsciente|nível|\bnão\b|ainda|apenas|\bfalta\b|\bsó\b/i, 'nada de rótulo de livro nem de frase negativa: ' + t);
+    }
+  }
+  assert.equal(tituloDoMomento({ nivel: 'solucao', porque: 'x' }, 'Ana'), tituloDoMomento({ nivel: 'solucao', porque: 'x' }, 'Ana'), 'o mesmo report sai sempre igual');
+  assert.equal(tituloDoMomento(null, 'Ana'), '');
 });
 
 test('a resposta da IA é limpa: listas sem vazios e com teto; campos ausentes não quebram', () => {
@@ -82,32 +102,39 @@ test('a resposta da IA é limpa: listas sem vazios e com teto; campos ausentes n
 });
 
 // ---------------------------------------------------------------- PDF
-test('PDF: nível de consciência, sinais de compra e "Como foi a conversa" aparecem, na ordem, logo depois do resumo', async () => {
+test('PDF: momento do lead, sinais de compra e "Como foi a conversa" aparecem, na ordem, logo depois do resumo', async () => {
   const buf = await gerarPdfBuffer(BASE);
   const t = textoDoPdf(buf);
-  for (const trecho of ['NÍVEL DE CONSCIÊNCIA', 'Consciente da nossa entrega', 'topou a reunião na hora', 'SINAIS DE COMPRA',
+  assert.ok(!t.includes('Consciente da nossa entrega'), 'o nome da régua não vai para o closer');
+  assert.ok(TITULOS.produto.some((x) => t.includes(x)), 'sem título da IA, entra um de reserva do nível');
+  for (const trecho of ['MOMENTO DO LEAD', 'topou a reunião na hora', 'SINAIS DE COMPRA',
     'Confirmou o investimento sem pedir desconto', 'Como foi a conversa', 'Cauã explicou que a entrega é montar a conta']) {
     assert.ok(t.includes(trecho), 'faltou no PDF: ' + trecho);
   }
   const pos = (x) => t.indexOf(x);
-  assert.ok(pos('Mais de R$5.000') < pos('NÍVEL DE CONSCIÊNCIA'), 'resumo antes');
-  assert.ok(pos('NÍVEL DE CONSCIÊNCIA') < pos('Como foi a conversa'));
+  assert.ok(pos('Mais de R$5.000') < pos('MOMENTO DO LEAD'), 'resumo antes');
+  assert.ok(pos('MOMENTO DO LEAD') < pos('Como foi a conversa'));
   assert.ok(pos('Como foi a conversa') < pos('Perfil e momento'), 'o desenrolar vem antes da análise');
   assert.ok(paginas(buf) <= 2);
 });
 
-test('PDF: lead de consciência baixa não ganha selo (nada de "nível 2 de 5" desanimando o closer)', async () => {
-  const buf = await gerarPdfBuffer({ ...BASE, consciencia: { nivel: 'problema', porque: 'ainda não sabe o que quer' } });
+test('PDF: o selo usa o título escrito para o lead e a fala dele; em nível baixo também aparece, sempre positivo', async () => {
+  const proprio = textoDoPdf(await gerarPdfBuffer({ ...BASE, consciencia: { nivel: 'solucao', titulo: 'Quer sair do CLT ainda este ano', fala: 'quero sair do CLT esse ano', porque: 'Contou que tem prazo para largar o emprego.' } }));
+  for (const x of ['MOMENTO DO LEAD', 'Quer sair do CLT ainda este ano', 'quero sair do CLT esse ano', 'Contou que tem prazo para largar o emprego.']) assert.ok(proprio.includes(x), 'faltou: ' + x);
+  assert.ok(!proprio.includes('Consciente da solu'));
+
+  const buf = await gerarPdfBuffer({ ...BASE, consciencia: { nivel: 'problema', porque: 'Disse que quer uma renda além do salário.' } });
   const t = textoDoPdf(buf);
-  assert.ok(!t.includes('NÍVEL DE CONSCIÊNCIA'));
-  assert.ok(!t.includes('ainda não sabe o que quer'));
+  assert.ok(t.includes('MOMENTO DO LEAD') && t.includes('Disse que quer uma renda além do salário.'));
+  assert.ok(TITULOS.problema.some((x) => t.includes(x)));
+  assert.ok(!t.includes('Consciente do problema') && !/2 de 5/.test(t), 'nada de "nível 2 de 5" desanimando o closer');
   assert.ok(t.includes('SINAIS DE COMPRA'), 'os sinais de compra continuam');
   assert.ok(t.includes('Como foi a conversa'));
 });
 
 test('PDF: sem consciência boa e sem sinais, o cartão escuro nem aparece', async () => {
   const t = textoDoPdf(await gerarPdfBuffer({ ...BASE, consciencia: null, sinais_compra: [] }));
-  assert.ok(!t.includes('NÍVEL DE CONSCIÊNCIA') && !t.includes('SINAIS DE COMPRA'));
+  assert.ok(!t.includes('MOMENTO DO LEAD') && !t.includes('SINAIS DE COMPRA'));
 });
 
 test('PDF: report antigo (sem os campos novos) sai igual a antes', async () => {
@@ -197,7 +224,7 @@ test('PDF: o termômetro de dores abre o cartão do topo, só com dor de fato', 
   assert.ok(!t.includes('Citada de passagem'), 'dor citada de passagem não vai para o closer');
   const pos = (x) => t.indexOf(x);
   assert.ok(pos('Mais de R$5.000') < pos('TERMÔMETRO DE DORES'), 'logo depois do resumo');
-  assert.ok(pos('TERMÔMETRO DE DORES') < pos('NÍVEL DE CONSCIÊNCIA'), 'as dores vêm antes do nível de consciência');
+  assert.ok(pos('TERMÔMETRO DE DORES') < pos('MOMENTO DO LEAD'), 'as dores vêm antes do nível de consciência');
   assert.ok(pos('R$100 mil de estoque parado') < pos('Vende no improviso'), 'a dor mais forte primeiro');
   assert.ok(pos('SINAIS DE COMPRA') < pos('Como foi a conversa'));
   assert.ok(paginas(buf) <= 2);
@@ -206,13 +233,13 @@ test('PDF: o termômetro de dores abre o cartão do topo, só com dor de fato', 
 test('PDF: sem dor de fato o termômetro não aparece; só com dores, o cartão do topo aparece do mesmo jeito', async () => {
   const fracas = textoDoPdf(await gerarPdfBuffer({ ...BASE, dores: [{ dor: 'Citada de passagem', intensidade: 2, porque: 'x' }] }));
   assert.ok(!fracas.includes('TERMÔMETRO DE DORES'));
-  assert.ok(fracas.includes('NÍVEL DE CONSCIÊNCIA'), 'o resto do cartão continua');
+  assert.ok(fracas.includes('MOMENTO DO LEAD'), 'o resto do cartão continua');
   const semCampo = textoDoPdf(await gerarPdfBuffer(BASE));
   assert.ok(!semCampo.includes('TERMÔMETRO DE DORES'), 'report antigo sai igual');
 
   const soDores = textoDoPdf(await gerarPdfBuffer({ ...BASE, consciencia: null, sinais_compra: [], dores: DORES }));
   assert.ok(soDores.includes('TERMÔMETRO DE DORES') && soDores.includes('R$100 mil de estoque parado'));
-  assert.ok(!soDores.includes('NÍVEL DE CONSCIÊNCIA') && !soDores.includes('SINAIS DE COMPRA'));
+  assert.ok(!soDores.includes('MOMENTO DO LEAD') && !soDores.includes('SINAIS DE COMPRA'));
 });
 
 test('PDF enorme com dores: continua em até 2 páginas e pelo menos uma dor fica', async () => {

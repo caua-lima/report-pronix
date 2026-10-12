@@ -330,7 +330,8 @@ test('vínculo: nome com mais de um contato no RD só vale se exatamente um dele
     await stats.registrar({ id: 'z1', usuarioId: 'u1', usuarioNome: 'Cauã Lima', lead: 'Diego Martins', contato: 'Diego Martins' });
     await vendasRd.sincronizar((await stats.listar({})).filter((x) => x.id === 'z1'));
     let r = await stats.buscarPorId('z1');
-    assert.deepEqual([r.rdContatoId, r.rdSituacao], ['b', 'Reunião Realizada · CLOSERS · Giovane Ribeiro'], 'o campo SDR do card diz de quem é o lead');
+    assert.deepEqual([r.rdContatoId, r.rdSituacao], ['b', 'Reunião Realizada · CLOSERS · Giovane Ribeiro — este closer não está cadastrado em Closers (ou o nome não bate)'], 'o campo SDR do card diz de quem é o lead; e a linha avisa que o closer do RD não está no cadastro');
+    assert.equal(r.closerId, '', 'closer fora do cadastro não é preenchido');
 
     // dois candidatos com card do mesmo pré-vendedor: continua sem escolher, e diz por quê
     fichas = { a: ficha('a', 'Cauã Lima'), b: ficha('b', 'Giovane Ribeiro', 'Cauã') };

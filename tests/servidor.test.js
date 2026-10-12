@@ -478,11 +478,93 @@ test('report rico: a resposta da IA volta limpa para a tela e vai para o PDF', a
   const r = await api('POST', '/api/report-direto', { chave: E.ana, corpo: { mensagens: conversa, nome: 'Marcos' } });
   respostaAnthropic = null;
   assert.equal(r.status, 200);
-  assert.deepEqual(r.json.dados.consciencia, { nivel: 'pronto', porque: 'Perguntou quando pode começar.' });
+  const { TITULOS } = require('../src/consciencia');
+  const lida = r.json.dados.consciencia;
+  assert.deepEqual([lida.nivel, lida.porque, lida.fala], ['pronto', 'Perguntou quando pode começar.', undefined]);
+  assert.ok(TITULOS.pronto.includes(lida.titulo), 'a IA não mandou título: entra um de reserva, positivo');
   assert.deepEqual(r.json.dados.conversa, ['Ana SDR explicou que a entrega é a conta completa no Mercado Livre; Marcos disse que faz sentido.']);
   const t = textoDoPdf(r.json.arquivoBase64);
-  assert.ok(t.includes('Pronto para decidir'));
+  assert.ok(t.includes('MOMENTO DO LEAD') && t.includes(lida.titulo) && !t.includes('Pronto para decidir'), 'o selo leva o título, não o nome da régua');
   assert.ok(t.includes('Ana SDR explicou que a entrega'));
+});
+
+test('momento do lead e perfil: título e fala da IA vão para o report; fala inventada sai; rótulo de livro é trocado; o perfil diz o que evitar', async () => {
+  const { TITULOS } = require('../src/consciencia');
+  const pedir = async (extra) => {
+    const resposta = anthropicPadrao();
+    Object.assign(resposta.content[0].input, extra);
+    respostaAnthropic = resposta;
+    chamadasAnthropic.length = 0;
+    const conversa = msgs.concat([{ from: 'eu', type: 'texto', content: 'combinado ' + Date.now() + Math.random() }]);
+    const r = await api('POST', '/api/report-direto', { chave: E.ana, corpo: { mensagens: conversa, nome: 'Marcos' } });
+    respostaAnthropic = null;
+    assert.equal(r.status, 200);
+    return r.json;
+  };
+
+  // 1) título próprio + fala que o lead disse + perfil com "evitar"
+  let j = await pedir({
+    consciencia: { nivel: 'solucao', titulo: 'Decidiu o canal e já fatura', fala: 'Fatura 20 mil por mês', porque: 'Disse que o Mercado Livre já está decidido.' },
+    perfil: { tipo: 'analitico', evidencia: 'Trouxe o faturamento sem ser perguntado: "Fatura 20 mil por mês".', conduzir: 'Abra pela conta do atacado', evitar: 'Evite: Promessa sem mostrar o número' },
+  });
+  assert.deepEqual(j.dados.consciencia, { nivel: 'solucao', porque: 'Disse que o Mercado Livre já está decidido.', titulo: 'Decidiu o canal e já fatura', fala: 'Fatura 20 mil por mês' });
+  assert.deepEqual(j.dados.citacoes, [CITACAO_REAL], 'a vitrine continua com a fala dela');
+  assert.equal(j.dados.resumo.find((x) => x.rotulo === 'Perfil').valor, 'Analítico — Abra pela conta do atacado. Evite: promessa sem mostrar o número.');
+  let t = textoDoPdf(j.arquivoBase64);
+  for (const x of ['MOMENTO DO LEAD', 'Decidiu o canal e já fatura', 'Fatura 20 mil por mês', 'Disse que o Mercado Livre já está decidido.', 'Evite: promessa sem mostrar o número.']) assert.ok(t.replace(/\s+/g, ' ').includes(x), 'faltou no PDF: ' + x);
+  assert.ok(!t.includes('Consciente da solu'), 'o nome da régua não aparece');
+  // a IA recebeu as regras e o formato novos
+  const system = chamadasAnthropic[0].system[0].text;
+  assert.match(system, /O SELO QUE O CLOSER LÊ \("Momento do lead"\)[\s\S]*aparece em TODO relatório[\s\S]*PROIBIDO o nome da régua/);
+  assert.match(system, /Prefira uma que NÃO esteja em "citacoes"/);
+  assert.match(system, /Em "evitar", UMA frase curta com o que faz este lead esfriar/);
+  const schema = chamadasAnthropic[0].tools[0].input_schema;
+  assert.deepEqual(schema.properties.consciencia.required, ['nivel', 'titulo', 'fala', 'porque']);
+  assert.deepEqual(schema.properties.perfil.required, ['tipo', 'evidencia', 'conduzir', 'evitar']);
+
+  // 2) fala que o lead não disse sai (o título fica); título com o nome da régua é trocado por um de reserva
+  j = await pedir({ consciencia: { nivel: 'problema', titulo: 'Consciente do problema', fala: 'Quero pagar hoje mesmo no Pix', porque: 'Contou que quer escalar.' } });
+  assert.equal(j.dados.consciencia.fala, undefined);
+  assert.ok(TITULOS.problema.includes(j.dados.consciencia.titulo));
+  t = textoDoPdf(j.arquivoBase64);
+  assert.ok(t.includes('MOMENTO DO LEAD') && t.includes(j.dados.consciencia.titulo) && !t.includes('Quero pagar hoje') && !t.includes('Consciente do problema'), 'nível 2 também ganha o selo, positivo e sem o rótulo de livro');
+
+  // 3) a fala do selo é a mesma da única citação: fica só na vitrine, não aparece duas vezes
+  j = await pedir({ consciencia: { nivel: 'solucao', titulo: 'Já decidiu pelo Mercado Livre', fala: CITACAO_REAL, porque: 'p' } });
+  assert.equal(j.dados.consciencia.fala, undefined);
+  assert.deepEqual(j.dados.citacoes, [CITACAO_REAL]);
+  // com duas falas boas na vitrine, a repetida fica só no selo
+  j = await pedir({ citacoes: [CITACAO_REAL, 'Fatura 20 mil por mês'], consciencia: { nivel: 'solucao', titulo: 'Já decidiu pelo Mercado Livre', fala: CITACAO_REAL, porque: 'p' } });
+  assert.ok(j.dados.consciencia.fala && CITACAO_REAL.startsWith(j.dados.consciencia.fala.replace(/\.$/, '')), 'a fala fica no selo');
+  assert.deepEqual(j.dados.citacoes, ['Fatura 20 mil por mês']);
+});
+
+test('corrigir o perfil do lead ensina a IA: a troca vira exemplo no prompt dos próximos reports', async () => {
+  const aprendizado = require('../src/aprendizado');
+  const stats = require('../src/stats');
+  assert.equal(await aprendizado.blocoPerfilParaPrompt(), '', 'sem correção, nada entra no prompt');
+  const resposta = anthropicPadrao();
+  Object.assign(resposta.content[0].input, { perfil: { tipo: 'analitico', evidencia: 'Respondeu o faturamento quando o vendedor perguntou.', conduzir: 'Mostre a conta', evitar: 'Rodeio' } });
+  respostaAnthropic = resposta;
+  const r = await api('POST', '/api/report-direto', { chave: E.ana, corpo: { mensagens: msgs.concat([{ from: 'eu', type: 'texto', content: 'perfil ' + Date.now() }]), nome: 'Marcos' } });
+  respostaAnthropic = null;
+  const id = r.json.id;
+  assert.equal((await stats.buscarPorId(id)).perfil, 'analitico');
+
+  // o master troca para "dominante"
+  assert.equal((await api('PATCH', `/api/admin/reports/${id}/resultado`, { chave: E.chefe, corpo: { perfilReal: 'dominante' } })).status, 200);
+  const bloco = await aprendizado.blocoPerfilParaPrompt();
+  assert.match(bloco, /^CALIBRAGEM DO PERFIL DO LEAD/);
+  assert.match(bloco, /Evidência: "Respondeu o faturamento quando o vendedor perguntou\." → a IA leu "analitico" \(Analítico\); o certo é "dominante" \(Dominante\)/);
+  // marcar o mesmo perfil que a IA leu não é correção; perfil inválido também não
+  assert.equal(await aprendizado.registrarAjustePerfil({ reportId: 'x', de: 'cetico', para: 'Cético', evidencia: 'e' }), false);
+  assert.equal(await aprendizado.registrarAjustePerfil({ reportId: 'x', de: 'cetico', para: 'inventado', evidencia: 'e' }), false);
+  assert.equal((await aprendizado.ajustesDePerfil()).length, 1);
+
+  // o próximo report já leva o exemplo
+  chamadasAnthropic.length = 0;
+  await api('POST', '/api/report-direto', { chave: E.ana, corpo: { mensagens: msgs.concat([{ from: 'eu', type: 'texto', content: 'depois ' + Date.now() }]), nome: 'Marcos' } });
+  assert.match(chamadasAnthropic[0].system[0].text, /CALIBRAGEM DO PERFIL DO LEAD[\s\S]*o certo é "dominante"/);
 });
 
 test('report rico: PDF regerado depois de editar mantém os campos novos (e ignora nível inválido)', async () => {
@@ -498,12 +580,12 @@ test('report rico: PDF regerado depois de editar mantém os campos novos (e igno
   assert.equal(r.status, 200);
   let t = textoDoPdf(r.json.arquivoBase64);
   assert.ok(!t.includes('Fraca demais') && !t.includes('Sem intensidade'), 'dor fraca ou inválida não vai para o PDF');
-  for (const x of ['Consciente da solução', 'Editado pelo SDR: já busca estrutura', 'Editado: Ana explicou a entrega completa', 'Editado: pediu a reunião', 'TERMÔMETRO DE DORES', 'Editada: estoque parado', 'Editado: contou do giro lento']) {
+  for (const x of ['MOMENTO DO LEAD', 'Editado pelo SDR: já busca estrutura', 'Editado: Ana explicou a entrega completa', 'Editado: pediu a reunião', 'TERMÔMETRO DE DORES', 'Editada: estoque parado', 'Editado: contou do giro lento']) {
     assert.ok(t.includes(x), 'faltou: ' + x);
   }
   r = await api('POST', '/api/pdf', { chave: E.ana, corpo: { dados: { ...dados, consciencia: { nivel: 'hackeado', porque: '<script>' } } } });
   t = textoDoPdf(r.json.arquivoBase64);
-  assert.ok(!t.includes('NÍVEL DE CONSCIÊNCIA'));
+  assert.ok(!t.includes('MOMENTO DO LEAD'));
 });
 
 test('palavras do lead: fala real que desanima o closer sai do report; as boas ficam; no máximo 3', async () => {

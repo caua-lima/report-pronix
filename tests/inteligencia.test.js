@@ -628,13 +628,17 @@ test('no-show não vai para o líder: sai do .zip do dia e aparece desmarcado na
 });
 
 // ---------------------------------------------------------------- "cauteloso" não é o perfil padrão
-test('perfil: report e coach recebem o mesmo critério de decisão, e "cauteloso" exige hesitação dita', () => {
+test('perfil: report e coach recebem o mesmo critério — o padrão da conversa, não a primeira frase —, e "cauteloso" e "analítico" exigem prova', () => {
   const regra = perfilMod.comoDecidirPerfil();
   const ordem = ['"cetico"', '"analitico"', '"dominante"', '"entusiasta"', '"relacional"', '"cauteloso"'].map((x) => regra.indexOf(x));
-  assert.ok(ordem.every((p, i) => p > -1 && (i === 0 || p > ordem[i - 1])), 'testa os perfis em ordem, com o cauteloso por último');
+  assert.ok(ordem.every((p, i) => p > -1 && (i === 0 || p > ordem[i - 1])), 'a ordem de desempate, com o cauteloso por último');
+  assert.match(regra, /o perfil é o PADRÃO das falas do LEAD na conversa inteira/);
+  assert.match(regra, /Fique com o perfil que tem MAIS falas-prova[\s\S]*tomou a INICIATIVA/);
   assert.match(regra, /"cauteloso": SÓ com hesitação dita/);
-  assert.match(regra, /"cauteloso" não é o perfil padrão[\s\S]*confirmar a reunião[\s\S]*decide sozinho NÃO é cautela/);
-  assert.equal(regra.split('\n').length, 8);
+  assert.match(regra, /"analitico": por conta própria[\s\S]*Uma pergunta isolada \("como funciona\?"\) não basta/);
+  assert.match(regra, /"cauteloso" e "analitico" não são perfis padrão[\s\S]*confirmar a reunião[\s\S]*decide sozinho NÃO é cautela[\s\S]*porque o vendedor PERGUNTOU os números NÃO é ser analítico/);
+  assert.match(regra, /SEJA AFIRMATIVO[\s\S]*"parece", "talvez"/);
+  assert.equal(regra.split('\n').length, 13);
   const { SYSTEM_PROMPT, PROMPT_VERSAO } = require('../src/report');
   assert.match(PROMPT_VERSAO, /^v\d+$/);
   assert.ok(SYSTEM_PROMPT.includes(regra), 'o report usa o critério');

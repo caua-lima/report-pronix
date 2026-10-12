@@ -104,6 +104,65 @@ test('agenda só para ver em parte das agendas é aviso; quem entrou só com a s
   assert.equal(d.cor.pronto, true, 'aviso não conta como falha');
 });
 
+// ---------------------------------------------------------------- closer preenchido sozinho
+test('closer: confere o cadastro contra os usuários do RD, a última rodada e por que cada report ficou sem closer', async () => {
+  const closers = require('../src/closers');
+  const stats = require('../src/stats');
+  // sem nenhum closer cadastrado: é a primeira coisa que falta
+  let d = await diagnostico.rodar(EU);
+  assert.deepEqual([item(d, 'closer', 'Closers cadastrados').ok, d.closer.pronto], [false, false]);
+  assert.equal(item(d, 'closer', 'Cada closer bate com um usuário do RD'), undefined);
+  assert.deepEqual([item(d, 'closer', 'A conferência no RD está rodando').ok, item(d, 'closer', 'Último closer preenchido sozinho').ok], [null, null]);
+
+  // três cadastros: um bate, um não existe no RD, e um usuário do RD bate com dois cadastros
+  rd.usuarios = [{ id: 'u1', nome: 'Cauã Lima' }, { id: 'u2', nome: 'Paulo Henrique Pagoti' }, { id: 'u3', nome: 'Giovane Ribeiro Souza' }];
+  const ph = await closers.criar('Paulo Henrique');
+  await closers.criar('Zayra Beatriz');
+  d = await diagnostico.rodar(EU);
+  const par = item(d, 'closer', 'Cada closer bate com um usuário do RD');
+  assert.equal(par.ok, false);
+  assert.match(par.detalhe, /^Batem: Paulo Henrique = Paulo Henrique Pagoti\. NÃO batem com nenhum usuário do RD \(nunca serão preenchidos\): Zayra Beatriz\./);
+  assert.match(par.resolver, /Todas as palavras do nome cadastrado precisam estar no nome do usuário do RD/);
+  await closers.criar('Paulo');
+  d = await diagnostico.rodar(EU);
+  assert.match(item(d, 'closer', 'Cada closer bate com um usuário do RD').detalhe, /Usuário do RD que bate com mais de um cadastro \(o sistema não escolhe\): Paulo Henrique Pagoti\./);
+  await closers.remover((await closers.listar()).find((c) => c.nome === 'Paulo').id);
+  await closers.remover((await closers.listar()).find((c) => c.nome === 'Zayra Beatriz').id);
+  assert.equal(item(await diagnostico.rodar(EU), 'closer', 'Cada closer bate com um usuário do RD').ok, true);
+
+  // os reports dos últimos 14 dias, cada um com o que a conferência anotou
+  const r = (id) => stats.registrar({ id, usuarioId: 'meu', usuarioNome: 'Cauã Lima', lead: 'Lead ' + id, contato: 'Contato ' + id, origem: 'extensao' });
+  for (const id of ['g1', 'g2', 'g3', 'g4', 'g5', 'g6']) await r(id);
+  const agora = new Date().toISOString();
+  await stats.atualizarResultado('g1', { closerId: ph.id, closerNome: 'Paulo Henrique', closerOrigem: 'rd' }); // preenchido sozinho
+  await stats.atualizarResultado('g2', { rdConferidoEm: agora, rdSituacao: 'Respondeu · SMQLs automáticas · Cauã Lima' }); // reunião ainda não aconteceu
+  await stats.atualizarResultado('g3', { rdConferidoEm: agora, rdSituacao: 'Não achei este lead no RD. Informe o e-mail ou o telefone dele.' });
+  await stats.atualizarResultado('g4', { rdConferidoEm: agora, rdSituacao: 'Reunião Realizada · CLOSERS · Igor Martins — este closer não está cadastrado em Closers (ou o nome não bate)' });
+  await stats.atualizarResultado('g6', { resultado: 'no_show' }); // no-show não entra na conta
+  await db.setJson('rd_ultima_rodada', { em: new Date(Date.now() - 40 * 60000).toISOString(), conferidos: 10, vendidos: 1, encerrados: 0, restantes: 4 });
+  d = await diagnostico.rodar(EU);
+  const reps = item(d, 'closer', 'Reports dos últimos 14 dias');
+  assert.equal(reps.ok, false, 'closer do RD fora do cadastro é o que impede de preencher');
+  assert.equal(reps.detalhe, '5 report(s): 1 com closer e 4 sem. Dos sem closer: 1 com o card ainda sem closer no RD (a reunião não aconteceu ou não foi registrada lá), 1 não achado(s) no RD, 1 com closer no RD que não está cadastrado aqui, 1 ainda não conferido(s).');
+  assert.match(reps.resolver, /a linha diz qual closer do RD não está cadastrado/);
+  const rodada = item(d, 'closer', 'A conferência no RD está rodando');
+  assert.equal(rodada.ok, true);
+  assert.match(rodada.detalhe, /^Última rodada: \d\d\/\d\d\/\d{4},? \d\d:\d\d \(10 lead\(s\) conferido\(s\), 4 na fila\)\.$/);
+  const prova = item(d, 'closer', 'Último closer preenchido sozinho');
+  assert.equal(prova.ok, true);
+  assert.match(prova.detalhe, /: Paulo Henrique, pelo RD\. \(1 nos últimos 14 dias\.\)$/);
+  assert.deepEqual(d.closer, { pronto: false, comprovado: true, falhas: 1 });
+  assert.equal((await stats.buscarPorId('g1')).closerOrigem, 'rd');
+
+  // closer trocado à mão deixa de contar como "sozinho"; rodada antiga vira aviso
+  await stats.atualizarResultado('g1', { closerId: ph.id, closerNome: 'Paulo Henrique' });
+  await db.setJson('rd_ultima_rodada', { em: new Date(Date.now() - 9 * 3600000).toISOString(), conferidos: 3, restantes: 0 });
+  d = await diagnostico.rodar(EU);
+  assert.equal(item(d, 'closer', 'Último closer preenchido sozinho').ok, null);
+  assert.deepEqual([item(d, 'closer', 'A conferência no RD está rodando').ok, /Faz mais de 3 horas\.$/.test(item(d, 'closer', 'A conferência no RD está rodando').detalhe)], [null, true]);
+  assert.equal(escritas, 0, 'o diagnóstico só confere');
+});
+
 test('rota: só o master', async () => {
   const servidor = http.createServer(app);
   await new Promise((r) => servidor.listen(0, '127.0.0.1', r));

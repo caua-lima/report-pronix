@@ -260,10 +260,21 @@ test('popup: último report mostra consciência (quando boa), sinais e "Como foi
   const p = await abrirPopup({ chave: 'pnx_ana', server: SERVER, ultimoReport: { dados, nome: 'Marcos', server: SERVER, dono, quando: 7, versao: 0 } }, { nomePorChave: { pnx_ana: 'Ana' } });
   await esperar(() => !p.document.getElementById('report').classList.contains('hidden'), { motivo: 'report na tela' });
   const t = p.document.getElementById('report').textContent;
-  assert.ok(t.includes('Nível de consciência: Pronto para decidir'));
+  assert.ok(t.includes('Momento do lead: Pronto para decidir'), 'report antigo, sem título: vale o nome do nível');
   assert.ok(t.includes('Pediu o link de pagamento'));
   assert.ok(t.includes('Como foi a conversa'));
   assert.ok(p.document.querySelector('[data-edit="conversa.0"]'));
   assert.ok(p.document.querySelector('[data-edit="consciencia.porque"]'));
   await fechar(p);
+
+  // report novo: o título escrito para o lead (editável), a fala dele e o porquê — em qualquer nível
+  const novo = { ...dados, consciencia: { nivel: 'problema', titulo: 'Quer renda além do salário', fala: 'quero uma renda <b>extra</b>', porque: 'Contou o objetivo logo no começo' } };
+  const q = await abrirPopup({ chave: 'pnx_ana', server: SERVER, ultimoReport: { dados: novo, nome: 'Marcos', server: SERVER, dono, quando: 8, versao: 0 } }, { nomePorChave: { pnx_ana: 'Ana' } });
+  await esperar(() => !q.document.getElementById('report').classList.contains('hidden'), { motivo: 'report novo na tela' });
+  const tq = q.document.getElementById('report').textContent;
+  assert.ok(tq.includes('Momento do lead: Quer renda além do salário') && tq.includes('“quero uma renda <b>extra</b>”') && tq.includes('Contou o objetivo logo no começo'));
+  assert.ok(!tq.includes('Consciente do problema'));
+  assert.ok(q.document.querySelector('[data-edit="consciencia.titulo"]'), 'o título pode ser editado');
+  assert.equal(q.document.querySelector('#report .frase b'), null, 'a fala do lead nunca vira HTML');
+  await fechar(q);
 });

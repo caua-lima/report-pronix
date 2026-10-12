@@ -727,7 +727,7 @@ test('report rico no painel: mostra consciência, sinais e a conversa; editar va
   p.$('gerar').click();
   await esperar(() => visivel(p.$('resultado')), { motivo: 'report na tela' });
   const t = p.$('report').textContent;
-  for (const x of ['Temperatura do lead', 'Nível de consciência: Consciente da nossa entrega', 'Perguntou como funciona o acompanhamento',
+  for (const x of ['Temperatura do lead', 'Momento do lead: Consciente da nossa entrega', 'Perguntou como funciona o acompanhamento',
     'Sinais de compra', 'Confirmou o investimento', 'Como foi a conversa', 'Ana explicou que a entrega é a conta completa']) {
     assert.ok(t.includes(x), 'faltou na tela: ' + x);
   }
@@ -755,7 +755,7 @@ test('report rico no painel: consciência baixa não aparece na tela', async () 
   const p = await painelSdrComTexto(api);
   p.$('gerar').click();
   await esperar(() => visivel(p.$('resultado')), { motivo: 'report na tela' });
-  assert.ok(!p.$('report').textContent.includes('Nível de consciência'));
+  assert.ok(!p.$('report').textContent.includes('Momento do lead'), 'report antigo de nível baixo, sem título: nada na tela');
   assert.ok(!p.$('report').textContent.includes('Temperatura do lead'));
   assert.ok(p.$('report').textContent.includes('Como foi a conversa'));
   p.fechar();
@@ -1397,6 +1397,17 @@ test('Diagnóstico das automações: mostra o que está ok, o que falta e o vere
   assert.match(texto('cor'), /Como resolver: Google Agenda → "Conectar de novo"\./);
   assert.match(texto('cor'), /ver Última reunião pintada de verdade/);
   assert.equal(p.$('diagResultado').querySelector('b b'), null, 'nada que vem do servidor vira HTML');
+  assert.match(p.$('statusDiag').textContent, /Tem coisa para acertar/);
+  assert.equal(p.$('diagResultado').querySelector('[data-diag="closer"]'), null, 'servidor antigo, sem o grupo dos closers: a tela segue');
+
+  // com o grupo dos closers: aparece como terceira lista, e o que falta nele também conta
+  DIAG.cor = { pronto: true, comprovado: false, falhas: 0 };
+  DIAG.closer = { pronto: false, comprovado: true, falhas: 1 };
+  DIAG.itens.push({ grupo: 'closer', nome: 'Cada closer bate com um usuário do RD', ok: false, detalhe: 'NÃO batem com nenhum usuário do RD (nunca serão preenchidos): Zayra <i>B</i>.', resolver: 'Acerte o nome na aba Closers.' });
+  p.$('diagRodar').click();
+  await esperar(() => !!p.$('diagResultado').querySelector('[data-diag="closer"]'), { motivo: 'grupo dos closers' });
+  assert.match(texto('closer'), /^Closer preenchido sozinho — 1 coisa\(s\) para acertar falta Cada closer bate com um usuário do RD ?NÃO batem com nenhum usuário do RD \(nunca serão preenchidos\): Zayra <i>B<\/i>\. ?Como resolver: Acerte o nome na aba Closers\.$/);
+  assert.equal(p.$('diagResultado').querySelector('i:not([data-ic])'), null);
   assert.match(p.$('statusDiag').textContent, /Tem coisa para acertar/);
   await dormir(60);
   assert.deepEqual(p.erros, []);
