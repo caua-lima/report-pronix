@@ -2,7 +2,7 @@
 
 // PDF "Afinidade com o closer": a nota de 0 a 10 de um lead para um closer, com os motivos, os
 // pontos de atenção e como conduzir a call. É o segundo documento que sai junto do handoff quando
-// o pré-vendedor clica em "Esse lead é bom para o <closer>?". Montado aqui no servidor: sem custo.
+// o pré-vendedor clica em "Analisar Match com <closer>". Montado aqui no servidor: sem custo.
 
 const PDFDocument = require('pdfkit');
 const { visual } = require('./generatePdf');
@@ -10,7 +10,7 @@ const { visual } = require('./generatePdf');
 const { desenharMarca, tituloSecao, faixaNoTopo, bullet, novaPaginaSePreciso, semEmoji, OURO, OURO_ESC, PRETO, CLARO, BORDA, TEXTO, VERDE, MARGIN } = visual;
 const VERMELHO = '#d9553f';
 const corDaNota = (faixa) => (faixa === 'alta' ? VERDE : faixa === 'baixa' ? VERMELHO : OURO);
-const rotuloDaFaixa = (faixa) => (faixa === 'alta' ? 'AFINIDADE ALTA' : faixa === 'baixa' ? 'AFINIDADE BAIXA' : 'AFINIDADE MÉDIA');
+const rotuloDaFaixa = (faixa) => (faixa === 'alta' ? 'MATCH ALTO' : faixa === 'baixa' ? 'MATCH BAIXO' : 'MATCH MÉDIO');
 const dataBr = (iso) => {
   const d = iso ? new Date(iso) : null;
   return d && !isNaN(d) ? d.toLocaleDateString('pt-BR') : '';
@@ -26,7 +26,7 @@ function render(doc, { afinidade: a, lead, sdr }) {
   doc.save().rect(0, 81, doc.page.width, 3).fill(OURO).restore();
   desenharMarca(doc, MARGIN, 22, 38);
   const tx = MARGIN + 50;
-  doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(18).text('AFINIDADE COM O CLOSER', tx, 24);
+  doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(18).text('MATCH COM O CLOSER', tx, 24);
   doc.font('Helvetica-Bold').fontSize(12).fillColor(OURO).text(company, tx, 48, { continued: true })
     .font('Helvetica').fontSize(10.5).fillColor('#d5d0c5').text(`     SDR: ${sdr || ''}     ·     ${new Date().toLocaleDateString('pt-BR')}`);
   doc.y = 104;
@@ -130,7 +130,7 @@ function gerarAfinidadePdfBuffer({ afinidade, lead, sdr }) {
         doc.save().moveTo(MARGIN, yRod).lineTo(doc.page.width - MARGIN, yRod).lineWidth(1.5).strokeColor(OURO).stroke().restore();
         doc.font('Helvetica-Bold').fontSize(8).fillColor(PRETO).text(company, MARGIN, yRod + 7, { width: doc.page.width - MARGIN * 2, align: 'left', lineBreak: false });
         doc.font('Helvetica').fontSize(8).fillColor('#8f8a7f').text(
-          `Afinidade com o closer  ·  uso interno do pré-vendedor  ·  ${i + 1}/${range.count}`,
+          `Match com o closer  ·  uso interno do pré-vendedor  ·  ${i + 1}/${range.count}`,
           MARGIN, yRod + 7, { width: doc.page.width - MARGIN * 2, align: 'right', lineBreak: false }
         );
         doc.page.margins.bottom = margemBaixo;
@@ -142,7 +142,7 @@ function gerarAfinidadePdfBuffer({ afinidade, lead, sdr }) {
   });
 }
 
-/** Afinidade_PH_Nome-do-Lead_10-10-2026.pdf */
+/** Match_PH_Nome-do-Lead_10-10-2026.pdf */
 function nomeDoArquivo(afinidade, lead) {
   const limpar = (s, n) =>
     String(s || '')
@@ -151,7 +151,7 @@ function nomeDoArquivo(afinidade, lead) {
       .trim().split(/\s+/).slice(0, n).join('-').slice(0, 40);
   const d = new Date();
   const p = (n) => String(n).padStart(2, '0');
-  return `Afinidade_${limpar(afinidade.apelido || afinidade.closerNome, 2) || 'Closer'}_${limpar(lead, 3) || 'Lead'}_${p(d.getDate())}-${p(d.getMonth() + 1)}-${d.getFullYear()}.pdf`;
+  return `Match_${limpar(afinidade.apelido || afinidade.closerNome, 2) || 'Closer'}_${limpar(lead, 3) || 'Lead'}_${p(d.getDate())}-${p(d.getMonth() + 1)}-${d.getFullYear()}.pdf`;
 }
 
 module.exports = { gerarAfinidadePdfBuffer, nomeDoArquivo };

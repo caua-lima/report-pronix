@@ -54,7 +54,7 @@ async function porId(id) {
 const MAX_INTELIGENCIA = 8000;
 const MAX_APELIDO = 20;
 
-/** Como o botão chama o closer ("Esse lead é bom para o PH?"): o apelido ou o primeiro nome. */
+/** Como o botão chama o closer ("Analisar Match com PH"): o apelido ou o primeiro nome. */
 const apelidoDe = (c) => (c && (c.apelido || String(c.nome || '').trim().split(/\s+/)[0])) || '';
 
 /**

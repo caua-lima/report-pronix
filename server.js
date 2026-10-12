@@ -173,7 +173,7 @@ app.get('/api/status', (_req, res) => {
 
 /** Quem sou eu (valida a chave e devolve nome e papel). */
 app.get('/api/eu', auth, async (req, res) => {
-  // Closers com análise de afinidade: é daqui que o popup tira o botão "Esse lead é bom para o …?".
+  // Closers com análise de afinidade: é daqui que o popup tira o botão "Analisar Match com …".
   const analises = await closers.comAnalise().catch(() => []);
   // Só para o master: quem ainda não tem inteligência cadastrada (o popup explica por que o botão não aparece).
   // Se ele mesmo desligou a análise de alguém, não há o que explicar: o popup fica sem botão e sem aviso.
@@ -311,7 +311,7 @@ app.post('/api/reports/:id/closer', auth, async (req, res) => {
 });
 
 /**
- * "Esse lead é bom para o closer?" — nota de 0 a 10 com os motivos, os pontos de atenção e como
+ * "Analisar Match com o closer" — nota de 0 a 10 com os motivos, os pontos de atenção e como
  * conduzir a call, mais o PDF. Vem depois do report: a extensão manda o que o report levantou e a
  * conversa. IA gratuita (Groq) e PDF montado aqui: não entra no gasto.
  */
@@ -501,7 +501,7 @@ app.post('/api/admin/closers', acesso(['closers'], SO_MASTER_ERRO), async (req, 
 
 /**
  * Apelido e inteligência do closer (o que as calls dele ensinaram): alimenta a análise de afinidade.
- * `analiseAtiva` liga e desliga o botão "Esse lead é bom para o …?" sem apagar o texto.
+ * `analiseAtiva` liga e desliga o botão "Analisar Match com …" sem apagar o texto.
  */
 app.patch('/api/admin/closers/:id', acesso(['closers'], SO_MASTER_ERRO), async (req, res) => {
   try {

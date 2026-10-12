@@ -1,6 +1,6 @@
 'use strict';
 
-// "Esse lead é bom para o closer?" — cruza três coisas e devolve uma nota de 0 a 10 com o porquê:
+// "Analisar Match com o closer" — cruza três coisas e devolve uma nota de 0 a 10 com o porquê:
 //   1. a INTELIGÊNCIA do closer: o que a análise das calls dele mostrou (com que tipo de lead fecha,
 //      como conduz, onde trava). É texto destilado, cadastrado no painel — sem nome nem dado de lead;
 //   2. o HISTÓRICO dele: reuniões e vendas por perfil de lead, do que o master marcou em Resultados;
@@ -19,7 +19,7 @@ const { infoDoNivel } = require('./consciencia');
 const { matrizCloserPerfil } = require('./inteligencia');
 const { padrao, textoDoPadrao, chaveDoMomento, simNao } = require('./casos');
 
-const VERSAO = 'a2'; // sobe quando o prompt mudar (invalida o cache)
+const VERSAO = 'a3'; // sobe quando o prompt mudar (invalida o cache)
 // O plano gratuito limita os tokens por minuto: tudo entra enxuto.
 const MAX_CONVERSA = Number(process.env.MAX_AFINIDADE_CHARS) || 5000;
 const MAX_INTELIGENCIA = 6500;
@@ -40,7 +40,7 @@ REGRAS
 - Use só o que está nesses blocos. Não invente fatos sobre o lead nem sobre o closer, nem cite outros leads pelo nome.
 - A nota mede a COMBINAÇÃO lead x closer, não se o lead é bom em geral. 0 = combinação ruim; 5 = neutra ou sem evidência para um lado; 10 = exatamente o tipo de lead com que este closer mais fecha. Sem evidência suficiente, fique entre 4 e 6 e diga o que falta saber.
 - Quem participa da decisão (sozinho, casal, sócio, família) e o perfil do lead pesam: diga como isso bate com o closer.
-- Cada motivo e cada ponto de atenção junta as duas pontas: o que o lead disse ou é, E o que a inteligência ou o histórico do closer mostra. Nada genérico ("bom perfil", "lead qualificado").
+- Cada motivo e cada ponto de atenção junta as duas pontas: o que o lead disse ou é, E o que a inteligência ou o histórico do closer mostra. Nada genérico ("bom perfil", "lead qualificado"). Quando uma contagem do histórico sustentar o ponto, cite-a no próprio motivo, do jeito que ela vem ("X de Y").
 - "como_conduzir": passos práticos para a call DESTE closer com ESTE lead, na ordem em que acontecem, usando o que funciona para ele e desviando do que trava.
 - Português do Brasil, direto, frases curtas.
 
