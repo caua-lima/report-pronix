@@ -31,6 +31,7 @@ const { gerarResumoRapido } = require('./src/resumoRapido');
 const coachIa = require('./src/coach');
 const inteligencia = require('./src/inteligencia');
 const afinidadeIa = require('./src/afinidade');
+const casosDoCloser = require('./src/casos');
 const limpezaRd = require('./src/limpezaRd');
 const diagnostico = require('./src/diagnostico');
 const { gerarAfinidadePdfBuffer, nomeDoArquivo: nomeDoArquivoAfinidade } = require('./src/afinidadePdf');
@@ -324,7 +325,10 @@ app.post('/api/afinidade', auth, async (req, res) => {
     }
     // O histórico do closer é dele, não de quem gerou o report: master e gestor cruzam com a equipe toda.
     const reports = await reportsDoEscopo(usuarios.ehAdmin(req.usuario) ? null : req.usuario.id).catch(() => []);
-    const r = await afinidadeIa.analisar({ closer, dados, mensagens, nome, reports });
+    // Os casos das calls dele (transcrições importadas + reuniões com resultado) valem para todos: é o padrão do closer.
+    const todos = usuarios.ehAdmin(req.usuario) ? reports : await stats.listar().catch(() => []);
+    const casos = await casosDoCloser.doCloser(closer.id, todos).catch(() => []);
+    const r = await afinidadeIa.analisar({ closer, dados, mensagens, nome, reports, casos });
     const lead = String((dados && dados.lead) || nome || '').slice(0, 80);
     const buffer = await gerarAfinidadePdfBuffer({ afinidade: r.afinidade, lead, sdr: req.usuario.nome });
     // A nota fica no report (só no do próprio usuário, ou de qualquer um para master/gestor).
@@ -514,9 +518,53 @@ app.patch('/api/admin/closers/:id', acesso(['closers'], SO_MASTER_ERRO), async (
   }
 });
 
+/**
+ * Pacote do closer: cadastro, apelido, inteligência e os casos das calls dele (o que a análise das
+ * transcrições classificou), tudo de uma vez. Acha o closer pelo nome ou pelo apelido e cria se não
+ * existir. Importar de novo troca os casos das transcrições, sem duplicar.
+ */
+app.post('/api/admin/closers/importar', acesso(['closers'], SO_MASTER_ERRO), async (req, res) => {
+  try {
+    const p = req.body || {};
+    const nome = String(p.nome || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+    if (!nome) return res.status(400).json({ erro: 'O pacote não traz o nome do closer.' });
+    if (p.casos !== undefined && !Array.isArray(p.casos)) return res.status(400).json({ erro: 'No pacote, "casos" precisa ser uma lista.' });
+    const apelido = typeof p.apelido === 'string' ? p.apelido.replace(/\s+/g, ' ').trim().slice(0, 20) : '';
+    const igual = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
+    const lista = await closers.listar();
+    let closer = lista.find((c) => igual(c.nome, nome)) || (apelido && lista.find((c) => igual(c.apelido, apelido))) || closerAuto.acharCloser(lista, nome);
+    const criado = !closer;
+    if (!closer) closer = await closers.criar(nome, typeof p.email === 'string' ? p.email : '');
+    const campos = {};
+    if (apelido) campos.apelido = apelido;
+    if (typeof p.inteligencia === 'string' && p.inteligencia.trim()) campos.inteligencia = p.inteligencia;
+    if (Object.keys(campos).length) closer = await closers.definirInteligencia(closer.id, campos);
+    const n = Array.isArray(p.casos) ? await casosDoCloser.importar(closer.id, p.casos) : (await casosDoCloser.importados(closer.id)).length;
+    res.json({
+      ok: true, criado, casos: n, inteligencia: Boolean(campos.inteligencia),
+      closer: { id: closer.id, nome: closer.nome, apelido: closers.apelidoDe(closer) },
+    });
+  } catch (err) {
+    res.status(400).json({ erro: err.message });
+  }
+});
+
+/** O padrão das calls do closer: as contas dos casos (transcrições importadas + reuniões com resultado). */
+app.get('/api/admin/closers/:id/padrao', acesso(['closers'], SO_MASTER_ERRO), async (req, res) => {
+  try {
+    const closer = await closers.porId(req.params.id);
+    if (!closer) return res.status(404).json({ erro: 'Closer não encontrado.' });
+    const casos = await casosDoCloser.doCloser(closer.id, await stats.listar().catch(() => []));
+    res.json({ ok: true, padrao: casosDoCloser.padrao(casos) });
+  } catch (err) {
+    res.status(500).json({ erro: err.message });
+  }
+});
+
 app.delete('/api/admin/closers/:id', acesso(['closers'], SO_MASTER_ERRO), async (req, res) => {
   try {
     await closers.remover(req.params.id);
+    await casosDoCloser.removerDoCloser(req.params.id).catch(() => {});
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ erro: err.message });
