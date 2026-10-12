@@ -255,16 +255,6 @@
     .chat-composer textarea:focus { outline: none; box-shadow: none; }
     @media (max-width: 640px) { .chat-composer { flex-wrap: wrap; } .chat-composer textarea { flex-basis: 100%; } }
     .conta { display: inline-block; min-width: 20px; margin-left: 7px; padding: 1px 6px; border-radius: 4px; background: var(--text); color: var(--bg); font-family: var(--f-mono); font-size: .68rem; font-weight: 700; text-align: center; line-height: 1.5; }
-    /* Abordagens do primeiro contato: cada uma abre para ver, copiar e editar o texto. */
-    .ab { border: 1px solid var(--border); border-radius: var(--r-sm); margin-bottom: 8px; background: var(--card); }
-    .ab > summary { cursor: pointer; padding: 10px 12px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; list-style: none; }
-    .ab > summary::-webkit-details-marker { display: none; }
-    .ab[open] > summary { border-bottom: 1px solid var(--border); }
-    .ab .letra { font-family: var(--f-titulo); font-weight: 700; background: var(--text); color: var(--bg); border-radius: 4px; padding: 1px 8px; }
-    .ab .corpo { padding: 12px; }
-    .ab .corpo label { margin-top: 10px; }
-    .ab textarea { min-height: 150px; }
-    .ab .copias { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
     .sec-t { font-family: var(--f-titulo); font-size: .98rem; font-weight: 700; margin: 22px 0 8px; color: var(--text); }
     .duas { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 0 24px; }
 
@@ -549,36 +539,6 @@
             <tbody id="listaRes"></tbody>
           </table>
           <div id="vazioRes" class="hint">Nenhum report neste período.</div>
-        </div>
-
-        <div class="card">
-          <div class="head"><div class="t"><i data-ic="message"></i>Abordagens do primeiro contato</div><div class="sub">— qual primeira mensagem dá mais resposta e mais venda</div></div>
-          <div class="hint" style="margin:0 0 12px">
-            Cadastre cada abordagem como <b>mensagem rápida</b> no WhatsApp. A extensão reconhece qual foi usada pelo trecho que só ela tem (a <b>assinatura</b>)
-            e conta sozinha: enviada, respondida, virou report, virou venda. Só entra na comparação a abordagem com <b>10 envios ou mais</b>.
-          </div>
-          <div class="row">
-            <div style="min-width:170px"><label for="abPeriodo">Período</label>
-              <select id="abPeriodo">
-                <option value="0">Tudo</option>
-                <option value="30">Últimos 30 dias</option>
-                <option value="7">Últimos 7 dias</option>
-              </select>
-            </div>
-            <button id="abVer" class="btn sec"><i data-ic="refresh"></i>Atualizar</button>
-          </div>
-          <div id="statusAb" class="status"></div>
-          <table style="margin-top:6px">
-            <thead><tr><th>Abordagem</th><th>Enviadas</th><th>Responderam</th><th>Viraram report</th><th>Vendas</th></tr></thead>
-            <tbody id="abPlacar"></tbody>
-          </table>
-
-          <h3 class="sec-t">Os textos em teste</h3>
-          <div id="abLista"></div>
-          <div class="row" style="margin-top:12px;align-items:center">
-            <button id="abSalvar" class="btn">Salvar abordagens</button>
-            <div id="statusAbSalvar" class="status" style="margin:0"></div>
-          </div>
         </div>
 
         <div class="card">
@@ -978,6 +938,13 @@
 
     <!-- ================= ABA: EXTENSÃO ================= -->
     <section id="aba-extensao" class="hidden">
+      <div id="diagCard" class="card hidden">
+        <div class="head"><div class="t"><i data-ic="check"></i>As automações estão funcionando?</div><div class="sub">— mover para "Respondeu" no RD e pintar a reunião na agenda</div></div>
+        <div class="hint" style="margin:0 0 12px">Confere tudo o que precisa estar no lugar, sem alterar nada. O último item de cada lista é a prova de que funcionou de verdade.</div>
+        <button id="diagRodar" class="btn sec"><i data-ic="refresh"></i>Verificar agora</button>
+        <div id="statusDiag" class="status"></div>
+        <div id="diagResultado" class="duas hidden" style="gap:18px 28px;margin-top:6px"></div>
+      </div>
       <div class="card">
         <div class="head"><div class="t"><i data-ic="download"></i>Arquivo da extensão</div><div class="sub">— mande este link para o SDR</div></div>
         <a class="dl" href="/PRONIX-extensao.zip" download><i data-ic="download"></i>Baixar PRONIX-extensao.zip</a>
@@ -2029,88 +1996,7 @@
         setStatus('statusRes', e.message, { erro: true });
       }
       carregarInteligencia();
-      carregarAbordagens();
     }
-
-    // ---------- Abordagens do primeiro contato (aba Resultados) ----------
-    async function carregarAbordagens() {
-      if (!podeAba('resultados')) return;
-      try {
-        const q = new URLSearchParams({ escopo: $('resEscopo').value || 'meus' });
-        if ($('abPeriodo').value !== '0') q.set('dias', $('abPeriodo').value);
-        const j = await api('GET', '/api/master/abordagens?' + q);
-        const p = j.placar || { linhas: [] };
-        const selo = (texto) => ` <span class="tag" style="border-color:var(--ok);color:var(--ok)">${texto}</span>`;
-        $('abPlacar').innerHTML = (p.linhas || []).map((l) => `
-          <tr>
-            <td><span class="rank">${esc(l.id)}</span><b>${esc(l.nome)}</b>${l.id === p.melhorEmVenda ? selo('mais vendas') : ''}${l.id === p.melhorEmResposta ? selo('mais respostas') : ''}${l.enviadas && l.amostraPequena ? ' <span class="tag" title="Ainda não entra na comparação">amostra pequena</span>' : ''}</td>
-            <td class="num">${l.enviadas}</td>
-            <td class="num">${l.respostas}${l.enviadas ? ` <span style="color:var(--muted)">(${pct(l.taxaResposta)})</span>` : ''}</td>
-            <td class="num">${l.comReport}</td>
-            <td class="num"><b>${l.vendas}</b>${l.enviadas ? ` <span style="color:var(--muted)">(${pct(l.taxaVenda)})</span>` : ''}</td>
-          </tr>`).join('');
-        setStatus('statusAb', p.total
-          ? `${p.total} primeiro(s) contato(s) reconhecido(s).` + (p.semAbordagemAtual ? ` ${p.semAbordagemAtual} de abordagem que saiu da lista.` : '')
-          : 'Nenhum primeiro contato reconhecido ainda. Envie uma das abordagens abaixo com a extensão aberta na conversa.', {});
-        desenharAbordagens(j.lista || []);
-      } catch (e) {
-        setStatus('statusAb', e.message, { erro: true });
-      }
-    }
-
-    /** Os textos: cada abordagem num bloco que abre, com um botão de copiar por mensagem. */
-    function desenharAbordagens(lista) {
-      const podeEditar = podeMexerEmUsuarios();
-      $('abSalvar').classList.toggle('hidden', !podeEditar);
-      $('abLista').innerHTML = lista.map((a) => `
-        <details class="ab" data-ab="${esc(a.id)}">
-          <summary><span class="letra">${esc(a.id)}</span><b>${esc(a.nome)}</b><span style="color:var(--muted);font-size:.82rem">${esc(a.hipotese || '')}</span></summary>
-          <div class="corpo">
-            <label style="margin-top:0">Nome</label><input type="text" data-ab-nome maxlength="40" value="${esc(a.nome)}" ${podeEditar ? '' : 'disabled'} />
-            <label>O que esta abordagem testa</label><input type="text" data-ab-hipotese maxlength="240" value="${esc(a.hipotese || '')}" ${podeEditar ? '' : 'disabled'} />
-            <label>Mensagens — uma por linha. [NOME], [DIA] e [HORA] você troca ao enviar</label>
-            <textarea data-ab-mensagens ${podeEditar ? '' : 'disabled'}>${esc((a.mensagens || []).join('\n'))}</textarea>
-            <div class="copias">${(a.mensagens || []).map((_, i) => `<button class="mini" type="button" data-copiar-msg="${i}">Copiar mensagem ${i + 1}</button>`).join('')}</div>
-            <label>Assinatura — o trecho que só esta abordagem tem (é por ele que a extensão reconhece)</label>
-            <input type="text" data-ab-assinatura maxlength="120" value="${esc((a.assinaturas || [])[0] || '')}" ${podeEditar ? '' : 'disabled'} />
-          </div>
-        </details>`).join('');
-    }
-
-    $('abLista').addEventListener('click', async (ev) => {
-      const b = ev.target.closest('[data-copiar-msg]');
-      if (!b) return;
-      const linhas = b.closest('.ab').querySelector('[data-ab-mensagens]').value.split('\n').map((x) => x.trim()).filter(Boolean);
-      const msg = linhas[Number(b.dataset.copiarMsg)] || '';
-      try {
-        await navigator.clipboard.writeText(msg);
-        toast('Mensagem copiada.');
-      } catch (_) {
-        toast('Não consegui copiar: selecione o texto e copie à mão.');
-      }
-    });
-    $('abSalvar').addEventListener('click', async () => {
-      const lista = [...$('abLista').querySelectorAll('.ab')].map((el) => ({
-        id: el.dataset.ab,
-        nome: el.querySelector('[data-ab-nome]').value,
-        hipotese: el.querySelector('[data-ab-hipotese]').value,
-        mensagens: el.querySelector('[data-ab-mensagens]').value.split('\n').map((x) => x.trim()).filter(Boolean),
-        assinaturas: [el.querySelector('[data-ab-assinatura]').value],
-      }));
-      $('abSalvar').disabled = true;
-      setStatus('statusAbSalvar', 'Salvando…', { loading: true });
-      try {
-        await api('PUT', '/api/master/abordagens', { lista });
-        setStatus('statusAbSalvar', 'Abordagens salvas. A extensão passa a reconhecer na próxima conversa aberta.', { ok: true });
-        await carregarAbordagens();
-      } catch (e) {
-        setStatus('statusAbSalvar', e.message, { erro: true });
-      } finally {
-        $('abSalvar').disabled = false;
-      }
-    });
-    $('abVer').addEventListener('click', carregarAbordagens);
-    $('abPeriodo').addEventListener('change', carregarAbordagens);
 
     // Uma fila por linha: duas mudanças seguidas esperam a versão nova voltar antes de enviar.
     const filaRes = new Map();
@@ -3387,7 +3273,38 @@
       }
     });
 
+    // ---------- Diagnóstico das automações (só o master): "Respondeu" no RD e cor na agenda ----------
+    async function rodarDiagnostico() {
+      $('diagRodar').disabled = true;
+      setStatus('statusDiag', 'Conferindo o RD e o Google…', { loading: true });
+      try {
+        const d = await api('GET', '/api/master/diagnostico');
+        const marca = (ok) => (ok === true ? '<b style="color:var(--ok)">ok</b>' : ok === false ? '<b style="color:var(--danger)">falta</b>' : '<b style="color:var(--ouro-tinta)">ver</b>');
+        const bloco = (grupo, titulo, r) => {
+          const veredito = !r.pronto ? `<span style="color:var(--danger)">${r.falhas} coisa(s) para acertar</span>`
+            : r.comprovado ? '<span style="color:var(--ok)">funcionando (já aconteceu de verdade)</span>'
+            : '<span style="color:var(--ouro-tinta)">tudo no lugar; falta acontecer a primeira vez</span>';
+          const linhas = d.itens.filter((i) => i.grupo === grupo).map((i) => `
+            <tr>
+              <td style="width:46px;vertical-align:top">${marca(i.ok)}</td>
+              <td><b>${esc(i.nome)}</b><div style="color:var(--text-2);font-size:.84rem">${esc(i.detalhe)}</div>${i.resolver ? `<div style="color:var(--muted);font-size:.8rem">${i.ok === false ? 'Como resolver: ' : ''}${esc(i.resolver)}</div>` : ''}</td>
+            </tr>`).join('');
+          return `<div data-diag="${grupo}"><div class="sec-t" style="margin-top:0">${titulo} — ${veredito}</div><table><tbody>${linhas}</tbody></table></div>`;
+        };
+        $('diagResultado').innerHTML = bloco('respondeu', 'Mover para "Respondeu"', d.respondeu) + bloco('cor', 'Pintar a reunião na agenda', d.cor);
+        $('diagResultado').classList.remove('hidden');
+        const tudo = d.respondeu.pronto && d.cor.pronto;
+        setStatus('statusDiag', tudo ? 'Nada faltando na configuração.' : 'Tem coisa para acertar: veja o que está marcado como "falta".', { ok: tudo, erro: !tudo });
+      } catch (e) {
+        setStatus('statusDiag', e.message, { erro: true });
+      } finally {
+        $('diagRodar').disabled = false;
+      }
+    }
+    $('diagRodar').addEventListener('click', rodarDiagnostico);
+
     async function carregarGoogle() {
+      $('diagCard').classList.toggle('hidden', !podeMexerEmUsuarios());
       const caixa = $('googleAgenda');
       if (!caixa) return;
       caixa.classList.toggle('hidden', !podeMexerEmUsuarios());
