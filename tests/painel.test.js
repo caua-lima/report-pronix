@@ -1592,6 +1592,56 @@ test('Resultados: certinho verde na venda finalizada, selo "Vendido no RD" esper
   p.fechar();
 });
 
+test('Acessos: as permissões de quem está logado já vêm abertas, para escolher o que usar (Coach, Popup do lead...)', async () => {
+  const usuarios = [
+    { id: '1', nome: 'Cauã Lima', papel: 'master', chave: 'pnx_MasterMaster1234567890ab', criadoEm: '2026-10-12T10:00:00Z', fichaCrm: true, coach: true, automacao: true, etiquetas: true, corAgenda: '5', abas: {} },
+    { id: 'u2', nome: 'Samuel', papel: 'sdr', chave: 'pnx_SdrSdr1234567890abcdefgh', criadoEm: '2026-09-01T10:00:00Z', fichaCrm: true, coach: false, automacao: false, etiquetas: false, abas: {} },
+  ];
+  const api = apiBase({ papel: 'master', nome: 'Cauã Lima', usuarios }).quando('PATCH /api/admin/usuarios/1', () => ({ corpo: { ok: true } }));
+  const p = abrirPainel(api, { hash: '#acessos' });
+  await esperar(() => p.$('lista').textContent.includes('Samuel'), { motivo: 'lista' });
+  const meu = p.document.querySelector('tr[data-perm-de="1"]');
+  assert.ok(!meu.classList.contains('hidden'), 'as minhas permissões já vêm abertas');
+  assert.ok(p.document.querySelector('tr[data-perm-de="u2"]').classList.contains('hidden'), 'as dos outros continuam recolhidas');
+  assert.match(p.document.querySelector('[data-abrir-perm="1"]').textContent, /Cauã Lima \(você\)/);
+  assert.ok([...p.document.querySelectorAll('#aba-acessos .head .sub')].some((x) => /clique no nome/.test(x.textContent)), 'a tela diz onde clicar');
+  // os quatro itens do WhatsApp estão ali, marcados, e a cor já está na Banana
+  assert.deepEqual(['data-ficha-crm', 'data-coach', 'data-automacao', 'data-etiquetas'].map((a) => meu.querySelector(`[${a}="1"]`).checked), [true, true, true, true]);
+  assert.equal(meu.querySelector('[data-cor-agenda="1"]').value, '5');
+  // desligar o coach para mim mesmo
+  const coach = meu.querySelector('[data-coach="1"]');
+  coach.checked = false;
+  coach.dispatchEvent(new p.w.Event('change', { bubbles: true }));
+  await esperar(() => api.contar('PATCH /api/admin/usuarios/1') === 1, { motivo: 'PATCH' });
+  assert.deepEqual(api.corpos('PATCH /api/admin/usuarios/1'), [{ coach: false }]);
+  // fechei as minhas: não reabrem sozinhas quando a lista recarrega
+  p.document.querySelector('[data-abrir-perm="1"]').click();
+  assert.ok(p.document.querySelector('tr[data-perm-de="1"]').classList.contains('hidden'));
+  await dormir(60);
+  assert.deepEqual(p.erros, []);
+  p.fechar();
+});
+
+test('Acessos: sistema vazio (entrando pela senha do servidor) — o primeiro acesso já vem como Master', async () => {
+  const api = criarApi({
+    'GET /api/eu': () => ({ status: 401, corpo: { erro: 'Chave inválida ou ausente.' } }),
+    'GET /api/admin/usuarios': () => ({ corpo: { usuarios: [] } }),
+    'POST /api/admin/login': () => ({ corpo: { ok: true } }),
+  });
+  const p = abrirPainel(api, { chave: '' });
+  p.$('senhaPrimeiro').value = 'senha-do-servidor';
+  p.$('entrarPrimeiro').click();
+  await esperar(() => visivel(p.$('aba-acessos')) && p.$('papel').value === 'master', { motivo: 'tipo Master sugerido' });
+  assert.match(p.$('statusCriar').textContent, /primeiro acesso: crie o seu como Master/);
+  // se eu trocar o tipo, a escolha é minha: recarregar a lista não volta para Master
+  p.$('papel').value = 'sdr';
+  p.document.querySelector('.tab[data-aba="acessos"]').click();
+  await dormir(80);
+  assert.equal(p.$('papel').value, 'sdr');
+  assert.deepEqual(p.erros, []);
+  p.fechar();
+});
+
 test('Acessos: a tabela fica limpa; clicar no nome abre as permissões da pessoa (WhatsApp e abas) e o resumo acompanha', async () => {
   const semAbas = { numeros: false, resultados: false, closers: false, arquivos: false, base: false, extensao: false, equipe: false };
   const usuarios = [
