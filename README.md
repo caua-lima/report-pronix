@@ -395,6 +395,10 @@ Custo zero: a análise roda no Groq e o PDF é montado no servidor. Se a anális
 continua pronto e o aviso oferece tentar de novo. A nota fica guardada no report, para comparar
 depois com o que a reunião deu.
 
+**Ligar e desligar.** Na aba Closers, cada closer com inteligência tem o botão **Desligar análise**
+(e depois **Ligar análise**). Desligada, o botão some do popup de todo mundo e `POST /api/afinidade`
+responde 403, sem chamar a IA; o texto da inteligência continua guardado, é só ligar de novo.
+
 ### Base de conhecimento
 
 Seis campos na aba **Base**: empresa, oferta e valores, perfil de cliente, roteiro, régua de
@@ -484,7 +488,7 @@ Autenticação por cabeçalho `x-cr-key` (a chave do usuário). `gestor+` = mast
 | `GET /api/admin/closers` | gestor+ | Lista completa de closers. |
 | `POST /api/admin/crm/teste` | gestor+ | Busca no RD sem cache, com o passo a passo. |
 | `POST/DELETE /api/admin/closers` | master | Adiciona e remove closers. |
-| `PATCH /api/admin/closers/:id` | master | Apelido e inteligência do closer (alimenta a afinidade). |
+| `PATCH /api/admin/closers/:id` | master | Apelido e inteligência do closer (alimenta a afinidade); `analiseAtiva` liga e desliga a análise. |
 | `GET/POST/PATCH/DELETE /api/admin/usuarios` | master | Acessos da equipe. |
 | `GET /api/master/resultados` · `GET /api/master/inteligencia` · `POST /api/master/insights` | master | Resultados, inteligência e insights. |
 | `GET /api/status` | pública | Verificação de conexão. |
