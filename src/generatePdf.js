@@ -6,7 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const PDFDocument = require('pdfkit');
 const { slugify } = require('./generateDoc');
-const { infoDoNivel, mostrarConsciencia, NIVEIS } = require('./consciencia');
+const { infoDoNivel, mostrarConsciencia, mostrarBarra, tituloDoMomento, NIVEIS } = require('./consciencia');
 const { doresVisiveis } = require('./dores');
 
 const OUTPUT_DIR = path.join(__dirname, '..', 'output');
@@ -140,8 +140,13 @@ function render(doc, dados) {
   }
 
 
-  // ---- Temperatura do lead: nível de consciência (só quando é bom) + sinais de compra ----
+  // ---- Temperatura do lead: dores, momento do lead (o selo do nível de consciência) e sinais de compra ----
+  // O selo aparece sempre que há leitura: título escrito para o lead, a fala dele e o porquê. A barra de
+  // degraus só entra quando o nível é bom.
   const verConsciencia = mostrarConsciencia(dados.consciencia);
+  const verBarra = mostrarBarra(dados.consciencia);
+  const tituloMomento = verConsciencia ? tituloDoMomento(dados.consciencia, dados.lead) : '';
+  const falaMomento = verConsciencia && dados.consciencia.fala ? `“${semEmoji(dados.consciencia.fala)}”` : '';
   const sinais = (dados.sinais_compra || []).filter(Boolean);
   // Termômetro de dores: só dor de fato (intensidade 3 ou mais). É o motivo da compra, então abre o cartão.
   const dores = doresVisiveis(dados.dores);
@@ -170,9 +175,13 @@ function render(doc, dados) {
       if (verConsciencia) h += 6;
     }
     if (verConsciencia) {
-      h += 12 + 16; // rótulo + barra
+      h += 12 + (verBarra ? 16 : 2); // rótulo + barra
       doc.font('Helvetica-Bold').fontSize(12);
-      h += doc.heightOfString(info.rotulo, { width: wTxt }) + 2;
+      h += doc.heightOfString(tituloMomento, { width: wTxt }) + 2;
+      if (falaMomento) {
+        doc.font('Helvetica-Oblique').fontSize(10);
+        h += doc.heightOfString(falaMomento, { width: wTxt }) + 3;
+      }
       if (porque) {
         doc.font('Helvetica').fontSize(10);
         h += doc.heightOfString(porque, { width: wTxt }) + 4;
@@ -215,18 +224,26 @@ function render(doc, dados) {
 
     if (verConsciencia) {
       doc.font('Helvetica-Bold').fontSize(8.5).fillColor(OURO)
-        .text('NÍVEL DE CONSCIÊNCIA', xIn, y, { width: wTxt, characterSpacing: 0.5 });
+        .text('MOMENTO DO LEAD', xIn, y, { width: wTxt, characterSpacing: 0.5 });
       y += 12;
-      // Barra de 5 degraus: acende até o nível do lead.
-      const gap = 4;
-      const wSeg = (Math.min(wTxt, 260) - gap * (NIVEIS.length - 1)) / NIVEIS.length;
-      NIVEIS.forEach((n, i) => {
-        const cor = n.numero <= info.numero ? OURO : '#45424b';
-        doc.save().roundedRect(xIn + i * (wSeg + gap), y + 2, wSeg, 6, 3).fill(cor).restore();
-      });
-      y += 16;
-      doc.font('Helvetica-Bold').fontSize(12).fillColor('#ffffff').text(info.rotulo, xIn, y, { width: wTxt });
+      if (verBarra) {
+        // Barra de 5 degraus: acende até o nível do lead.
+        const gap = 4;
+        const wSeg = (Math.min(wTxt, 260) - gap * (NIVEIS.length - 1)) / NIVEIS.length;
+        NIVEIS.forEach((n, i) => {
+          const cor = n.numero <= info.numero ? OURO : '#45424b';
+          doc.save().roundedRect(xIn + i * (wSeg + gap), y + 2, wSeg, 6, 3).fill(cor).restore();
+        });
+        y += 16;
+      } else {
+        y += 2;
+      }
+      doc.font('Helvetica-Bold').fontSize(12).fillColor('#ffffff').text(tituloMomento, xIn, y, { width: wTxt });
       y = doc.y + 2;
+      if (falaMomento) {
+        doc.font('Helvetica-Oblique').fontSize(10).fillColor(OURO).text(falaMomento, xIn, y, { width: wTxt });
+        y = doc.y + 3;
+      }
       if (porque) {
         doc.font('Helvetica').fontSize(10).fillColor('#d5d0c5').text(porque, xIn, y, { width: wTxt });
         y = doc.y + 4;
