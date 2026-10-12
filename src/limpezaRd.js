@@ -140,9 +140,21 @@ async function cardsDaEtapa(etapaId, usuarioRdId) {
   return todos;
 }
 
+/** O e-mail do contato do card (o primeiro válido): é por ele que se acha o lead no RD para conferir. */
+function emailDoCard(deal) {
+  const todos = (Array.isArray(deal && deal.contacts) ? deal.contacts : [])
+    .flatMap((c) => (Array.isArray(c && c.emails) ? c.emails : []))
+    .map((e) => String((e && (e.email || e)) || '').trim().toLowerCase())
+    .filter((e) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e));
+  return todos[0] || '';
+}
+/** Endereço do card no RD, para abrir direto. */
+const linkDoCard = (id) => `https://crm.rdstation.com/app/deals/${encodeURIComponent(id)}`;
+
 const cardPublico = (d, regra, dias) => ({
   id: idDe(d), nome: crm.consertarAcentos(d.name || '').slice(0, 120), etapa: regra.etapa.nome, motivo: regra.rotulo, dias,
   responsavel: crm.consertarAcentos((d.user && d.user.name) || '').slice(0, 60),
+  email: emailDoCard(d), link: linkDoCard(idDe(d)),
 });
 
 /**
@@ -230,7 +242,7 @@ async function executar({ usuario, ids, dias, escopo, funil }) {
         dealId: id, nome, funil: ctx.funil.nome, de: { id: regra.etapa.id, nome: regra.etapa.nome }, motivo: regra.rotulo, dias: parado,
         em: new Date().toISOString(), por: String(usuario.nome || '').slice(0, 80), usuarioId: usuario.id,
       }, LIMITE_LOG);
-      saida.feitos.push({ id, nome, motivo: regra.rotulo });
+      saida.feitos.push({ id, nome, motivo: regra.rotulo, email: emailDoCard(deal), link: linkDoCard(id) });
     } catch (e) {
       saida.erros.push({ id, erro: e.message });
       // O RD limitou as consultas: para o lote aqui, e o painel espera antes de continuar.
@@ -292,4 +304,4 @@ async function relatorio({ de, ate } = {}) {
   return { porMotivo, total, texto };
 }
 
-module.exports = { previa, executar, desfazer, relatorio, contexto, funisElegiveis, diasParado, camposComSdr, DIAS_PADRAO, LOTE_MAX };
+module.exports = { previa, executar, desfazer, relatorio, contexto, funisElegiveis, emailDoCard, diasParado, camposComSdr, DIAS_PADRAO, LOTE_MAX };
