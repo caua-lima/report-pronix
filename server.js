@@ -444,6 +444,25 @@ app.post('/api/master/limpeza-rd/executar', master, async (req, res) => {
   }
 });
 
+/** Cadastros duplicados no funil (mesmo e-mail ou telefone, só os cards de quem pediu): prévia, sem alterar nada. */
+app.get('/api/master/limpeza-rd/duplicados', master, async (req, res) => {
+  try {
+    res.json(await limpezaRd.previaDuplicados({ usuario: req.usuario || { nome: process.env.MASTER_NOME || 'Cauã Lima', id: '' }, funil: String(req.query.funil || '') }));
+  } catch (err) {
+    res.status(400).json({ erro: err.message });
+  }
+});
+
+/** Fecha um lote de duplicados (pares {id, fica}) em Desqualificados, com a perda "Duplicado". */
+app.post('/api/master/limpeza-rd/duplicados', master, async (req, res) => {
+  try {
+    const b = req.body || {};
+    res.json(await limpezaRd.fecharDuplicados({ usuario: req.usuario || { nome: process.env.MASTER_NOME || 'Cauã Lima', id: '' }, pares: b.pares, funil: String(b.funil || ''), execucao: String(b.execucao || '') }));
+  } catch (err) {
+    res.status(400).json({ erro: err.message });
+  }
+});
+
 app.post('/api/master/limpeza-rd/desfazer', master, async (req, res) => {
   try {
     res.json(await limpezaRd.desfazer({ usuario: req.usuario || { nome: process.env.MASTER_NOME || 'Cauã Lima', id: '' }, ids: (req.body || {}).ids }));
