@@ -66,18 +66,33 @@ async function emCache(chave, buscar) {
   return v;
 }
 
+const acharEtapa = (f, alvo) => f.etapas.find((e) => norm(e.nome).startsWith(alvo));
+const elegivel = (f) => REGRAS.every((r) => acharEtapa(f, r.etapa())) && Boolean(acharEtapa(f, destino()));
+
+/** Os funis em que a limpeza pode rodar: os que têm as duas etapas de origem e a de destino. */
+async function funisElegiveis() {
+  if (!crm.configurado()) throw new Error('O RD Station CRM não está configurado no servidor (RDSTATION_CRM_TOKEN).');
+  return (await crm.funis()).filter(elegivel).map((f) => ({ id: f.id, nome: f.nome }));
+}
+
 /**
  * Tudo que a limpeza precisa achar no RD antes de começar: o funil com as três etapas, os dois motivos
  * de perda, o campo SDR com a opção de quem pediu e o usuário do RD. Faltou algo essencial: erro que
  * diz o quê. O que é só recomendável vira aviso.
  */
-async function contexto(usuario) {
+async function contexto(usuario, funilId) {
   if (!crm.configurado()) throw new Error('O RD Station CRM não está configurado no servidor (RDSTATION_CRM_TOKEN).');
-  const funis = await crm.funis();
-  const acharEtapa = (f, alvo) => f.etapas.find((e) => norm(e.nome).startsWith(alvo));
-  const funil = funis.find((f) => REGRAS.every((r) => acharEtapa(f, r.etapa())) && acharEtapa(f, destino()));
-  if (!funil) {
+  const elegiveis = (await crm.funis()).filter(elegivel);
+  if (!elegiveis.length) {
     throw new Error('Não achei no RD um funil que tenha as etapas "Contato iniciado", "Respondeu" e "Desqualificados".');
+  }
+  // Com mais de um funil possível, a limpeza nunca escolhe sozinha em qual rodar.
+  const pedido = String(funilId || '');
+  const funil = pedido ? elegiveis.find((f) => f.id === pedido) : elegiveis.length === 1 ? elegiveis[0] : null;
+  if (!funil) {
+    throw new Error(pedido
+      ? 'O funil escolhido não existe mais no RD (ou não tem as etapas da limpeza). Atualize a página e escolha de novo.'
+      : `Escolha em qual funil fazer a limpeza. Funis possíveis: ${elegiveis.map((f) => f.nome).join(', ')}.`);
   }
   const motivos = await emCache('crm:motivos-perda', async () =>
     lista(await crm.rd('/deal_lost_reasons', { limit: 200 }), 'deal_lost_reasons', 'lost_reasons').map((m) => ({ id: idDe(m), nome: crm.consertarAcentos(m.name || '') }))
@@ -132,10 +147,10 @@ const cardPublico = (d, regra, dias) => ({
 
 /**
  * O que a limpeza faria, sem alterar nada.
- * @param {{usuario: object, dias?: number, escopo?: 'meus'|'todos'}} o
+ * @param {{usuario: object, dias?: number, escopo?: 'meus'|'todos', funil?: string}} o  funil = id do funil no RD
  */
-async function previa({ usuario, dias, escopo }) {
-  const ctx = await contexto(usuario);
+async function previa({ usuario, dias, escopo, funil }) {
+  const ctx = await contexto(usuario, funil);
   const minimo = diasValidos(dias);
   const soMeus = escopo !== 'todos';
   if (soMeus && !ctx.usuarioRd) {
@@ -156,7 +171,7 @@ async function previa({ usuario, dias, escopo }) {
   }
   cards.sort((a, b) => b.dias - a.dias);
   return {
-    dias: minimo, escopo: soMeus ? 'meus' : 'todos',
+    dias: minimo, escopo: soMeus ? 'meus' : 'todos', funilId: ctx.funil.id,
     contexto: {
       funil: ctx.funil.nome, destino: ctx.destino.nome, sdr: ctx.sdr ? ctx.sdr.valor : '', responsavel: ctx.usuarioRd ? ctx.usuarioRd.nome : '',
       motivos: ctx.regras.map((r) => ({ etapa: r.etapa.nome, motivo: r.motivo.nome })), avisos: ctx.avisos,
@@ -180,11 +195,11 @@ function camposComSdr(deal, sdr) {
  * muda o que continua em aberto, na etapa de origem, parado e (em "só os meus") com o mesmo responsável.
  * @returns {Promise<{feitos: object[], pulados: object[], erros: object[], limite: boolean}>}
  */
-async function executar({ usuario, ids, dias, escopo }) {
+async function executar({ usuario, ids, dias, escopo, funil }) {
   if (!crm.moverLigado()) throw new Error('A escrita no RD está desligada no servidor (CRM_MOVER_ETAPA=0).');
   const pedidos = [...new Set((Array.isArray(ids) ? ids : []).map((x) => String(x || '')).filter((x) => /^[A-Za-z0-9_-]{1,40}$/.test(x)))].slice(0, LOTE_MAX);
   if (!pedidos.length) throw new Error('Nenhum card para mover.');
-  const ctx = await contexto(usuario);
+  const ctx = await contexto(usuario, funil);
   const minimo = diasValidos(dias);
   const soMeus = escopo !== 'todos';
   if (soMeus && !ctx.usuarioRd) throw new Error('Não achei o seu usuário no RD para conferir o responsável de cada card.');
@@ -212,7 +227,7 @@ async function executar({ usuario, ids, dias, escopo }) {
 
       const nome = crm.consertarAcentos(deal.name || '').slice(0, 120);
       await db.push(CHAVE_LOG, {
-        dealId: id, nome, de: { id: regra.etapa.id, nome: regra.etapa.nome }, motivo: regra.rotulo, dias: parado,
+        dealId: id, nome, funil: ctx.funil.nome, de: { id: regra.etapa.id, nome: regra.etapa.nome }, motivo: regra.rotulo, dias: parado,
         em: new Date().toISOString(), por: String(usuario.nome || '').slice(0, 80), usuarioId: usuario.id,
       }, LIMITE_LOG);
       saida.feitos.push({ id, nome, motivo: regra.rotulo });
@@ -277,4 +292,4 @@ async function relatorio({ de, ate } = {}) {
   return { porMotivo, total, texto };
 }
 
-module.exports = { previa, executar, desfazer, relatorio, contexto, diasParado, camposComSdr, DIAS_PADRAO, LOTE_MAX };
+module.exports = { previa, executar, desfazer, relatorio, contexto, funisElegiveis, diasParado, camposComSdr, DIAS_PADRAO, LOTE_MAX };
