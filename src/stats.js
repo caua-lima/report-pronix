@@ -25,8 +25,9 @@ const LIMITE_CONSUMO = 20000;
  *   PDF sob a mesma chave em src/pdfStorage.js), passa aqui; senão gera um novo.
  */
 async function registrar({
-  id, usuarioId, usuarioNome, lead, contato, origem, uso, reportKey, arquivo, qualidade, captura, citacoesRemovidas, leitura,
+  id, usuarioId, usuarioNome, lead, contato, origem, uso, reportKey, arquivo, qualidade, captura, citacoesRemovidas, leitura, vinculo,
 }) {
+  const v = vinculoLimpo(vinculo);
   const quando = new Date().toISOString();
   const u = uso || {};
   const idFinal = id || crypto.randomBytes(5).toString('hex');
@@ -63,7 +64,12 @@ async function registrar({
       closerId: '',
       closerNome: '',
       closerEmail: '',
-      leadEmail: '', // e-mail do LEAD (não do closer) — pra puxar o report por e-mail depois
+      leadEmail: v.email, // e-mail do LEAD (não do closer): vem do card do RD e serve para achar o lead de novo
+      // Vínculo com o lead no RD, lido do card que estava aberto na hora do report: é por ele (e não pelo
+      // nome do contato no WhatsApp) que o desfecho da reunião é puxado depois. Ver src/vendasRd.js.
+      telefone: v.telefone,
+      rdContatoId: v.contatoId,
+      rdDealId: v.dealId,
       resultado: '', // '' | 'venda_call' | 'venda_fup' | 'pix_compromisso'
       dataReuniao: '',
       dataFechamento: '',
@@ -327,6 +333,24 @@ async function buscarPorId(id) {
   return todos.find((r) => r.id === id) || null;
 }
 
+const ID_RD = /^[A-Za-z0-9_-]{1,40}$/;
+const EMAIL_OK = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+/** { telefone, email, contatoId, dealId } -> só o que é válido (o resto vira ''). */
+function vinculoLimpo(v) {
+  const x = v && typeof v === 'object' ? v : {};
+  const tel = String(x.telefone || '').replace(/\D/g, '');
+  const email = String(x.email || '').trim().toLowerCase();
+  return {
+    telefone: tel.length >= 10 && tel.length <= 15 ? tel : '',
+    email: EMAIL_OK.test(email) ? email.slice(0, 120) : '',
+    contatoId: ID_RD.test(String(x.contatoId || '')) ? String(x.contatoId) : '',
+    dealId: ID_RD.test(String(x.dealId || '')) ? String(x.dealId) : '',
+  };
+}
+// Marcas da conferência no RD: não são edição de ninguém, então não sobem a versão do report
+// (quem está com a tela aberta não leva "alterado por outra pessoa" por causa da rodada automática).
+const SO_CONFERENCIA = new Set(['rdConferidoEm', 'rdSituacao', 'rdContatoId', 'rdDealId', 'telefone', 'rdVendaLida']);
+
 // '' = ainda não marcado. Os três primeiros são venda; os outros dizem o que houve com a reunião.
 const RESULTADOS_VALIDOS = new Set(['', 'venda_call', 'venda_fup', 'pix_compromisso', 'sem_venda', 'no_show', 'em_followup']);
 const RESULTADOS_VENDA = new Set(['venda_call', 'venda_fup', 'pix_compromisso']);
@@ -384,7 +408,13 @@ async function atualizarResultado(id, campos = {}, { versaoEsperada } = {}) {
         novo.closerNome = campos.closerNome || '';
         novo.closerEmail = campos.closerEmail || '';
       }
-      if (tem('leadEmail')) novo.leadEmail = String(campos.leadEmail || '').trim().slice(0, 200);
+      if (tem('leadEmail')) novo.leadEmail = String(campos.leadEmail || '').trim().toLowerCase().slice(0, 200);
+      if (tem('telefone')) novo.telefone = vinculoLimpo({ telefone: campos.telefone }).telefone;
+      if (tem('rdContatoId')) novo.rdContatoId = vinculoLimpo({ contatoId: campos.rdContatoId }).contatoId;
+      if (tem('rdDealId')) novo.rdDealId = vinculoLimpo({ dealId: campos.rdDealId }).dealId;
+      // O que o RD mostrou na última conferência (etapa, funil, responsável) — ou que o lead não foi achado.
+      if (tem('rdSituacao')) novo.rdSituacao = String(campos.rdSituacao || '').replace(/\s+/g, ' ').trim().slice(0, 160);
+      if (tem('rdVendaLida')) novo.rdVendaLida = String(campos.rdVendaLida || '').slice(0, 30);
       if (tem('resultado')) novo.resultado = RESULTADOS_VALIDOS.has(campos.resultado) ? campos.resultado : '';
       if (tem('dataReuniao')) novo.dataReuniao = DATA_OK.test(campos.dataReuniao || '') ? campos.dataReuniao : '';
       if (tem('produto')) novo.produto = PRODUTOS_VALIDOS.includes(campos.produto) ? campos.produto : '';
@@ -401,9 +431,12 @@ async function atualizarResultado(id, campos = {}, { versaoEsperada } = {}) {
         novo.dataFechamento = DATA_OK.test(campos.dataFechamento || '') ? campos.dataFechamento : '';
       }
       novo.diasParaFechar = diasEntre(novo.dataReuniao, novo.dataFechamento);
-      novo.versao = atual + 1;
-      novo.atualizadoEm = new Date().toISOString();
-      versao = novo.versao;
+      const soConferencia = Object.keys(campos).filter(tem).every((k) => SO_CONFERENCIA.has(k));
+      if (!soConferencia) {
+        novo.versao = atual + 1;
+        novo.atualizadoEm = new Date().toISOString();
+      }
+      versao = Number(novo.versao) || 0;
       return novo;
     }
   );
@@ -461,5 +494,5 @@ async function registrarResumoRapido({ usuarioNome, uso }) {
 
 module.exports = {
   registrar, resumo, listar, remover, buscarPorChave, buscarPorId, atualizarResultado, anotarAfinidade, hojeStr, registrarResumoRapido,
-  RESULTADOS_VALIDOS, PRODUTOS_VALIDOS, valorEmReais, ehVenda, emDiaLocal,
+  RESULTADOS_VALIDOS, PRODUTOS_VALIDOS, valorEmReais, ehVenda, emDiaLocal, vinculoLimpo,
 };
