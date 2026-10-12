@@ -949,7 +949,7 @@
 
   let jobEmAndamento = false;
 
-  // "Esse lead é bom para o closer?" (afinidade.js, carregado antes deste arquivo).
+  // "Analisar Match com o closer" (afinidade.js, carregado antes deste arquivo).
   const afinidadeUi = (typeof globalThis !== 'undefined' && globalThis.__crAfinidade) || null;
   /** O closer pedido no popup, conferido: só id e nomes curtos entram no job. */
   const closerPedido = (a) =>

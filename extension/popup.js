@@ -195,7 +195,7 @@ async function testarConexao() {
 }
 
 /**
- * Botões "Esse lead é bom para o <closer>?": um por closer com inteligência cadastrada no painel.
+ * Botões "Analisar Match com <closer>": um por closer com inteligência cadastrada no painel.
  * Clicar gera o report normal e, junto, a análise de afinidade com esse closer (nota de 0 a 10 e PDF).
  */
 function mostrarAnalises(lista, faltando) {
@@ -211,8 +211,8 @@ function mostrarAnalises(lista, faltando) {
     aviso.className = 'hint';
     aviso.id = 'analisesFalta';
     aviso.textContent = faltando.length
-      ? `Botão "Esse lead é bom para o ${String(faltando[0]).slice(0, 20)}?": falta cadastrar a inteligência dele no painel (Closers → Inteligência).`
-      : 'Botão "Esse lead é bom para o closer?": cadastre o closer no painel (aba Closers) e a inteligência dele.';
+      ? `Botão "Analisar Match com ${String(faltando[0]).slice(0, 20)}": falta cadastrar a inteligência dele no painel (Closers → Inteligência).`
+      : 'Botão "Analisar Match com o closer": cadastre o closer no painel (aba Closers) e a inteligência dele.';
     caixa.appendChild(aviso);
   }
   closers.forEach((c) => {
@@ -220,15 +220,15 @@ function mostrarAnalises(lista, faltando) {
     const b = document.createElement('button');
     b.className = 'ghost analise';
     b.dataset.closer = c.id;
-    b.textContent = `Esse lead é bom para o ${apelido}?`; // texto puro: nome de closer nunca vira HTML
-    b.title = `Gera o report e a análise de afinidade com ${c.nome || apelido}`;
+    b.textContent = `Analisar Match com ${apelido}`; // texto puro: nome de closer nunca vira HTML
+    b.title = `Gera o report e analisa o match do lead com ${c.nome || apelido}`;
     b.addEventListener('click', () => gerar({ id: c.id, apelido, nome: String(c.nome || '').slice(0, 80) }));
     caixa.appendChild(b);
   });
   if (closers.length) {
     const dica = document.createElement('div');
     dica.className = 'hint';
-    dica.textContent = 'Gera o report normal e mais um PDF com a nota de 0 a 10, os motivos, os pontos de atenção e como conduzir a call.';
+    dica.textContent = 'Gera o report normal e mostra o match de 0 a 10 com o porquê e a base da nota. O PDF traz também os pontos de atenção e como conduzir a call.';
     caixa.appendChild(dica);
   }
 }
@@ -248,7 +248,7 @@ async function gerar(afinidade) {
     setStatus(
       '<b>Report iniciado!</b> Acompanhe o aviso no canto inferior direito da tela. ' +
         'Você pode fechar este popup, mas não troque de conversa até o report ficar pronto.' +
-        (afinidade ? ` A análise para o ${escapeHtml(afinidade.apelido)} aparece no mesmo aviso.` : ''),
+        (afinidade ? ` O match com ${escapeHtml(afinidade.apelido)} aparece no mesmo aviso.` : ''),
       { html: true }
     );
   } catch (err) {

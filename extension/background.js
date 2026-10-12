@@ -176,7 +176,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
-  // "Esse lead é bom para o closer?": a nota de 0 a 10 e o segundo PDF, depois que o report ficou pronto.
+  // "Analisar Match com o closer": a nota de 0 a 10 e o segundo PDF, depois que o report ficou pronto.
   if (msg && msg.action === 'afinidade') {
     (async () => {
       const r = await chamar('/api/afinidade', {
