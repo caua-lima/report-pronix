@@ -88,7 +88,7 @@ async function preencher({ usuario, conversa, ficha, reuniao }) {
   const doLead = (await stats.listar({ de }))
     .filter((r) => r.usuarioId === usuario.id && !r.closerId && r.resultado !== 'no_show' && ehDaConversa(r, conversa, ficha));
   for (const r of doLead) {
-    await stats.atualizarResultado(r.id, { closerId: closer.id, closerNome: closer.nome });
+    await stats.atualizarResultado(r.id, { closerId: closer.id, closerNome: closer.nome, closerOrigem: doRd ? 'rd' : 'agenda' });
   }
   return doLead.length ? { closerNome: closer.nome, origem: doRd ? 'rd' : 'agenda', preenchidos: doLead.length } : null;
 }

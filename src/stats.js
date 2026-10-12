@@ -407,6 +407,9 @@ async function atualizarResultado(id, campos = {}, { versaoEsperada } = {}) {
         novo.closerId = campos.closerId || '';
         novo.closerNome = campos.closerNome || '';
         novo.closerEmail = campos.closerEmail || '';
+        // De onde o closer veio: 'rd' ou 'agenda' quando o sistema preencheu sozinho; '' quando foi escolhido à mão.
+        novo.closerOrigem = novo.closerId && ['rd', 'agenda'].includes(campos.closerOrigem) ? campos.closerOrigem : '';
+        novo.closerEm = novo.closerId ? new Date().toISOString() : '';
       }
       if (tem('leadEmail')) novo.leadEmail = String(campos.leadEmail || '').trim().toLowerCase().slice(0, 200);
       if (tem('telefone')) novo.telefone = vinculoLimpo({ telefone: campos.telefone }).telefone;

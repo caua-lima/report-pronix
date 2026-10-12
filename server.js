@@ -279,7 +279,10 @@ const donoDoEscopo = (req) => {
  */
 async function conferirDesfechosNoRd({ porVez } = {}) {
   if (!crm.configurado() || !(await db.travar('rd-desfechos', 1800))) return null;
-  return vendasRd.sincronizar(await stats.listar({}), { porVez, minutosQuente: 50, horasFrio: 20 });
+  const r = await vendasRd.sincronizar(await stats.listar({}), { porVez, minutosQuente: 50, horasFrio: 20 });
+  // Quando rodou por último: o diagnóstico mostra, para dar para ver se a batida de hora em hora está chegando.
+  await db.setJson('rd_ultima_rodada', { em: new Date().toISOString(), ...r }).catch(() => {});
+  return r;
 }
 
 /**
@@ -673,7 +676,7 @@ app.patch('/api/admin/reports/:id/resultado', acesso(['numeros', 'resultados']),
     ['leadEmail', 'telefone', 'resultado', 'dataReuniao', 'dataFechamento', 'obsReuniao', 'perfilReal', 'conscienciaReal', 'produto', 'ticket', 'pagamento'].forEach((k) => {
       if (tem(k)) campos[k] = body[k];
     });
-    const antes = tem('conscienciaReal') ? await stats.buscarPorId(req.params.id) : null;
+    const antes = tem('conscienciaReal') || tem('perfilReal') ? await stats.buscarPorId(req.params.id) : null;
     if (tem('closerId')) {
       let closer = null;
       if (body.closerId) {
@@ -700,6 +703,12 @@ app.patch('/api/admin/reports/:id/resultado', acesso(['numeros', 'resultados']),
           evidencia: antes.conscienciaPorque, nota: body.notaConsciencia,
         })
         .catch((err) => console.error('Falha ao guardar a calibragem:', err.message));
+    }
+    // Corrigir o perfil do lead também: a troca vira exemplo para os próximos reports.
+    if (antes && body.perfilReal && body.perfilReal !== antes.perfilReal) {
+      await aprendizado
+        .registrarAjustePerfil({ reportId: antes.id, de: antes.perfil, para: body.perfilReal, evidencia: antes.perfilEvidencia })
+        .catch((err) => console.error('Falha ao guardar a calibragem do perfil:', err.message));
     }
     // Informou o e-mail ou o telefone do lead: procura no RD agora, com o dado novo (o vínculo antigo sai).
     if ((tem('leadEmail') || tem('telefone')) && crm.configurado()) {

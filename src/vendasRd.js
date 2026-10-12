@@ -285,11 +285,15 @@ async function sincronizar(reports, { porVez = POR_VEZ, minutosQuente = 0, horas
     }
     const ficha = achado.ficha;
     // De quebra: o lead já está com o closer no funil dele? Preenche o closer do report (se estiver vazio).
-    if (!r.closerId) {
-      const c = closerAuto.acharCloser(cadastrados, closerAuto.closerDoRd(ficha));
-      if (c && c.nome !== r.usuarioNome) await stats.atualizarResultado(r.id, { closerId: c.id, closerNome: c.nome });
+    // Closer que está no RD mas não no cadastro não é preenchido — e a linha diz isso, para ninguém ficar esperando.
+    let aviso = '';
+    const nomeNoRd = r.closerId ? '' : closerAuto.closerDoRd(ficha);
+    if (nomeNoRd) {
+      const c = closerAuto.acharCloser(cadastrados, nomeNoRd);
+      if (c && c.nome !== r.usuarioNome) await stats.atualizarResultado(r.id, { closerId: c.id, closerNome: c.nome, closerOrigem: 'rd' });
+      else if (!c && normalizar(nomeNoRd) !== normalizar(r.usuarioNome)) aviso = ' — este closer não está cadastrado em Closers (ou o nome não bate)';
     }
-    const extra = { ...vinculoQueFalta(r, ficha), rdSituacao: situacaoNoRd(ficha) };
+    const extra = { ...vinculoQueFalta(r, ficha), rdSituacao: (situacaoNoRd(ficha) + aviso).slice(0, 160) };
     const feito = await aplicar(r, await comProduto(desfecho(ficha, r)), extra);
     if (feito === 'venda') vendidos++;
     if (feito === 'perda') encerrados++;
