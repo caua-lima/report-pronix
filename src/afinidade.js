@@ -17,8 +17,9 @@ const { montarHistoricoFormatado, extrairJson } = require('./report');
 const { infoDoPerfil } = require('./perfil');
 const { infoDoNivel } = require('./consciencia');
 const { matrizCloserPerfil } = require('./inteligencia');
+const { padrao, textoDoPadrao, chaveDoMomento, simNao } = require('./casos');
 
-const VERSAO = 'a1'; // sobe quando o prompt mudar (invalida o cache)
+const VERSAO = 'a2'; // sobe quando o prompt mudar (invalida o cache)
 // O plano gratuito limita os tokens por minuto: tudo entra enxuto.
 const MAX_CONVERSA = Number(process.env.MAX_AFINIDADE_CHARS) || 5000;
 const MAX_INTELIGENCIA = 6500;
@@ -31,7 +32,7 @@ const neutralizarMarcas = (t) => String(t == null ? '' : t).replace(/<\s*\/?\s*(
 
 const SYSTEM = `Você é analista de vendas de uma equipe de pré-vendas. O pré-vendedor vai passar um LEAD para uma reunião com um CLOSER específico. Diga, com honestidade, o quanto ESTE lead combina com ESTE closer, cruzando:
 1) INTELIGÊNCIA DO CLOSER — o que a análise das calls dele mostrou: com que tipo de lead ele fecha, como conduz, onde trava.
-2) HISTÓRICO DO CLOSER — números das reuniões dele por perfil de lead (quando houver).
+2) HISTÓRICO DO CLOSER — números das reuniões dele por perfil de lead e, quando houver, os CASOS das calls dele: vendas por quem decide, por presença dos decisores na call e por momento do lead. São contagens medidas ("vendas de total"): pesam mais que impressão, e valem sobre a inteligência quando os dois divergirem.
 3) O LEAD — o que o report levantou e a conversa da prospecção.
 
 REGRAS
@@ -44,7 +45,7 @@ REGRAS
 - Português do Brasil, direto, frases curtas.
 
 Responda SOMENTE com um JSON, sem texto fora dele, neste formato:
-{"nota":7,"veredito":"uma frase com a conclusão","composicao":"sozinho | casal | com sócio | família | não ficou claro","motivos":["até 5"],"atencao":["até 4"],"como_conduzir":["até 6"],"falta_saber":["até 3, o que confirmar antes da call; [] se nada"]}`;
+{"nota":7,"veredito":"uma frase com a conclusão","composicao":"sozinho | casal | com sócio | família | não ficou claro","momento":"loja física | já vende online | do zero | não ficou claro","decisores_na_call":"sim | não | não ficou claro","motivos":["até 5"],"atencao":["até 4"],"como_conduzir":["até 6"],"falta_saber":["até 3, o que confirmar antes da call; [] se nada"]}`;
 
 /** O que o histórico de Resultados diz deste closer: reuniões e vendas, no geral e por perfil de lead. */
 function historicoDoCloser(reports, closerId) {
@@ -93,11 +94,12 @@ function blocoDoLead(dados, nome) {
 const faixaDaNota = (n) => (n >= 7 ? 'alta' : n >= 4 ? 'media' : 'baixa');
 
 /**
- * @param {{closer: object, dados?: object, mensagens?: object[], nome?: string, reports?: object[]}} entrada
+ * @param {{closer: object, dados?: object, mensagens?: object[], nome?: string, reports?: object[], casos?: object[]}} entrada
  *   closer = { id, nome, apelido, inteligencia, inteligenciaEm }
+ *   casos = as negociações dele já classificadas (src/casos.js); viram o padrão dentro do histórico
  * @returns {Promise<{afinidade: object, cache: boolean}>}
  */
-async function analisar({ closer, dados, mensagens, nome, reports }) {
+async function analisar({ closer, dados, mensagens, nome, reports, casos }) {
   if (!closer || !closer.id) throw new Error('Closer não encontrado.');
   const inteligencia = String(closer.inteligencia || '').trim().slice(0, MAX_INTELIGENCIA);
   if (!inteligencia) {
@@ -122,9 +124,12 @@ async function analisar({ closer, dados, mensagens, nome, reports }) {
     if (conversa.length > MAX_CONVERSA) conversa = '[início da conversa omitido]\n' + conversa.slice(-MAX_CONVERSA);
   }
   const hist = historicoDoCloser(reports, closer.id);
-  const blocoHist = hist.reunioes
-    ? `No geral: ${hist.vendas} venda(s) em ${hist.reunioes} reunião(ões) com resultado marcado.\n` + hist.linhas.join('\n')
-    : 'Ainda sem reuniões com resultado marcado para este closer.';
+  const contas = padrao(casos || []);
+  const blocoCasos = textoDoPadrao(contas);
+  const blocoHist =
+    (hist.reunioes
+      ? `No geral: ${hist.vendas} venda(s) em ${hist.reunioes} reunião(ões) com resultado marcado.\n` + hist.linhas.join('\n')
+      : 'Ainda sem reuniões com resultado marcado para este closer.') + (blocoCasos ? '\n' + blocoCasos : '');
 
   const chave =
     'afinidade:' +
@@ -160,12 +165,15 @@ async function analisar({ closer, dados, mensagens, nome, reports }) {
     faixa: faixaDaNota(nota),
     veredito: texto(j.veredito, 280),
     composicao: texto(j.composicao, 60),
+    // Guardados no report: quando o resultado da reunião for marcado, este lead vira mais um caso do closer.
+    momento: chaveDoMomento(j.momento),
+    decisoresNaCall: simNao(j.decisores_na_call),
     motivos: lista(j.motivos, 300, 5),
     atencao: lista(j.atencao, 300, 4),
     comoConduzir: lista(j.como_conduzir, 300, 6),
     faltaSaber: lista(j.falta_saber, 200, 3),
     // Em que a nota se apoia: para o leitor saber o peso dela.
-    base: { inteligenciaEm: closer.inteligenciaEm || '', reunioes: hist.reunioes, vendas: hist.vendas },
+    base: { inteligenciaEm: closer.inteligenciaEm || '', reunioes: hist.reunioes, vendas: hist.vendas, casos: contas.geral.total, casosVendas: contas.geral.vendas },
   };
   if (!afinidade.veredito && !afinidade.motivos.length) throw new Error('A análise veio vazia. Tente de novo.');
   await db.cacheSet(chave, JSON.stringify(afinidade), 24 * 3600);

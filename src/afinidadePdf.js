@@ -95,7 +95,8 @@ function render(doc, { afinidade: a, lead, sdr }) {
   const apoio = [
     b.inteligenciaEm ? `inteligência do closer atualizada em ${dataBr(b.inteligenciaEm)}` : 'inteligência do closer',
     b.reunioes ? `histórico de ${b.vendas} venda(s) em ${b.reunioes} reunião(ões)` : 'ainda sem histórico de resultados deste closer',
-  ].join('  ·  ');
+    b.casos ? `${b.casos} caso(s) das calls dele, com ${b.casosVendas || 0} venda(s)` : '',
+  ].filter(Boolean).join('  ·  ');
   const nota = `Base da análise: ${apoio}. É uma leitura de apoio feita por IA: use para se preparar, não como sentença.`;
   doc.font('Helvetica').fontSize(8.5);
   const hNota = doc.heightOfString(nota, { width: larg - 24, lineGap: 1 }) + 18;

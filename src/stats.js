@@ -428,6 +428,11 @@ async function anotarAfinidade(id, afinidade) {
         closerId: String(afinidade.closerId || '').slice(0, 40),
         closerNome: String(afinidade.closerNome || '').slice(0, 80),
         nota: Math.max(0, Math.min(10, nota)),
+        // Quem decide, o momento do lead e se os decisores vão à call: com o resultado da reunião
+        // marcado, este report vira mais um caso do closer (src/casos.js).
+        composicao: String(afinidade.composicao || '').slice(0, 60),
+        momento: String(afinidade.momento || '').slice(0, 20),
+        decisoresNaCall: afinidade.decisoresNaCall === true ? true : afinidade.decisoresNaCall === false ? false : null,
         em: new Date().toISOString(),
       },
     })
