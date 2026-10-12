@@ -1836,9 +1836,29 @@
     return saida;
   }
 
-  /** Linha de etiquetas no topo do cartão: "Qualificado" (liga/desliga à mão), o agendamento e o formulário. */
+  /**
+   * O card do RD desta conversa foi dado como perdido? Devolve o que a etiqueta mostra (ou null).
+   * Vale o card escolhido para a ficha: se o lead tem outro card em aberto, é ele o escolhido e não há etiqueta.
+   * Na etapa "Desqualificados" a etiqueta diz DESQUALIFICADO; perdido em outra etapa, PERDIDO.
+   */
+  function perdaNoRd(f) {
+    const card = ((f && f.negociacoes) || []).find((c) => c && c.escolhida);
+    if (!card || !card.perdida) return null;
+    const motivo = String(card.motivoPerda || '').replace(/\s+/g, ' ').trim();
+    const nota = String(card.notaPerda || '').replace(/\s+/g, ' ').trim();
+    return {
+      rotulo: /desqualific/i.test(String(card.etapa || '')) ? 'DESQUALIFICADO' : 'PERDIDO',
+      motivo: motivo.length > 34 ? motivo.slice(0, 33).trimEnd() + '…' : motivo,
+      titulo: 'Card dado como perdido no RD' + (card.etapa ? ` (etapa ${card.etapa})` : '') + (motivo ? `. Motivo: ${motivo}` : '') + (nota ? `. Anotação: ${nota}` : '') + '.',
+    };
+  }
+
+  /** Linha de etiquetas no topo do cartão: perda no RD, "Qualificado" (liga/desliga à mão), o agendamento e o formulário. */
   function blocoEtiquetas(estado) {
-    if ((!ficha.automacao && !ficha.etiquetas) || estado.tipo === 'carregando') return null;
+    if (estado.tipo === 'carregando') return null;
+    // A perda vem da própria ficha do RD: aparece para quem vê o cartão, com ou sem as outras etiquetas ligadas.
+    const perda = perdaNoRd(estado.ficha);
+    if (!ficha.automacao && !ficha.etiquetas && !perda) return null;
     const marca = estado.marca || {};
     const conversa = ficha.conversa;
     const linha = elem('div', 'display:flex;flex-wrap:wrap;align-items:center;gap:5px;margin-top:7px');
@@ -1858,6 +1878,12 @@
       redesenharFicha();
       enviarMarca(conversa, campos);
     };
+    if (perda) {
+      const chip = elem('span', `${base};border:1px solid #ff6f5c;background:rgba(255,111,92,.14);color:#ff6f5c`, perda.rotulo + (perda.motivo ? ' · ' + perda.motivo : ''));
+      chip.id = 'cr-etiqueta-perda';
+      chip.title = perda.titulo;
+      linha.appendChild(chip);
+    }
     if (ficha.automacao && marca.qualificado) {
       const chip = elem('span', `${base};border:1px solid #3ddc84;background:rgba(61,220,132,.14);color:#3ddc84`, 'QUALIFICADO');
       // De onde a etiqueta veio (passe o mouse): assim dá para confiar nela sem reabrir a conversa.
@@ -1865,7 +1891,8 @@
       chip.title = porque ? 'Qualificado: ' + porque + '.' : 'Lead qualificado.';
       linha.appendChild(chip);
       linha.appendChild(tirar('Tirar a etiqueta Qualificado', () => mudar({ qualificado: false, manual: true }, { qualificado: false })));
-    } else if (ficha.automacao) {
+    } else if (ficha.automacao && !perda) {
+      // Card perdido não ganha a sugestão de marcar como qualificado.
       const b = elem('button', `${base};cursor:pointer;border:1px dashed #55515b;background:transparent;color:#a39e93`, '+ Qualificado');
       b.type = 'button';
       b.title = 'Marcar este lead como qualificado';
