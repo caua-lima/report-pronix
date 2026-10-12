@@ -199,6 +199,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         nome: msg.nome,
         forcarNovo: !!msg.forcarNovo,
         captureQuality: msg.captureQuality,
+        // O que o cartão do RD sabia do lead na hora: é o vínculo do report com o card.
+        vinculo: msg.vinculo || null,
       });
       if (!r.ok) return sendResponse({ ok: false, erro: r.erro });
       // Idempotência: mesma conversa já gerada antes — o content script decide
@@ -221,3 +223,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 });
+
+// De hora em hora, enquanto o Chrome está aberto: pede ao servidor para pôr os resultados em dia com o RD
+// (venda com produto e ticket, follow-up, não comprou, closer). O servidor só confere o que mudou de fato
+// e nunca roda mais de uma vez a cada 30 minutos, então a batida é barata. Sem chave salva, não faz nada.
+const ALARME_RD = 'rd-atualizar';
+if (chrome.alarms) {
+  // O service worker acorda várias vezes por hora: só cria o alarme se ele ainda não existe (recriar zeraria a contagem).
+  chrome.alarms.get(ALARME_RD, (existe) => {
+    if (!existe) chrome.alarms.create(ALARME_RD, { delayInMinutes: 3, periodInMinutes: 60 });
+  });
+  chrome.alarms.onAlarm.addListener((alarme) => {
+    if (alarme && alarme.name === ALARME_RD) chamar('/api/rd/atualizar', {}, { timeoutMs: 58000 }).catch(() => {});
+  });
+}

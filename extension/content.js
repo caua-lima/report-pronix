@@ -1012,7 +1012,7 @@
         mensagensLead: stats.doLead,
       };
       let resp = await new Promise((resolve) =>
-        chrome.runtime.sendMessage({ action: 'reportFetch', server, mensagens, nome, captureQuality }, resolve)
+        chrome.runtime.sendMessage({ action: 'reportFetch', server, mensagens, nome, captureQuality, vinculo: vinculoDoLead() }, resolve)
       );
 
       if (!resp || !resp.ok) {
@@ -1040,7 +1040,7 @@
         }
         mostrarBadge({ texto: '<b>Gerando de novo…</b>', loading: true });
         resp = await new Promise((resolve) =>
-          chrome.runtime.sendMessage({ action: 'reportFetch', server, mensagens, nome, captureQuality, forcarNovo: true }, resolve)
+          chrome.runtime.sendMessage({ action: 'reportFetch', server, mensagens, nome, captureQuality, forcarNovo: true, vinculo: vinculoDoLead() }, resolve)
         );
         if (!resp || !resp.ok) {
           mostrarBadge({ texto: escHtml((resp && resp.erro) || 'Falha ao gerar o report.'), cor: '#ff6f5c' });
@@ -1135,6 +1135,22 @@
     etiquetas: false, // o master ligou as etiquetas do formulário (investimento e se já vende)
     conversa: null, // { telefone, nome } da conversa aberta: é por ela que o servidor lembra a etiqueta
   };
+  /**
+   * O vínculo do report com o lead no RD: o que o cartão aberto sabe — id do contato e do card, e-mail e
+   * telefone. O servidor guarda isso no report e é por aí que depois puxa o resultado da reunião (o nome
+   * do contato no WhatsApp não serve para achar o card). Sem cartão na tela, vai só o telefone da conversa.
+   */
+  function vinculoDoLead() {
+    const est = ficha.ultimoEstado;
+    const f = est && est.ficha && typeof est.ficha === 'object' ? est.ficha : null;
+    const escolhido = f ? (f.negociacoes || []).find((c) => c && c.escolhida) : null;
+    return {
+      telefone: String((ficha.conversa && ficha.conversa.telefone) || (f && (f.telefones || [])[0]) || ''),
+      email: String((f && (f.emails || [])[0]) || ''),
+      contatoId: String((f && f.contatoId) || ''),
+      dealId: String((escolhido && escolhido.id) || ''),
+    };
+  }
   // Leitura do agendamento e do "lead respondeu" (agenda.js, carregado antes deste arquivo).
   const agendaLib = (typeof globalThis !== 'undefined' && globalThis.__crAgenda) || null;
   const auto = { assinatura: '', tentados: new Set() };
