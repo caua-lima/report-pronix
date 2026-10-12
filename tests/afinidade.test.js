@@ -206,6 +206,39 @@ test('sem inteligência cadastrada, sem dados do lead ou closer inexistente: err
   assert.equal((await chamar('POST', '/api/afinidade', { closerId: E.ph.id, dados: DADOS_REPORT })).status, 401, 'sem chave não entra');
 });
 
+test('ligar e desligar: desligada, o botão some para todos e a rota recusa; a inteligência continua guardada', async () => {
+  assert.equal((await chamar('PATCH', '/api/admin/closers/' + E.ph.id, { analiseAtiva: false }, E.sdr)).status, 403, 'SDR não desliga');
+  const off = await chamar('PATCH', '/api/admin/closers/' + E.ph.id, { analiseAtiva: false }, E.master);
+  assert.equal(off.status, 200);
+  assert.equal(off.json.closer.analiseDesligada, true);
+  assert.equal(off.json.closer.inteligencia, INTELIGENCIA, 'o texto não é apagado');
+  assert.equal(off.json.closer.apelido, 'PH');
+
+  assert.deepEqual((await chamar('GET', '/api/eu', undefined, E.sdr)).json.analises, []);
+  const eu = (await chamar('GET', '/api/eu', undefined, E.master)).json;
+  assert.deepEqual(eu.analises, []);
+  assert.equal(eu.analisesFaltando, undefined, 'foi o master que desligou: o popup não cobra a inteligência de ninguém');
+
+  pedidosIa.length = 0;
+  const lead = { ...DADOS_REPORT, lead: 'Lead Cinco' };
+  const recusa = await chamar('POST', '/api/afinidade', { closerId: E.ph.id, dados: lead }, E.master);
+  assert.equal(recusa.status, 403);
+  assert.match(recusa.json.erro, /A análise do PH está desligada\. Ligue em Closers/);
+  assert.equal(pedidosIa.length, 0, 'desligada não gasta chamada de IA');
+
+  // valor que não é verdadeiro/falso não mexe no estado; salvar o texto de novo também não religa sozinho
+  await chamar('PATCH', '/api/admin/closers/' + E.ph.id, { analiseAtiva: 'sim' }, E.master);
+  await chamar('PATCH', '/api/admin/closers/' + E.ph.id, { inteligencia: INTELIGENCIA }, E.master);
+  assert.equal((await closers.porId(E.ph.id)).analiseDesligada, true);
+  assert.deepEqual(await closers.comAnalise(), []);
+
+  const on = await chamar('PATCH', '/api/admin/closers/' + E.ph.id, { analiseAtiva: true }, E.master);
+  assert.equal(on.json.closer.analiseDesligada, undefined);
+  assert.deepEqual((await chamar('GET', '/api/eu', undefined, E.sdr)).json.analises, [{ id: E.ph.id, nome: 'Paulo Henrique Pagoti', apelido: 'PH' }]);
+  assert.deepEqual((await chamar('GET', '/api/eu', undefined, E.master)).json.analisesFaltando, ['Outro']);
+  assert.equal((await chamar('POST', '/api/afinidade', { closerId: E.ph.id, dados: lead }, E.master)).status, 200);
+});
+
 // ---------------------------------------------------------------- peças soltas
 test('faixas da nota, nome do arquivo e PDF de nota baixa em 1 página', async () => {
   assert.deepEqual([0, 3, 4, 6, 7, 10].map(afinidade.faixaDaNota), ['baixa', 'baixa', 'media', 'media', 'alta', 'alta']);

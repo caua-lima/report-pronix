@@ -1351,6 +1351,35 @@ test('Closers: o master cadastra o apelido e a inteligência do closer (alimenta
   p.fechar();
 });
 
+test('Closers: "Desligar análise" tira o botão da extensão sem apagar a inteligência; "Ligar análise" devolve', async () => {
+  let lista = [
+    { id: 'c1', nome: 'Paulo Henrique Pagoti', email: '', apelido: 'PH', inteligencia: 'Fecha com casal.', inteligenciaEm: '2026-10-12T12:00:00.000Z' },
+    { id: 'c2', nome: 'Sem Texto', email: '' },
+  ];
+  const api = apiMaster()
+    .quando('GET /api/admin/closers', () => ({ corpo: { closers: lista } }))
+    .quando('PATCH /api/admin/closers/c1', ({ corpo }) => {
+      lista = lista.map((c) => (c.id === 'c1' ? { ...c, analiseDesligada: corpo.analiseAtiva ? undefined : true } : c));
+      return { corpo: { ok: true } };
+    });
+  const p = abrirPainel(api, { hash: '#closers' });
+  await esperar(() => p.$('listaClosers').textContent.includes('Paulo Henrique'), { motivo: 'lista de closers' });
+  const botao = () => p.$('listaClosers').querySelector('[data-alternar-analise="c1"]');
+  const tags = () => [...p.$('listaClosers').querySelectorAll('.tag')].map((t) => t.textContent);
+
+  assert.equal(botao().textContent, 'Desligar análise');
+  assert.equal(p.$('listaClosers').querySelector('[data-alternar-analise="c2"]'), null, 'sem inteligência não há o que ligar');
+  botao().click();
+  await esperar(() => tags().includes('análise desligada'), { motivo: 'análise desligada' });
+  assert.equal(botao().textContent, 'Ligar análise');
+  assert.equal(p.$('listaClosers').querySelector('[data-editor-closer="c1"] [data-inteligencia]').value, 'Fecha com casal.', 'o texto continua lá');
+  botao().click();
+  await esperar(() => tags().includes('análise: PH'), { motivo: 'análise ligada de novo' });
+  assert.deepEqual(api.corpos('PATCH /api/admin/closers/c1'), [{ analiseAtiva: false }, { analiseAtiva: true }]);
+  assert.deepEqual(p.erros, []);
+  p.fechar();
+});
+
 test('Base: mostra os seis campos, avisa quando é a recomendada e deixa voltar aos textos anteriores', async () => {
   const cheia = { empresa: 'E', qualificacao: 'Q', script: 'S', oferta: 'O', objecoes: 'OB', perfil: 'P', recomendada: true, temAnterior: true, atualizadoEm: '2026-10-01T10:00:00Z' };
   const api = apiBase()
