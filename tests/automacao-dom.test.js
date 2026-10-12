@@ -322,6 +322,49 @@ test('etiquetas do formulário: investimento ("R$ 3 a 5k", "R$ 5k+") e se já ve
   assert.equal(nada.document.getElementById('cr-etiquetas'), null);
 });
 
+// ---------------------------------------------------------------- perda no RD
+test('card perdido no RD: o cartão mostra DESQUALIFICADO (ou PERDIDO) com o motivo, mesmo sem as outras etiquetas ligadas', async () => {
+  const comCards = (cards, extra = {}) => ({
+    aoEnviar: async (msg) => (msg.action === 'crmLead'
+      ? { ok: true, configurado: true, encontrado: true, coach: false, ficha: { ...fichaDoRd(cards.find((c) => c.escolhida).etapa), negociacoes: cards, totalNegociacoes: cards.length }, ...extra }
+      : { ok: true }),
+  });
+  const card = (campos) => ({ id: 'd1', nome: 'Marcos Pereira', etapa: 'Desqualificados', funil: 'Funil SDR', responsavel: 'Cauã Lima', criadaEm: '28/09/2026', aberta: false, perdida: true, motivoPerda: 'Nunca respondeu', notaPerda: '', escolhida: true, ...campos });
+  const perda = (p) => p.document.getElementById('cr-etiqueta-perda');
+
+  // sem automação nem etiquetas do formulário: a perda aparece assim mesmo (vem da ficha do RD)
+  const p = abrir(comCards([card()]));
+  await esperar(() => !!perda(p), { motivo: 'etiqueta de perda' });
+  assert.equal(perda(p).textContent, 'DESQUALIFICADO · Nunca respondeu');
+  assert.equal(perda(p).title, 'Card dado como perdido no RD (etapa Desqualificados). Motivo: Nunca respondeu.');
+  assert.equal(perda(p).parentElement.id, 'cr-etiquetas', 'fica na linha de etiquetas, à vista com o cartão minimizado');
+
+  // perdido fora da etapa de desqualificados, com anotação; o texto do RD nunca vira HTML e motivo comprido é encurtado
+  const outro = abrir(comCards([card({ etapa: 'Não Compraram', motivoPerda: 'Sem  limite no cartão para a entrada do projeto <b>x</b>', notaPerda: 'Volta em janeiro' })]));
+  await esperar(() => !!perda(outro), { motivo: 'etiqueta de perda' });
+  assert.equal(perda(outro).textContent, 'PERDIDO · Sem limite no cartão para a entra…');
+  assert.match(perda(outro).title, /Motivo: Sem limite no cartão para a entrada do projeto <b>x<\/b>\. Anotação: Volta em janeiro\./);
+  assert.equal(perda(outro).querySelector('b'), null);
+  // sem motivo no RD: só o rótulo
+  const semMotivo = abrir(comCards([card({ motivoPerda: '' })]));
+  await esperar(() => !!perda(semMotivo), { motivo: 'etiqueta de perda' });
+  assert.equal(perda(semMotivo).textContent, 'DESQUALIFICADO');
+
+  // com a automação ligada: a perda vem primeiro e não se oferece "+ Qualificado" para card perdido
+  const comAuto = abrir(comCards([card()], { automacao: true, podeResponder: false, marca: SEM_MARCA }));
+  await esperar(() => !!perda(comAuto), { motivo: 'etiqueta de perda' });
+  assert.equal(etiquetas(comAuto), 'DESQUALIFICADO · Nunca respondeu');
+
+  // lead com um card perdido e outro em aberto: o escolhido é o aberto, então não há etiqueta de perda
+  const reaberto = abrir(comCards([{ ...card({ id: 'd2', etapa: 'Respondeu', aberta: true, perdida: false, motivoPerda: '' }) }, card({ escolhida: false })], { automacao: true, podeResponder: false, marca: SEM_MARCA }));
+  await esperar(() => /\+ Qualificado/.test(etiquetas(reaberto)), { motivo: 'etiquetas' });
+  assert.equal(perda(reaberto), null);
+  // card em aberto e nenhuma permissão: continua sem a linha de etiquetas
+  const aberto = abrir(comCards([card({ etapa: 'Contato iniciado', aberta: true, perdida: false, motivoPerda: '' })]));
+  await fichaNaTela(aberto);
+  assert.equal(aberto.document.getElementById('cr-etiquetas'), null);
+});
+
 // ---------------------------------------------------------------- reunião do Google Agenda
 test('reunião do Google Agenda: o cartão mostra dia, hora e closer, e ela vale mais que o agendamento lido na conversa', async () => {
   const comReuniao = (reuniao, marca = SEM_MARCA) => ({
