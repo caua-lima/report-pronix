@@ -365,6 +365,7 @@
         <button class="tab so-master hidden" data-aba="resultados"><i data-ic="target"></i>Resultados da reunião</button>
         <button class="tab so-admin hidden" data-aba="numeros"><i data-ic="chart"></i>Reports gerados</button>
         <button class="tab so-master hidden" data-aba="closers"><i data-ic="users"></i>Closers<span id="nClosersTab" class="conta hidden"></span></button>
+        <button class="tab so-master hidden" data-aba="funil"><i data-ic="filter"></i>Limpeza do RD</button>
       </div>
       <div class="grupo">
         <div class="grupo-rotulo">Sistema</div>
@@ -615,6 +616,45 @@
           <button id="gerarInsights" class="btn">Gerar insights</button>
           <div id="statusInsights" class="status"></div>
           <div id="insightsBox"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= ABA: LIMPEZA DO RD (só o master) ================= -->
+    <section id="aba-funil" class="hidden">
+      <div id="limpezaRd" class="card hidden">
+        <div class="head"><div class="t"><i data-ic="filter"></i>Limpeza do funil no RD</div><div class="sub">— card parado vira perda em Desqualificados, com o motivo</div></div>
+        <div class="hint" style="margin:0 0 12px">
+          Card em <b>Contato iniciado</b> sem movimento há mais dias que o limite vai para <b>Desqualificados</b> com perda <b>"Nunca respondeu"</b>;
+          card em <b>Respondeu</b>, com perda <b>"Parou de responder"</b>. O campo SDR recebe o seu nome. <b>Nada muda no RD até você executar</b>: veja a prévia e teste com 5 cards antes.
+        </div>
+        <div class="row">
+          <div style="min-width:150px"><label for="lzDias">Parado há mais de (dias)</label><input id="lzDias" type="number" min="1" max="365" value="15" /></div>
+          <div style="min-width:210px"><label for="lzEscopo">Cards de</label>
+            <select id="lzEscopo">
+              <option value="meus">Só os meus (sou o responsável)</option>
+              <option value="todos">Todos da etapa</option>
+            </select>
+          </div>
+          <button id="lzPrevia" class="btn sec"><i data-ic="refresh"></i>Ver prévia</button>
+        </div>
+        <div id="statusLz" class="status"></div>
+        <div id="lzResumo" class="hint hidden" style="margin-top:6px"></div>
+        <div id="lzTabela" class="hidden" style="max-height:340px;overflow:auto;margin-top:8px;border:1px solid var(--border);border-radius:var(--r-sm);padding:0 10px">
+          <table>
+            <thead><tr><th>Card</th><th>Etapa</th><th>Parado há</th><th>Motivo da perda</th><th>Responsável</th></tr></thead>
+            <tbody id="lzLista"></tbody>
+          </table>
+        </div>
+        <div id="lzAcoes" class="row hidden" style="margin-top:12px">
+          <button id="lzTeste" class="btn sec">Testar com 5 cards</button>
+          <button id="lzTudo" class="btn">Executar todos</button>
+          <button id="lzDesfazer" class="btn sec hidden">Desfazer o último lote</button>
+        </div>
+        <div id="lzRelatorio" class="hidden" style="margin-top:14px">
+          <div class="sec-t" style="margin-top:0">Relatório da limpeza de hoje</div>
+          <pre id="lzTexto" style="white-space:pre-wrap;margin:0 0 8px;padding:12px;background:var(--card-2);border:1px solid var(--border);border-radius:var(--r-sm);font-family:var(--f-mono);font-size:.86rem"></pre>
+          <button id="lzCopiar" class="mini" type="button">Copiar relatório</button>
         </div>
       </div>
     </section>
@@ -947,41 +987,6 @@
         <div id="statusCrm" class="status"></div>
         <pre id="resultadoCrm" class="hint hidden" style="white-space:pre-wrap;margin:8px 0 0"></pre>
       </div>
-      <div id="limpezaRd" class="card hidden">
-        <div class="head"><div class="t"><i data-ic="filter"></i>Limpeza do funil no RD</div><div class="sub">— card parado vira perda em Desqualificados, com o motivo</div></div>
-        <div class="hint" style="margin:0 0 12px">
-          Card em <b>Contato iniciado</b> sem movimento há mais dias que o limite vai para <b>Desqualificados</b> com perda <b>"Nunca respondeu"</b>;
-          card em <b>Respondeu</b>, com perda <b>"Parou de responder"</b>. O campo SDR recebe o seu nome. <b>Nada muda no RD até você executar</b>: veja a prévia e teste com 5 cards antes.
-        </div>
-        <div class="row">
-          <div style="min-width:150px"><label for="lzDias">Parado há mais de (dias)</label><input id="lzDias" type="number" min="1" max="365" value="15" /></div>
-          <div style="min-width:210px"><label for="lzEscopo">Cards de</label>
-            <select id="lzEscopo">
-              <option value="meus">Só os meus (sou o responsável)</option>
-              <option value="todos">Todos da etapa</option>
-            </select>
-          </div>
-          <button id="lzPrevia" class="btn sec"><i data-ic="refresh"></i>Ver prévia</button>
-        </div>
-        <div id="statusLz" class="status"></div>
-        <div id="lzResumo" class="hint hidden" style="margin-top:6px"></div>
-        <div id="lzTabela" class="hidden" style="max-height:340px;overflow:auto;margin-top:8px;border:1px solid var(--border);border-radius:var(--r-sm);padding:0 10px">
-          <table>
-            <thead><tr><th>Card</th><th>Etapa</th><th>Parado há</th><th>Motivo da perda</th><th>Responsável</th></tr></thead>
-            <tbody id="lzLista"></tbody>
-          </table>
-        </div>
-        <div id="lzAcoes" class="row hidden" style="margin-top:12px">
-          <button id="lzTeste" class="btn sec">Testar com 5 cards</button>
-          <button id="lzTudo" class="btn">Executar todos</button>
-          <button id="lzDesfazer" class="btn sec hidden">Desfazer o último lote</button>
-        </div>
-        <div id="lzRelatorio" class="hidden" style="margin-top:14px">
-          <div class="sec-t" style="margin-top:0">Relatório da limpeza de hoje</div>
-          <pre id="lzTexto" style="white-space:pre-wrap;margin:0 0 8px;padding:12px;background:var(--card-2);border:1px solid var(--border);border-radius:var(--r-sm);font-family:var(--f-mono);font-size:.86rem"></pre>
-          <button id="lzCopiar" class="mini" type="button">Copiar relatório</button>
-        </div>
-      </div>
       <div id="googleAgenda" class="card hidden">
         <div class="head"><div class="t"><i data-ic="target"></i>Google Agenda</div><div class="sub">— a reunião do lead no cartão do WhatsApp (dia, hora e closer)</div></div>
         <div class="hint" style="margin:0 0 12px">O servidor lê as agendas que a conta conectada enxerga (a sua e as que os closers compartilharam com você) e procura o evento em que o e-mail do lead é convidado. A única coisa que ele altera é a <b>cor</b> do evento, para quem tem uma cor escolhida em Acessos. Aparece para quem tem a <b>Automação RD</b> ligada.</div>
@@ -1084,8 +1089,8 @@
     }
 
     // ---------- Menu ----------
-    const ABAS = ['report', 'dia', 'acessos', 'numeros', 'resultados', 'closers', 'arquivos', 'base', 'extensao'];
-    const SO_ADMIN = ['acessos', 'numeros', 'resultados', 'closers', 'arquivos', 'base', 'extensao'];
+    const ABAS = ['report', 'dia', 'acessos', 'numeros', 'resultados', 'closers', 'funil', 'arquivos', 'base', 'extensao'];
+    const SO_ADMIN = ['acessos', 'numeros', 'resultados', 'closers', 'funil', 'arquivos', 'base', 'extensao'];
     let souAdmin = false;
     let souGestor = false;
     let souMaster = false;
@@ -1097,7 +1102,7 @@
       ['base', 'Base'], ['extensao', 'Extensão'], ['equipe', 'Reports do dia da equipe'],
     ];
     const podeAba = (a) =>
-      a === 'report' || a === 'dia' || (a === 'acessos' ? podeMexerEmUsuarios() : Boolean(senhaAdmin) || minhasAbas.has(a));
+      a === 'report' || a === 'dia' || (a === 'acessos' || a === 'funil' ? podeMexerEmUsuarios() : Boolean(senhaAdmin) || minhasAbas.has(a));
     const temAbaDeGestao = () => SO_ADMIN.some(podeAba);
     let papelConhecido = false; // a chave já foi conferida (antes disso não dá para saber se é master)
     let validacaoPendente = false; // a chave ainda está sendo conferida (a lista do dia espera: o papel muda o que ela mostra)
@@ -1112,6 +1117,7 @@
       resultados: ['Resultados da reunião', 'O que deu cada reunião e o que o histórico ensina sobre closers e perfis de lead.'],
       numeros: ['Reports gerados', 'Volume, custo e quem gerou cada report.'],
       closers: ['Closers', 'Quem conduz as reuniões.'],
+      funil: ['Limpeza do RD', 'Card parado no começo do funil vira perda em Desqualificados, com o motivo.'],
       acessos: ['Acessos', 'Quem usa a ferramenta e o que cada pessoa vê e faz.'],
       arquivos: ['Arquivos', 'Os PDFs já gerados, para baixar por pessoa ou por período.'],
       base: ['Base', 'O conhecimento que entra em todo report.'],
@@ -1198,6 +1204,7 @@
     /** Carrega SÓ o que a aba pedida precisa (antes toda abertura de aba baixava acessos, closers, números, arquivos e base juntos). */
     async function carregarAba(aba) {
       if (aba === 'acessos') return carregarUsuarios();
+      if (aba === 'funil') return prepararLimpeza();
       if (aba === 'numeros') {
         await carregarClosers(); // as linhas da tabela oferecem os closers no select
         return carregarStats();
@@ -3254,7 +3261,6 @@
     });
 
     async function carregarGoogle() {
-      prepararLimpeza();
       const caixa = $('googleAgenda');
       if (!caixa) return;
       caixa.classList.toggle('hidden', !podeMexerEmUsuarios());
