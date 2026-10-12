@@ -361,7 +361,8 @@ O campo **SDR** do card recebe o nome de quem pediu a limpeza. Fica na aba **Lim
 1. **Funil** — você escolhe em qual funil rodar (ex.: só o de SMQLs automáticas). A lista traz os
    funis que têm as três etapas; com mais de um, a limpeza nunca escolhe sozinha.
 2. **Prévia** — lista o que seria mexido e de onde, sem alterar nada.
-3. **Testar com 5 cards** — para conferir no RD antes do resto.
+3. **Testar com 5 cards** — para conferir no RD antes do resto. A tela lista os cards movidos com
+   o **e-mail do lead** e o link "Abrir no RD".
 4. **Executar todos** — em lotes de 15. Cada card é lido de novo antes de mudar: se saiu da etapa,
    teve movimento, foi fechado ou é de outro responsável (em "só os meus"), é pulado.
 5. **Relatório** — quantos cards por motivo ("• Nunca respondeu - 110"), com botão de copiar.

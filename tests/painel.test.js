@@ -1167,7 +1167,7 @@ test('Limpeza do funil no RD: prévia sem alterar nada, teste com 5, execução 
     dias: 15, escopo: 'meus', total: 32, ids,
     contexto: { funil: 'Funil SDR', destino: 'Desqualificados', sdr: 'Cauã', responsavel: 'Cauã Lima', avisos: [], motivos: [{ etapa: 'Contato iniciado', motivo: 'Nunca Respondeu (SDR)' }, { etapa: 'Respondeu', motivo: 'Parou de Responder (SDR/Closer)' }] },
     porMotivo: [{ rotulo: 'Nunca respondeu', etapa: 'Contato iniciado', total: 20, naEtapa: 761 }, { rotulo: 'Parou de responder', etapa: 'Respondeu', total: 12, naEtapa: 505 }],
-    cards: [{ id: 'd1', nome: 'PRXC | Lead <b>Um</b>', etapa: 'Contato iniciado', motivo: 'Nunca respondeu', dias: 111, responsavel: 'Cauã Lima' }],
+    cards: [{ id: 'd1', nome: 'PRXC | Lead <b>Um</b>', etapa: 'Contato iniciado', motivo: 'Nunca respondeu', dias: 111, responsavel: 'Cauã Lima', email: 'lead.um@exemplo.com', link: 'https://crm.rdstation.com/app/deals/d1' }],
   };
   let relatorio = { total: 0, texto: '' };
   const lotes = [];
@@ -1179,7 +1179,9 @@ test('Limpeza do funil no RD: prévia sem alterar nada, teste com 5, execução 
     .quando('POST /api/master/limpeza-rd/executar', ({ corpo }) => {
       lotes.push(corpo.ids);
       relatorio = { total: 32, texto: '• Nunca respondeu - 20\n• Parou de responder - 12\nTotal: 32' };
-      return { corpo: { feitos: corpo.ids.map((id) => ({ id, nome: id, motivo: 'Nunca respondeu' })), pulados: [], erros: [], limite: false } };
+      // d2 vem com um link que não é do RD: a tela não pode transformar isso em link
+      const feitos = corpo.ids.map((id) => ({ id, nome: 'Card ' + id, motivo: 'Nunca respondeu', email: id === 'd3' ? '' : id + '@exemplo.com', link: id === 'd2' ? 'javascript:alert(1)' : 'https://crm.rdstation.com/app/deals/' + id }));
+      return { corpo: { feitos, pulados: [], erros: [], limite: false } };
     })
     .quando('POST /api/master/limpeza-rd/desfazer', ({ corpo }) => ({ corpo: { desfeitos: corpo.ids.map((id) => ({ id })), erros: [] } }));
   const p = abrirPainel(api, { hash: '#funil' });
@@ -1220,11 +1222,25 @@ test('Limpeza do funil no RD: prévia sem alterar nada, teste com 5, execução 
   await esperar(() => lotes.length === 1, { motivo: 'lote de teste' });
   assert.deepEqual(lotes[0], ids.slice(0, 5));
   assert.equal(api.corpos('POST /api/master/limpeza-rd/executar')[0].funil, 'f2');
+
+  // os 5 testados aparecem com o e-mail do lead e o link do card, para conferir no RD
+  await esperar(() => visivel(p.$('lzFeitos')), { motivo: 'lista dos movidos' });
+  const linhasFeitos = [...p.$('lzFeitosLista').querySelectorAll('tr')].map((tr) => tr.textContent.replace(/\s+/g, ' ').trim());
+  assert.equal(linhasFeitos.length, 5);
+  assert.match(linhasFeitos[0], /^Card d1 d1@exemplo\.com Nunca respondeu Abrir no RD$/);
+  assert.match(linhasFeitos[2], /sem e-mail no card/);
+  const links = [...p.$('lzFeitosLista').querySelectorAll('a')].map((a) => a.getAttribute('href'));
+  assert.deepEqual(links, ['d1', 'd3', 'd4', 'd5'].map((id) => 'https://crm.rdstation.com/app/deals/' + id), 'endereço que não é do RD não vira link');
+  p.$('lzCopiarEmails').click();
+  await esperar(() => copiados.some((t) => t.startsWith('d1@exemplo.com')), { motivo: 'e-mails copiados' });
+  assert.equal(copiados.find((t) => t.startsWith('d1@exemplo.com')), 'd1@exemplo.com\nd2@exemplo.com\nd4@exemplo.com\nd5@exemplo.com');
+  // a prévia também mostra o e-mail
+  assert.match(p.$('lzLista').textContent, /lead\.um@exemplo\.com/);
   await esperar(() => visivel(p.$('lzRelatorio')), { motivo: 'relatório' });
   assert.match(p.$('lzTexto').textContent, /• Nunca respondeu - 20\n• Parou de responder - 12\nTotal: 32/);
   p.$('lzCopiar').click();
-  await esperar(() => copiados.length === 1, { motivo: 'relatório copiado' });
-  assert.match(copiados[0], /^Limpeza do funil — \d\d\/\d\d\/\d{4}\n• Nunca respondeu - 20/);
+  await esperar(() => copiados.some((t) => /^Limpeza do funil/.test(t)), { motivo: 'relatório copiado' });
+  assert.match(copiados.find((t) => /^Limpeza do funil/.test(t)), /^Limpeza do funil — \d\d\/\d\d\/\d{4}\n• Nunca respondeu - 20/);
 
   // executar todos: vai em lotes de 15
   await esperar(() => !p.$('lzTudo').disabled && /32 card/.test(p.$('statusLz').textContent), { motivo: 'prévia refeita' });

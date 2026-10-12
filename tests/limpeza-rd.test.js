@@ -36,7 +36,7 @@ let erroNoPut = null;
 function reiniciar() {
   const d = (id, nome, et, parado, extra = {}) => ({ _id: id, name: nome, deal_stage: etapa[et], user: CAUA, win: null, closed_at: null, created_at: ha(200), updated_at: ha(parado), last_activity_at: null, deal_custom_fields: [], ...extra });
   deals = Object.fromEntries([
-    d('d1', 'PRXC | Lead Um', 'e1', 111),
+    d('d1', 'PRXC | Lead Um', 'e1', 111, { contacts: [{ name: 'Lead Um', emails: [{ email: ' Lead.Um@Exemplo.com ' }, { email: 'outro@exemplo.com' }] }] }),
     d('d2', 'PRXC | Lead Dois', 'e1', 40, { deal_custom_fields: [{ custom_field_id: 'cfOrigem', value: 'Instagram', custom_field: { _id: 'cfOrigem', label: 'Origem' } }, { custom_field: { _id: 'cfSdr', label: 'SDR' }, value: 'Samuel Filipe' }] }),
     d('d3', 'PRXC | Recente', 'e1', 3),
     d('d4', 'PRXC | No limite', 'e1', 15), // "há mais de 15 dias": 15 ainda não entra
@@ -206,6 +206,25 @@ test('faltou algo no RD: o erro diz o quê (motivo de perda, opção do SDR, eta
   crm.funis = async () => [{ id: 'f2', nome: 'Outro funil', etapas: [{ id: 'z1', nome: 'Entrada', ordem: 0 }] }];
   await assert.rejects(() => limpeza.previa({ usuario: EU }), /Não achei no RD um funil/);
   crm.funis = funisOk;
+});
+
+// ---------------------------------------------------------------- e-mail para conferir
+test('e-mail do lead: aparece na prévia e na lista do que foi movido (com o link do card), mas não fica no registro', async () => {
+  const p = await limpeza.previa({ usuario: EU, dias: 15, escopo: 'meus' });
+  const um = p.cards.find((c) => c.id === 'd1');
+  assert.deepEqual([um.email, um.link], ['lead.um@exemplo.com', 'https://crm.rdstation.com/app/deals/d1']);
+  assert.equal(p.cards.find((c) => c.id === 'd5').email, '', 'card sem contato com e-mail: vazio');
+
+  const r = await limpeza.executar({ usuario: EU, ids: ['d1', 'd5'], dias: 15, escopo: 'meus' });
+  assert.deepEqual(r.feitos.map((f) => [f.id, f.email, f.link]), [
+    ['d1', 'lead.um@exemplo.com', 'https://crm.rdstation.com/app/deals/d1'],
+    ['d5', '', 'https://crm.rdstation.com/app/deals/d5'],
+  ]);
+  const guardado = fs.readFileSync(path.join(DADOS, 'rd_limpeza_log.json'), 'utf8');
+  assert.ok(!guardado.includes('exemplo.com'), 'o e-mail é só para a tela: não entra no registro');
+  // e-mail inválido ou em formato estranho não quebra
+  assert.equal(limpeza.emailDoCard({ contacts: [{ emails: [{ email: 'sem-arroba' }, 'ok@exemplo.com'] }] }), 'ok@exemplo.com');
+  assert.equal(limpeza.emailDoCard(null), '');
 });
 
 // ---------------------------------------------------------------- escolher o funil
