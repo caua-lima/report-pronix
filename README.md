@@ -374,27 +374,6 @@ do card. É uma leitura conservadora do "esfriando" da tela do RD: na dúvida, n
 campos personalizados do card são reenviados como estavam (`src/limpezaRd.js`).
 `CRM_MOVER_ETAPA=0` desliga também esta escrita.
 
-### Abordagens do primeiro contato (qual mensagem dá mais resposta e mais venda)
-
-O pré-vendedor testa variações do primeiro contato — cada uma cadastrada como **mensagem rápida**
-no WhatsApp — e o sistema conta sozinho, por abordagem: **enviadas**, **responderam**, **viraram
-report** e **vendas**. O placar fica em Resultados → "Abordagens do primeiro contato", com os
-textos para copiar e editar.
-
-- **Como reconhece:** cada abordagem tem uma **assinatura**, o trecho que só ela tem. Ao abrir a
-  conversa, a extensão procura a assinatura nas primeiras mensagens do pré-vendedor (no próprio
-  navegador) e avisa o servidor **só a letra** da abordagem. Vale a assinatura mais longa, e a
-  primeira reconhecida é a do primeiro contato. O cartão mostra a etiqueta "ABORDAGEM B".
-- **Respondeu:** existe mensagem do lead depois da do pré-vendedor.
-- **Venda:** o report do mesmo lead tem venda marcada em Resultados (ou vendido no RD).
-- **Comparação honesta:** só disputa "mais respostas" e "mais vendas" a abordagem com 10 envios
-  ou mais; as outras aparecem como "amostra pequena".
-- As cinco de partida (`src/abordagens.js`) são a mensagem de hoje (controle) e quatro variações
-  que mudam uma coisa cada. Todas mantêm "Você agendou sua reunião para [DIA] às [HORA]", que é a
-  frase que o cartão lê para mostrar o agendamento.
-
-Sem IA e sem custo: é contagem. Precisa da **Automação RD** ligada para o usuário.
-
 ### Afinidade com o closer ("Esse lead é bom para o PH?")
 
 Para cada closer com **inteligência cadastrada** (aba Closers → Inteligência), o popup da extensão
@@ -483,12 +462,12 @@ Autenticação por cabeçalho `x-cr-key` (a chave do usuário). `gestor+` = mast
 | --- | --- | --- |
 | `POST /api/crm/lead` | chave + popup do lead | Ficha do RD do lead da conversa. |
 | `POST /api/crm/respondeu` | chave + automação | Avança o card para "Respondeu". |
+| `GET /api/master/diagnostico` | master | Confere, sem alterar nada, se a automação do "Respondeu" e a cor da agenda têm tudo no lugar, e mostra a última vez que cada uma funcionou. |
 | `GET /api/master/limpeza-rd/funis` · `GET …/previa` · `POST …/executar` · `POST …/desfazer` · `GET …/relatorio` | master | Limpeza do funil no RD: prévia, lotes, desfazer e relatório por motivo. |
 | `POST /api/lead/marca` | chave + automação | Etiqueta "Qualificado" e agendamento. |
 | `POST /api/resumo-rapido` | chave + popup do lead | Resumo rápido da conversa. |
 | `POST /api/coach` · `POST /api/coach/feedback` | chave + coach | Coach e o "Funcionou". |
 | `POST /api/afinidade` | chave | Nota de 0 a 10 do lead para um closer, com motivos e o PDF. |
-| `POST /api/lead/abordagem` | chave + automação | Anota a letra da abordagem do primeiro contato e/ou que o lead respondeu. |
 
 ### Dia a dia e gestão
 
@@ -594,8 +573,6 @@ Tudo em `src/db.js` (Redis em produção, `data/*.json` local). **A conversa nã
 | `pdf_<id>` | O PDF de cada report. |
 | `base` | Base de conhecimento (com os textos anteriores, para restaurar). |
 | `closers` | Lista de closers, com o apelido e a inteligência de cada um. |
-| `abordagens` | Os textos e as assinaturas das abordagens em teste. |
-| `abordagem_contatos` | Por lead: a letra da abordagem, a data e se respondeu (até 6.000). Nenhum texto de conversa. |
 | `crm_cards` | Card escolhido para cada lead com mais de um. |
 | `google_agenda` | Autorização da conta conectada ao Google Agenda (só no servidor). |
 | `lead_marcas` | Etiqueta "Qualificado" e agendamento por lead (até 4.000). |
