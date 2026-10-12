@@ -177,7 +177,7 @@ async function testarConexao() {
     if (!r.ok) throw new Error(j.erro || 'Chave inválida.');
     $('sdrNome').textContent = j.nome;
     mostrarInfoExt(j);
-    mostrarAnalises(j.analises);
+    mostrarAnalises(j.analises, j.analisesFaltando);
     chrome.storage.local.set({ analises: Array.isArray(j.analises) ? j.analises : [] });
     const dono = await impressaoDaChave(chave);
     chrome.storage.local.get({ ultimoReport: null }, ({ ultimoReport }) => {
@@ -198,12 +198,23 @@ async function testarConexao() {
  * Botões "Esse lead é bom para o <closer>?": um por closer com inteligência cadastrada no painel.
  * Clicar gera o report normal e, junto, a análise de afinidade com esse closer (nota de 0 a 10 e PDF).
  */
-function mostrarAnalises(lista) {
+function mostrarAnalises(lista, faltando) {
   const caixa = $('analises');
   if (!caixa) return;
   const closers = (Array.isArray(lista) ? lista : []).filter((c) => c && c.id).slice(0, 6);
   caixa.textContent = '';
-  caixa.classList.toggle('hidden', !closers.length);
+  // Para o master, sem nenhum botão: diz o que falta para ele aparecer (o servidor só manda "faltando" ao master).
+  const semBotao = !closers.length && Array.isArray(faltando);
+  caixa.classList.toggle('hidden', !closers.length && !semBotao);
+  if (semBotao) {
+    const aviso = document.createElement('div');
+    aviso.className = 'hint';
+    aviso.id = 'analisesFalta';
+    aviso.textContent = faltando.length
+      ? `Botão "Esse lead é bom para o ${String(faltando[0]).slice(0, 20)}?": falta cadastrar a inteligência dele no painel (Closers → Inteligência).`
+      : 'Botão "Esse lead é bom para o closer?": cadastre o closer no painel (aba Closers) e a inteligência dele.';
+    caixa.appendChild(aviso);
+  }
   closers.forEach((c) => {
     const apelido = String(c.apelido || c.nome || '').slice(0, 20);
     const b = document.createElement('button');

@@ -233,6 +233,23 @@ test('popup: um botão por closer com inteligência; clicar manda gerar o report
   p.w.close();
 });
 
+test('popup: para o master sem nenhum botão, explica o que falta (a inteligência do closer, ou o próprio closer)', async () => {
+  const p = await abrirPopup({ chave: 'pnx_caua', server: 'https://report-pronix.vercel.app' }, { ok: true, nome: 'Cauã Lima', analises: [], analisesFaltando: ['PH<b>x</b>', 'Vitor'] });
+  await esperar(() => !!p.document.getElementById('analisesFalta'), { motivo: 'aviso do que falta' });
+  assert.equal(p.document.getElementById('analisesFalta').textContent, 'Botão "Esse lead é bom para o PH<b>x</b>?": falta cadastrar a inteligência dele no painel (Closers → Inteligência).');
+  assert.equal(p.document.querySelector('#analises b'), null, 'apelido nunca vira HTML');
+  assert.equal(p.botoes().length, 0);
+  assert.ok(!p.document.getElementById('analises').classList.contains('hidden'));
+  await dormir(40);
+  p.w.close();
+
+  const semCloser = await abrirPopup({ chave: 'pnx_caua', server: 'https://report-pronix.vercel.app' }, { ok: true, nome: 'Cauã Lima', analises: [], analisesFaltando: [] });
+  await esperar(() => !!semCloser.document.getElementById('analisesFalta'), { motivo: 'aviso sem closer' });
+  assert.match(semCloser.document.getElementById('analisesFalta').textContent, /cadastre o closer no painel \(aba Closers\)/);
+  await dormir(40);
+  semCloser.w.close();
+});
+
 test('popup: sem closer com inteligência, nenhum botão a mais (e a lista guardada é limpa)', async () => {
   const p = await abrirPopup({ chave: 'pnx_caua', server: 'https://report-pronix.vercel.app', analises: [PH] }, { ok: true, nome: 'Cauã Lima', analises: [] });
   await esperar(() => Array.isArray(p.storage.analises) && p.storage.analises.length === 0, { motivo: 'lista atualizada pelo servidor' });
