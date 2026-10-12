@@ -208,6 +208,41 @@ test('faltou algo no RD: o erro diz o quê (motivo de perda, opção do SDR, eta
   crm.funis = funisOk;
 });
 
+// ---------------------------------------------------------------- escolher o funil
+test('funil: com mais de um possível, a limpeza exige a escolha e só mexe nos cards do funil escolhido', async () => {
+  const funisOk = crm.funis;
+  Object.assign(etapa, { e21: { _id: 'e21', name: 'Contato iniciado' }, e22: { _id: 'e22', name: 'Respondeu' }, e29: { _id: 'e29', name: 'Desqualificados' } });
+  const smql = (id, nome, et, parado) => ({ _id: id, name: nome, deal_stage: etapa[et], user: CAUA, win: null, closed_at: null, created_at: ha(200), updated_at: ha(parado), last_activity_at: null, deal_custom_fields: [] });
+  deals.s1 = smql('s1', 'VDV SMQL | Lead A', 'e21', 50);
+  deals.s2 = smql('s2', 'VDV SMQL | Lead B', 'e22', 30);
+  crm.funis = async () => [
+    { id: 'f1', nome: 'Funil SDR', etapas: ['e1', 'e2', 'e3', 'e9'].map((k, ordem) => ({ id: k, nome: etapa[k].name, ordem })) },
+    { id: 'f2', nome: 'SMQLs automáticas', etapas: ['e21', 'e22', 'e29'].map((k, ordem) => ({ id: k, nome: etapa[k].name, ordem })) },
+    { id: 'f3', nome: 'Funil dos closers', etapas: [{ id: 'c1', nome: 'Reunião realizada', ordem: 0 }, { id: 'c2', nome: 'Vendido', ordem: 1 }] },
+  ];
+  try {
+    assert.deepEqual(await limpeza.funisElegiveis(), [{ id: 'f1', nome: 'Funil SDR' }, { id: 'f2', nome: 'SMQLs automáticas' }], 'só os funis que têm as três etapas');
+    await assert.rejects(() => limpeza.previa({ usuario: EU }), /Escolha em qual funil fazer a limpeza\. Funis possíveis: Funil SDR, SMQLs automáticas\./);
+    await assert.rejects(() => limpeza.previa({ usuario: EU, funil: 'f3' }), /funil escolhido não existe mais/);
+    await assert.rejects(() => limpeza.executar({ usuario: EU, ids: ['s1'] }), /Escolha em qual funil/, 'executar também não escolhe sozinho');
+
+    const p = await limpeza.previa({ usuario: EU, dias: 15, escopo: 'meus', funil: 'f2' });
+    assert.deepEqual([p.funilId, p.contexto.funil], ['f2', 'SMQLs automáticas']);
+    assert.deepEqual(p.ids, ['s1', 's2'], 'só os cards do funil escolhido');
+    assert.deepEqual((await limpeza.previa({ usuario: EU, dias: 15, escopo: 'meus', funil: 'f1' })).ids, ['d1', 'd5', 'd2']);
+
+    // card de OUTRO funil mandado junto é pulado; o do funil escolhido vai para a Desqualificados DELE
+    const r = await limpeza.executar({ usuario: EU, ids: ['d1', 's1'], dias: 15, escopo: 'meus', funil: 'f2' });
+    assert.deepEqual(r.feitos.map((f) => f.id), ['s1']);
+    assert.deepEqual(r.pulados.map((x) => [x.id, x.porque]), [['d1', 'mudou de etapa']]);
+    assert.equal(escritas[0].corpo.deal_stage_id, 'e29');
+    assert.equal(deals.d1.deal_stage.name, 'Contato iniciado');
+  } finally {
+    crm.funis = funisOk;
+    ['e21', 'e22', 'e29'].forEach((k) => delete etapa[k]);
+  }
+});
+
 // ---------------------------------------------------------------- rotas
 test('rotas: só o master usa; a prévia e o relatório respondem pelo painel', async () => {
   const servidor = http.createServer(app);
@@ -225,7 +260,9 @@ test('rotas: só o master usa; a prévia e o relatório respondem pelo painel', 
     for (const [m, rota] of [['GET', '/api/master/limpeza-rd/previa'], ['POST', '/api/master/limpeza-rd/executar'], ['POST', '/api/master/limpeza-rd/desfazer'], ['GET', '/api/master/limpeza-rd/relatorio']]) {
       assert.equal((await chamar(m, rota, m === 'POST' ? { ids: ['d1'] } : undefined, sdr)).status, 403, rota);
     }
-    const p = await chamar('GET', '/api/master/limpeza-rd/previa?dias=15&escopo=meus', undefined, master);
+    assert.equal((await chamar('GET', '/api/master/limpeza-rd/funis', undefined, sdr)).status, 403);
+    assert.deepEqual((await chamar('GET', '/api/master/limpeza-rd/funis', undefined, master)).json, { funis: [{ id: 'f1', nome: 'Funil SDR' }] });
+    const p = await chamar('GET', '/api/master/limpeza-rd/previa?dias=15&escopo=meus&funil=f1', undefined, master);
     assert.equal(p.status, 200);
     assert.deepEqual(p.json.ids, ['d1', 'd5', 'd2']);
     const e = await chamar('POST', '/api/master/limpeza-rd/executar', { ids: ['d1'], dias: 15, escopo: 'meus' }, master);

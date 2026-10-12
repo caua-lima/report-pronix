@@ -1173,7 +1173,8 @@ test('Limpeza do funil no RD: prévia sem alterar nada, teste com 5, execução 
   const lotes = [];
   const api = apiMaster()
     .quando('GET /api/master/google', () => ({ corpo: { configurado: false, conectado: false, agendas: [] } }))
-    .quando('GET /api/master/limpeza-rd/previa', () => ({ corpo: PREVIA }))
+    .quando('GET /api/master/limpeza-rd/funis', () => ({ corpo: { funis: [{ id: 'f1', nome: 'Funil SDR <b>x</b>' }, { id: 'f2', nome: 'SMQLs automáticas' }] } }))
+    .quando('GET /api/master/limpeza-rd/previa', () => ({ corpo: { ...PREVIA, funilId: 'f2' } }))
     .quando('GET /api/master/limpeza-rd/relatorio', () => ({ corpo: relatorio }))
     .quando('POST /api/master/limpeza-rd/executar', ({ corpo }) => {
       lotes.push(corpo.ids);
@@ -1188,7 +1189,20 @@ test('Limpeza do funil no RD: prévia sem alterar nada, teste com 5, execução 
   assert.ok(visivel(p.$('aba-funil')), 'tem aba própria');
   assert.ok(visivel(p.document.querySelector('.tab[data-aba="funil"]')), 'e item no menu');
   assert.equal(p.$('tituloPagina').textContent, 'Limpeza do RD');
-  assert.equal(api.contar('GET /api/master/limpeza-rd/previa'), 0, 'abrir a aba não consulta o RD sozinho');
+  assert.equal(api.contar('GET /api/master/limpeza-rd/previa'), 0, 'abrir a aba não consulta os cards sozinho');
+
+  // o funil: lista os possíveis e já vem no de SMQLs automáticas; nome de funil nunca vira HTML
+  await esperar(() => p.$('lzFunil').options.length === 3, { motivo: 'funis no seletor' });
+  assert.deepEqual([...p.$('lzFunil').options].map((o) => o.textContent), ['Escolha o funil…', 'Funil SDR <b>x</b>', 'SMQLs automáticas']);
+  assert.equal(p.$('lzFunil').value, 'f2');
+  // sem funil escolhido, a prévia nem é pedida
+  p.$('lzFunil').value = '';
+  p.$('lzPrevia').click();
+  await esperar(() => /Escolha o funil antes/.test(p.$('statusLz').textContent), { motivo: 'aviso de funil' });
+  assert.equal(api.contar('GET /api/master/limpeza-rd/previa'), 0);
+  p.$('lzFunil').value = 'f2';
+  p.$('lzFunil').dispatchEvent(new p.w.Event('change', { bubbles: true }));
+  assert.equal(p.w.localStorage.getItem('crLzFunil'), 'f2', 'a escolha fica lembrada');
 
   p.$('lzPrevia').click();
   await esperar(() => /32 card\(s\) parado/.test(p.$('statusLz').textContent), { motivo: 'prévia' });
@@ -1199,12 +1213,13 @@ test('Limpeza do funil no RD: prévia sem alterar nada, teste com 5, execução 
   assert.equal(p.$('lzTudo').textContent, 'Executar todos (32)');
   assert.equal(lotes.length, 0);
   const q = api.pedidos.find((x) => x.chave === 'GET /api/master/limpeza-rd/previa').query;
-  assert.deepEqual([q.get('dias'), q.get('escopo')], ['15', 'meus']);
+  assert.deepEqual([q.get('dias'), q.get('escopo'), q.get('funil')], ['15', 'meus', 'f2']);
 
-  // teste com 5: só os 5 primeiros da prévia
+  // teste com 5: só os 5 primeiros da prévia, no funil da prévia
   p.$('lzTeste').click();
   await esperar(() => lotes.length === 1, { motivo: 'lote de teste' });
   assert.deepEqual(lotes[0], ids.slice(0, 5));
+  assert.equal(api.corpos('POST /api/master/limpeza-rd/executar')[0].funil, 'f2');
   await esperar(() => visivel(p.$('lzRelatorio')), { motivo: 'relatório' });
   assert.match(p.$('lzTexto').textContent, /• Nunca respondeu - 20\n• Parou de responder - 12\nTotal: 32/);
   p.$('lzCopiar').click();
@@ -1223,6 +1238,13 @@ test('Limpeza do funil no RD: prévia sem alterar nada, teste com 5, execução 
   p.$('lzDesfazer').click();
   await esperar(() => api.contar('POST /api/master/limpeza-rd/desfazer') === 3, { motivo: 'desfazer em lotes' });
   await dormir(80);
+
+  // trocar de funil some com a prévia que estava na tela: ninguém executa no funil errado
+  await esperar(() => visivel(p.$('lzAcoes')), { motivo: 'prévia na tela' });
+  p.$('lzFunil').value = 'f1';
+  p.$('lzFunil').dispatchEvent(new p.w.Event('change', { bubbles: true }));
+  assert.ok(!visivel(p.$('lzAcoes')) && !visivel(p.$('lzTabela')));
+  assert.match(p.$('statusLz').textContent, /Funil trocado/);
   assert.deepEqual(p.erros, []);
   p.fechar();
 });
