@@ -380,6 +380,23 @@ do card. É uma leitura conservadora do "esfriando" da tela do RD: na dúvida, n
 campos personalizados do card são reenviados como estavam (`src/limpezaRd.js`).
 `CRM_MOVER_ETAPA=0` desliga também esta escrita.
 
+**Cadastros duplicados.** Na mesma aba, **Procurar duplicados** olha os cards em aberto do funil em
+que você é o responsável e acha o mesmo lead em mais de um card: **e-mail igual ou telefone igual**
+(DDD + 8 últimos dígitos, então "+55 71 99999-8888" e "(71) 9999-8888" são o mesmo). Um card fica e os
+outros vão para "Desqualificados" com a perda **"Duplicado"** e o campo SDR preenchido.
+
+- **Quem fica:** o card na etapa mais adiantada; no empate, o de movimento mais recente.
+- **O que não é duplicado:** lead que já foi perdido e se inscreveu de novo (card fechado não entra
+  na conta), card de outro responsável e card de outro funil.
+- **Dado genérico:** e-mail ou telefone repetido em mais de 6 cards (teste, número de preenchimento)
+  fica de fora, e a tela avisa.
+- **Antes de fechar**, cada par é lido de novo: só fecha se o card que fica continua em aberto no
+  funil, com o mesmo responsável e contato em comum. Nunca se fecha o último card vivo de um lead.
+- A prévia mostra, por lead, o que fica e o que sai, e avisa quando o lead **cadastrou de novo**
+  (o card que sai é mais novo que o que fica). Tem o mesmo "Testar com 5", os lotes, o relatório
+  (linha "Duplicado") e o desfazer. O nome do motivo no RD pode ser trocado em
+  `CRM_LIMPEZA_MOTIVO_DUPLICADO` (padrão: qualquer motivo que contenha "duplic").
+
 ### Afinidade com o closer ("Analisar Match com PH")
 
 Para cada closer com **inteligência cadastrada** (aba Closers → Inteligência), o popup da extensão
@@ -489,6 +506,7 @@ Autenticação por cabeçalho `x-cr-key` (a chave do usuário). `gestor+` = mast
 | `POST /api/crm/respondeu` | chave + automação | Avança o card para "Respondeu". |
 | `GET /api/master/diagnostico` | master | Confere, sem alterar nada, se a automação do "Respondeu" e a cor da agenda têm tudo no lugar, e mostra a última vez que cada uma funcionou. |
 | `GET /api/master/limpeza-rd/funis` · `GET …/previa` · `POST …/executar` · `POST …/desfazer` · `GET …/relatorio` | master | Limpeza do funil no RD: prévia, lotes, desfazer e relatório por motivo. |
+| `GET/POST /api/master/limpeza-rd/duplicados` | master | Cadastros duplicados no funil: a busca (sem alterar nada) e o fechamento em lotes como "Duplicado". |
 | `POST /api/lead/marca` | chave + automação | Etiqueta "Qualificado" e agendamento. |
 | `POST /api/resumo-rapido` | chave + popup do lead | Resumo rápido da conversa. |
 | `POST /api/coach` · `POST /api/coach/feedback` | chave + coach | Coach e o "Funcionou". |
