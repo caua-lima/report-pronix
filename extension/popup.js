@@ -85,7 +85,10 @@ function renderReport(d) {
   const abertura = d.abertura
     ? `<h2>${svgIc('<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>')} Como iniciar a reunião</h2><p class="frase">"${ed('abertura', d.abertura)}"</p>`
     : '';
-  const nivel = d.consciencia && NIVEIS_VISIVEIS[d.consciencia.nivel];
+  // O selo do report: o título escrito para o lead (ou o nome do nível, em report antigo), a fala dele e o porquê.
+  const nivel = d.consciencia && (d.consciencia.titulo || NIVEIS_VISIVEIS[d.consciencia.nivel]);
+  const tituloNivel = d.consciencia && d.consciencia.titulo ? ed('consciencia.titulo', d.consciencia.titulo) : escapeHtml(nivel || '');
+  const falaNivel = d.consciencia && d.consciencia.fala ? `<p class="frase">“${escapeHtml(d.consciencia.fala)}”</p>` : '';
   const sinais = d.sinais_compra || [];
   // Termômetro de dores: só dor de fato (3 ou mais), na ordem em que vieram (da mais forte para a mais fraca).
   const dores = (d.dores || []).map((x, i) => ({ ...x, i })).filter((x) => x && x.dor && x.intensidade >= 3);
@@ -96,7 +99,7 @@ function renderReport(d) {
   const temperatura = nivel || sinais.length || dores.length
     ? `<h2>${svgIc('<path d="M14 14.8V4a2 2 0 0 0-4 0v10.8a4 4 0 1 0 4 0z"/>')} Temperatura do lead</h2>` +
       blocoDores +
-      (nivel ? `<p><b>Nível de consciência:</b> ${escapeHtml(nivel)}</p><p class="frase">${ed('consciencia.porque', d.consciencia.porque)}</p>` : '') +
+      (nivel ? `<p><b>Momento do lead:</b> ${tituloNivel}</p>${falaNivel}<p class="frase">${ed('consciencia.porque', d.consciencia.porque)}</p>` : '') +
       (sinais.length ? `<p><b>Sinais de compra</b></p>${listaEditavel(sinais, false, 'sinais_compra')}` : '')
     : '';
   const conversa = (d.conversa || []).length

@@ -978,7 +978,7 @@
     <!-- ================= ABA: EXTENSÃO ================= -->
     <section id="aba-extensao" class="hidden">
       <div id="diagCard" class="card hidden">
-        <div class="head"><div class="t"><i data-ic="check"></i>As automações estão funcionando?</div><div class="sub">— mover para "Respondeu" no RD e pintar a reunião na agenda</div></div>
+        <div class="head"><div class="t"><i data-ic="check"></i>As automações estão funcionando?</div><div class="sub">— mover para "Respondeu" no RD, pintar a reunião na agenda e preencher o closer depois da reunião</div></div>
         <div class="hint" style="margin:0 0 12px">Confere tudo o que precisa estar no lugar, sem alterar nada. O último item de cada lista é a prova de que funcionou de verdade.</div>
         <button id="diagRodar" class="btn sec"><i data-ic="refresh"></i>Verificar agora</button>
         <div id="statusDiag" class="status"></div>
@@ -2785,7 +2785,10 @@
         : '';
       const frase = d.frase_impacto ? `<h2><i data-ic="zap"></i>Frase de Impacto</h2><p class="frase">"${ed('frase_impacto', d.frase_impacto)}"</p>` : '';
       const abertura = d.abertura ? `<h2><i data-ic="message"></i>Como iniciar a reunião</h2><p class="frase">"${ed('abertura', d.abertura)}"</p>` : '';
-      const nivel = d.consciencia && NIVEIS_VISIVEIS[d.consciencia.nivel];
+      // O selo do report: o título escrito para o lead (ou o nome do nível, em report antigo), a fala dele e o porquê.
+      const nivel = d.consciencia && (d.consciencia.titulo || NIVEIS_VISIVEIS[d.consciencia.nivel]);
+      const tituloNivel = d.consciencia && d.consciencia.titulo ? ed('consciencia.titulo', d.consciencia.titulo) : esc(nivel || '');
+      const falaNivel = d.consciencia && d.consciencia.fala ? `<p class="frase">“${esc(d.consciencia.fala)}”</p>` : '';
       const sinais = d.sinais_compra || [];
       // Termômetro de dores: só dor de fato (3 ou mais), na ordem em que vieram (da mais forte para a mais fraca).
       const dores = (d.dores || []).map((x, i) => ({ ...x, i })).filter((x) => x && x.dor && x.intensidade >= 3);
@@ -2796,7 +2799,7 @@
       const temperatura = nivel || sinais.length || dores.length
         ? '<h2><i data-ic="target"></i>Temperatura do lead</h2>' +
           blocoDores +
-          (nivel ? `<p><b>Nível de consciência:</b> ${esc(nivel)}</p><p class="frase">${ed('consciencia.porque', d.consciencia.porque)}</p>` : '') +
+          (nivel ? `<p><b>Momento do lead:</b> ${tituloNivel}</p>${falaNivel}<p class="frase">${ed('consciencia.porque', d.consciencia.porque)}</p>` : '') +
           (sinais.length ? `<p><b>Sinais de compra</b></p>${listaEditavel(sinais, false, 'sinais_compra')}` : '')
         : '';
       const conversa = (d.conversa || []).length
@@ -3537,9 +3540,10 @@
             </tr>`).join('');
           return `<div data-diag="${grupo}"><div class="sec-t" style="margin-top:0">${titulo} — ${veredito}</div><table><tbody>${linhas}</tbody></table></div>`;
         };
-        $('diagResultado').innerHTML = bloco('respondeu', 'Mover para "Respondeu"', d.respondeu) + bloco('cor', 'Pintar a reunião na agenda', d.cor);
+        $('diagResultado').innerHTML = bloco('respondeu', 'Mover para "Respondeu"', d.respondeu) + bloco('cor', 'Pintar a reunião na agenda', d.cor) +
+          (d.closer ? bloco('closer', 'Closer preenchido sozinho', d.closer) : '');
         $('diagResultado').classList.remove('hidden');
-        const tudo = d.respondeu.pronto && d.cor.pronto;
+        const tudo = d.respondeu.pronto && d.cor.pronto && (!d.closer || d.closer.pronto);
         setStatus('statusDiag', tudo ? 'Nada faltando na configuração.' : 'Tem coisa para acertar: veja o que está marcado como "falta".', { ok: tudo, erro: !tudo });
       } catch (e) {
         setStatus('statusDiag', e.message, { erro: true });
