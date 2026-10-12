@@ -259,6 +259,36 @@ test('report gerado: o lead ganha a etiqueta Qualificado (e o agendamento lido n
   q.fechar();
 });
 
+// ---------------------------------------------------------------- o report nasce vinculado ao card do RD
+test('report: leva o vínculo com o card do RD que está na tela (id do contato e do card, e-mail e telefone)', async () => {
+  const servidorCom = (resposta) => {
+    const pedidos = [];
+    return {
+      pedidos,
+      aoEnviar: async (original) => {
+        const msg = JSON.parse(JSON.stringify(original));
+        if (msg.action === 'crmLead') return { ok: true, configurado: true, coach: false, ...resposta };
+        if (msg.action === 'reportFetch') { pedidos.push(msg); return { ok: true, dados: {}, arquivo: 'r.pdf', arquivoBase64: 'AAAA' }; }
+        return { ok: true };
+      },
+    };
+  };
+  const comCard = servidorCom({ encontrado: true, ficha: { ...fichaDoRd('Respondeu'), contatoId: 'k77', emails: ['marcos@exemplo.com', 'outro@exemplo.com'] } });
+  const p = abrir(comCard);
+  await fichaNaTela(p);
+  p.iniciar();
+  await esperar(() => comCard.pedidos.length === 1, { motivo: 'report pedido' });
+  assert.deepEqual(comCard.pedidos[0].vinculo, { telefone: '5571999998888', email: 'marcos@exemplo.com', contatoId: 'k77', dealId: 'd1' });
+
+  // o RD não achou o lead: vai só o telefone da conversa, e o servidor tenta o resto
+  const semCard = servidorCom({ encontrado: false });
+  const q = abrir(semCard);
+  await dormir(150);
+  q.iniciar();
+  await esperar(() => semCard.pedidos.length === 1, { motivo: 'report pedido sem ficha' });
+  assert.deepEqual(semCard.pedidos[0].vinculo, { telefone: '5571999998888', email: '', contatoId: '', dealId: '' });
+});
+
 // ---------------------------------------------------------------- lead que só respondeu a primeira pergunta
 test('lead respondeu só a primeira pergunta: o card vai para "Respondeu" e NÃO ganha etiqueta nem agendamento', async () => {
   const srv = servidorFalso();

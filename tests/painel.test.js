@@ -1827,6 +1827,70 @@ test('Acessos: a tabela fica limpa; clicar no nome abre as permissões da pessoa
   p.fechar();
 });
 
+test('Resultados: cada linha mostra o que o RD disse do lead; quem não foi achado pede o e-mail ou o telefone e vincula na hora', async () => {
+  let linhas = { ...LINHAS_RES, reports: [
+    { ...LINHAS_RES.reports[0], id: 'v1', resultado: 'venda_call', vendidoNoRd: true, produto: 'performance', ticket: 18624, rdSituacao: 'Vendido (vendido) · CLOSERS · Paulo <b>Henrique</b>', rdConferidoEm: '2026-10-12T19:30:00.000Z', vinculado: true },
+    { ...LINHAS_RES.reports[0], id: 'v2', resultado: '', rdSituacao: 'Não achei no RD: 2 contatos com esse nome. Informe o e-mail ou o telefone do lead.', vinculado: false },
+    { ...LINHAS_RES.reports[0], id: 'v3', resultado: '', rdSituacao: '' },
+  ] };
+  const api = apiBase({ papel: 'master', nome: 'Cauã' })
+    .quando('GET /api/master/resultados', () => ({ corpo: linhas }))
+    .quando('GET /api/master/inteligencia', () => ({ corpo: INTEL }))
+    .quando('PATCH /api/admin/reports/v2/resultado', ({ corpo }) => {
+      linhas = { ...linhas, reports: linhas.reports.map((r) => (r.id === 'v2' ? { ...r, rdSituacao: 'Reunião Realizada · CLOSERS · Giovane Ribeiro', vinculado: true } : r)) };
+      return { corpo: { ok: true, versao: (corpo.versao || 0) + 1, recarregar: true, rdSituacao: 'Reunião Realizada · CLOSERS · Giovane Ribeiro' } };
+    });
+  const p = abrirPainel(api, { hash: '#resultados' });
+  const linha = (id) => p.document.querySelector('tr[data-res="' + id + '"]');
+  await esperar(() => !!linha('v2'), { motivo: 'linhas' });
+
+  // o que o RD mostrou, como texto; a venda já vem com resultado, produto e ticket
+  assert.equal(linha('v1').querySelector('.rd-situacao').textContent, 'RD: Vendido (vendido) · CLOSERS · Paulo <b>Henrique</b>');
+  assert.equal(linha('v1').querySelector('.rd-situacao b'), null, 'nada que vem do RD vira HTML');
+  assert.match(linha('v1').querySelector('.rd-situacao').title, /Conferido em 12\/10/);
+  assert.deepEqual([linha('v1').querySelector('[data-res-campo="resultado"]').value, linha('v1').querySelector('[data-res-campo="produto"]').value, linha('v1').querySelector('[data-res-campo="ticket"]').value], ['venda_call', 'performance', '18.624,00']);
+  assert.equal(linha('v1').querySelector('[data-res-campo="vinculo"]'), null, 'lead achado não pede vínculo');
+  assert.equal(linha('v3').querySelector('.rd-situacao'), null, 'ainda não conferido: sem linha do RD');
+
+  // não achado: a linha diz por quê e pede o e-mail ou o telefone
+  assert.match(linha('v2').querySelector('.rd-situacao').textContent, /^RD: Não achei no RD: 2 contatos com esse nome/);
+  const campo = linha('v2').querySelector('[data-res-campo="vinculo"]');
+  assert.ok(campo, 'campo para informar o e-mail ou o telefone');
+  // vazio não manda nada; e-mail vai como leadEmail, e a tela recarrega com o que o RD achou
+  campo.value = '   ';
+  campo.dispatchEvent(new p.w.Event('change', { bubbles: true }));
+  await dormir(60);
+  assert.equal(api.contar('PATCH /api/admin/reports/v2/resultado'), 0);
+  campo.value = ' diego2@exemplo.com ';
+  campo.dispatchEvent(new p.w.Event('change', { bubbles: true }));
+  await esperar(() => linha('v2') && /Reunião Realizada/.test(linha('v2').textContent), { motivo: 'linha vinculada' });
+  assert.deepEqual(Object.keys(api.corpos('PATCH /api/admin/reports/v2/resultado')[0]).sort(), ['leadEmail', 'versao']);
+  assert.equal(api.corpos('PATCH /api/admin/reports/v2/resultado')[0].leadEmail, 'diego2@exemplo.com');
+  assert.equal(linha('v2').querySelector('[data-res-campo="vinculo"]'), null);
+  await dormir(40);
+  assert.deepEqual(p.erros, []);
+  p.fechar();
+});
+
+test('Resultados: telefone digitado na linha não achada vai como telefone', async () => {
+  const linhas = { ...LINHAS_RES, reports: [{ ...LINHAS_RES.reports[0], id: 'v9', resultado: '', rdSituacao: 'Não achei este lead no RD. Informe o e-mail ou o telefone dele.' }] };
+  const api = apiBase({ papel: 'master', nome: 'Cauã' })
+    .quando('GET /api/master/resultados', () => ({ corpo: linhas }))
+    .quando('GET /api/master/inteligencia', () => ({ corpo: INTEL }))
+    .quando('PATCH /api/admin/reports/v9/resultado', () => ({ corpo: { ok: true, versao: 1, recarregar: true, rdSituacao: '' } }));
+  const p = abrirPainel(api, { hash: '#resultados' });
+  await esperar(() => !!p.document.querySelector('tr[data-res="v9"] [data-res-campo="vinculo"]'), { motivo: 'campo de vínculo' });
+  const campo = p.document.querySelector('tr[data-res="v9"] [data-res-campo="vinculo"]');
+  campo.value = '(71) 99999-8888';
+  campo.dispatchEvent(new p.w.Event('change', { bubbles: true }));
+  await esperar(() => api.contar('PATCH /api/admin/reports/v9/resultado') === 1, { motivo: 'vínculo enviado' });
+  assert.equal(api.corpos('PATCH /api/admin/reports/v9/resultado')[0].telefone, '(71) 99999-8888');
+  assert.equal(api.corpos('PATCH /api/admin/reports/v9/resultado')[0].leadEmail, undefined);
+  await dormir(60);
+  assert.deepEqual(p.erros, []);
+  p.fechar();
+});
+
 test('Resultados: "Não fechou" também é encerrado — sai da lista ao marcar e volta com "Mostrar encerrados"', async () => {
   const linhas = { ...LINHAS_RES, reports: [
     { ...LINHAS_RES.reports[0], id: 'a1', resultado: '' },
