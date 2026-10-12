@@ -33,14 +33,28 @@ function acharCloser(lista, nome) {
   return casam.length === 1 ? casam[0] : null;
 }
 
-/** No RD, o responsável do card só é o closer depois que a reunião aconteceu (ou no funil dos closers). */
-function closerDoRd(ficha) {
-  const n = ficha && ficha.negociacao;
+/** O card está com um closer? No RD, o responsável só é o closer depois que a reunião aconteceu (ou no funil dos closers). */
+function closerDoCard(n) {
   if (!n || !n.responsavel) return '';
   const etapa = normalizar(n.etapa);
   const funil = normalizar(n.funil);
-  const noFunilDosClosers = /^(em contato|fluxo de fup|negociacao avanc|nao compraram|vendido)/.test(etapa);
+  const noFunilDosClosers = /^(fup agendado|em contato|fluxo de fup|negociacao avanc|nao compraram|vendido)/.test(etapa);
   return /reuniao realizada/.test(etapa) || /closer/.test(funil) || noFunilDosClosers ? n.responsavel : '';
+}
+
+/**
+ * O closer do lead segundo o RD. Vale o card da ficha; se ele ainda é o do pré-vendedor, vale outro
+ * card do mesmo lead que já esteja com um closer (o lead costuma ter um card no funil do SDR e outro
+ * no dos closers) — a lista vem do mais novo para o mais antigo.
+ */
+function closerDoRd(ficha) {
+  const direto = closerDoCard(ficha && ficha.negociacao);
+  if (direto) return direto;
+  for (const card of (ficha && ficha.negociacoes) || []) {
+    const nome = closerDoCard(card);
+    if (nome) return nome;
+  }
+  return '';
 }
 
 /** O report é desta conversa? Pelo telefone (8 últimos dígitos) ou pelo nome do contato. */
