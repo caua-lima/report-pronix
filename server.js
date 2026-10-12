@@ -175,7 +175,9 @@ app.get('/api/eu', auth, async (req, res) => {
   // Closers com análise de afinidade: é daqui que o popup tira o botão "Esse lead é bom para o …?".
   const analises = await closers.comAnalise().catch(() => []);
   // Só para o master: quem ainda não tem inteligência cadastrada (o popup explica por que o botão não aparece).
-  const analisesFaltando = usuarios.ehMaster(req.usuario) ? await closers.semAnalise().catch(() => []) : undefined;
+  // Se ele mesmo desligou a análise de alguém, não há o que explicar: o popup fica sem botão e sem aviso.
+  const explicar = usuarios.ehMaster(req.usuario) && !(await closers.temDesligada().catch(() => false));
+  const analisesFaltando = explicar ? await closers.semAnalise().catch(() => []) : undefined;
   res.json({
     ok: true, nome: req.usuario.nome, id: req.usuario.id, papel: req.usuario.papel,
     // O que o master liberou para esta chave (a extensão mostra no popup).
@@ -317,6 +319,9 @@ app.post('/api/afinidade', auth, async (req, res) => {
     const { closerId, reportId, dados, mensagens, nome } = req.body || {};
     const closer = await closers.porId(String(closerId || ''));
     if (!closer) return res.status(404).json({ erro: 'Closer não encontrado.' });
+    if (closer.analiseDesligada) {
+      return res.status(403).json({ erro: `A análise do ${closers.apelidoDe(closer)} está desligada. Ligue em Closers, no painel.` });
+    }
     // O histórico do closer é dele, não de quem gerou o report: master e gestor cruzam com a equipe toda.
     const reports = await reportsDoEscopo(usuarios.ehAdmin(req.usuario) ? null : req.usuario.id).catch(() => []);
     const r = await afinidadeIa.analisar({ closer, dados, mensagens, nome, reports });
@@ -490,13 +495,17 @@ app.post('/api/admin/closers', acesso(['closers'], SO_MASTER_ERRO), async (req, 
   }
 });
 
-/** Apelido e inteligência do closer (o que as calls dele ensinaram): alimenta a análise de afinidade. */
+/**
+ * Apelido e inteligência do closer (o que as calls dele ensinaram): alimenta a análise de afinidade.
+ * `analiseAtiva` liga e desliga o botão "Esse lead é bom para o …?" sem apagar o texto.
+ */
 app.patch('/api/admin/closers/:id', acesso(['closers'], SO_MASTER_ERRO), async (req, res) => {
   try {
     const corpo = req.body || {};
     const campos = {};
     if (typeof corpo.apelido === 'string') campos.apelido = corpo.apelido;
     if (typeof corpo.inteligencia === 'string') campos.inteligencia = corpo.inteligencia;
+    if (typeof corpo.analiseAtiva === 'boolean') campos.analiseAtiva = corpo.analiseAtiva;
     const c = await closers.definirInteligencia(req.params.id, campos);
     if (!c) return res.status(404).json({ erro: 'Closer não encontrado.' });
     res.json({ ok: true, closer: c });

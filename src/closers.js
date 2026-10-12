@@ -61,8 +61,10 @@ const apelidoDe = (c) => (c && (c.apelido || String(c.nome || '').trim().split(/
  * Inteligência do closer: o que as calls dele ensinaram (com que tipo de lead fecha, como conduz,
  * onde trava). É texto destilado, sem nome nem dado de lead — é o que alimenta a análise de
  * afinidade (src/afinidade.js). Texto vazio desliga a análise para este closer.
+ * `analiseAtiva` liga e desliga a análise sem apagar o texto: desligada, o botão some da extensão
+ * e a rota recusa o pedido.
  */
-async function definirInteligencia(id, { apelido, inteligencia } = {}) {
+async function definirInteligencia(id, { apelido, inteligencia, analiseAtiva } = {}) {
   const dados = await ler();
   const c = dados.closers.find((x) => x.id === id);
   if (!c) return null;
@@ -71,13 +73,24 @@ async function definirInteligencia(id, { apelido, inteligencia } = {}) {
     c.inteligencia = String(inteligencia || '').replace(/\r\n/g, '\n').trim().slice(0, MAX_INTELIGENCIA);
     c.inteligenciaEm = c.inteligencia ? new Date().toISOString() : '';
   }
+  if (analiseAtiva !== undefined) {
+    if (analiseAtiva) delete c.analiseDesligada;
+    else c.analiseDesligada = true;
+  }
   await db.setJson(CHAVE_DB, dados);
   return c;
 }
 
-/** Closers com análise de afinidade disponível (só id, nome e apelido — a inteligência não sai daqui). */
+/** Closers com análise de afinidade ligada (só id, nome e apelido — a inteligência não sai daqui). */
 async function comAnalise() {
-  return (await listar()).filter((c) => c.inteligencia).map((c) => ({ id: c.id, nome: c.nome, apelido: apelidoDe(c) }));
+  return (await listar())
+    .filter((c) => c.inteligencia && !c.analiseDesligada)
+    .map((c) => ({ id: c.id, nome: c.nome, apelido: apelidoDe(c) }));
+}
+
+/** Algum closer tem a inteligência cadastrada e a análise desligada pelo master? */
+async function temDesligada() {
+  return (await listar()).some((c) => c.inteligencia && c.analiseDesligada);
 }
 
 /** Como o botão chamaria os closers que ainda NÃO têm inteligência (para o popup dizer o que falta). */
@@ -85,4 +98,4 @@ async function semAnalise() {
   return (await listar()).filter((c) => !c.inteligencia).map(apelidoDe).filter(Boolean).slice(0, 5);
 }
 
-module.exports = { listar, criar, remover, porId, definirInteligencia, comAnalise, semAnalise, apelidoDe, MAX_INTELIGENCIA };
+module.exports = { listar, criar, remover, porId, definirInteligencia, comAnalise, semAnalise, temDesligada, apelidoDe, MAX_INTELIGENCIA };
