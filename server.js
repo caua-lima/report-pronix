@@ -417,7 +417,7 @@ app.get('/api/master/limpeza-rd/previa', master, async (req, res) => {
 app.post('/api/master/limpeza-rd/executar', master, async (req, res) => {
   try {
     const b = req.body || {};
-    res.json(await limpezaRd.executar({ usuario: req.usuario || { nome: process.env.MASTER_NOME || 'Cauã Lima', id: '' }, ids: b.ids, dias: b.dias, escopo: String(b.escopo || 'meus'), funil: String(b.funil || '') }));
+    res.json(await limpezaRd.executar({ usuario: req.usuario || { nome: process.env.MASTER_NOME || 'Cauã Lima', id: '' }, ids: b.ids, dias: b.dias, escopo: String(b.escopo || 'meus'), funil: String(b.funil || ''), execucao: String(b.execucao || '') }));
   } catch (err) {
     res.status(400).json({ erro: err.message });
   }
@@ -428,6 +428,15 @@ app.post('/api/master/limpeza-rd/desfazer', master, async (req, res) => {
     res.json(await limpezaRd.desfazer({ usuario: req.usuario || { nome: process.env.MASTER_NOME || 'Cauã Lima', id: '' }, ids: (req.body || {}).ids }));
   } catch (err) {
     res.status(400).json({ erro: err.message });
+  }
+});
+
+/** Os relatórios salvos das limpezas já feitas (um por execução), do mais novo para o mais antigo. */
+app.get('/api/master/limpeza-rd/relatorios', master, async (_req, res) => {
+  try {
+    res.json({ relatorios: await limpezaRd.relatoriosSalvos() });
+  } catch (err) {
+    res.status(500).json({ erro: err.message });
   }
 });
 

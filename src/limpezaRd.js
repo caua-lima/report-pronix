@@ -25,6 +25,10 @@ const MAX_PAGINAS = 40; // 8.000 cards por etapa
 const MAX_NA_TELA = 300;
 const CHAVE_LOG = 'rd_limpeza_log';
 const LIMITE_LOG = 8000;
+// Um relatório por execução (o "Testar com 5" é uma, o "Executar todos" é outra): fica guardado à parte
+// do registro card a card, então continua lá mesmo depois que o registro girar.
+const CHAVE_RELATORIOS = 'rd_limpeza_relatorios';
+const LIMITE_RELATORIOS = 400;
 
 const norm = (s) =>
   String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
@@ -205,9 +209,10 @@ function camposComSdr(deal, sdr) {
 /**
  * Move e marca perda em um lote de cards (no máximo LOTE_MAX). Cada card é lido de novo antes: só
  * muda o que continua em aberto, na etapa de origem, parado e (em "só os meus") com o mesmo responsável.
- * @returns {Promise<{feitos: object[], pulados: object[], erros: object[], limite: boolean}>}
+ * `execucao` identifica a rodada: os lotes de uma mesma rodada somam no mesmo relatório salvo.
+ * @returns {Promise<{feitos: object[], pulados: object[], erros: object[], limite: boolean, execucao: string}>}
  */
-async function executar({ usuario, ids, dias, escopo, funil }) {
+async function executar({ usuario, ids, dias, escopo, funil, execucao }) {
   if (!crm.moverLigado()) throw new Error('A escrita no RD está desligada no servidor (CRM_MOVER_ETAPA=0).');
   const pedidos = [...new Set((Array.isArray(ids) ? ids : []).map((x) => String(x || '')).filter((x) => /^[A-Za-z0-9_-]{1,40}$/.test(x)))].slice(0, LOTE_MAX);
   if (!pedidos.length) throw new Error('Nenhum card para mover.');
@@ -215,7 +220,8 @@ async function executar({ usuario, ids, dias, escopo, funil }) {
   const minimo = diasValidos(dias);
   const soMeus = escopo !== 'todos';
   if (soMeus && !ctx.usuarioRd) throw new Error('Não achei o seu usuário no RD para conferir o responsável de cada card.');
-  const saida = { feitos: [], pulados: [], erros: [], limite: false };
+  const rodada = idDaExecucao(execucao);
+  const saida = { feitos: [], pulados: [], erros: [], limite: false, execucao: rodada };
   for (const id of pedidos) {
     try {
       const deal = await crm.rd(`/deals/${encodeURIComponent(id)}`);
@@ -240,7 +246,7 @@ async function executar({ usuario, ids, dias, escopo, funil }) {
       const nome = crm.consertarAcentos(deal.name || '').slice(0, 120);
       await db.push(CHAVE_LOG, {
         dealId: id, nome, funil: ctx.funil.nome, de: { id: regra.etapa.id, nome: regra.etapa.nome }, motivo: regra.rotulo, dias: parado,
-        em: new Date().toISOString(), por: String(usuario.nome || '').slice(0, 80), usuarioId: usuario.id,
+        em: new Date().toISOString(), por: String(usuario.nome || '').slice(0, 80), usuarioId: usuario.id, execucao: rodada,
       }, LIMITE_LOG);
       saida.feitos.push({ id, nome, motivo: regra.rotulo, email: emailDoCard(deal), link: linkDoCard(id) });
     } catch (e) {
@@ -252,7 +258,48 @@ async function executar({ usuario, ids, dias, escopo, funil }) {
       }
     }
   }
+  // O relatório da rodada é gravado a cada lote: se a tela fechar no meio, o que já foi feito está salvo.
+  await somarNoRelatorio(rodada, { funil: ctx.funil.nome, dias: minimo, escopo: soMeus ? 'meus' : 'todos', por: String(usuario.nome || '').slice(0, 80), usuarioId: usuario.id }, saida)
+    .catch((err) => console.error('Falha ao salvar o relatório da limpeza:', err.message));
   return saida;
+}
+
+const idDaExecucao = (v) =>
+  (/^[A-Za-z0-9_-]{6,40}$/.test(String(v || '')) ? String(v) : 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8));
+
+/** Soma o resultado de um lote no relatório da rodada (cria na primeira vez que algo foi movido). */
+async function somarNoRelatorio(rodada, base, saida) {
+  const porMotivo = {};
+  saida.feitos.forEach((f) => { porMotivo[f.motivo] = (porMotivo[f.motivo] || 0) + 1; });
+  const agora = new Date().toISOString();
+  const achou = await db.atualizarNaLista(CHAVE_RELATORIOS, (r) => r && r.id === rodada, (r) => {
+    const soma = { ...(r.porMotivo || {}) };
+    Object.entries(porMotivo).forEach(([k, v]) => { soma[k] = (soma[k] || 0) + v; });
+    return { ...r, fim: agora, total: (r.total || 0) + saida.feitos.length, pulados: (r.pulados || 0) + saida.pulados.length, erros: (r.erros || 0) + saida.erros.length, porMotivo: soma };
+  });
+  // Rodada que não moveu nada não vira relatório.
+  if (achou || !saida.feitos.length) return;
+  await db.push(CHAVE_RELATORIOS, {
+    id: rodada, inicio: agora, fim: agora, ...base, total: saida.feitos.length, pulados: saida.pulados.length, erros: saida.erros.length, porMotivo, desfeitos: 0,
+  }, LIMITE_RELATORIOS);
+}
+
+/** O texto do relatório, do jeito que vai para o líder: um motivo por linha e o total. */
+function textoDoRelatorio(r) {
+  const quando = new Date(r.inicio).toLocaleString('pt-BR', { timeZone: process.env.TZ_RELATORIO || 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const linhas = REGRAS.map((regra) => ({ rotulo: regra.rotulo, total: (r.porMotivo && r.porMotivo[regra.rotulo]) || 0 })).sort((a, b) => b.total - a.total);
+  return `Limpeza do funil — ${quando}${r.funil ? ' — ' + r.funil : ''}\n` + linhas.map((m) => `• ${m.rotulo} - ${m.total}`).join('\n') + `\nTotal: ${r.total || 0}`;
+}
+
+/** Os relatórios salvos, do mais novo para o mais antigo. */
+async function relatoriosSalvos({ limite = 60 } = {}) {
+  const todos = await db.range(CHAVE_RELATORIOS);
+  return todos.filter((r) => r && r.id).reverse().slice(0, limite).map((r) => ({
+    id: r.id, inicio: r.inicio, fim: r.fim, funil: r.funil || '', dias: r.dias, escopo: r.escopo, por: r.por || '',
+    total: r.total || 0, pulados: r.pulados || 0, erros: r.erros || 0, desfeitos: r.desfeitos || 0,
+    porMotivo: REGRAS.map((regra) => ({ rotulo: regra.rotulo, total: (r.porMotivo && r.porMotivo[regra.rotulo]) || 0 })),
+    texto: textoDoRelatorio(r),
+  }));
 }
 
 /**
@@ -275,6 +322,13 @@ async function desfazer({ usuario, ids }) {
       const resp = await crm.rd(`/deals/${encodeURIComponent(id)}`, {}, { metodo: 'PUT', corpo: { deal_stage_id: ultima.de.id, deal: { win: null, deal_lost_reason_id: null } } });
       if (!resp) throw new Error('o RD não achou o card');
       await db.push(CHAVE_LOG, { dealId: id, nome: ultima.nome, desfeito: true, motivo: ultima.motivo, em: new Date().toISOString(), por: String(usuario.nome || '').slice(0, 80), usuarioId: usuario.id }, LIMITE_LOG);
+      if (ultima.execucao) {
+        await db.atualizarNaLista(CHAVE_RELATORIOS, (r) => r && r.id === ultima.execucao, (r) => {
+          const soma = { ...(r.porMotivo || {}) };
+          if (soma[ultima.motivo] > 0) soma[ultima.motivo]--;
+          return { ...r, total: Math.max(0, (r.total || 0) - 1), desfeitos: (r.desfeitos || 0) + 1, porMotivo: soma };
+        }).catch(() => {});
+      }
       saida.desfeitos.push({ id, nome: ultima.nome, etapa: ultima.de.nome });
     } catch (e) {
       saida.erros.push({ id, erro: e.message });
@@ -304,4 +358,4 @@ async function relatorio({ de, ate } = {}) {
   return { porMotivo, total, texto };
 }
 
-module.exports = { previa, executar, desfazer, relatorio, contexto, funisElegiveis, emailDoCard, diasParado, camposComSdr, DIAS_PADRAO, LOTE_MAX };
+module.exports = { previa, executar, desfazer, relatorio, relatoriosSalvos, contexto, funisElegiveis, emailDoCard, diasParado, camposComSdr, DIAS_PADRAO, LOTE_MAX };
