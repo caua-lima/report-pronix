@@ -133,7 +133,7 @@ Além do papel, o master liga quatro recursos **por pessoa** na aba Acessos:
 | **Coach** | só o master | Popup do coach: a dica de como seguir, quando você pede. |
 | **Automação RD** | só o master | Mover o card para "Respondeu", etiqueta "Qualificado" e agendamento. |
 | **Etiquetas** | só o master | No cartão, o investimento do formulário ("R$ 3 a 5k", "R$ 5k+") e se o lead já vende. |
-| **Cor na agenda** | nenhuma | A cor com que as reuniões dos leads da pessoa são pintadas no Google Agenda. |
+| **Cor na agenda** | master: Banana; demais: nenhuma | A cor com que as reuniões dos leads da pessoa são pintadas no Google Agenda. O master já começa na Banana sem configurar; "Não pintar" escolhido à mão é respeitado. |
 
 Regras do cadastro (`src/usuarios.js`): o único master não pode ser rebaixado nem removido; enquanto
 não houver nenhum, o usuário cujo nome é `MASTER_NOME` é promovido uma vez. A `ADMIN_PASSWORD` é o acesso
