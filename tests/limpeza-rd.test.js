@@ -227,6 +227,42 @@ test('e-mail do lead: aparece na prévia e na lista do que foi movido (com o lin
   assert.equal(limpeza.emailDoCard(null), '');
 });
 
+// ---------------------------------------------------------------- relatório salvo
+test('relatório salvo: uma execução = um relatório (os lotes somam); fica guardado, com funil e contagem por motivo', async () => {
+  const antes = (await limpeza.relatoriosSalvos()).length;
+  // a mesma rodada em dois lotes (é assim que o painel manda)
+  const l1 = await limpeza.executar({ usuario: EU, ids: ['d1', 'd3'], dias: 15, escopo: 'meus', execucao: 'rodada-teste-1' });
+  assert.equal(l1.execucao, 'rodada-teste-1');
+  await limpeza.executar({ usuario: EU, ids: ['d2', 'd5'], dias: 15, escopo: 'meus', execucao: 'rodada-teste-1' });
+  let salvos = await limpeza.relatoriosSalvos();
+  assert.equal(salvos.length, antes + 1, 'dois lotes, um relatório');
+  const r = salvos[0];
+  assert.deepEqual([r.id, r.funil, r.total, r.pulados, r.erros, r.desfeitos, r.dias, r.escopo, r.por], ['rodada-teste-1', 'Funil SDR', 3, 1, 0, 0, 15, 'meus', 'Cauã Lima']);
+  assert.deepEqual(r.porMotivo, [{ rotulo: 'Nunca respondeu', total: 2 }, { rotulo: 'Parou de responder', total: 1 }]);
+  assert.match(r.texto, /^Limpeza do funil — \d\d\/\d\d\/\d{4},? \d\d:\d\d — Funil SDR\n• Nunca respondeu - 2\n• Parou de responder - 1\nTotal: 3$/);
+
+  // outra rodada: outro relatório, e o mais novo vem primeiro
+  deals.n1 = { ...JSON.parse(JSON.stringify(deals.d7)), _id: 'n1', user: CAUA };
+  const l3 = await limpeza.executar({ usuario: EU, ids: ['n1'], dias: 15, escopo: 'meus' });
+  assert.match(l3.execucao, /^r[a-z0-9]+$/, 'sem identificador, o servidor cria um');
+  salvos = await limpeza.relatoriosSalvos();
+  assert.deepEqual([salvos.length, salvos[0].total, salvos[1].id], [antes + 2, 1, 'rodada-teste-1']);
+
+  // rodada que não move nada não vira relatório
+  await limpeza.executar({ usuario: EU, ids: ['d3', 'd4'], dias: 15, escopo: 'meus', execucao: 'rodada-vazia' });
+  assert.equal((await limpeza.relatoriosSalvos()).some((x) => x.id === 'rodada-vazia'), false);
+
+  // desfazer um card tira ele da conta do relatório em que estava
+  await limpeza.desfazer({ usuario: EU, ids: ['d5'] });
+  const depois = (await limpeza.relatoriosSalvos()).find((x) => x.id === 'rodada-teste-1');
+  assert.deepEqual([depois.total, depois.desfeitos], [2, 1]);
+  assert.deepEqual(depois.porMotivo, [{ rotulo: 'Nunca respondeu', total: 2 }, { rotulo: 'Parou de responder', total: 0 }]);
+  assert.match(depois.texto, /• Nunca respondeu - 2\n• Parou de responder - 0\nTotal: 2$/);
+
+  // nada de e-mail de lead no que fica guardado
+  assert.ok(!fs.readFileSync(path.join(DADOS, 'rd_limpeza_relatorios.json'), 'utf8').includes('@'));
+});
+
 // ---------------------------------------------------------------- escolher o funil
 test('funil: com mais de um possível, a limpeza exige a escolha e só mexe nos cards do funil escolhido', async () => {
   const funisOk = crm.funis;
@@ -288,6 +324,10 @@ test('rotas: só o master usa; a prévia e o relatório respondem pelo painel', 
     assert.equal(e.json.feitos.length, 1);
     const rel = await chamar('GET', '/api/master/limpeza-rd/relatorio', undefined, master);
     assert.match(rel.json.texto, /• Nunca respondeu - \d+\n• Parou de responder - \d+\nTotal: \d+|• Parou de responder - \d+\n• Nunca respondeu - \d+\nTotal: \d+/);
+    assert.equal((await chamar('GET', '/api/master/limpeza-rd/relatorios', undefined, sdr)).status, 403);
+    const salvos = await chamar('GET', '/api/master/limpeza-rd/relatorios', undefined, master);
+    assert.equal(salvos.status, 200);
+    assert.ok(salvos.json.relatorios.length >= 1 && /Total: \d+$/.test(salvos.json.relatorios[0].texto), 'o que a rota acabou de mover já está salvo');
     const erro = await chamar('POST', '/api/master/limpeza-rd/executar', { ids: [] }, master);
     assert.equal(erro.status, 400);
   } finally {

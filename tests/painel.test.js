@@ -1170,14 +1170,18 @@ test('Limpeza do funil no RD: prévia sem alterar nada, teste com 5, execução 
     cards: [{ id: 'd1', nome: 'PRXC | Lead <b>Um</b>', etapa: 'Contato iniciado', motivo: 'Nunca respondeu', dias: 111, responsavel: 'Cauã Lima', email: 'lead.um@exemplo.com', link: 'https://crm.rdstation.com/app/deals/d1' }],
   };
   let relatorio = { total: 0, texto: '' };
+  // já existe um relatório de uma limpeza anterior: ele aparece ao abrir a aba
+  const salvos = [{ id: 'antigo', inicio: '2026-10-10T15:00:00.000Z', funil: 'SMQLs <b>x</b>', total: 213, desfeitos: 2, porMotivo: [{ rotulo: 'Nunca respondeu', total: 110 }, { rotulo: 'Parou de responder', total: 103 }], texto: 'Limpeza do funil — 10/10/2026 12:00 — SMQLs\n• Nunca respondeu - 110\n• Parou de responder - 103\nTotal: 213' }];
   const lotes = [];
   const api = apiMaster()
     .quando('GET /api/master/google', () => ({ corpo: { configurado: false, conectado: false, agendas: [] } }))
     .quando('GET /api/master/limpeza-rd/funis', () => ({ corpo: { funis: [{ id: 'f1', nome: 'Funil SDR <b>x</b>' }, { id: 'f2', nome: 'SMQLs automáticas' }] } }))
     .quando('GET /api/master/limpeza-rd/previa', () => ({ corpo: { ...PREVIA, funilId: 'f2' } }))
     .quando('GET /api/master/limpeza-rd/relatorio', () => ({ corpo: relatorio }))
+    .quando('GET /api/master/limpeza-rd/relatorios', () => ({ corpo: { relatorios: salvos } }))
     .quando('POST /api/master/limpeza-rd/executar', ({ corpo }) => {
       lotes.push(corpo.ids);
+      if (!salvos.some((s) => s.id === corpo.execucao)) salvos.unshift({ id: corpo.execucao, inicio: new Date().toISOString(), funil: 'SMQLs automáticas', total: corpo.ids.length, desfeitos: 0, porMotivo: [{ rotulo: 'Nunca respondeu', total: corpo.ids.length }, { rotulo: 'Parou de responder', total: 0 }], texto: 'novo' });
       relatorio = { total: 32, texto: '• Nunca respondeu - 20\n• Parou de responder - 12\nTotal: 32' };
       // d2 vem com um link que não é do RD: a tela não pode transformar isso em link
       const feitos = corpo.ids.map((id) => ({ id, nome: 'Card ' + id, motivo: 'Nunca respondeu', email: id === 'd3' ? '' : id + '@exemplo.com', link: id === 'd2' ? 'javascript:alert(1)' : 'https://crm.rdstation.com/app/deals/' + id }));
@@ -1192,6 +1196,15 @@ test('Limpeza do funil no RD: prévia sem alterar nada, teste com 5, execução 
   assert.ok(visivel(p.document.querySelector('.tab[data-aba="funil"]')), 'e item no menu');
   assert.equal(p.$('tituloPagina').textContent, 'Limpeza do RD');
   assert.equal(api.contar('GET /api/master/limpeza-rd/previa'), 0, 'abrir a aba não consulta os cards sozinho');
+
+  // relatórios salvos: o histórico aparece ao abrir a aba, e cada um pode ser copiado
+  await esperar(() => visivel(p.$('lzSalvos')) && p.$('lzSalvosLista').querySelectorAll('tr').length === 1, { motivo: 'histórico de relatórios' });
+  const salvo = p.$('lzSalvosLista').querySelector('tr').textContent.replace(/\s+/g, ' ').trim();
+  assert.match(salvo, /SMQLs <b>x<\/b> 110 103 213 \(2 desfeitos\) Copiar$/);
+  assert.equal(p.$('lzSalvosLista').querySelector('b b'), null, 'nome do funil nunca vira HTML');
+  p.$('lzSalvosLista').querySelector('[data-copiar-salvo="0"]').click();
+  await esperar(() => copiados.length === 1, { motivo: 'relatório salvo copiado' });
+  assert.match(copiados[0], /^Limpeza do funil — 10\/10\/2026 12:00 — SMQLs\n• Nunca respondeu - 110/);
 
   // o funil: lista os possíveis e já vem no de SMQLs automáticas; nome de funil nunca vira HTML
   await esperar(() => p.$('lzFunil').options.length === 3, { motivo: 'funis no seletor' });
@@ -1222,6 +1235,9 @@ test('Limpeza do funil no RD: prévia sem alterar nada, teste com 5, execução 
   await esperar(() => lotes.length === 1, { motivo: 'lote de teste' });
   assert.deepEqual(lotes[0], ids.slice(0, 5));
   assert.equal(api.corpos('POST /api/master/limpeza-rd/executar')[0].funil, 'f2');
+  // a rodada foi salva: o relatório novo entra no topo do histórico, e a tela avisa
+  await esperar(() => p.$('lzSalvosLista').querySelectorAll('tr').length === 2, { motivo: 'relatório novo no histórico' });
+  assert.match(p.$('lzSalvosLista').querySelector('tr').textContent, /SMQLs automáticas/);
 
   // os 5 testados aparecem com o e-mail do lead e o link do card, para conferir no RD
   await esperar(() => visivel(p.$('lzFeitos')), { motivo: 'lista dos movidos' });
@@ -1239,8 +1255,8 @@ test('Limpeza do funil no RD: prévia sem alterar nada, teste com 5, execução 
   await esperar(() => visivel(p.$('lzRelatorio')), { motivo: 'relatório' });
   assert.match(p.$('lzTexto').textContent, /• Nunca respondeu - 20\n• Parou de responder - 12\nTotal: 32/);
   p.$('lzCopiar').click();
-  await esperar(() => copiados.some((t) => /^Limpeza do funil/.test(t)), { motivo: 'relatório copiado' });
-  assert.match(copiados.find((t) => /^Limpeza do funil/.test(t)), /^Limpeza do funil — \d\d\/\d\d\/\d{4}\n• Nunca respondeu - 20/);
+  await esperar(() => copiados.some((t) => /Nunca respondeu - 20/.test(t)), { motivo: 'relatório copiado' });
+  assert.match(copiados.find((t) => /Nunca respondeu - 20/.test(t)), /^Limpeza do funil — \d\d\/\d\d\/\d{4}\n• Nunca respondeu - 20/);
 
   // executar todos: vai em lotes de 15
   await esperar(() => !p.$('lzTudo').disabled && /32 card/.test(p.$('statusLz').textContent), { motivo: 'prévia refeita' });
@@ -1248,6 +1264,11 @@ test('Limpeza do funil no RD: prévia sem alterar nada, teste com 5, execução 
   p.$('lzTudo').click();
   await esperar(() => lotes.length === 3, { motivo: 'três lotes' });
   assert.deepEqual(lotes.map((l) => l.length), [15, 15, 2]);
+  // os três lotes são UMA execução (um relatório só), diferente da do teste com 5
+  const rodadas = api.corpos('POST /api/master/limpeza-rd/executar').map((c) => c.execucao);
+  assert.equal(new Set(rodadas.slice(1)).size, 1);
+  assert.notEqual(rodadas[0], rodadas[1]);
+  assert.match(rodadas[1], /^lz[a-z0-9]{6,}$/);
 
   // desfazer o último lote
   await esperar(() => visivel(p.$('lzDesfazer')) && !p.$('lzDesfazer').disabled, { motivo: 'botão de desfazer' });

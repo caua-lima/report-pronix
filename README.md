@@ -366,6 +366,7 @@ O campo **SDR** do card recebe o nome de quem pediu a limpeza. Fica na aba **Lim
 4. **Executar todos** — em lotes de 15. Cada card é lido de novo antes de mudar: se saiu da etapa,
    teve movimento, foi fechado ou é de outro responsável (em "só os meus"), é pulado.
 5. **Relatório** — quantos cards por motivo ("• Nunca respondeu - 110"), com botão de copiar.
+   Cada execução vira um **relatório salvo** (dia, funil e contagem), que fica no histórico da aba.
 6. **Desfazer o último lote** — volta para a etapa de onde saiu e reabre o card.
 
 "Parado" conta do movimento mais recente entre a última atividade, a última atualização e a criação
@@ -599,6 +600,7 @@ Tudo em `src/db.js` (Redis em produção, `data/*.json` local). **A conversa nã
 | `google_agenda` | Autorização da conta conectada ao Google Agenda (só no servidor). |
 | `lead_marcas` | Etiqueta "Qualificado" e agendamento por lead (até 4.000). |
 | `crm_movimentos` | Registro de cada card movido para "Respondeu" (últimos 500). |
+| `rd_limpeza_relatorios` | Um relatório por execução da limpeza: quando, funil e quantos cards por motivo (últimos 400). |
 | `rd_limpeza_log` | Cada card desqualificado pela limpeza do funil: de que etapa saiu, o motivo e quando (últimos 8.000). É o que permite desfazer. |
 | `coach_feedback` | Sugestões marcadas como úteis ou não. |
 | `aprendizado_consciencia` | Correções do nível de consciência (até 200). |
