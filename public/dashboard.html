@@ -629,6 +629,9 @@
           card em <b>Respondeu</b>, com perda <b>"Parou de responder"</b>. O campo SDR recebe o seu nome. <b>Nada muda no RD até você executar</b>: veja a prévia e teste com 5 cards antes.
         </div>
         <div class="row">
+          <div style="min-width:230px;flex:1"><label for="lzFunil">Funil</label>
+            <select id="lzFunil"><option value="">Carregando os funis do RD…</option></select>
+          </div>
           <div style="min-width:150px"><label for="lzDias">Parado há mais de (dias)</label><input id="lzDias" type="number" min="1" max="365" value="15" /></div>
           <div style="min-width:210px"><label for="lzEscopo">Cards de</label>
             <select id="lzEscopo">
@@ -3146,8 +3149,36 @@
     const lzHoje = () => new Date().toLocaleDateString('en-CA');
     function prepararLimpeza() {
       $('limpezaRd').classList.toggle('hidden', !podeMexerEmUsuarios());
-      if (podeMexerEmUsuarios()) lzCarregarRelatorio();
+      if (!podeMexerEmUsuarios()) return;
+      lzCarregarFunis();
+      lzCarregarRelatorio();
     }
+    /** Os funis em que a limpeza pode rodar. Vem marcado o último escolhido; sem ele, o de SMQLs automáticas, se existir. */
+    async function lzCarregarFunis() {
+      const sel = $('lzFunil');
+      if (sel.dataset.pronto) return;
+      try {
+        const lista = (await api('GET', '/api/master/limpeza-rd/funis')).funis || [];
+        let guardado = '';
+        try { guardado = localStorage.getItem('crLzFunil') || ''; } catch (_) { /* sem storage */ }
+        const smql = lista.find((f) => /smql/i.test(f.nome) && /autom/i.test(f.nome));
+        const escolhido = lista.some((f) => f.id === guardado) ? guardado : smql ? smql.id : lista.length === 1 ? lista[0].id : '';
+        sel.innerHTML = (lista.length === 1 ? '' : `<option value="">${lista.length ? 'Escolha o funil…' : 'Nenhum funil com as etapas da limpeza'}</option>`) +
+          lista.map((f) => `<option value="${esc(f.id)}">${esc(f.nome)}</option>`).join('');
+        sel.value = escolhido;
+        sel.dataset.pronto = '1';
+      } catch (e) {
+        sel.innerHTML = '<option value="">Não consegui listar os funis</option>';
+        setStatus('statusLz', e.message, { erro: true });
+      }
+    }
+    // Trocou o funil: a prévia que estava na tela era de outro — some, para ninguém executar no funil errado.
+    $('lzFunil').addEventListener('change', () => {
+      try { localStorage.setItem('crLzFunil', $('lzFunil').value); } catch (_) { /* sem storage */ }
+      lzAtual = null;
+      ['lzResumo', 'lzTabela', 'lzAcoes'].forEach((id) => $(id).classList.add('hidden'));
+      setStatus('statusLz', $('lzFunil').value ? 'Funil trocado: clique em "Ver prévia".' : 'Escolha o funil.', {});
+    });
     async function lzCarregarRelatorio() {
       try {
         const r = await api('GET', '/api/master/limpeza-rd/relatorio?de=' + lzHoje() + '&ate=' + lzHoje());
@@ -3158,12 +3189,16 @@
       }
     }
     async function lzVerPrevia() {
+      if (!$('lzFunil').value && $('lzFunil').options.length > 1) {
+        setStatus('statusLz', 'Escolha o funil antes de ver a prévia.', { erro: true });
+        return;
+      }
       $('lzPrevia').disabled = true;
       setStatus('statusLz', 'Consultando o RD… (pode levar alguns segundos)', { loading: true });
       try {
-        const q = new URLSearchParams({ dias: $('lzDias').value || '15', escopo: $('lzEscopo').value });
+        const q = new URLSearchParams({ dias: $('lzDias').value || '15', escopo: $('lzEscopo').value, funil: $('lzFunil').value });
         const p = await api('GET', '/api/master/limpeza-rd/previa?' + q);
-        lzAtual = { ids: p.ids || [], total: p.total || 0, dias: p.dias, escopo: p.escopo };
+        lzAtual = { ids: p.ids || [], total: p.total || 0, dias: p.dias, escopo: p.escopo, funil: p.funilId || $('lzFunil').value };
         const c = p.contexto || {};
         $('lzResumo').classList.remove('hidden');
         $('lzResumo').innerHTML =
@@ -3196,7 +3231,7 @@
       try {
         for (let i = 0; i < ids.length; i += 15) {
           setStatus('statusLz', `Movendo no RD… ${Math.min(i, ids.length)} de ${ids.length}`, { loading: true });
-          const r = await api('POST', '/api/master/limpeza-rd/executar', { ids: ids.slice(i, i + 15), dias: lzAtual.dias, escopo: lzAtual.escopo });
+          const r = await api('POST', '/api/master/limpeza-rd/executar', { ids: ids.slice(i, i + 15), dias: lzAtual.dias, escopo: lzAtual.escopo, funil: lzAtual.funil });
           soma.feitos.push(...(r.feitos || []));
           soma.pulados += (r.pulados || []).length;
           soma.erros.push(...(r.erros || []));
