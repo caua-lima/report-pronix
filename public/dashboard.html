@@ -666,6 +666,16 @@
           </table>
           <div id="vazioClosers" class="hint">Nenhum closer cadastrado ainda.</div>
         </div>
+
+        <div class="card">
+          <div class="head"><div class="t"><i data-ic="package"></i>Pacote do closer</div><div class="sub">— cadastro, inteligência e os casos das calls dele, de um arquivo só</div></div>
+          <div class="row" style="align-items:center">
+            <input id="pacoteCloser" type="file" accept=".json,application/json" style="flex:1;min-width:220px" />
+            <button id="importarPacote" class="btn"><i data-ic="plus"></i>Importar pacote</button>
+          </div>
+          <div id="statusPacote" class="status"></div>
+          <div class="hint">O pacote sai da análise das transcrições do closer (arquivo <b>.json</b>). Importar cria o closer se ele ainda não existe, grava o apelido e a inteligência e carrega os casos das calls. Importar de novo troca os casos das transcrições, sem duplicar; os que vêm de resultados marcados continuam.</div>
+        </div>
       </div>
     </section>
 
@@ -1595,6 +1605,7 @@
                 <div class="status" data-status-inteligencia style="margin:0"></div>
               </div>
               <div class="hint">É este texto que a IA cruza com o lead para dar a nota de 0 a 10. Vazio = sem análise para este closer. Para tirar o botão da extensão sem apagar o texto, use "Desligar análise" na linha do closer.${c.inteligenciaEm ? ' Atualizada em ' + esc(new Date(c.inteligenciaEm).toLocaleDateString('pt-BR')) + '.' : ''}</div>
+              <div data-padrao-closer="${esc(c.id)}" style="margin-top:14px"></div>
             </td>
           </tr>`).join('');
       } catch (e) {
@@ -1621,12 +1632,62 @@
       }
     });
 
+    // O padrão das calls do closer: vendas por quem decide, por presença dos decisores e por momento do lead.
+    // Sai dos casos importados das transcrições e das reuniões com resultado marcado.
+    async function mostrarPadraoDoCloser(id) {
+      const caixa = $('listaClosers').querySelector(`[data-padrao-closer="${id}"]`);
+      if (!caixa) return;
+      let p = null;
+      try { p = (await api('GET', '/api/admin/closers/' + id + '/padrao')).padrao; } catch (_) { p = null; }
+      if (!p || !p.geral || !p.geral.total) {
+        caixa.innerHTML = '<div class="hint" style="margin:0">Ainda sem casos das calls deste closer. Eles entram pelo pacote (abaixo) e, depois, a cada lead analisado que tiver o resultado da reunião marcado.</div>';
+        return;
+      }
+      const linha = (rotulo, x) => (x ? `<tr><td>${esc(rotulo)}</td><td>${x.total}</td><td>${x.vendas}${x.total >= 5 ? ' <span style="color:var(--muted)">(' + Math.round((100 * x.vendas) / x.total) + '%)</span>' : ''}</td><td>${x.acordos || '—'}</td></tr>` : '');
+      const bloco = (titulo, linhas) => (linhas ? `<tr><th colspan="4" style="padding-top:10px">${esc(titulo)}</th></tr>${linhas}` : '');
+      caixa.innerHTML = `
+        <label>Padrão das calls <span style="color:var(--muted);font-weight:400">— ${p.geral.total} caso(s): ${p.origem.transcricao} de transcrições, ${p.origem.resultado} de reuniões com resultado marcado</span></label>
+        <table>
+          <thead><tr><th></th><th>Casos</th><th>Vendas</th><th>Acordo a pagar</th></tr></thead>
+          <tbody>
+            ${linha('Todos', p.geral)}
+            ${bloco('Quem decide', linha('Sozinho(a)', p.quem.sozinho) + linha('Casal', p.quem.casal) + linha('Sócios', p.quem.socios) + linha('Depende de pai, irmão ou filho', p.quem.familia))}
+            ${bloco('Decisores na call', linha('Todos estavam', p.presenca.todos) + linha('Faltou alguém', p.presenca.faltou))}
+            ${bloco('Momento do lead', linha('Loja ou empresa física', p.momento.loja) + linha('Já vende online', p.momento.online) + linha('Começando do zero', p.momento.zero))}
+            ${bloco('Reuniões', linha('Uma', p.reunioes.uma) + linha('Duas ou mais', p.reunioes.duas))}
+          </tbody>
+        </table>
+        <div class="hint">A análise de afinidade usa estes números junto com a inteligência. Eles se atualizam sozinhos: cada lead analisado para este closer que tiver o resultado da reunião marcado entra na conta.</div>`;
+    }
+
+    // Pacote do closer: um arquivo com o cadastro, a inteligência e os casos das calls.
+    $('importarPacote').addEventListener('click', async () => {
+      const arquivo = $('pacoteCloser').files && $('pacoteCloser').files[0];
+      if (!arquivo) { setStatus('statusPacote', 'Escolha o arquivo do pacote (.json).', { erro: true }); return; }
+      $('importarPacote').disabled = true;
+      setStatus('statusPacote', 'Importando…', { loading: true });
+      try {
+        let pacote;
+        try { pacote = JSON.parse(await arquivo.text()); } catch (_) { throw new Error('Este arquivo não é um pacote de closer (precisa ser o .json).'); }
+        const r = await api('POST', '/api/admin/closers/importar', pacote);
+        setStatus('statusPacote', `${r.criado ? 'Closer criado' : 'Closer atualizado'}: ${r.closer.nome}. Inteligência ${r.inteligencia ? 'gravada' : 'mantida'} e ${r.casos} caso(s) das calls. O botão "Esse lead é bom para o ${r.closer.apelido}?" já aparece na extensão.`, { ok: true });
+        $('pacoteCloser').value = '';
+        await carregarClosers();
+        carregarStats(); // o closer novo entra no select da tabela de reports
+      } catch (e) {
+        setStatus('statusPacote', e.message, { erro: true });
+      } finally {
+        $('importarPacote').disabled = false;
+      }
+    });
+
     // Inteligência do closer: abre o editor na linha de baixo e salva o apelido e o texto.
     $('listaClosers').addEventListener('click', async (ev) => {
       const abrirEditor = ev.target.closest('[data-inteligencia-closer]');
       if (abrirEditor) {
         const linha = $('listaClosers').querySelector(`[data-editor-closer="${abrirEditor.dataset.inteligenciaCloser}"]`);
         if (linha) linha.classList.toggle('hidden');
+        if (linha && !linha.classList.contains('hidden')) mostrarPadraoDoCloser(abrirEditor.dataset.inteligenciaCloser);
         return;
       }
       // Liga e desliga o botão "Esse lead é bom para o …?" na extensão; a inteligência continua guardada.
