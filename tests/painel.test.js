@@ -1380,6 +1380,64 @@ test('Closers: "Desligar análise" tira o botão da extensão sem apagar a intel
   p.fechar();
 });
 
+test('Closers: importar o pacote cria o closer com inteligência e casos; o editor mostra o padrão das calls', async () => {
+  let lista = [];
+  const conta = (total, vendas, acordos = 0) => ({ total, vendas, acordos });
+  const PADRAO = {
+    geral: conta(10, 4, 1), origem: { transcricao: 9, resultado: 1 },
+    quem: { casal: conta(6, 4), familia: conta(2, 0) }, presenca: { todos: conta(6, 4, 1), faltou: conta(4, 0) },
+    quemPresenca: {}, momento: { loja: conta(5, 2) }, reunioes: { uma: conta(9, 3), duas: conta(1, 1) }, tempo: {},
+  };
+  const api = apiMaster()
+    .quando('GET /api/admin/closers', () => ({ corpo: { closers: lista } }))
+    .quando('POST /api/admin/closers/importar', ({ corpo }) => {
+      if (!corpo.nome) return { status: 400, corpo: { erro: 'O pacote não traz o nome do closer.' } };
+      lista = [{ id: 'c7', nome: corpo.nome, email: '', apelido: corpo.apelido, inteligencia: corpo.inteligencia, inteligenciaEm: '2026-10-12T12:00:00.000Z' }];
+      return { corpo: { ok: true, criado: true, casos: corpo.casos.length, inteligencia: true, closer: { id: 'c7', nome: corpo.nome, apelido: corpo.apelido } } };
+    })
+    .quando('GET /api/admin/closers/c7/padrao', () => ({ corpo: { ok: true, padrao: PADRAO } }));
+  const p = abrirPainel(api, { hash: '#closers' });
+  await esperar(() => visivel(p.$('importarPacote')), { motivo: 'aba Closers aberta' });
+  const escolher = (texto) => Object.defineProperty(p.$('pacoteCloser'), 'files', { configurable: true, value: texto == null ? [] : [{ name: 'pacote.json', text: async () => texto }] });
+
+  // sem arquivo e com arquivo que não é pacote: avisa e não chama o servidor
+  escolher(null);
+  p.$('importarPacote').click();
+  await esperar(() => /Escolha o arquivo/.test(p.$('statusPacote').textContent), { motivo: 'aviso de arquivo' });
+  escolher('isto não é json');
+  p.$('importarPacote').click();
+  await esperar(() => /não é um pacote de closer/.test(p.$('statusPacote').textContent), { motivo: 'aviso de arquivo inválido' });
+  assert.equal(api.contar('POST /api/admin/closers/importar'), 0);
+  // erro do servidor aparece como veio
+  escolher(JSON.stringify({ casos: [] }));
+  p.$('importarPacote').click();
+  await esperar(() => /não traz o nome/.test(p.$('statusPacote').textContent), { motivo: 'erro do servidor' });
+
+  const pacote = { nome: 'Closer <b>Fictício</b>', apelido: 'CF', inteligencia: 'Fecha com casal.', casos: [{ resultado: 'venda' }, { resultado: 'nao' }] };
+  escolher(JSON.stringify(pacote));
+  p.$('importarPacote').click();
+  await esperar(() => /Closer criado/.test(p.$('statusPacote').textContent), { motivo: 'pacote importado' });
+  assert.match(p.$('statusPacote').textContent, /Inteligência gravada e 2 caso\(s\) das calls\. O botão "Esse lead é bom para o CF\?"/);
+  assert.equal(p.$('statusPacote').querySelector('b'), null, 'nome que vem do pacote nunca vira HTML');
+  assert.deepEqual(api.corpos('POST /api/admin/closers/importar').pop(), pacote);
+  await esperar(() => p.$('listaClosers').textContent.includes('análise: CF'), { motivo: 'lista refeita com o closer novo' });
+
+  // abrir o editor traz o padrão das calls
+  p.document.querySelector('[data-inteligencia-closer="c7"]').click();
+  const caixa = () => p.$('listaClosers').querySelector('[data-padrao-closer="c7"]');
+  await esperar(() => /Padrão das calls/.test(caixa().textContent), { motivo: 'padrão carregado' });
+  assert.match(caixa().textContent, /10 caso\(s\): 9 de transcrições, 1 de reuniões com resultado marcado/);
+  const linhas = [...caixa().querySelectorAll('tbody tr')].map((tr) => [...tr.children].map((td) => td.textContent.trim()).join('|'));
+  assert.ok(linhas.includes('Todos|10|4 (40%)|1'));
+  assert.ok(linhas.includes('Casal|6|4 (67%)|—'));
+  assert.ok(linhas.includes('Depende de pai, irmão ou filho|2|0|—'), 'menos de 5 casos: sem porcentagem');
+  assert.ok(linhas.includes('Faltou alguém|4|0|—'));
+  assert.ok(!linhas.some((l) => l.startsWith('Sócios')), 'recorte sem caso não aparece');
+  await dormir(40);
+  assert.deepEqual(p.erros, []);
+  p.fechar();
+});
+
 test('Base: mostra os seis campos, avisa quando é a recomendada e deixa voltar aos textos anteriores', async () => {
   const cheia = { empresa: 'E', qualificacao: 'Q', script: 'S', oferta: 'O', objecoes: 'OB', perfil: 'P', recomendada: true, temAnterior: true, atualizadoEm: '2026-10-01T10:00:00Z' };
   const api = apiBase()
