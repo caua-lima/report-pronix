@@ -374,10 +374,10 @@ do card. É uma leitura conservadora do "esfriando" da tela do RD: na dúvida, n
 campos personalizados do card são reenviados como estavam (`src/limpezaRd.js`).
 `CRM_MOVER_ETAPA=0` desliga também esta escrita.
 
-### Afinidade com o closer ("Esse lead é bom para o PH?")
+### Afinidade com o closer ("Analisar Match com PH")
 
 Para cada closer com **inteligência cadastrada** (aba Closers → Inteligência), o popup da extensão
-ganha um botão **"Esse lead é bom para o {apelido}?"**. Clicar gera o report normal e, logo abaixo
+ganha um botão **"Analisar Match com {apelido}"**. Clicar gera o report normal e, logo abaixo
 do "Report pronto!", a análise:
 
 - **nota de 0 a 10** da combinação lead × closer (não é "o lead é bom?", é "é bom *para ele*?");
