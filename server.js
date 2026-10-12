@@ -32,6 +32,7 @@ const coachIa = require('./src/coach');
 const inteligencia = require('./src/inteligencia');
 const afinidadeIa = require('./src/afinidade');
 const abordagens = require('./src/abordagens');
+const limpezaRd = require('./src/limpezaRd');
 const { gerarAfinidadePdfBuffer, nomeDoArquivo: nomeDoArquivoAfinidade } = require('./src/afinidadePdf');
 const aprendizado = require('./src/aprendizado');
 const { normalizarConsciencia } = require('./src/consciencia');
@@ -387,6 +388,44 @@ app.get('/api/master/inteligencia', acesso(['resultados'], SO_MASTER_ERRO), asyn
   try {
     const painel = inteligencia.painel(await reportsDoEscopo(donoDoEscopo(req)), await closers.listar());
     res.json({ ...painel, insights: await inteligencia.ultimosInsights(), calibragens: (await aprendizado.ajustes()).length });
+  } catch (err) {
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Limpeza do funil no RD: card parado em "Contato iniciado" ou "Respondeu" vira perda em
+// "Desqualificados". Só o master; a prévia não altera nada e a execução vai em lotes pequenos.
+// ---------------------------------------------------------------------------
+app.get('/api/master/limpeza-rd/previa', master, async (req, res) => {
+  try {
+    res.json(await limpezaRd.previa({ usuario: req.usuario || { nome: process.env.MASTER_NOME || 'Cauã Lima', id: '' }, dias: req.query.dias, escopo: String(req.query.escopo || 'meus') }));
+  } catch (err) {
+    res.status(400).json({ erro: err.message });
+  }
+});
+
+app.post('/api/master/limpeza-rd/executar', master, async (req, res) => {
+  try {
+    const b = req.body || {};
+    res.json(await limpezaRd.executar({ usuario: req.usuario || { nome: process.env.MASTER_NOME || 'Cauã Lima', id: '' }, ids: b.ids, dias: b.dias, escopo: String(b.escopo || 'meus') }));
+  } catch (err) {
+    res.status(400).json({ erro: err.message });
+  }
+});
+
+app.post('/api/master/limpeza-rd/desfazer', master, async (req, res) => {
+  try {
+    res.json(await limpezaRd.desfazer({ usuario: req.usuario || { nome: process.env.MASTER_NOME || 'Cauã Lima', id: '' }, ids: (req.body || {}).ids }));
+  } catch (err) {
+    res.status(400).json({ erro: err.message });
+  }
+});
+
+app.get('/api/master/limpeza-rd/relatorio', master, async (req, res) => {
+  try {
+    const dia = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(String(v || '')) ? String(v) : '');
+    res.json(await limpezaRd.relatorio({ de: dia(req.query.de), ate: dia(req.query.ate) }));
   } catch (err) {
     res.status(500).json({ erro: err.message });
   }
