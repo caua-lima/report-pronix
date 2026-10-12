@@ -1576,9 +1576,11 @@
         $('vazioClosers').style.display = closersCache.length ? 'none' : '';
         $('listaClosers').innerHTML = closersCache.map((c) => `
           <tr>
-            <td><b>${esc(c.nome)}</b>${c.inteligencia ? ` <span class="tag" title="Com análise de afinidade: o botão aparece na extensão">análise: ${esc(c.apelido || String(c.nome).split(' ')[0])}</span>` : ''}</td>
+            <td><b>${esc(c.nome)}</b>${!c.inteligencia ? '' : c.analiseDesligada
+              ? ' <span class="tag" style="opacity:.55" title="A inteligência está guardada, mas o botão não aparece na extensão">análise desligada</span>'
+              : ` <span class="tag" title="Com análise de afinidade: o botão aparece na extensão">análise: ${esc(c.apelido || String(c.nome).split(' ')[0])}</span>`}</td>
             <td style="color:var(--muted)">${esc(c.email || '—')}</td>
-            <td><div class="acoes"><button class="mini" data-inteligencia-closer="${esc(c.id)}">Inteligência</button><button class="mini del" data-remover-closer="${esc(c.id)}" data-desc="${esc(c.nome)}">Remover</button></div></td>
+            <td><div class="acoes">${c.inteligencia ? `<button class="mini" data-alternar-analise="${esc(c.id)}" data-ligar="${c.analiseDesligada ? '1' : ''}" title="${c.analiseDesligada ? 'Volta a mostrar o botão na extensão' : 'Tira o botão da extensão sem apagar a inteligência'}">${c.analiseDesligada ? 'Ligar análise' : 'Desligar análise'}</button>` : ''}<button class="mini" data-inteligencia-closer="${esc(c.id)}">Inteligência</button><button class="mini del" data-remover-closer="${esc(c.id)}" data-desc="${esc(c.nome)}">Remover</button></div></td>
           </tr>
           <tr class="hidden" data-editor-closer="${esc(c.id)}">
             <td colspan="3" style="background:var(--card-2);padding:14px 12px">
@@ -1592,7 +1594,7 @@
                 <button class="btn" data-salvar-inteligencia="${esc(c.id)}">Salvar inteligência</button>
                 <div class="status" data-status-inteligencia style="margin:0"></div>
               </div>
-              <div class="hint">É este texto que a IA cruza com o lead para dar a nota de 0 a 10. Vazio = sem análise para este closer.${c.inteligenciaEm ? ' Atualizada em ' + esc(new Date(c.inteligenciaEm).toLocaleDateString('pt-BR')) + '.' : ''}</div>
+              <div class="hint">É este texto que a IA cruza com o lead para dar a nota de 0 a 10. Vazio = sem análise para este closer. Para tirar o botão da extensão sem apagar o texto, use "Desligar análise" na linha do closer.${c.inteligenciaEm ? ' Atualizada em ' + esc(new Date(c.inteligenciaEm).toLocaleDateString('pt-BR')) + '.' : ''}</div>
             </td>
           </tr>`).join('');
       } catch (e) {
@@ -1625,6 +1627,21 @@
       if (abrirEditor) {
         const linha = $('listaClosers').querySelector(`[data-editor-closer="${abrirEditor.dataset.inteligenciaCloser}"]`);
         if (linha) linha.classList.toggle('hidden');
+        return;
+      }
+      // Liga e desliga o botão "Esse lead é bom para o …?" na extensão; a inteligência continua guardada.
+      const alternar = ev.target.closest('[data-alternar-analise]');
+      if (alternar) {
+        const ligar = alternar.dataset.ligar === '1';
+        alternar.disabled = true;
+        try {
+          await api('PATCH', '/api/admin/closers/' + alternar.dataset.alternarAnalise, { analiseAtiva: ligar });
+          toast(ligar ? 'Análise ligada: o botão volta para a extensão.' : 'Análise desligada: o botão sai da extensão.');
+          await carregarClosers();
+        } catch (e) {
+          alternar.disabled = false;
+          setStatus('statusCloser', e.message, { erro: true });
+        }
         return;
       }
       const salvar = ev.target.closest('[data-salvar-inteligencia]');
