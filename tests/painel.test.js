@@ -1200,7 +1200,7 @@ test('Limpeza do funil no RD: prévia sem alterar nada, teste com 5, execução 
   // relatórios salvos: o histórico aparece ao abrir a aba, e cada um pode ser copiado
   await esperar(() => visivel(p.$('lzSalvos')) && p.$('lzSalvosLista').querySelectorAll('tr').length === 1, { motivo: 'histórico de relatórios' });
   const salvo = p.$('lzSalvosLista').querySelector('tr').textContent.replace(/\s+/g, ' ').trim();
-  assert.match(salvo, /SMQLs <b>x<\/b> 110 103 213 \(2 desfeitos\) Copiar$/);
+  assert.match(salvo, /SMQLs <b>x<\/b> 110 103 0 213 \(2 desfeitos\) Copiar$/);
   assert.equal(p.$('lzSalvosLista').querySelector('b b'), null, 'nome do funil nunca vira HTML');
   p.$('lzSalvosLista').querySelector('[data-copiar-salvo="0"]').click();
   await esperar(() => copiados.length === 1, { motivo: 'relatório salvo copiado' });
@@ -1282,6 +1282,92 @@ test('Limpeza do funil no RD: prévia sem alterar nada, teste com 5, execução 
   p.$('lzFunil').dispatchEvent(new p.w.Event('change', { bubbles: true }));
   assert.ok(!visivel(p.$('lzAcoes')) && !visivel(p.$('lzTabela')));
   assert.match(p.$('statusLz').textContent, /Funil trocado/);
+  assert.deepEqual(p.erros, []);
+  p.fechar();
+});
+
+test('Cadastros duplicados: a busca mostra quem fica e quem sai sem alterar nada; teste com 5, fechar em lotes e desfazer', async () => {
+  const card = (id, nome, etapa, extra = {}) => ({ id, nome, etapa, email: id + '@exemplo.com', telefone: '', criadoEm: '01/10/2026', dias: 12, link: 'https://crm.rdstation.com/app/deals/' + id, ...extra });
+  const pares = Array.from({ length: 23 }, (_, i) => ({ id: 's' + (i + 1), fica: 'f' + (i + 1), ...(i === 1 ? { via: 's1' } : {}) }));
+  const BUSCA = {
+    funilId: 'f2', analisados: 812, totalGrupos: 21, total: 23, pares, suspeitos: [{ dado: 'teste@<b>teste</b>.com', tipo: 'e-mail', cards: 9 }],
+    contexto: { funil: 'SMQLs automáticas', destino: 'Desqualificados', motivo: 'Lead Duplicado', sdr: 'Cauã', responsavel: 'Cauã Lima', avisos: [] },
+    grupos: [
+      { fica: card('f1', 'Ana <b>Souza</b>', 'Respondeu'), saem: [card('s1', 'Ana', 'Contato iniciado', { dias: 3 }), card('s2', 'Ana 3', 'Contato iniciado', { link: 'javascript:alert(1)' })], por: 'e-mail e telefone', reinscritoHaDias: 3 },
+      { fica: card('f3', 'Bruno', 'Contato iniciado', { email: '', telefone: '(71) 98888-2222' }), saem: [card('s3', 'Bruno antigo', 'Contato iniciado')], por: 'telefone', reinscritoHaDias: null },
+    ],
+  };
+  const lotes = [];
+  const salvos = [];
+  const api = apiMaster()
+    .quando('GET /api/master/google', () => ({ corpo: { configurado: false, conectado: false, agendas: [] } }))
+    .quando('GET /api/master/limpeza-rd/funis', () => ({ corpo: { funis: [{ id: 'f1', nome: 'Funil SDR' }, { id: 'f2', nome: 'SMQLs automáticas' }] } }))
+    .quando('GET /api/master/limpeza-rd/relatorio', () => ({ corpo: { total: lotes.length ? 5 : 0, texto: '• Duplicado - 5\nTotal: 5' } }))
+    .quando('GET /api/master/limpeza-rd/relatorios', () => ({ corpo: { relatorios: salvos } }))
+    .quando('GET /api/master/limpeza-rd/duplicados', () => ({ corpo: BUSCA }))
+    .quando('POST /api/master/limpeza-rd/duplicados', ({ corpo }) => {
+      lotes.push(corpo.pares);
+      if (!salvos.some((s) => s.id === corpo.execucao)) salvos.unshift({ id: corpo.execucao, inicio: new Date().toISOString(), funil: 'SMQLs automáticas', total: corpo.pares.length, desfeitos: 0, porMotivo: [{ rotulo: 'Nunca respondeu', total: 0 }, { rotulo: 'Parou de responder', total: 0 }, { rotulo: 'Duplicado', total: corpo.pares.length }], texto: 'dup' });
+      const feitos = corpo.pares.slice(1).map((x) => ({ id: x.id, nome: 'Card <i>' + x.id + '</i>', motivo: 'Duplicado', email: x.id + '@exemplo.com', link: 'https://crm.rdstation.com/app/deals/' + x.id, fica: { id: x.fica, nome: 'Fica', etapa: 'Respondeu', link: 'https://crm.rdstation.com/app/deals/' + x.fica } }));
+      return { corpo: { feitos, pulados: [{ id: corpo.pares[0].id, porque: 'já foi fechado' }], erros: [], limite: false } };
+    })
+    .quando('POST /api/master/limpeza-rd/desfazer', ({ corpo }) => ({ corpo: { desfeitos: corpo.ids.map((id) => ({ id })), erros: [] } }));
+  const p = abrirPainel(api, { hash: '#funil' });
+  await esperar(() => visivel(p.$('duplicadosRd')) && p.$('lzFunil').value === 'f2', { motivo: 'cartão dos duplicados e funil escolhido' });
+  assert.equal(api.contar('GET /api/master/limpeza-rd/duplicados'), 0, 'abrir a aba não consulta os cards sozinho');
+
+  p.$('dpProcurar').click();
+  await esperar(() => /21 lead\(s\) com cadastro duplicado: 23 card\(s\) sairiam como "Duplicado"/.test(p.$('statusDp').textContent), { motivo: 'busca' });
+  assert.match(p.$('statusDp').textContent, /A lista mostra 2\. Nada foi alterado ainda\./);
+  assert.equal(api.pedidos.find((x) => x.chave === 'GET /api/master/limpeza-rd/duplicados').query.get('funil'), 'f2');
+  assert.match(p.$('dpResumo').textContent, /cards de Cauã Lima: 812 em aberto analisado\(s\)\. Perda: "Lead Duplicado", etapa Desqualificados\. Campo SDR: Cauã\./);
+  assert.match(p.$('dpResumo').textContent, /E-mail "teste@<b>teste<\/b>\.com" aparece em 9 cards: parece dado genérico, ficou de fora\./);
+  const linhas = [...p.$('dpLista').querySelectorAll('tr')].map((tr) => [...tr.children].map((td) => td.textContent.replace(/\s+/g, ' ').trim()));
+  assert.deepEqual(linhas[0], ['Ana <b>Souza</b>f1@exemplo.comcadastrou de novo há 3 dia(s)', 'e-mail e telefone', 'Respondeu · criado em 01/10/2026 · parado há 12 dia(s)', 'Contato iniciado · criado em 01/10/2026 · parado há 3 dia(s)Contato iniciado · criado em 01/10/2026 · parado há 12 dia(s)']);
+  assert.match(linhas[1][0], /^Bruno\(71\) 98888-2222$/, 'sem e-mail, mostra o telefone; sem reinscrição, sem aviso');
+  assert.equal(p.$('dpLista').querySelector('b b'), null, 'nome do card nunca vira HTML');
+  assert.equal(p.$('dpResumo').querySelector('span b'), null, 'dado suspeito nunca vira HTML');
+  assert.deepEqual([...p.$('dpLista').querySelectorAll('a')].map((a) => a.getAttribute('href')), ['f1', 's1', 'f3', 's3'].map((id) => 'https://crm.rdstation.com/app/deals/' + id), 'endereço que não é do RD não vira link');
+  assert.equal(p.$('dpTudo').textContent, 'Fechar todos como Duplicado (23)');
+  assert.equal(lotes.length, 0);
+
+  // teste com 5: os 5 primeiros pares, com a ponte junto, no funil da busca
+  p.$('dpTeste').click();
+  await esperar(() => lotes.length === 1, { motivo: 'lote de teste' });
+  assert.deepEqual(lotes[0], pares.slice(0, 5));
+  assert.equal(api.corpos('POST /api/master/limpeza-rd/duplicados')[0].funil, 'f2');
+  await esperar(() => visivel(p.$('dpFeitos')), { motivo: 'lista dos fechados' });
+  const feitos = [...p.$('dpFeitosLista').querySelectorAll('tr')].map((tr) => tr.textContent.replace(/\s+/g, ' ').trim());
+  assert.equal(feitos.length, 4);
+  assert.match(feitos[0], /^Card <i>s2<\/i> s2@exemplo\.com Abrir o fechado ficou: Respondeu$/);
+  assert.equal(p.$('dpFeitosLista').querySelector('i'), null);
+  // o relatório salvo ganha a coluna de duplicados
+  await esperar(() => p.$('lzSalvosLista').querySelectorAll('tr').length === 1, { motivo: 'relatório salvo' });
+  assert.match(p.$('lzSalvosLista').querySelector('tr').textContent.replace(/\s+/g, ' ').trim(), /SMQLs automáticas 0 0 5 5 Copiar$/);
+
+  // fechar todos: lotes de 10, uma rodada só
+  await esperar(() => !p.$('dpTudo').disabled && /23 card/.test(p.$('statusDp').textContent), { motivo: 'busca refeita' });
+  lotes.length = 0;
+  p.$('dpTudo').click();
+  await esperar(() => lotes.length === 3, { motivo: 'três lotes' });
+  assert.deepEqual(lotes.map((l) => l.length), [10, 10, 3]);
+  const rodadas = api.corpos('POST /api/master/limpeza-rd/duplicados').map((c) => c.execucao);
+  assert.equal(new Set(rodadas.slice(1)).size, 1);
+  assert.match(rodadas[1], /^dp[a-z0-9]{6,}$/);
+  await esperar(() => visivel(p.$('dpDesfazer')) && !p.$('dpDesfazer').disabled, { motivo: 'botão de desfazer' });
+  assert.equal(p.$('dpDesfazer').textContent, 'Desfazer o último lote (20)');
+
+  // desfazer usa a mesma rota da limpeza
+  p.$('dpDesfazer').click();
+  await esperar(() => api.contar('POST /api/master/limpeza-rd/desfazer') === 2, { motivo: 'desfazer em lotes' });
+  await esperar(() => /20 card\(s\) reaberto\(s\)/.test(p.$('statusDp').textContent), { motivo: 'aviso do desfazer' });
+
+  // trocar de funil some com a busca
+  await esperar(() => visivel(p.$('dpAcoes')), { motivo: 'busca na tela' });
+  p.$('lzFunil').value = 'f1';
+  p.$('lzFunil').dispatchEvent(new p.w.Event('change', { bubbles: true }));
+  assert.ok(!visivel(p.$('dpAcoes')) && !visivel(p.$('dpTabela')));
+  await dormir(60);
   assert.deepEqual(p.erros, []);
   p.fechar();
 });
