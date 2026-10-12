@@ -65,13 +65,17 @@ function chaveDoPerfil(v) {
 
 const infoDoPerfil = (chave) => PERFIS.find((p) => p.chave === chave) || null;
 
-/** { tipo, evidencia, conduzir } vindo da IA -> formato limpo, ou null se o tipo não for reconhecido. */
+/** { tipo, evidencia, conduzir, evitar? } vindo da IA -> formato limpo, ou null se o tipo não for reconhecido. */
 function normalizarPerfil(p) {
   if (!p || typeof p !== 'object') return null;
   const tipo = chaveDoPerfil(p.tipo);
   if (!tipo) return null;
   const txt = (v, max) => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, max) : '');
-  return { tipo, evidencia: txt(p.evidencia, 300), conduzir: txt(p.conduzir, 300) };
+  const saida = { tipo, evidencia: txt(p.evidencia, 300), conduzir: txt(p.conduzir, 300) };
+  // O que faz este lead esfriar na reunião (uma frase). Só entra quando a IA escreveu.
+  const evitar = txt(p.evitar, 200).replace(/^evit(e|ar)\s*:?\s*/i, '');
+  if (evitar) saida.evitar = evitar;
+  return saida;
 }
 
 /** Texto da régua para entrar num prompt (report e coach usam a mesma). */
@@ -85,14 +89,19 @@ function reguaParaPrompt() {
  */
 function comoDecidirPerfil() {
   return [
-    'COMO DECIDIR — teste nesta ordem e fique com o PRIMEIRO que tiver prova nas falas do LEAD (o que o vendedor disse não conta):',
-    '1. "cetico": desconfiança dita — pediu prova ou garantia, citou golpe, curso ou mentoria que não deu certo, perguntou "funciona mesmo?".',
-    '2. "analitico": pediu número, detalhe ou passo a passo; comparou opções; quis entender o método, a margem ou o retorno antes de avançar.',
-    '3. "dominante": respostas curtas e diretas; perguntou preço, prazo ou resultado logo; conduziu a conversa ou cobrou objetividade.',
+    'COMO DECIDIR — o perfil é o PADRÃO das falas do LEAD na conversa inteira, não uma frase solta (o que o vendedor disse não conta):',
+    'a) Passe pelas falas do lead e marque qual perfil cada uma PROVA. A maioria não prova nenhum: resposta a uma pergunta do vendedor, "sim", "ok", dado de formulário e confirmação de horário não contam.',
+    'b) Fique com o perfil que tem MAIS falas-prova. Vale mais a fala em que o lead tomou a INICIATIVA (perguntou, contou, pediu, cobrou) do que a fala em que só respondeu.',
+    'c) Empate: o perfil da fala mais forte perto do fim da conversa (é o estado em que ele chega à reunião); persistindo, a ordem abaixo.',
+    'O QUE É PROVA DE CADA UM:',
+    '1. "cetico": desconfiança dita — pediu prova ou garantia, citou golpe, curso ou mentoria que não deu certo, perguntou "funciona mesmo?", quis saber quem está por trás.',
+    '2. "analitico": por conta própria, pediu número, detalhe ou passo a passo; comparou opções; quis entender o método, a margem ou o retorno ANTES de avançar. Uma pergunta isolada ("como funciona?") não basta: precisa de duas provas, ou de uma pergunta de conta (margem, prazo de retorno, custo).',
+    '3. "dominante": respostas curtas e diretas; perguntou preço, prazo ou resultado logo; conduziu a conversa, cortou rodeio ou cobrou objetividade.',
     '4. "entusiasta": animação dita — exclamações, "quero começar já", topou as coisas na hora, já se imagina vendendo.',
-    '5. "relacional": contou a própria história sem ser perguntado, falou de família, sonho ou sentimento, mandou áudio longo.',
-    '6. "cauteloso": SÓ com hesitação dita — pediu tempo, disse que precisa de outra pessoa para DECIDIR, falou do medo de perder dinheiro ou de errar, respondeu "vou ver".',
-    'ARMADILHAS: "cauteloso" não é o perfil padrão. Ser educado, responder "sim", confirmar a reunião, ter pouco dinheiro, estar começando do zero ou dizer que conversa com o cônjuge mas decide sozinho NÃO é cautela. Em conversa curta, decida pelo JEITO das respostas (curtas e diretas: dominante; perguntou dado: analítico; contou história: relacional). Dois perfis com prova: vale o das ÚLTIMAS falas do lead.',
+    '5. "relacional": contou a própria história sem ser perguntado, falou de família, sonho ou sentimento, mandou áudio longo, agradeceu a atenção.',
+    '6. "cauteloso": SÓ com hesitação dita — pediu tempo, disse que precisa de outra pessoa para DECIDIR, falou do medo de perder dinheiro ou de errar, respondeu "vou ver". Um "vou ver" isolado numa conversa animada não faz ninguém cauteloso.',
+    'ARMADILHAS: "cauteloso" e "analitico" não são perfis padrão — são os dois erros mais comuns. Ser educado, responder "sim", confirmar a reunião, ter pouco dinheiro, estar começando do zero ou dizer que conversa com o cônjuge mas decide sozinho NÃO é cautela. Responder com números porque o vendedor PERGUNTOU os números NÃO é ser analítico. Em conversa curta, decida pelo JEITO das falas que existem (tamanho, tom, quem puxa o assunto) e nunca escolha um perfil só porque não achou prova dos outros.',
+    'SEJA AFIRMATIVO: escolha um perfil e sustente. Nada de "parece", "talvez", "aparenta ser" ou "pode ser" na evidência e no como conduzir.',
   ].join('\n');
 }
 

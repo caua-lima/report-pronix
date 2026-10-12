@@ -6,7 +6,7 @@ const { gerarPdf } = require('./generatePdf');
 const base = require('./base');
 const { normalizarConversa, normalizarTextoLivre } = require('./conversation-normalizer');
 const { verificarCitacoes, neutralizarMarcas, citacaoDesanimadora } = require('./citacoes');
-const { normalizarConsciencia } = require('./consciencia');
+const { normalizarConsciencia, tituloDoMomento } = require('./consciencia');
 const { normalizarPerfil, infoDoPerfil, reguaParaPrompt, comoDecidirPerfil } = require('./perfil');
 const aprendizado = require('./aprendizado');
 
@@ -18,7 +18,7 @@ const LLM_PROVIDER = (process.env.LLM_PROVIDER || 'anthropic').toLowerCase();
 // confundido com o antigo e nunca rodar de novo pra mesma conversa.
 const { normalizarDores } = require('./dores');
 
-const PROMPT_VERSAO = 'v9';
+const PROMPT_VERSAO = 'v10';
 
 // Modo de qualidade só troca o MODELO da Anthropic — nunca inferido sozinho:
 // "standard" é o comportamento de sempre (ANTHROPIC_MODEL), então nenhum
@@ -78,12 +78,15 @@ const EXEMPLO_PEQUENO = {
   ],
   consciencia: {
     nivel: 'produto',
+    titulo: 'Viu no acompanhamento o que faltava',
+    fala: 'Era exatamente o que faltava pra mim.',
     porque: 'Depois de ouvir como funciona o acompanhamento, respondeu que "era exatamente o que faltava" — reagiu à nossa entrega, não só à ideia de vender online.',
   },
   perfil: {
     tipo: 'dominante',
-    evidencia: 'Respostas curtas e diretas, foi logo aos números (104 vendas em 15 dias) e fechou o investimento com um "OK".',
-    conduzir: 'Ir direto ao plano de execução e aos prazos; ele decide rápido quando vê o caminho.',
+    evidencia: 'Respostas curtas e diretas, foi logo aos números ("104 vendas em 15 dias") e fechou o investimento com um "OK".',
+    conduzir: 'Abra pelo plano de execução para sair das 104 vendas e pelos prazos; ele decide rápido quando vê o caminho.',
+    evitar: 'Apresentação longa da empresa antes de chegar ao plano.',
   },
   conversa: [
     'Vitor chegou pelo anúncio e o SDR abriu perguntando como estava a operação; Vitor contou da loja física de moto peças e que começou no Mercado Livre há 15 dias.',
@@ -156,12 +159,15 @@ const EXEMPLO_GRANDE = {
   ],
   consciencia: {
     nivel: 'solucao',
+    titulo: 'Decisão tomada, falta o caminho',
+    fala: 'Preciso começar no Mercado Livre, isso aí já tá decidido.',
     porque: 'Disse que precisa começar no Mercado Livre e que isso já está decidido — procura quem mostre o caminho para executar.',
   },
   perfil: {
     tipo: 'analitico',
-    evidencia: 'Trouxe os números da operação (R$2M/mês, R$100 mil parados) e quis entender como linha e preço ficam separados do atacado.',
-    conduzir: 'Mostrar o processo e a conta fechando, com exemplo de precificação separada; ela avança quando entende o como.',
+    evidencia: 'Trouxe por conta própria os números da operação (R$2M/mês, R$100 mil parados) e perguntou como linha e preço ficam separados do atacado.',
+    conduzir: 'Mostre a conta fechando com um exemplo de precificação separada do atacado; ela avança quando entende o como.',
+    evitar: 'Promessa de faturamento sem mostrar de onde sai a margem.',
   },
   analise: {
     bant: { orcamento: 'sim', autoridade: 'parcial', necessidade: 'sim', prazo: 'sim' },
@@ -249,12 +255,20 @@ ARMADILHAS (são os erros que mais acontecem):
 - Resposta curta a uma pergunta do vendedor ("sim", "ok", "pode ser") só conta quando confirma um FATO citado na pergunta (ex.: o valor do investimento). Não conta como interesse na entrega.
 - Promessa de terceiro ("minha esposa quer muito") não é fala do lead sobre ele mesmo.
 - Sem a prova do nível, DESÇA um degrau. Na dúvida entre dois, fique com o MENOR.
-Em "porque", UMA frase curta que CITA a prova — a fala ou o fato exato do lead que definiu o nível — em tom de venda ("Perguntou como funciona o acompanhamento e confirmou os R$3 mil — chega decidido"). Sem prova citada, o nível está errado. O relatório só mostra o selo do nível "solucao" para cima; abaixo disso ele fica fora do PDF. Então nunca escreva nada negativo aqui.
+Em "porque", UMA frase curta que CITA a prova — a fala ou o fato exato do lead que definiu o nível — em tom de venda ("Perguntou como funciona o acompanhamento e confirmou os R$3 mil — chega decidido"). Sem prova citada, o nível está errado.
+
+O SELO QUE O CLOSER LÊ ("Momento do lead") — o nível acima é a medida interna e tem de estar certo mesmo quando é baixo. Já o selo aparece em TODO relatório e é sempre uma boa notícia verdadeira sobre este lead. Em qualquer nível existe algo bom a dizer: no "inconsciente", a abertura dele para ouvir; no "problema", o objetivo ou a dor que ele mesmo nomeou; no "solucao", que ele já procura quem ensine; no "produto", o que ele gostou da entrega; no "pronto", o passo de compra que puxou.
+- "titulo": 3 a 8 palavras, afirmativas, escritas PARA ESTE LEAD com o que ele disse ("Quer sair do CLT ainda este ano"; "Já vende e quer método para escalar"; "Perguntou quando pode começar"). PROIBIDO o nome da régua ("consciente do problema", "consciente da solução", "inconsciente"), número de nível e fórmula que serviria para qualquer lead ("Lead interessado", "Bom potencial"). Se dois leads diferentes receberiam o mesmo título, ele está genérico: reescreva com o fato deste.
+- "fala": UMA fala literal do LEAD, copiada palavra por palavra, que sustenta o título. Prefira uma que NÃO esteja em "citacoes" (o closer lê as duas seções: fala repetida é espaço perdido). Sem fala literal que sirva, devolva "" — nunca adapte.
+- "porque", título e fala são sempre positivos: nada de "ainda não", "apenas", "só", "falta" ou "não sabe".
 
 PERFIL DO LEAD (campo "perfil") — como este lead se comunica e decide, lido pelo JEITO das respostas dele (tamanho, tom, o que pergunta, o que conta nos áudios). Escolha UM:
 ${reguaParaPrompt()}
 ${comoDecidirPerfil()}
-Em "evidencia", a FALA ou o comportamento do lead NESTA conversa que prova o perfil escolhido (não a definição do perfil). Em "conduzir", UMA frase para o closer conduzir a reunião com este lead, em tom de plano de ação. Conversa curta demais para ler o perfil: escolha pelo jeito das falas que existem e diga na evidência que a leitura é de poucas falas.
+Em "evidencia", a prova tirada DESTA conversa: o comportamento e, entre aspas, a fala do lead que o mostra ("Perguntou a margem e o prazo de retorno antes de aceitar a reunião: 'quanto sobra no fim do mês?'"). Nunca a definição do perfil.
+Em "conduzir", UMA frase no imperativo que só serve para ESTE lead: diga por onde abrir e amarre a um fato dele ("Abra pela conta do estoque parado de R$100 mil: ele decide quando vê o número fechar"). Copiar o "como conduzir" da régua é errado.
+Em "evitar", UMA frase curta com o que faz este lead esfriar na reunião ("Rodeio antes de falar de valor"; "Promessa sem mostrar a conta").
+Conversa curta: escolha pelo jeito das falas que existem e sustente a escolha; não escreva que a leitura é fraca.
 
 COMO FOI A CONVERSA (campo "conversa") — 4 a 6 frases em ordem cronológica: é a narração que faz o closer entrar na reunião como se tivesse lido a conversa inteira. Terceira pessoa e com os nomes: o pré-vendedor pelo NOME DELE (informado abaixo, junto da conversa) e o lead pelo nome. Cubra, nesta ordem, o que existir:
 1. COMO COMEÇOU: de onde o lead veio ou como a conversa abriu.
@@ -282,8 +296,8 @@ Preencha pela ferramenta "gerar_relatorio":
 - "secoes": OBRIGATÓRIO ter de 2 a 4 seções, SEMPRE incluindo "O que o closer deve bater" (numerada:true, ações concretas). Título curto e direto (SEM emoji, SEM símbolo) + bullets densos. As demais saem da conversa: "Perfil e momento", "Dor e objetivo", "Como fechar essa call". Nunca devolva secoes vazio nem só uma seção.
 - "citacoes" (seção "Nas palavras do lead"): 1 a 3 FALAS EXATAS/verbatim do LEAD (copiadas literalmente das linhas do LEAD, inclusive áudios) que deixam o closer ANIMADO para a reunião. É a vitrine do lead: PROCURE ATIVAMENTE, porque quase toda conversa que chegou à reunião tem pelo menos uma. Servem: vontade de começar ("quero começar logo"), decisão tomada ("isso já tá decidido"), o objetivo ou sonho dito por ele ("quero sair do CLT até o fim do ano"), o motivo de ser agora, confirmação de que tem o investimento ("o investimento eu tenho"), autonomia para decidir, elogio ou identificação com o que foi apresentado ("era exatamente isso que eu procurava"), compromisso com a reunião, algo que ele já construiu e de que se orgulha. Prefira as mais fortes e de assuntos diferentes. PROIBIDO citar fala que possa desanimar o closer: preço caro, dúvida, medo, desconfiança, "vou pensar", falta de dinheiro ou de tempo, reclamação, dor contada em tom negativo. Sem paráfrase e sem falas do vendedor. Só devolva [] se o lead realmente não disse nada de positivo.
 - "abertura": um EXTRA além do relatório completo — a fala com que o CLOSER começa a reunião, para ler quase como está. NÃO é o relatório; o corpo (as seções) continua obrigatório do mesmo jeito. Estilo do handoff: cumprimenta o lead pelo nome, diz que o pré-vendedor repassou o contexto, resume a situação real (se está começando do zero ou já vende, o que vende/quer, a motivação) e TERMINA confirmando com o lead ("é isso mesmo?"). 2 a 4 frases, primeira pessoa, tom cordial. Use SOMENTE o que apareceu na conversa. Não fale de preço nem de proposta. Se souber o nome do pré-vendedor, cite-o; senão, diga "meu time".
-- "consciencia": { "nivel", "porque" } conforme a seção NÍVEL DE CONSCIÊNCIA.
-- "perfil": { "tipo", "evidencia", "conduzir" } conforme a seção PERFIL DO LEAD.
+- "consciencia": { "nivel", "titulo", "fala", "porque" } conforme a seção NÍVEL DE CONSCIÊNCIA e O SELO QUE O CLOSER LÊ.
+- "perfil": { "tipo", "evidencia", "conduzir", "evitar" } conforme a seção PERFIL DO LEAD.
 - "conversa": 4 a 6 frases do desenrolar, com o nome do pré-vendedor e do lead (seção COMO FOI A CONVERSA).
 - "analise": { "bant", "spin", "perguntas_chave", "abordagem" } conforme a seção ANÁLISE DA PROSPECÇÃO.
 - "sinais_compra": 1 a 4 sinais concretos de compra, ou [].
@@ -492,19 +506,22 @@ const REPORT_TOOL = {
         description: 'Nível de consciência do lead, julgado só pelo que ele disse ou demonstrou na conversa.',
         properties: {
           nivel: { type: 'string', enum: ['inconsciente', 'problema', 'solucao', 'produto', 'pronto'] },
+          titulo: { type: 'string', description: 'O selo que o closer lê: 3 a 8 palavras afirmativas e positivas, escritas para este lead. Nunca o nome da régua.' },
+          fala: { type: 'string', description: 'Uma fala literal do lead que sustenta o título, de preferência diferente das citações. "" se não houver.' },
           porque: { type: 'string', description: 'Uma frase curta, em tom de venda, com a evidência da conversa.' },
         },
-        required: ['nivel', 'porque'],
+        required: ['nivel', 'titulo', 'fala', 'porque'],
       },
       perfil: {
         type: 'object',
         description: 'Perfil comportamental do lead, lido pelo jeito das respostas dele.',
         properties: {
           tipo: { type: 'string', enum: ['dominante', 'analitico', 'cetico', 'relacional', 'cauteloso', 'entusiasta'] },
-          evidencia: { type: 'string', description: 'O comportamento observado nesta conversa que indica o perfil.' },
-          conduzir: { type: 'string', description: 'Uma frase para o closer conduzir a reunião com este lead.' },
+          evidencia: { type: 'string', description: 'O comportamento observado nesta conversa, com a fala do lead entre aspas, que prova o perfil.' },
+          conduzir: { type: 'string', description: 'Uma frase no imperativo para o closer conduzir a reunião, amarrada a um fato deste lead.' },
+          evitar: { type: 'string', description: 'Uma frase curta: o que faz este lead esfriar na reunião.' },
         },
-        required: ['tipo', 'evidencia', 'conduzir'],
+        required: ['tipo', 'evidencia', 'conduzir', 'evitar'],
       },
       conversa: {
         type: 'array',
@@ -700,6 +717,7 @@ function aplicarVerificacaoDeCitacoes(dados, falasDoLead) {
   const boas = mantidas.filter((c) => !citacaoDesanimadora(c));
   dados.citacoes = boas.slice(0, 3);
   dados._meta = { citacoesRemovidas: removidas.length };
+  aplicarMomentoDoLead(dados, falasDoLead);
   if (removidas.length) {
     // Só a quantidade: o conteúdo é fala de lead e não vai para log.
     console.warn(`[report] ${removidas.length} citação(ões) removida(s): não batem com falas do lead.`);
@@ -707,6 +725,30 @@ function aplicarVerificacaoDeCitacoes(dados, falasDoLead) {
   if (mantidas.length > boas.length) {
     console.warn(`[report] ${mantidas.length - boas.length} citação(ões) tirada(s) por poder desanimar o closer.`);
   }
+}
+
+/**
+ * O selo "Momento do lead": a fala só fica se o lead disse mesmo (mesma conferência das citações) e não
+ * pode desanimar; se ela repete uma citação da vitrine, sai de um dos dois lugares. O título vem sempre:
+ * o da IA ou, sem ele, um de reserva do nível, que muda de lead para lead.
+ */
+function aplicarMomentoDoLead(dados, falasDoLead) {
+  const c = dados.consciencia;
+  if (!c) return;
+  if (c.fala) {
+    const dita = verificarCitacoes([c.fala], falasDoLead).mantidas.length > 0;
+    if (!dita || citacaoDesanimadora(c.fala)) delete c.fala;
+  }
+  if (c.fala) {
+    const chave = (s) => String(s || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+    const repetida = (dados.citacoes || []).findIndex((x) => chave(x) === chave(c.fala));
+    if (repetida !== -1) {
+      // Com outras falas na vitrine, a repetida fica só no selo; se era a única, fica só na vitrine.
+      if (dados.citacoes.length > 1) dados.citacoes.splice(repetida, 1);
+      else delete c.fala;
+    }
+  }
+  c.titulo = tituloDoMomento(c, dados.lead);
 }
 
 /**
@@ -799,7 +841,9 @@ function aplicarPerfilNoResumo(dados) {
   const jaTem = (dados.resumo || []).some((r) => /^perfil( do lead)?$/i.test(String(r.rotulo || '').trim()));
   if (jaTem) return;
   const dica = dados.perfil.conduzir || dados.perfil.evidencia;
-  dados.resumo = (dados.resumo || []).concat([{ rotulo: 'Perfil', valor: dica ? `${info.rotulo} — ${dica}` : info.rotulo }]);
+  const ponto = (s) => (/[.!?]$/.test(s) ? s : s + '.');
+  const evitar = dados.perfil.conduzir && dados.perfil.evitar ? ` Evite: ${ponto(dados.perfil.evitar.charAt(0).toLowerCase() + dados.perfil.evitar.slice(1))}` : '';
+  dados.resumo = (dados.resumo || []).concat([{ rotulo: 'Perfil', valor: dica ? `${info.rotulo} — ${evitar ? ponto(dica) : dica}${evitar}` : info.rotulo }]);
 }
 
 /**
@@ -815,10 +859,10 @@ async function montarSystem() {
     console.error('[report] não consegui ler a base de conhecimento:', err.message);
   }
   const comPlaybook = playbook ? `${SYSTEM_PROMPT}\n\n---\n\n${playbook}` : SYSTEM_PROMPT;
-  // O que o gestor já corrigiu no nível de consciência vira régua para os próximos reports.
+  // O que o gestor já corrigiu no nível de consciência e no perfil do lead vira régua para os próximos reports.
   let calibragem = '';
   try {
-    calibragem = await aprendizado.blocoConscienciaParaPrompt();
+    calibragem = [await aprendizado.blocoConscienciaParaPrompt(), await aprendizado.blocoPerfilParaPrompt()].filter(Boolean).join('\n\n');
   } catch (err) {
     console.error('[report] não consegui ler a calibragem:', err.message);
   }

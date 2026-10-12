@@ -9,6 +9,7 @@
 
 const db = require('./db');
 const { NIVEIS, chaveDoNivel } = require('./consciencia');
+const { chaveDoPerfil, infoDoPerfil } = require('./perfil');
 
 const CHAVE = 'aprendizado_consciencia';
 const LIMITE = 200;
@@ -66,4 +67,39 @@ async function blocoConscienciaParaPrompt() {
   );
 }
 
-module.exports = { registrarAjusteConsciencia, blocoConscienciaParaPrompt, ajustes };
+// Perfil do lead: a mesma ideia. Quando o master troca o perfil que a IA leu, a troca vira exemplo
+// ("com esta evidência a IA disse X, o certo era Y") e entra nos próximos reports.
+const CHAVE_PERFIL = 'aprendizado_perfil';
+const nomeDoPerfil = (k) => (infoDoPerfil(k) || {}).rotulo || k;
+
+/** Guarda uma correção de perfil feita pelo master. Ignora quando não mudou nada. */
+async function registrarAjustePerfil({ reportId, de, para, evidencia }) {
+  const a = chaveDoPerfil(de);
+  const b = chaveDoPerfil(para);
+  if (!b || a === b) return false;
+  await db.push(CHAVE_PERFIL, { reportId: String(reportId || '').slice(0, 20), de: a || '', para: b, evidencia: limpar(evidencia, 300), quando: new Date().toISOString() }, LIMITE);
+  return true;
+}
+
+async function ajustesDePerfil() {
+  try {
+    return await db.range(CHAVE_PERFIL);
+  } catch (_) {
+    return [];
+  }
+}
+
+/** Bloco para o system do report. '' quando ainda não há correções de perfil com evidência. */
+async function blocoPerfilParaPrompt() {
+  const porReport = new Map();
+  (await ajustesDePerfil()).forEach((x) => porReport.set(x.reportId || x.quando, x));
+  const uteis = [...porReport.values()].filter((x) => x.evidencia).slice(-NO_PROMPT);
+  if (!uteis.length) return '';
+  return (
+    'CALIBRAGEM DO PERFIL DO LEAD — correções feitas pelo gestor em reports anteriores. ' +
+    'Use como régua: com evidência parecida, escolha o perfil que ele escolheu.\n' +
+    uteis.map((x) => `- Evidência: "${x.evidencia}" → a IA leu "${x.de || '?'}" (${nomeDoPerfil(x.de)}); o certo é "${x.para}" (${nomeDoPerfil(x.para)})`).join('\n')
+  );
+}
+
+module.exports = { registrarAjusteConsciencia, blocoConscienciaParaPrompt, ajustes, registrarAjustePerfil, blocoPerfilParaPrompt, ajustesDePerfil };
