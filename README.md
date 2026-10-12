@@ -330,17 +330,36 @@ funciona**.
   Realizada" (ou no funil dos closers) com o closer como responsável, ou se a reunião está na agenda
   de um closer, os handoffs daquele lead que estão sem closer são preenchidos (`src/closerAuto.js`).
   Só vale closer cadastrado na aba Closers, e closer já marcado nunca é trocado.
-- **Desfecho puxado do RD.** O closer registra o fim no RD: vendido, ou perdido / etapa "Não
-  compraram" com o motivo. O servidor lê isso (`src/vendasRd.js`) ao abrir a aba Resultados (no
-  máximo a cada 30 min), uma vez por dia pelo agendador da Vercel (`/api/cron/rd`, com
-  `CRON_SECRET`) e pelo botão **Puxar do RD**. Vendido vira o selo "Vendido no RD" (você só diz
-  se foi call, follow-up ou pix); não comprou vira "Não fechou" com o motivo em "o que deu a
-  reunião" e sai da lista. Só vale desfecho registrado depois de o report existir.
+- **Desfecho puxado do RD.** O closer registra o fim no RD: vendido (com o produto e o valor), ou
+  perdido / etapa "Não compraram" com o motivo. O servidor lê isso (`src/vendasRd.js`) e preenche
+  a linha sozinho:
+  - **vendido** vira **Venda em call** — ou **Venda em follow-up**, se o card já tinha passado pelo
+    follow-up ou fechou depois do dia da reunião —, com o **produto** e o **ticket** do card. Você
+    só completa a forma de pagamento. Tipo, produto e ticket preenchidos à mão nunca são trocados;
+  - **não comprou** vira "Não fechou" com o motivo em "o que deu a reunião" e sai da lista.
+
+  Só vale desfecho registrado depois de o report existir.
+- **De hora em hora.** A conferência roda sozinha: a extensão bate no servidor a cada hora enquanto o
+  Chrome está aberto (`POST /api/rd/atualizar`), a aba Resultados confere ao abrir, o agendador da
+  Vercel roda uma vez por dia (`/api/cron/rd`, com `CRON_SECRET`) e o botão **Puxar do RD** confere
+  na hora. Para não gastar consulta à toa: nunca roda mais de uma vez a cada 30 min, olha no máximo
+  10 a 25 leads por rodada, report recente conferido há menos de 50 min e report antigo conferido há
+  menos de 20 h ficam para a próxima. É só leitura no RD e não usa IA.
+- **Achar o card certo.** O nome do contato no WhatsApp não serve para achar o lead no RD. Ao gerar
+  o report, a extensão manda o que o cartão aberto sabe do card — id do contato, e-mail e telefone —
+  e o report fica **vinculado**. A busca vai pelo e-mail, depois pelo telefone (os dois enxergam os
+  cadastros repetidos do mesmo lead, onde o card da reunião às vezes está), depois pelo id e, por
+  último, pelo nome. Cada linha mostra o que o RD respondeu ("RD: Reunião Realizada · CLOSERS ·
+  Fulano"). Lead não achado aparece em vermelho com um campo para informar o **e-mail ou o telefone**:
+  o sistema vincula e confere na hora. Reports antigos se vinculam sozinhos quando a conversa é
+  reaberta com o cartão na tela.
 - **Conferir uma pessoa.** Em "Reports de", o master escolhe ver os resultados de um usuário.
 - **Dados da venda.** Na venda, a linha ganha produto (PRONIX Performance ou Acelera), ticket e forma
   de pagamento. O valor do card vendido no RD já vem como ticket, se o campo estiver vazio.
-- **Etapas do funil dos closers.** "Fluxo de FUP" marca "Em follow-up", "Vendido" vale como venda
-  mesmo sem o card estar marcado como ganho, e o responsável do card vira o closer do report.
+- **Etapas do funil dos closers.** "FUP Agendado" e "Fluxo de FUP" marcam "Em follow-up" ("Em
+  contato" e "Negociação Avançada" também, quando o card está no funil dos closers), "Vendido" vale
+  como venda mesmo sem o card estar marcado como ganho, e o responsável do card que está com um
+  closer vira o closer do report — mesmo que o lead tenha outro card ainda no funil do pré-vendedor.
 - **No-show não é reunião.** Sai da lista de resultados (volta com "Mostrar no-show"), fica fora
   do .zip do dia e não conta como venda perdida do closer.
 - **Perfil com critério.** A IA testa os perfis em ordem e exige prova na fala do lead;
@@ -507,6 +526,7 @@ Autenticação por cabeçalho `x-cr-key` (a chave do usuário). `gestor+` = mast
 | `GET /api/master/diagnostico` | master | Confere, sem alterar nada, se a automação do "Respondeu" e a cor da agenda têm tudo no lugar, e mostra a última vez que cada uma funcionou. |
 | `GET /api/master/limpeza-rd/funis` · `GET …/previa` · `POST …/executar` · `POST …/desfazer` · `GET …/relatorio` | master | Limpeza do funil no RD: prévia, lotes, desfazer e relatório por motivo. |
 | `GET/POST /api/master/limpeza-rd/duplicados` | master | Cadastros duplicados no funil: a busca (sem alterar nada) e o fechamento em lotes como "Duplicado". |
+| `POST /api/rd/atualizar` | chave | Batida de hora em hora da extensão: põe venda, follow-up, perda e closer dos reports em dia com o RD (no máximo a cada 30 min). |
 | `POST /api/lead/marca` | chave + automação | Etiqueta "Qualificado" e agendamento. |
 | `POST /api/resumo-rapido` | chave + popup do lead | Resumo rápido da conversa. |
 | `POST /api/coach` · `POST /api/coach/feedback` | chave + coach | Coach e o "Funcionou". |
