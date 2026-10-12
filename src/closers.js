@@ -80,4 +80,9 @@ async function comAnalise() {
   return (await listar()).filter((c) => c.inteligencia).map((c) => ({ id: c.id, nome: c.nome, apelido: apelidoDe(c) }));
 }
 
-module.exports = { listar, criar, remover, porId, definirInteligencia, comAnalise, apelidoDe, MAX_INTELIGENCIA };
+/** Como o botão chamaria os closers que ainda NÃO têm inteligência (para o popup dizer o que falta). */
+async function semAnalise() {
+  return (await listar()).filter((c) => !c.inteligencia).map(apelidoDe).filter(Boolean).slice(0, 5);
+}
+
+module.exports = { listar, criar, remover, porId, definirInteligencia, comAnalise, semAnalise, apelidoDe, MAX_INTELIGENCIA };

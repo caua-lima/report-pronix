@@ -99,6 +99,8 @@ const CONVERSA = [
 test('inteligência do closer: só o master grava; sem ela o closer não aparece para análise', async () => {
   let eu = await chamar('GET', '/api/eu', undefined, E.master);
   assert.deepEqual(eu.json.analises, [], 'ninguém com inteligência ainda');
+  assert.deepEqual(eu.json.analisesFaltando, ['Paulo', 'Outro'], 'o master fica sabendo de quem falta a inteligência');
+  assert.equal((await chamar('GET', '/api/eu', undefined, E.sdr)).json.analisesFaltando, undefined, 'para os outros isso não vai');
 
   assert.equal((await chamar('PATCH', '/api/admin/closers/' + E.ph.id, { inteligencia: INTELIGENCIA }, E.sdr)).status, 403, 'SDR não mexe');
   assert.equal((await chamar('PATCH', '/api/admin/closers/naoexiste', { inteligencia: 'x' }, E.master)).status, 404);

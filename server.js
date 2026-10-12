@@ -174,6 +174,8 @@ app.get('/api/status', (_req, res) => {
 app.get('/api/eu', auth, async (req, res) => {
   // Closers com análise de afinidade: é daqui que o popup tira o botão "Esse lead é bom para o …?".
   const analises = await closers.comAnalise().catch(() => []);
+  // Só para o master: quem ainda não tem inteligência cadastrada (o popup explica por que o botão não aparece).
+  const analisesFaltando = usuarios.ehMaster(req.usuario) ? await closers.semAnalise().catch(() => []) : undefined;
   res.json({
     ok: true, nome: req.usuario.nome, id: req.usuario.id, papel: req.usuario.papel,
     // O que o master liberou para esta chave (a extensão mostra no popup).
@@ -181,6 +183,7 @@ app.get('/api/eu', auth, async (req, res) => {
     abas: usuarios.abasDe(req.usuario), // abas do painel liberadas para esta chave
     etiquetas: Boolean(req.usuario.etiquetas),
     analises,
+    analisesFaltando,
   });
 });
 
