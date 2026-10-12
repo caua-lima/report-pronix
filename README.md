@@ -286,6 +286,12 @@ Três coisas, sem IA e sem custo, para quem o master ligou:
 
 O texto da conversa não vai ao servidor para isso — só o pedido de mover, a etiqueta e a data.
 
+**Etiqueta de perda.** Se o card do lead foi dado como perdido no RD, o cartão mostra, em vermelho,
+**DESQUALIFICADO · motivo** (card na etapa de desqualificados) ou **PERDIDO · motivo** (perdido em
+outra etapa), com a anotação da perda ao passar o mouse. Vem da própria ficha do RD, então aparece
+para quem vê o cartão, sem depender da automação; cobre tanto a perda dada à mão quanto a da
+Limpeza do RD. Lead com outro card em aberto não ganha a etiqueta: a ficha mostra o card aberto.
+
 **Reunião pelo Google Agenda.** Quando o master conecta a conta dele (aba **Extensão** → **Google
 Agenda**), o servidor lê as agendas que essa conta enxerga — as dos closers, compartilhadas com
 ela — e procura o evento em que o **e-mail do lead** é convidado (sem e-mail no RD, o nome inteiro
