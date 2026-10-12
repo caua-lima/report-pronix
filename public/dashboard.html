@@ -739,7 +739,7 @@
         </div>
 
         <div class="card">
-          <div class="head"><div class="t"><i data-ic="users"></i>Equipe</div></div>
+          <div class="head"><div class="t"><i data-ic="users"></i>Equipe</div><div class="sub">— clique no nome para escolher o que a pessoa usa: Popup do lead, Coach, Automação RD, Etiquetas, cor da agenda e abas. O seu já vem aberto.</div></div>
           <table>
             <thead><tr><th>Nome</th><th>Chave</th><th>Permissões</th><th>Criado</th><th></th></tr></thead>
             <tbody id="lista"></tbody>
@@ -1115,6 +1115,7 @@
     let souAdmin = false;
     let souGestor = false;
     let souMaster = false;
+    let meuId = ''; // id do usuário desta chave: na aba Acessos, as permissões dele já vêm abertas
     const podeMexerEmUsuarios = () => souMaster || Boolean(senhaAdmin); // a senha reserva equivale ao master
     // Abas (e o "ver a equipe" dos reports do dia) que o master liberou para esta chave, na aba Acessos.
     let minhasAbas = new Set();
@@ -1278,6 +1279,17 @@
         $('cardCriar').classList.toggle('hidden', !podeMexerEmUsuarios());
         $('avisoSoMaster').classList.toggle('hidden', podeMexerEmUsuarios());
         $('vazio').style.display = usuarios.length ? 'none' : '';
+        // Sistema vazio: o primeiro acesso é o do dono, então já vem como Master (sem master ninguém libera nada).
+        if (!usuarios.length && !$('papel').dataset.sugerido) {
+          $('papel').value = 'master';
+          $('papel').dataset.sugerido = '1';
+          setStatus('statusCriar', 'Este é o primeiro acesso: crie o seu como Master. É o Master que liga Coach, Automação RD e Etiquetas.', {});
+        }
+        // As permissões de quem está logado já vêm abertas (uma vez): é ali que se escolhe o que usar.
+        if (meuId && !abertosAcessos.proprio && usuarios.some((u) => u.id === meuId)) {
+          abertosAcessos.add(meuId);
+          abertosAcessos.proprio = true;
+        }
         const CORES_AGENDA = [['1', 'Lavanda'], ['2', 'Sálvia'], ['3', 'Uva'], ['4', 'Flamingo'], ['5', 'Banana (amarelo)'], ['6', 'Tangerina'], ['7', 'Pavão'], ['8', 'Grafite'], ['9', 'Mirtilo'], ['10', 'Manjericão'], ['11', 'Tomate']];
         const NO_WHATSAPP = [
           ['fichaCrm', 'data-ficha-crm', 'Popup do lead', 'Ficha do RD e resumo rápido ao abrir a conversa'],
@@ -1295,10 +1307,10 @@
           const aberta = abertosAcessos.has(u.id);
           return `
           <tr>
-            <td><button type="button" class="nome-acesso" data-abrir-perm="${esc(u.id)}" aria-expanded="${aberta}" title="Clique para ver e mudar o que ${esc(u.nome)} pode usar" style="background:none;border:0;padding:0;font:inherit;color:inherit;cursor:pointer;font-weight:700;text-align:left"><span class="seta" style="display:inline-block;width:14px;color:var(--muted)">${aberta ? '▾' : '▸'}</span>${esc(u.nome)}</button>${podeMexerEmUsuarios() ? `
+            <td><button type="button" class="nome-acesso" data-abrir-perm="${esc(u.id)}" aria-expanded="${aberta}" title="Clique para ver e mudar o que ${esc(u.nome)} pode usar" style="background:none;border:0;padding:0;font:inherit;color:inherit;cursor:pointer;font-weight:700;text-align:left"><span class="seta" style="display:inline-block;width:14px;color:var(--muted)">${aberta ? '▾' : '▸'}</span>${esc(u.nome)}${u.id === meuId ? ' <span style="font-weight:400;color:var(--muted)">(você)</span>' : ''}</button>${podeMexerEmUsuarios() ? `
               <select class="mini-select" data-papel-de="${esc(u.id)}" title="Tipo de acesso de ${esc(u.nome)}">
                 ${[['sdr', 'Usuário'], ['gestor', 'Gestor'], ['master', 'Master']].map(([v, t]) => `<option value="${v}" ${u.papel === v ? 'selected' : ''}>${t}</option>`).join('')}
-              </select>` : u.papel !== 'sdr' ? ` <span class="tag" style="color:var(--gold-ink);border-color:var(--primary)">${u.papel}</span>` : ''}</td>
+              </select>` : u.papel !== 'sdr' ? ` <span class="tag" style="color:var(--ouro-tinta);border-color:var(--ouro)">${u.papel}</span>` : ''}</td>
             <td><span class="chave" data-cheia="${esc(u.chave)}" data-mascara="${esc(mascarar(u.chave))}" title="Clique para mostrar ou ocultar" style="cursor:pointer">${esc(mascarar(u.chave))}</span></td>
             <td style="color:var(--text-2);font-size:.82rem" data-resumo-perm="${esc(u.id)}">${nWhats} no WhatsApp · ${master ? 'todas as abas' : nAbas + ' aba(s)'}</td>
             <td style="color:var(--muted);font-size:.8rem">${new Date(u.criadoEm).toLocaleDateString('pt-BR')}</td>
@@ -2980,6 +2992,7 @@
           throw new Error(j.erro || 'Chave inválida.');
         }
         souMaster = j.papel === 'master';
+        meuId = String(j.id || '');
         papelConhecido = true;
         souGestor = j.papel === 'gestor';
         souAdmin = souMaster || souGestor; // master e gestor veem e fazem tudo; só o master mexe em usuários
