@@ -81,6 +81,31 @@ async function definirInteligencia(id, { apelido, inteligencia, analiseAtiva } =
   return c;
 }
 
+/**
+ * Pasta do Google Drive com as transcrições das calls do closer, e a partir de que dia ler (AAAA-MM-DD).
+ * Pasta vazia desliga a leitura. O que já foi lido continua guardado.
+ */
+async function definirDrive(id, { pasta, desde } = {}) {
+  const dados = await ler();
+  const c = dados.closers.find((x) => x.id === id);
+  if (!c) return null;
+  if (pasta !== undefined) c.drivePasta = /^[A-Za-z0-9_-]{10,80}$/.test(String(pasta || '')) ? String(pasta) : '';
+  if (desde !== undefined) c.driveDesde = /^\d{4}-\d{2}-\d{2}$/.test(String(desde || '')) ? String(desde) : '';
+  await db.setJson(CHAVE_DB, dados);
+  return c;
+}
+
+/** Como foi a última leitura do Drive deste closer (quando, quantos documentos, o erro, se houve). */
+async function anotarLeituraDoDrive(id, info) {
+  const dados = await ler();
+  const c = dados.closers.find((x) => x.id === id);
+  if (!c) return null;
+  const n = (v) => Math.max(0, Math.round(Number(v)) || 0);
+  c.driveUltima = { em: String((info && info.em) || new Date().toISOString()).slice(0, 30), lidos: n(info && info.lidos), casos: n(info && info.casos), semConversa: n(info && info.semConversa), restantes: n(info && info.restantes), erro: String((info && info.erro) || '').slice(0, 300) };
+  await db.setJson(CHAVE_DB, dados);
+  return c;
+}
+
 /** Closers com análise de afinidade ligada (só id, nome e apelido — a inteligência não sai daqui). */
 async function comAnalise() {
   return (await listar())
@@ -98,4 +123,4 @@ async function semAnalise() {
   return (await listar()).filter((c) => !c.inteligencia).map(apelidoDe).filter(Boolean).slice(0, 5);
 }
 
-module.exports = { listar, criar, remover, porId, definirInteligencia, comAnalise, semAnalise, temDesligada, apelidoDe, MAX_INTELIGENCIA };
+module.exports = { listar, criar, remover, porId, definirInteligencia, definirDrive, anotarLeituraDoDrive, comAnalise, semAnalise, temDesligada, apelidoDe, MAX_INTELIGENCIA };
