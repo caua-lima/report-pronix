@@ -143,7 +143,7 @@ test('conectar: o master abre a tela do Google e a volta guarda a autorização'
   const c = await chamar('POST', '/api/master/google/conectar', {}, E.master);
   const u = new URL(c.json.url);
   assert.equal(u.origin + u.pathname, 'https://accounts.google.com/o/oauth2/v2/auth');
-  assert.equal(u.searchParams.get('scope'), 'https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/calendar.events', 'ler as agendas e alterar eventos (só a cor)');
+  assert.equal(u.searchParams.get('scope'), 'https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/drive.readonly', 'ler as agendas, alterar eventos (só a cor) e ler as transcrições no Drive');
   assert.equal(u.searchParams.get('access_type'), 'offline');
   assert.match(u.searchParams.get('redirect_uri'), /\/api\/google\/retorno$/);
   const state = u.searchParams.get('state');

@@ -17,7 +17,9 @@ const CHAVE_PINTURA = 'google_agenda_pintura'; // última tentativa de pintar: {
 const CACHE_AGENDAS = 'google:agendas:v2';
 // Ler as agendas e os eventos; e alterar eventos só para uma coisa: pintar a reunião com a cor do
 // pré-vendedor (o time marca de quem é cada lead pela cor do evento).
-const ESCOPO = 'https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/calendar.events';
+// calendar.*: ler as agendas e pintar a reunião. drive.readonly: ler as transcrições das calls na pasta do closer
+// (src/driveGoogle.js) — só leitura; quem conectou antes de ela existir precisa conectar de novo.
+const ESCOPO = 'https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/drive.readonly';
 // Cores de evento do Google Agenda (colorId).
 const CORES = {
   1: 'Lavanda', 2: 'Sálvia', 3: 'Uva', 4: 'Flamingo', 5: 'Banana', 6: 'Tangerina',
@@ -292,6 +294,19 @@ async function alteraEventos() {
   return r && r.ok && r.corpo.scope ? pode(r.corpo.scope) : null;
 }
 
+/** A conexão atual pode ler o Drive? true | false | null (não deu para saber). */
+async function leDrive() {
+  const pode = (escopo) => String(escopo || '').split(/\s+/).some((e) => e.endsWith('/auth/drive.readonly') || e.endsWith('/auth/drive'));
+  const g = await guardado();
+  if (g && g.escopo && !String(process.env.GOOGLE_REFRESH_TOKEN || '').trim()) return pode(g.escopo);
+  const token = await tokenDeAcesso().catch(() => '');
+  if (!token) return null;
+  const r = await google('https://oauth2.googleapis.com/tokeninfo', {
+    method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ access_token: token }),
+  }).catch(() => null);
+  return r && r.ok && r.corpo.scope ? pode(r.corpo.scope) : null;
+}
+
 /** Para o painel: está configurado? conectado? quantas agendas enxerga? */
 async function status() {
   const g = await guardado();
@@ -303,6 +318,7 @@ async function status() {
       saida.agendas = lista.map((a) => a.nome);
       // Para explicar a cor que não mudou: a conexão altera eventos? em quais agendas a conta só pode ver?
       saida.alteraEventos = await alteraEventos();
+      saida.leDrive = await leDrive();
       saida.soLeitura = lista.filter((a) => !a.escreve).map((a) => a.nome);
       const ult = await db.getJson(CHAVE_PINTURA, null).catch(() => null);
       saida.ultimaPintura = ult && ult.resultado ? ult : null;
@@ -313,4 +329,4 @@ async function status() {
   return saida;
 }
 
-module.exports = { configurado, urlDeAutorizacao, concluirConexao, desconectar, reuniaoDoLead, pintarReuniao, status, horaLocal, ehDoLead, CORES, corValida };
+module.exports = { configurado, urlDeAutorizacao, concluirConexao, desconectar, reuniaoDoLead, pintarReuniao, status, horaLocal, ehDoLead, CORES, corValida, tokenDeAcesso, leDrive };
