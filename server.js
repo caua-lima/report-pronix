@@ -32,6 +32,8 @@ const coachIa = require('./src/coach');
 const inteligencia = require('./src/inteligencia');
 const afinidadeIa = require('./src/afinidade');
 const casosDoCloser = require('./src/casos');
+const transcricoes = require('./src/transcricoes');
+const driveGoogle = require('./src/driveGoogle');
 const limpezaRd = require('./src/limpezaRd');
 const diagnostico = require('./src/diagnostico');
 const { gerarAfinidadePdfBuffer, nomeDoArquivo: nomeDoArquivoAfinidade } = require('./src/afinidadePdf');
@@ -286,13 +288,28 @@ async function conferirDesfechosNoRd({ porVez } = {}) {
 }
 
 /**
+ * Transcrições novas das calls, lidas da pasta de cada closer no Drive: no máximo uma rodada a cada 45 min
+ * e dois documentos por closer (é o que cabe na IA gratuita e no tempo do servidor). null = nada a fazer agora.
+ */
+async function lerTranscricoesNovas() {
+  if (!(await closers.listar()).some((c) => c.drivePasta && !c.analiseDesligada)) return null;
+  if (!(await db.travar('drive-transcricoes', 2700))) return null;
+  return transcricoes.sincronizarTodos({ porVez: 2 });
+}
+
+/**
  * Batida de hora em hora da extensão: mantém venda, follow-up, perda e closer dos reports em dia com o
  * RD. Qualquer chave válida pode bater; a trava de 30 min vale para todos, então não acumula.
  */
 app.post('/api/rd/atualizar', auth, async (_req, res) => {
   try {
-    const r = await conferirDesfechosNoRd({ porVez: 10 });
-    res.json(r ? { ok: true, ...r } : { ok: true, emDia: true });
+    // As duas rodadas falam com serviços diferentes (RD e Google): vão juntas, para caber no tempo do servidor.
+    const [r, lidas] = await Promise.all([
+      conferirDesfechosNoRd({ porVez: 10 }),
+      lerTranscricoesNovas().catch((err) => { console.error('Falha ao ler as transcrições do Drive:', err.message); return null; }),
+    ]);
+    const transc = lidas ? { transcricoes: { lidos: lidas.lidos, casos: lidas.casos } } : {};
+    res.json(r ? { ok: true, ...r, ...transc } : { ok: true, emDia: true, ...transc });
   } catch (err) {
     res.status(502).json({ erro: err.message });
   }
@@ -549,8 +566,19 @@ app.patch('/api/admin/closers/:id', acesso(['closers'], SO_MASTER_ERRO), async (
     if (typeof corpo.apelido === 'string') campos.apelido = corpo.apelido;
     if (typeof corpo.inteligencia === 'string') campos.inteligencia = corpo.inteligencia;
     if (typeof corpo.analiseAtiva === 'boolean') campos.analiseAtiva = corpo.analiseAtiva;
-    const c = await closers.definirInteligencia(req.params.id, campos);
+    let c = await closers.definirInteligencia(req.params.id, campos);
     if (!c) return res.status(404).json({ erro: 'Closer não encontrado.' });
+    // Pasta do Drive com as transcrições das calls dele (o link da pasta) e a partir de que dia ler.
+    if (typeof corpo.drivePasta === 'string' || typeof corpo.driveDesde === 'string') {
+      const drive = {};
+      if (typeof corpo.drivePasta === 'string') {
+        const id = driveGoogle.idDaPasta(corpo.drivePasta);
+        if (corpo.drivePasta.trim() && !id) return res.status(400).json({ erro: 'Não reconheci o link da pasta do Drive. Cole o endereço da pasta (…/folders/…).' });
+        drive.pasta = id;
+      }
+      if (typeof corpo.driveDesde === 'string') drive.desde = corpo.driveDesde;
+      c = await closers.definirDrive(req.params.id, drive);
+    }
     res.json({ ok: true, closer: c });
   } catch (err) {
     res.status(400).json({ erro: err.message });
@@ -583,6 +611,55 @@ app.post('/api/admin/closers/importar', acesso(['closers'], SO_MASTER_ERRO), asy
       ok: true, criado, casos: n, inteligencia: Boolean(campos.inteligencia),
       closer: { id: closer.id, nome: closer.nome, apelido: closers.apelidoDe(closer) },
     });
+  } catch (err) {
+    res.status(400).json({ erro: err.message });
+  }
+});
+
+/** Lê agora os documentos novos da pasta do closer no Drive (três por clique) e devolve o que aconteceu. */
+app.post('/api/admin/closers/:id/drive/ler', acesso(['closers'], SO_MASTER_ERRO), async (req, res) => {
+  try {
+    const closer = await closers.porId(req.params.id);
+    if (!closer) return res.status(404).json({ erro: 'Closer não encontrado.' });
+    res.json({ ok: true, ...(await transcricoes.sincronizar(closer, { porVez: 3 })) });
+  } catch (err) {
+    res.status(400).json({ erro: err.message });
+  }
+});
+
+/** Os casos lidos do Drive deste closer (os mais novos primeiro) e como foi a última leitura. */
+app.get('/api/admin/closers/:id/drive', acesso(['closers'], SO_MASTER_ERRO), async (req, res) => {
+  try {
+    const closer = await closers.porId(req.params.id);
+    if (!closer) return res.status(404).json({ erro: 'Closer não encontrado.' });
+    const lista = await casosDoCloser.doDrive(closer.id);
+    res.json({
+      ok: true, pasta: closer.drivePasta || '', desde: closer.driveDesde || '', ultima: closer.driveUltima || null, total: lista.length,
+      casos: lista.slice().sort((a, b) => String(b.data).localeCompare(String(a.data))).slice(0, 60).map((c) => ({
+        id: c.id, data: c.data, quem: c.quem, todosNaCall: c.todosNaCall, momento: c.momento, resultado: c.resultado, motivo: c.motivo, perfil: c.perfil, reunioes: c.reunioes, minutos: c.minutos, revisado: Boolean(c.revisado),
+      })),
+    });
+  } catch (err) {
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+/** Corrige um caso lido do Drive (resultado, quem decide, presença, momento): caso corrigido não é mais mexido pela leitura. */
+app.patch('/api/admin/closers/:id/casos/:caso', acesso(['closers'], SO_MASTER_ERRO), async (req, res) => {
+  try {
+    const c = await casosDoCloser.editarDoDrive(req.params.id, req.params.caso, req.body || {});
+    if (!c) return res.status(404).json({ erro: 'Caso não encontrado.' });
+    res.json({ ok: true, caso: c });
+  } catch (err) {
+    res.status(400).json({ erro: err.message });
+  }
+});
+
+app.delete('/api/admin/closers/:id/casos/:caso', acesso(['closers'], SO_MASTER_ERRO), async (req, res) => {
+  try {
+    const c = await casosDoCloser.editarDoDrive(req.params.id, req.params.caso, null);
+    if (!c) return res.status(404).json({ erro: 'Caso não encontrado.' });
+    res.json({ ok: true });
   } catch (err) {
     res.status(400).json({ erro: err.message });
   }
