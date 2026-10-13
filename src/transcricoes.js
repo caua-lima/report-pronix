@@ -135,7 +135,8 @@ function anotacoesParaIa(e, closerNome) {
 /** A IA classifica; o que dá para saber sem ela (onboarding da casa, duração) vale sobre a resposta. */
 async function classificar(e, { closerNome = '' } = {}) {
   const user = `<anotacoes>\n${anotacoesParaIa(e, closerNome).replace(/<\s*\/?\s*anotacoes\s*>/gi, '')}\n</anotacoes>\n\nResponda agora só com o JSON.`;
-  const j = extrairJson(await chatGroq({ system: SYSTEM, user, modelo: process.env.GROQ_COACH_MODEL, maxTokens: 450 }));
+  // Com prazo: várias calls são lidas na mesma rodada, dentro do tempo de uma função da Vercel.
+  const j = extrairJson(await chatGroq({ system: SYSTEM, user, modelo: process.env.GROQ_COACH_MODEL, maxTokens: 450, prazoMs: 18000 }));
   const resultado = e.onboarding ? 'venda' : casos.RESULTADOS.includes(j.resultado) ? j.resultado : '';
   if (!resultado) throw new Error('A IA não disse como a reunião terminou.');
   const semNome = (s) => mascarar(String(s || ''), { closerNome }).replace(/\[(pessoa|lead)\]/g, 'o lead').replace(/\s+/g, ' ').trim();
@@ -229,8 +230,8 @@ async function sincronizar(closer, { porVez = 2 } = {}) {
     } catch (err) {
       meus[a.id] = { ...marca, r: 'erro' };
       saida.erros.push(err.message);
-      // Problema da conexão ou do limite: não adianta insistir nos próximos nesta rodada.
-      if (/Conecte|permissão para ler o Drive|não está ativada|limitou|limite/i.test(err.message)) {
+      // Problema da conexão, do limite ou da IA lenta: não adianta insistir nos próximos nesta rodada.
+      if (/Conecte|permissão para ler o Drive|não está ativada|limitou|limite|demorou demais/i.test(err.message)) {
         delete meus[a.id]; // não foi culpa do arquivo: não gasta tentativa
         saida.restantes += agora.length - agora.indexOf(a);
         break;
