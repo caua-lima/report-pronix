@@ -423,9 +423,21 @@ ganha um botão **"Analisar Match com {apelido}"**. Clicar gera o report normal 
 do "Report pronto!", a análise:
 
 - **nota de 0 a 10** da combinação lead × closer (não é "o lead é bom?", é "é bom *para ele*?");
-- o veredito, **por que essa nota**, **pontos de atenção**, **como conduzir a call** e o que
-  **confirmar antes**;
-- um **segundo PDF** com tudo isso, de uso do pré-vendedor.
+- no aviso: o veredito, até três motivos, um ponto de atenção e a base da nota;
+- um **segundo PDF**, de uso do pré-vendedor, com o relatório completo:
+  - **pontos que dão match** — cada um com a prova do lead (a fala ou o fato) e o que as calls do
+    closer mostram, com o número;
+  - **pontos de atenção** — de onde vêm e como contornar antes ou durante a call;
+  - **casos parecidos nas calls do closer** — as contas dos recortes em que o lead se encaixa (quem
+    decide, momento, presença) e exemplos reais do que fechou e do que não, sem nome de lead;
+  - **plano da call** em oito fases: abertura, quem decide e quem paga, perguntas de diagnóstico,
+    devolver a dor, prova, proposta, pagamento e fechamento;
+  - **objeções prováveis** (o sinal na conversa e a resposta), o que não fazer, **falas do lead**
+    para usar (só as que ele disse de fato) e o que confirmar antes.
+
+A análise são dois pedidos à IA gratuita — a avaliação e o plano da call —, porque cada pedido tem
+tamanho limitado. Se o plano falhar, o relatório sai com a avaliação e os passos curtos, e a próxima
+tentativa refaz o plano.
 
 A nota cruza três coisas: a inteligência do closer (o que as calls dele ensinaram: com que tipo de
 lead fecha — sozinho, casal, com sócio; perfil —, como conduz, onde trava), o histórico dele em
@@ -451,6 +463,28 @@ terminou. Os casos vêm de dois lugares (`src/casos.js`):
 
 O padrão ("casal com os dois na call: 9 de 17") vai dentro do histórico no pedido à IA e aparece no
 painel, em Closers → Inteligência.
+
+**Transcrições novas, direto do Drive.** Em Closers → Inteligência, cole o link da **pasta do Google
+Drive** onde caem as transcrições das calls do closer (as anotações do Google Meet) e a data a partir
+da qual ler. Todo documento novo vira um caso dele, e o padrão se atualiza (`src/transcricoes.js`,
+`src/driveGoogle.js`):
+
+- a leitura acontece sozinha de hora em hora (junto da batida da extensão; no máximo uma rodada a cada
+  45 min, dois documentos por closer) e no botão **Ler agora** (três por clique);
+- reunião sem conversa (não compareceu, caiu) não vira caso; duas reuniões do mesmo lead em até 15
+  dias viram **um** caso, com o melhor desfecho; o que chega pelo Drive e por um report com resultado
+  conta uma vez só;
+- a classificação é da IA gratuita, a partir das anotações. É automática e pode errar: a tela lista
+  cada call lida, com "quem decide" e "como terminou" editáveis e o botão de apagar. Caso corrigido
+  não é mais mexido. Tarefa para a pessoa do onboarding nas "Próximas etapas" vale como prova de venda
+  (`TRANSCRICAO_ONBOARDING`, padrão `Carlos`);
+- **privacidade:** só leitura no Drive; a transcrição não fica guardada no servidor; antes de ir para a
+  IA os nomes, e-mails e telefones são mascarados; o caso guardado não tem nome de lead (só uma
+  impressão do primeiro nome, para juntar as reuniões).
+
+Para funcionar: ative a **Google Drive API** no projeto do Google Cloud do aplicativo e conecte o
+Google de novo no painel (a permissão `drive.readonly` é nova). A conta conectada precisa ter acesso à
+pasta.
 
 **Ligar e desligar.** Na aba Closers, cada closer com inteligência tem o botão **Desligar análise**
 (e depois **Ligar análise**). Desligada, o botão some do popup de todo mundo e `POST /api/afinidade`
@@ -550,6 +584,8 @@ Autenticação por cabeçalho `x-cr-key` (a chave do usuário). `gestor+` = mast
 | `PATCH /api/admin/closers/:id` | master | Apelido e inteligência do closer (alimenta a afinidade); `analiseAtiva` liga e desliga a análise. |
 | `POST /api/admin/closers/importar` | master | Pacote do closer: cadastro, apelido, inteligência e casos das calls. |
 | `GET /api/admin/closers/:id/padrao` | master | As contas dos casos do closer (transcrições + reuniões com resultado). |
+| `POST /api/admin/closers/:id/drive/ler` · `GET …/drive` | master | Lê os documentos novos da pasta do Drive do closer; lista os casos lidos e a última leitura. |
+| `PATCH/DELETE /api/admin/closers/:id/casos/:caso` | master | Corrige ou apaga um caso lido do Drive. |
 | `GET/POST/PATCH/DELETE /api/admin/usuarios` | master | Acessos da equipe. |
 | `GET /api/master/resultados` · `GET /api/master/inteligencia` · `POST /api/master/insights` | master | Resultados, inteligência e insights. |
 | `GET /api/status` | pública | Verificação de conexão. |

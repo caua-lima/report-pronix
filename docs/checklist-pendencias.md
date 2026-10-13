@@ -20,6 +20,7 @@ Detalhes técnicos em [`auditoria-pronix.md`](auditoria-pronix.md) e [`plano-imp
 - [x] "Fulano vai melhor com lead X" com o porquê das anotações; perfil do lead com critério (prompt v7)
 - [x] Menu lateral; Acessos com permissões por pessoa (abas, recursos e cor na agenda)
 - [ ] **Você:** enviar a extensão 1.3.5 (visual novo, botão "Analisar Match com PH" com o porquê da nota, etiqueta de perda no cartão e termômetro de dores, vínculo do report com o card do RD e atualização de hora em hora) à Chrome Web Store. Na loja, a permissão nova "alarms" pede justificativa: "atualizar de hora em hora, a partir do CRM, o resultado das reuniões dos relatórios gerados"
+- [ ] **Você:** ativar a Google Drive API no projeto do Google Cloud, conectar o Google de novo (permissão de ler o Drive) e colar o link da pasta de transcrições do PH em Closers → Inteligência (ler a partir de 09/10/2026)
 - [ ] **Você:** importar o pacote do PH em Closers → Importar pacote (cadastro, inteligência e os casos das calls)
 - [ ] **Você:** reconectar o Google (Extensão → Google Agenda → Conectar de novo) para liberar a cor
 - [ ] **Você:** escolher a sua cor e a do Samuel em Acessos; conferir se a conta pode editar as agendas dos closers
