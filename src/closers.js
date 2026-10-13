@@ -89,8 +89,11 @@ async function definirDrive(id, { pasta, desde } = {}) {
   const dados = await ler();
   const c = dados.closers.find((x) => x.id === id);
   if (!c) return null;
+  const antes = [c.drivePasta || '', c.driveDesde || ''].join('|');
   if (pasta !== undefined) c.drivePasta = /^[A-Za-z0-9_-]{10,80}$/.test(String(pasta || '')) ? String(pasta) : '';
   if (desde !== undefined) c.driveDesde = /^\d{4}-\d{2}-\d{2}$/.test(String(desde || '')) ? String(desde) : '';
+  // Pasta ou data nova: a leitura recomeça da data escolhida, e não de onde a anterior parou.
+  if ([c.drivePasta || '', c.driveDesde || ''].join('|') !== antes) delete c.driveUltima;
   await db.setJson(CHAVE_DB, dados);
   return c;
 }
@@ -101,7 +104,10 @@ async function anotarLeituraDoDrive(id, info) {
   const c = dados.closers.find((x) => x.id === id);
   if (!c) return null;
   const n = (v) => Math.max(0, Math.round(Number(v)) || 0);
-  c.driveUltima = { em: String((info && info.em) || new Date().toISOString()).slice(0, 30), lidos: n(info && info.lidos), casos: n(info && info.casos), semConversa: n(info && info.semConversa), restantes: n(info && info.restantes), erro: String((info && info.erro) || '').slice(0, 300) };
+  // `ate`: até que dia a pasta já foi lida (a próxima leitura começa daí). Leitura que falhou não muda isso.
+  const dia = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(String(v || '')) ? String(v) : '');
+  const ate = dia(info && info.ate) || dia(c.driveUltima && c.driveUltima.ate);
+  c.driveUltima = { em: String((info && info.em) || new Date().toISOString()).slice(0, 30), lidos: n(info && info.lidos), casos: n(info && info.casos), semConversa: n(info && info.semConversa), restantes: n(info && info.restantes), erro: String((info && info.erro) || '').slice(0, 300), ...(ate ? { ate } : {}) };
   await db.setJson(CHAVE_DB, dados);
   return c;
 }

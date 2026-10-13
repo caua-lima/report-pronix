@@ -27,6 +27,7 @@ const CHAVE_LIDOS = 'drive_lidos';
 const MAX_LIDOS = 3000; // arquivos lembrados por closer
 const DIAS_MESMO_LEAD = 15;
 const TENTATIVAS = 3;
+const FOLGA_DIAS = 14; // com a pasta em dia, a próxima leitura ainda olha os documentos das duas últimas semanas
 const MESES = { jan: 1, fev: 2, mar: 3, abr: 4, mai: 5, jun: 6, jul: 7, ago: 8, set: 9, out: 10, nov: 11, dez: 12 };
 
 const semAcento = (s) => String(s == null ? '' : s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
@@ -196,17 +197,21 @@ async function lidosDe(closerId) {
  * Lê os documentos novos da pasta de um closer e transforma cada reunião em caso.
  * @param {object} closer  { id, nome, drivePasta, driveDesde }
  * @param {{porVez?: number}} o
- * @returns {Promise<{lidos: number, casos: number, semConversa: number, erros: string[], restantes: number, total: number}>}
+ * @returns {Promise<{lidos: number, casos: number, semConversa: number, erros: string[], restantes: number, total: number, subpastas: number, desde: string}>}
  */
-async function sincronizar(closer, { porVez = 2 } = {}) {
+async function sincronizar(closer, { porVez = 2, hoje = new Date().toISOString().slice(0, 10) } = {}) {
   if (!closer || !closer.id) throw new Error('Closer não encontrado.');
   if (!closer.drivePasta) throw new Error(`Informe a pasta do Drive com as transcrições de ${closer.nome} (aba Closers → Inteligência).`);
-  const arquivos = await drive.listar(closer.drivePasta, { desde: closer.driveDesde });
+  // Procura a partir de onde a última leitura parou, e não da data inicial: a pasta ganha uma subpasta
+  // por call, e reler tudo a cada hora ficaria mais lento a cada mês.
+  const desde = [closer.driveDesde, closer.driveUltima && closer.driveUltima.ate].filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(String(d || ''))).sort().pop() || '';
+  const { arquivos, subpastas } = await drive.procurar(closer.drivePasta, { desde });
   const { tudo, meus } = await lidosDe(closer.id);
   const pendentes = arquivos.filter((a) => !meus[a.id] || (meus[a.id].r === 'erro' && (meus[a.id].n || 0) < TENTATIVAS));
   const agora = pendentes.slice(0, Math.max(1, porVez));
   const lista = await casos.doDrive(closer.id);
-  const saida = { lidos: 0, casos: 0, semConversa: 0, erros: [], restantes: pendentes.length - agora.length, total: arquivos.length };
+  // `total`, `subpastas` e `desde` dizem o que foi olhado: é o que explica um "nada novo" na tela.
+  const saida = { lidos: 0, casos: 0, semConversa: 0, erros: [], restantes: pendentes.length - agora.length, total: arquivos.length, subpastas, desde };
 
   for (const a of agora) {
     const marca = { em: new Date().toISOString(), n: ((meus[a.id] && meus[a.id].n) || 0) + 1 };
@@ -244,7 +249,11 @@ async function sincronizar(closer, { porVez = 2 } = {}) {
   if (ids.length > MAX_LIDOS) ids.sort((x, y) => String(meus[x].em).localeCompare(String(meus[y].em))).slice(0, ids.length - MAX_LIDOS).forEach((k) => delete meus[k]);
   tudo[closer.id] = meus;
   await db.setJson(CHAVE_LIDOS, tudo);
-  await closers.anotarLeituraDoDrive(closer.id, { em: new Date().toISOString(), lidos: saida.lidos, casos: saida.casos, semConversa: saida.semConversa, restantes: saida.restantes, erro: saida.erros[0] || '' });
+  // Até onde a pasta está lida: com fila, o dia do documento mais antigo que falta; sem fila, duas
+  // semanas atrás (documento que chega atrasado à pasta ainda é pego).
+  const faltam = arquivos.filter((a) => !meus[a.id] || (meus[a.id].r === 'erro' && (meus[a.id].n || 0) < TENTATIVAS));
+  const ate = faltam.length ? String(faltam[0].criadoEm || '').slice(0, 10) : drive.diasAntes(hoje, FOLGA_DIAS);
+  await closers.anotarLeituraDoDrive(closer.id, { em: new Date().toISOString(), lidos: saida.lidos, casos: saida.casos, semConversa: saida.semConversa, restantes: saida.restantes, erro: saida.erros[0] || '', ate });
   return saida;
 }
 
