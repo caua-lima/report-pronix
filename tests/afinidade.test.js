@@ -26,12 +26,30 @@ const pedidosIa = [];
 let respostaIa = null;
 const RESPOSTA_BOA = {
   nota: 8, veredito: 'Casal decidido e com investimento confirmado: é o cenário em que este closer mais fecha.',
-  composicao: 'casal',
-  motivos: ['O lead decide com a esposa e os dois vão à call; o closer fecha mais com o casal junto.', 'Confirmou o investimento; o closer trava quando o orçamento fica vago.'],
-  atencao: ['Nunca vendeu online: o closer tende a acelerar.'],
+  composicao: 'casal', momento: 'loja física', decisores_na_call: 'sim',
+  pontos_match: [
+    { ponto: 'Casal que decide junto e vai junto à call', prova: '"Com a minha esposa, ela vai participar da reunião"', historico: 'Fecha mais com casal quando os dois estão na call.' },
+    { ponto: 'Investimento confirmado', prova: 'Disse que tem mais de R$5.000', historico: 'Trava quando o orçamento fica vago.' },
+  ],
+  pontos_atencao: [{ ponto: 'Nunca vendeu online', prova: 'Loja física há 8 anos', contornar: 'Mostrar o passo a passo antes de falar de escala.' }],
   como_conduzir: ['Abrir confirmando o objetivo dos dois.', 'Fechar pedindo a decisão na própria call.'],
   falta_saber: ['Se a esposa participa da decisão financeira.'],
 };
+// A segunda etapa (o plano da call) é outro pedido à IA: a simulação responde a cada uma pelo que foi pedido.
+const PLANO_BOM = {
+  abertura: 'Abra pelos 8 anos de loja do Marcos e pergunte da esposa.',
+  decisores: 'Confirme que a esposa está na call antes de começar.',
+  perguntas: ['Quanto a loja fatura hoje?', 'O que fez vocês olharem para o online agora?', 'Quanto tempo por dia conseguem dedicar?'],
+  dor: 'Devolva a queda do balcão com o número que ele der.',
+  prova: 'Mostre um caso de loja física que migrou.',
+  proposta: 'Apresente para os dois, olhando para a esposa.',
+  pagamento: 'Confirme o cartão e o limite antes da proposta.',
+  objecoes: [{ objecao: 'Vamos pensar', sinal: 'Decide com a esposa', resposta: 'Resolva a dúvida dos dois na call.' }, { objecao: 'sem resposta', sinal: 'x' }],
+  fechamento: 'Peça a decisão na call; se saírem, marque o retorno em 24h com os dois.',
+  nao_fazer: ['Acelerar a parte técnica'],
+  falas_do_lead: ['Quero começar logo', 'Com a minha esposa, ela vai participar da reunião', 'Já tenho o dinheiro separado no banco'],
+};
+let planoIa = null; // null = PLANO_BOM; 'falha' = a IA cai na segunda etapa
 const fetchReal = global.fetch;
 global.fetch = async (url, opts = {}) => {
   const u = new URL(String(url));
@@ -39,7 +57,9 @@ global.fetch = async (url, opts = {}) => {
   if (u.hostname === 'api.groq.com') {
     const corpo = JSON.parse(opts.body);
     pedidosIa.push(corpo);
-    const conteudo = typeof respostaIa === 'string' ? respostaIa : JSON.stringify(respostaIa || RESPOSTA_BOA);
+    const ehPlano = /PLANO DA CALL/.test(corpo.messages[0].content);
+    if (ehPlano && planoIa === 'falha') return { ok: false, status: 500, text: async () => 'caiu', json: async () => ({}) };
+    const conteudo = ehPlano ? JSON.stringify(planoIa || PLANO_BOM) : typeof respostaIa === 'string' ? respostaIa : JSON.stringify(respostaIa || RESPOSTA_BOA);
     return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: conteudo } }] }) };
   }
   throw new Error('chamada externa inesperada: ' + u.href);
@@ -125,7 +145,7 @@ test('inteligência do closer: só o master grava; sem ela o closer não aparece
 });
 
 // ---------------------------------------------------------------- a análise
-test('análise: nota de 0 a 10 com motivos, atenção e como conduzir; PDF junto; a nota fica no report', async () => {
+test('análise: nota de 0 a 10, pontos de match e de atenção com prova, plano da call e PDF completo; a nota fica no report', async () => {
   await stats.registrar({ id: 'rep1', usuarioId: E.sdr.id, usuarioNome: 'Bia SDR', lead: 'Marcos Pereira', contato: 'Marcos', origem: 'extensao' });
   // histórico do closer: 2 reuniões com lead analítico, 1 venda
   for (const [id, resultado] of [['h1', 'venda_call'], ['h2', 'sem_venda']]) {
@@ -138,14 +158,23 @@ test('análise: nota de 0 a 10 com motivos, atenção e como conduzir; PDF junto
   assert.equal(r.status, 200);
   const a = r.json.afinidade;
   assert.deepEqual([a.nota, a.faixa, a.apelido, a.composicao], [8, 'alta', 'PH', 'casal']);
-  assert.equal(a.motivos.length, 2);
+  // cada ponto junta as duas pontas: o lead (prova) e o closer (o que as calls dele mostram)
+  assert.deepEqual(a.pontosMatch[0], { ponto: 'Casal que decide junto e vai junto à call', prova: '"Com a minha esposa, ela vai participar da reunião"', historico: 'Fecha mais com casal quando os dois estão na call.' });
+  assert.deepEqual(a.pontosAtencao, [{ ponto: 'Nunca vendeu online', prova: 'Loja física há 8 anos', contornar: 'Mostrar o passo a passo antes de falar de escala.' }]);
+  // em uma linha, para o aviso do report
+  assert.deepEqual(a.motivos, ['Casal que decide junto e vai junto à call — Fecha mais com casal quando os dois estão na call.', 'Investimento confirmado — Trava quando o orçamento fica vago.']);
+  assert.deepEqual(a.atencao, ['Nunca vendeu online — Mostrar o passo a passo antes de falar de escala.']);
   assert.equal(a.comoConduzir.length, 2);
+  // o plano da call, fase a fase
+  assert.deepEqual([a.plano.abertura, a.plano.perguntas.length, a.plano.fechamento], ['Abra pelos 8 anos de loja do Marcos e pergunte da esposa.', 3, 'Peça a decisão na call; se saírem, marque o retorno em 24h com os dois.']);
+  assert.deepEqual(a.plano.objecoes, [{ objecao: 'Vamos pensar', sinal: 'Decide com a esposa', resposta: 'Resolva a dúvida dos dois na call.' }], 'objeção sem resposta não entra');
+  assert.deepEqual(a.plano.falasDoLead, ['Quero começar logo', 'Com a minha esposa, ela vai participar da reunião'], 'fala que o lead não disse fica de fora');
   assert.deepEqual(a.faltaSaber, ['Se a esposa participa da decisão financeira.']);
   assert.deepEqual([a.base.reunioes, a.base.vendas], [2, 1], 'o histórico do closer entra na conta');
   assert.match(r.json.arquivo, /^Match_PH_Marcos-Pereira_\d\d-\d\d-\d{4}\.pdf$/);
 
   // o que foi para a IA: inteligência, histórico, lead e conversa, cada um no seu bloco
-  assert.equal(pedidosIa.length, 1);
+  assert.equal(pedidosIa.length, 2, 'avaliação e plano da call');
   const user = pedidosIa[0].messages[1].content;
   assert.match(user, /<inteligencia>\nFecha mais com casal/);
   assert.match(user, /<historico>\nNo geral: 1 venda\(s\) em 2 reunião\(ões\)[\s\S]*Lead analítico: 1 venda\(s\) em 2/);
@@ -158,7 +187,13 @@ test('análise: nota de 0 a 10 com motivos, atenção e como conduzir; PDF junto
   const pdf = Buffer.from(r.json.arquivoBase64, 'base64');
   assert.equal(pdf.subarray(0, 5).toString(), '%PDF-');
   const t = textoDoPdf(pdf);
-  for (const trecho of ['MATCH COM O CLOSER', 'MATCH ALTO', 'Paulo Henrique Pagoti', 'QUEM DECIDE', 'Por que essa nota', 'Pontos de atenção', 'Como conduzir a call', 'Confirmar antes da call', 'Base da análise']) {
+  // o plano recebe a avaliação pronta e a mesma inteligência
+  const userPlano = pedidosIa[1].messages[1].content;
+  assert.match(userPlano, /<avaliacao>\nNota 8 de 10\.[\s\S]*Pontos de match: Casal que decide junto/);
+  assert.match(userPlano, /<inteligencia>\nFecha mais com casal/);
+  assert.match(pedidosIa[1].messages[0].content, /Tudo específico DESTE lead[\s\S]*Não invente fato, preço, prazo, bônus nem condição/);
+  for (const trecho of ['MATCH COM O CLOSER', 'MATCH ALTO', 'Paulo Henrique Pagoti', 'QUEM DECIDE', 'MOMENTO', 'DECISORES NA CALL', 'Pontos que dão match', 'O lead:', 'O PH:', 'Pontos de atenção', 'De onde vem:', 'Como contornar:',
+    'Plano da call', '1. ABERTURA', 'PERGUNTAS DE DIAGNÓSTICO', 'Quanto a loja fatura hoje?', 'PAGAMENTO', 'FECHAMENTO', 'Objeções prováveis', 'Sinal na conversa:', 'Resposta:', 'O que não fazer', 'Falas do lead para usar', 'Quero começar logo', 'Confirmar antes da call', 'Base da análise']) {
     assert.ok(t.includes(trecho), 'faltou no PDF: ' + trecho);
   }
 
@@ -167,10 +202,36 @@ test('análise: nota de 0 a 10 com motivos, atenção e como conduzir; PDF junto
   assert.deepEqual([rep.afinidade.closerId, rep.afinidade.nota], [E.ph.id, 8]);
   assert.equal(rep.versao, 0);
 
+  assert.ok(!t.includes('Como conduzir a call'), 'com o plano completo, os passos curtos não repetem');
+
   // mesma pergunta de novo: vem do cache, sem chamar a IA
   const de_novo = await chamar('POST', '/api/afinidade', { closerId: E.ph.id, dados: DADOS_REPORT, mensagens: CONVERSA, nome: 'Marcos' }, E.sdr);
   assert.equal(de_novo.json.cache, true);
-  assert.equal(pedidosIa.length, 1);
+  assert.equal(pedidosIa.length, 2);
+});
+
+test('plano da call falhou: a avaliação vale assim mesmo, o PDF sai com os passos curtos e a próxima tentativa refaz', async () => {
+  planoIa = 'falha';
+  pedidosIa.length = 0;
+  const lead = { ...DADOS_REPORT, lead: 'Lead Sem Plano' };
+  const r = await chamar('POST', '/api/afinidade', { closerId: E.ph.id, dados: lead, mensagens: CONVERSA }, E.sdr);
+  assert.equal(r.status, 200);
+  assert.deepEqual([r.json.afinidade.nota, r.json.afinidade.plano, r.json.afinidade.motivos.length], [8, null, 2]);
+  const t = textoDoPdf(Buffer.from(r.json.arquivoBase64, 'base64'));
+  assert.ok(t.includes('Pontos que dão match') && t.includes('Como conduzir a call') && !t.includes('Plano da call'));
+  // não ficou em cache pela metade: com a IA de volta, o relatório sai completo
+  planoIa = null;
+  const de_novo = await chamar('POST', '/api/afinidade', { closerId: E.ph.id, dados: lead, mensagens: CONVERSA }, E.sdr);
+  assert.equal(de_novo.json.cache, false);
+  assert.ok(de_novo.json.afinidade.plano && de_novo.json.afinidade.plano.perguntas.length === 3);
+});
+
+test('resposta no formato antigo (listas de frases) continua valendo', async () => {
+  respostaIa = { nota: 6, veredito: 'Combina em parte.', composicao: 'sozinho', motivos: ['Decide sozinho.'], atencao: ['Capital curto.'], como_conduzir: ['Ir direto ao plano.'], falta_saber: [] };
+  const r = await chamar('POST', '/api/afinidade', { closerId: E.ph.id, dados: { ...DADOS_REPORT, lead: 'Lead Formato Antigo' } }, E.sdr);
+  respostaIa = null;
+  assert.deepEqual(r.json.afinidade.pontosMatch, [{ ponto: 'Decide sozinho.', prova: '', historico: '' }]);
+  assert.deepEqual([r.json.afinidade.motivos, r.json.afinidade.atencao], [['Decide sozinho.'], ['Capital curto.']]);
 });
 
 test('a nota do report de outra pessoa não é alterada por um SDR; o master pode', async () => {

@@ -26,13 +26,16 @@ const RESPOSTA_IA = {
   nota: 9, veredito: 'Casal decidido, os dois na call.', composicao: 'casal', momento: 'loja física', decisores_na_call: 'sim',
   motivos: ['Casal junto na call é onde este closer mais fecha.'], atencao: [], como_conduzir: ['Confirmar a presença dos dois.'], falta_saber: [],
 };
+const PLANO_IA = { abertura: 'Abra pela loja.', perguntas: ['Quanto fatura?'], proposta: 'Para os dois.', fechamento: 'Peça a decisão.', objecoes: [] };
 const fetchReal = global.fetch;
 global.fetch = async (url, opts = {}) => {
   const u = new URL(String(url));
   if (u.hostname === '127.0.0.1') return fetchReal(url, opts);
   if (u.hostname === 'api.groq.com') {
-    pedidosIa.push(JSON.parse(opts.body));
-    return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: JSON.stringify(RESPOSTA_IA) } }] }) };
+    const corpo = JSON.parse(opts.body);
+    pedidosIa.push(corpo);
+    const resposta = /PLANO DA CALL/.test(corpo.messages[0].content) ? PLANO_IA : RESPOSTA_IA;
+    return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: JSON.stringify(resposta) } }] }) };
   }
   throw new Error('chamada externa inesperada: ' + u.href);
 };
@@ -156,6 +159,16 @@ test('a análise recebe o padrão dos casos; o lead analisado vira caso quando o
   assert.match(user, /casal com os dois na call: 3 de 3/);
   assert.match(pedidosIa[0].messages[0].content, /"momento":"loja física \| já vende online \| do zero \| não ficou claro","decisores_na_call"/);
   assert.ok(textoDoPdf(Buffer.from(r.json.arquivoBase64, 'base64')).replace(/\s+/g, ' ').includes('10 caso(s) das calls dele, com 4 venda(s)'), 'o PDF diz em quantos casos a nota se apoia');
+  // casos parecidos: as contas dos recortes em que este lead se encaixa e exemplos reais, achados sem IA
+  const par = r.json.afinidade.parecidos;
+  assert.deepEqual(par.linhas.slice(0, 2), [
+    { rotulo: 'casal, loja ou empresa física, todos os decisores na call', total: 1, vendas: 1, acordos: 0 },
+    { rotulo: 'casal, todos os decisores na call', total: 3, vendas: 3, acordos: 0 },
+  ]);
+  assert.ok(par.linhas.some((l) => l.rotulo === 'Quem decide: casal' && l.total === 4 && l.vendas === 3));
+  const pdf = textoDoPdf(Buffer.from(r.json.arquivoBase64, 'base64')).replace(/\s+/g, ' ');
+  assert.ok(/Casos parecidos nas calls do cf/i.test(pdf) && pdf.includes('casal, todos os decisores na call: fechou 3 de 3'));
+  assert.match(pedidosIa[1].messages[1].content, /<casos>\ncasal, loja ou empresa física, todos os decisores na call: 1 venda\(s\) em 1 caso\(s\)/, 'o plano da call recebe os casos parecidos');
   // o que a análise leu do lead fica no report
   const rep = await stats.buscarPorId('lead1');
   assert.deepEqual([rep.afinidade.composicao, rep.afinidade.momento, rep.afinidade.decisoresNaCall], ['casal', 'loja', true]);
@@ -183,7 +196,7 @@ test('a análise recebe o padrão dos casos; o lead analisado vira caso quando o
   await stats.atualizarResultado('lead1', { closerId: E.closer, closerNome: 'Closer Fictício da Silva' });
   pedidosIa.length = 0;
   await chamar('POST', '/api/afinidade', { closerId: E.closer, dados }, E.sdr);
-  assert.equal(pedidosIa.length, 1);
+  assert.equal(pedidosIa.length, 2);
   assert.match(pedidosIa[0].messages[1].content, /Casos das calls dele: 11 \(10 de transcrições, 1 de reuniões com resultado marcado\)/);
 });
 
