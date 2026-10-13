@@ -76,7 +76,10 @@ const fetchReal = global.fetch;
 global.fetch = async (url, opts = {}) => {
   const u = new URL(String(url));
   if (u.hostname === '127.0.0.1') return fetchReal(url, opts);
-  const json = (corpo, status = 200) => ({ ok: status < 400, status, json: async () => corpo, text: async () => (typeof corpo === 'string' ? corpo : JSON.stringify(corpo)) });
+  const json = (corpo, status = 200) => ({
+    ok: status < 400, status, json: async () => corpo, text: async () => (typeof corpo === 'string' ? corpo : JSON.stringify(corpo)),
+    arrayBuffer: async () => { const b = Buffer.isBuffer(corpo) ? corpo : Buffer.from(String(corpo)); return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength); },
+  });
   if (u.hostname === 'oauth2.googleapis.com') { chamadas.token++; return json({ access_token: 'acesso-de-teste', expires_in: 3600, scope: 'https://www.googleapis.com/auth/drive.readonly' }); }
   if (u.hostname === 'www.googleapis.com' && u.pathname.startsWith('/drive/v3/files')) {
     assert.equal(opts.headers.Authorization, 'Bearer acesso-de-teste');
@@ -96,9 +99,10 @@ global.fetch = async (url, opts = {}) => {
     assert.ok(pais.length >= 1 && pais.length <= 20, 'até 20 pastas por consulta');
     const desde = (/createdTime >= '([^']+)'/.exec(q) || [])[1];
     if (/mimeType = 'application\/vnd\.google-apps\.folder'/.test(q)) return json({ files: Object.entries(PASTAS).filter(([, p]) => pais.includes(p.pai)).map(([id, p]) => ({ id, name: p.nome, mimeType: 'application/vnd.google-apps.folder', createdTime: p.criado })) });
+    const tudoMenosPasta = /mimeType != 'application\/vnd\.google-apps\.folder'/.test(q); // "o que há nestas pastas?"
     const files = Object.entries(ARQUIVOS)
-      .filter(([, a]) => pais.includes(a.pai) && q.includes(`mimeType = '${a.tipo}'`) && (!desde || a.criado >= desde))
-      .map(([id, a]) => ({ id, name: a.nome, mimeType: a.tipo, createdTime: a.criado }));
+      .filter(([, a]) => pais.includes(a.pai) && (tudoMenosPasta || q.includes(`mimeType = '${a.tipo}'`)) && (!desde || a.criado >= desde))
+      .map(([id, a]) => ({ id, name: a.nome, mimeType: a.tipo, createdTime: a.criado, ...(a.alvo ? { shortcutDetails: { targetId: a.alvo, targetMimeType: ARQUIVOS[a.alvo].tipo } } : {}) }));
     return json({ files });
   }
   if (u.hostname === 'api.groq.com') {
@@ -164,10 +168,10 @@ test('ler a pasta: só documento novo (a partir da data), poucos por vez; cada c
   await comPasta();
   let c = await closers.porId(closer.id);
   let r = await transcricoes.sincronizar(c, { porVez: 2 });
-  assert.deepEqual(r, { lidos: 2, casos: 2, semConversa: 0, erros: [], restantes: 2, total: 4, subpastas: 1, desde: '2026-10-09' });
+  assert.deepEqual(r, { lidos: 2, casos: 2, semConversa: 0, erros: [], restantes: 2, total: 4, subpastas: 1, desde: '2026-10-09', maisNova: '', naJanela: 0, dentro: [] });
   assert.deepEqual(chamadas.export, ['casal', 'bruno1'], 'do mais antigo para o mais novo; o vídeo e o documento de antes da data nem aparecem');
   assert.equal(chamadas.lista.filter((q) => /document/.test(q)).length, 1, 'a pasta e as subpastas numa consulta só');
-  assert.match(chamadas.lista.find((q) => /document/.test(q)), /^\('pasta_das_calls_0001' in parents or 'subpasta_gravacoes_01' in parents\) and trashed = false and \(mimeType = 'application\/vnd\.google-apps\.document' or mimeType = 'text\/plain'\) and createdTime >= '2026-10-09T00:00:00'$/);
+  assert.match(chamadas.lista.find((q) => /document/.test(q)), /^\('pasta_das_calls_0001' in parents or 'subpasta_gravacoes_01' in parents\) and trashed = false and \(mimeType = 'application\/vnd\.google-apps\.document' or mimeType = 'application\/vnd\.openxmlformats-officedocument\.wordprocessingml\.document' or mimeType = 'text\/plain' or mimeType = 'application\/vnd\.google-apps\.shortcut'\) and createdTime >= '2026-10-09T00:00:00'$/);
   for (const pedido of chamadas.ia) for (const nome of ['Marina', 'Ricardo', 'Bruno', 'Teixeira']) assert.ok(!pedido.includes(nome), 'nome de lead foi para a IA: ' + nome);
 
   let lista = await casos.doDrive(closer.id);
@@ -181,7 +185,7 @@ test('ler a pasta: só documento novo (a partir da data), poucos por vez; cada c
   c = await closers.porId(closer.id);
   assert.equal(c.driveUltima.ate, '2026-10-11', 'a próxima leitura começa no dia do documento mais antigo que falta');
   r = await transcricoes.sincronizar(c, { porVez: 5 });
-  assert.deepEqual(r, { lidos: 2, casos: 1, semConversa: 1, erros: [], restantes: 0, total: 2, subpastas: 1, desde: '2026-10-11' });
+  assert.deepEqual(r, { lidos: 2, casos: 1, semConversa: 1, erros: [], restantes: 0, total: 2, subpastas: 1, desde: '2026-10-11', maisNova: '', naJanela: 0, dentro: [] });
   lista = await casos.doDrive(closer.id);
   assert.equal(lista.length, 2, 'duas reuniões do mesmo lead são UMA negociação');
   const bruno = lista.find((x) => x.arquivos.includes('bruno1'));
@@ -362,7 +366,7 @@ test('uma subpasta por call (como o Meet organiza): acha as calls novas entre de
   assert.equal(dosDocumentos().length, 1);
   assert.match(dosDocumentos()[0], /^\('pasta_google_meet_0002' in parents or 'agrupador' in parents\) and .*createdTime >= '2026-11-06T00:00:00'$/, 'pasta de call já lida não é mais consultada');
 
-  assert.deepEqual([r.subpastas, r.desde], [34, '2026-11-06'], 'a tela mostra o que foi olhado');
+  assert.deepEqual([r.subpastas, r.desde, r.maisNova, r.naJanela, r.dentro], [34, '2026-11-06', '2026-10-12', 0, []], 'a tela mostra o que foi olhado: a subpasta mais nova é de antes da data');
 
   // pasta que a conta conectada não enxerga: a busca do Google volta vazia, e o sistema avisa em vez de dizer "nada novo"
   await assert.rejects(() => drive.listar('pasta_sem_acesso_0004'), /Não achei a pasta no Drive: confira o link e se a conta conectada tem acesso/);
@@ -379,4 +383,44 @@ test('uma subpasta por call (como o Meet organiza): acha as calls novas entre de
   assert.equal((await atual()).driveUltima.ate, '2026-11-07', 'salvar de novo o que já estava não mexe');
   await closers.definirDrive(quarto.id, { desde: '2026-09-01' });
   assert.equal((await atual()).driveUltima, undefined);
+});
+
+test('a call nova vem como Word (.docx) ou como atalho: é lida do mesmo jeito; só com vídeo, a leitura diz o que há na subpasta', async () => {
+  const { Document, Packer, Paragraph } = require('docx');
+  const DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+  const ATALHO = 'application/vnd.google-apps.shortcut';
+  const RAIZ = 'pasta_meet_word_00005';
+  const palavra = async (texto) => Packer.toBuffer(new Document({ sections: [{ children: texto.split('\n').map((l) => new Paragraph(l)) }] }));
+
+  // o .docx é aberto sem biblioteca: os parágrafos voltam como linhas, com acento, emoji e "&" no lugar
+  const original = ARQUIVOS.casal.texto + '\nFrutas & legumes <frescos>';
+  const lido = drive.textoDoDocx(await palavra(original));
+  assert.equal(lido.replace(/\n+/g, '\n'), original.replace(/\n+/g, '\n').trim());
+  assert.throws(() => drive.textoDoDocx(Buffer.from('isto não é um arquivo do Word')), /Não consegui abrir o arquivo do Word/);
+
+  PASTAS.word_a = { pai: RAIZ, criado: '2026-10-13T15:00:00Z', nome: '2026-10-13 09h46 · Marina e Ricardo' };
+  PASTAS.word_b = { pai: RAIZ, criado: '2026-10-13T19:00:00Z', nome: '2026-10-13 15h00 · Bruno Teixeira' };
+  PASTAS.word_c = { pai: RAIZ, criado: '2026-10-13T21:00:00Z', nome: '2026-10-13 18h00 · Só Gravação' };
+  ARQUIVOS.word_doc = { pai: 'word_a', tipo: DOCX, criado: '2026-10-13T15:10:00Z', nome: '2026-10-13 09h46 · Marina e Ricardo.docx', texto: await palavra(ARQUIVOS.casal.texto) };
+  ARQUIVOS.original_do_meet = { ...ARQUIVOS.bruno1, pai: 'pasta_de_outra_pessoa', criado: '2026-10-13T18:00:00Z' };
+  ARQUIVOS.word_atalho = { pai: 'word_b', tipo: ATALHO, criado: '2026-10-13T19:05:00Z', nome: 'atalho', alvo: 'original_do_meet' };
+  ARQUIVOS.word_atalho_video = { pai: 'word_b', tipo: ATALHO, criado: '2026-10-13T19:06:00Z', nome: 'atalho do vídeo', alvo: 'video' };
+  ARQUIVOS.word_video = { ...ARQUIVOS.video, pai: 'word_c', criado: '2026-10-13T21:05:00Z' };
+
+  const r = await drive.procurar(RAIZ, { desde: '2026-10-09' });
+  assert.deepEqual(r.arquivos.map((a) => [a.id, a.tipo]), [['word_doc', DOCX], ['original_do_meet', 'application/vnd.google-apps.document']], 'o atalho vale pelo documento; atalho de vídeo fica de fora');
+  assert.deepEqual([r.subpastas, r.maisNova, r.naJanela, r.dentro], [3, '2026-10-13', 3, []]);
+
+  const quinto = await closers.criar('Quinto Closer Ficticio');
+  await closers.definirDrive(quinto.id, { pasta: RAIZ, desde: '2026-10-09' });
+  const s = await transcricoes.sincronizar(await closers.porId(quinto.id), { porVez: 5, hoje: '2026-10-13' });
+  assert.deepEqual([s.lidos, s.casos, s.erros], [2, 2, []]);
+  const lista = await casos.doDrive(quinto.id);
+  assert.deepEqual(lista.map((c) => [c.resultado, c.quem, c.data]).sort(), [['nao', 'socios', '2026-10-10'], ['venda', 'casal', '2026-10-09']], 'o Word foi lido como o documento do Meet');
+
+  // só a gravação na subpasta nova: nada para ler, e a resposta diz o que há lá (tipos e datas, sem nome)
+  delete ARQUIVOS.word_doc; delete ARQUIVOS.word_atalho; delete ARQUIVOS.word_atalho_video;
+  const vazio = await drive.procurar(RAIZ, { desde: '2026-10-09' });
+  assert.deepEqual([vazio.arquivos, vazio.naJanela, vazio.dentro], [[], 3, [{ tipo: 'video/mp4', quantos: 1, maisNovo: '2026-10-13' }]]);
+  assert.ok(!JSON.stringify(vazio).includes('Gravação'), 'nome de pasta ou de arquivo não sai daqui');
 });

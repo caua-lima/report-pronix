@@ -474,8 +474,10 @@ da qual ler. Todo documento novo vira um caso dele, e o padrão se atualiza (`sr
   data de corte e pergunta pelos documentos de várias pastas por consulta. Com a pasta em dia, cada
   leitura olha só as duas últimas semanas; mudar a pasta ou a data recomeça da data escolhida;
 - a leitura acontece sozinha de hora em hora (junto da batida da extensão; no máximo uma rodada a cada
-  45 min, dois documentos por closer) e no botão **Ler agora** (três por clique). A tela diz quantas
-  subpastas e documentos foram olhados; se a conta conectada não enxerga a pasta, avisa;
+  45 min, dois documentos por closer) e no botão **Ler agora** (três por clique). A tela diz o que foi
+  olhado — quantas subpastas, a data da mais nova e, se há call nova sem texto para ler, que tipos de
+  arquivo ela tem —, sem nome de ninguém; se a conta conectada não enxerga a pasta, avisa;
+- lê Documento Google, Word (`.docx`), `.txt` e atalho para um deles; vídeo e o resto ficam de fora;
 - reunião sem conversa (não compareceu, caiu) não vira caso; duas reuniões do mesmo lead em até 15
   dias viram **um** caso, com o melhor desfecho; o que chega pelo Drive e por um report com resultado
   conta uma vez só;
