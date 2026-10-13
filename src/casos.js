@@ -76,8 +76,9 @@ function normalizarCaso(b, origem) {
 }
 
 async function ler() {
-  const j = await db.getJson(CHAVE_DB, { porCloser: {} });
-  return j && j.porCloser && typeof j.porCloser === 'object' ? j : { porCloser: {} };
+  const j = (await db.getJson(CHAVE_DB, null)) || {};
+  const mapa = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : {});
+  return { porCloser: mapa(j.porCloser), doDrive: mapa(j.doDrive) };
 }
 
 /** Casos importados das transcrições deste closer. */
@@ -102,8 +103,9 @@ async function importar(closerId, lista) {
 
 async function removerDoCloser(closerId) {
   const dados = await ler();
-  if (!dados.porCloser[closerId]) return;
+  if (!dados.porCloser[closerId] && !dados.doDrive[closerId]) return;
   delete dados.porCloser[closerId];
+  delete dados.doDrive[closerId];
   await db.setJson(CHAVE_DB, dados);
 }
 
@@ -128,9 +130,128 @@ function dosReports(reports, closerId) {
     .filter(Boolean);
 }
 
-/** Tudo o que se sabe das calls do closer: transcrições importadas + reuniões com resultado marcado. */
+// ---------------------------------------------------------------- casos lidos do Google Drive
+// Cada transcrição nova na pasta do closer vira um caso (src/transcricoes.js). Ficam separados dos casos do
+// pacote: importar o pacote de novo não apaga o que veio do Drive, e vice-versa. Não guardam nome de lead:
+// só uma impressão (hash) do primeiro nome, para juntar as reuniões do mesmo lead e não contar duas vezes.
+
+/** Impressão curta de um primeiro nome ("Bruno" e "bruno " dão a mesma): serve para comparar, não para ler. */
+function impressaoDoNome(nome) {
+  const primeiro = semAcento(nome).replace(/[^a-z ]+/g, ' ').trim().split(/\s+/)[0] || '';
+  return primeiro.length >= 2 ? crypto.createHash('sha256').update('lead:' + primeiro).digest('hex').slice(0, 12) : '';
+}
+
+function normalizarCasoDoDrive(b) {
+  const c = normalizarCaso(b, 'drive');
+  if (!c) return null;
+  const ids = (v) => (Array.isArray(v) ? v : []).map((x) => txt(x, 80)).filter((x) => /^[A-Za-z0-9_-]{4,80}$/.test(x)).slice(0, 12);
+  c.arquivos = ids(b.arquivos);
+  c.leadPrimeiros = (Array.isArray(b.leadPrimeiros) ? b.leadPrimeiros : []).map((x) => txt(x, 12)).filter((x) => /^[a-f0-9]{12}$/.test(x)).slice(0, 6);
+  // Dia e hora de cada reunião que entrou no caso: o mesmo encontro em dois arquivos não conta duas vezes.
+  c.momentos = (Array.isArray(b.momentos) ? b.momentos : []).map((x) => txt(x, 16)).filter((x) => /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(x)).slice(-12);
+  c.lidoEm = txt(b.lidoEm, 30) || new Date().toISOString();
+  if (b.revisado) c.revisado = true; // o master corrigiu à mão: a leitura automática não mexe mais
+  return c;
+}
+
+async function doDrive(closerId) {
+  const lista = ((await ler()).doDrive || {})[closerId];
+  return Array.isArray(lista) ? lista : [];
+}
+
+async function salvarDoDrive(closerId, lista) {
+  if (!closerId) throw new Error('Closer não encontrado.');
+  const dados = await ler();
+  dados.doDrive = dados.doDrive && typeof dados.doDrive === 'object' ? dados.doDrive : {};
+  const casos = (Array.isArray(lista) ? lista : []).map(normalizarCasoDoDrive).filter(Boolean).slice(-MAX_CASOS);
+  if (casos.length) dados.doDrive[closerId] = casos;
+  else delete dados.doDrive[closerId];
+  await db.setJson(CHAVE_DB, dados);
+  return casos;
+}
+
+/** Corrige (resultado, quem decide, presença, momento) ou apaga um caso lido do Drive. */
+async function editarDoDrive(closerId, casoId, mudancas) {
+  const lista = await doDrive(closerId);
+  const i = lista.findIndex((c) => c.id === casoId);
+  if (i === -1) return null;
+  if (mudancas === null) {
+    lista.splice(i, 1);
+    await salvarDoDrive(closerId, lista);
+    return { removido: true };
+  }
+  const m = mudancas && typeof mudancas === 'object' ? mudancas : {};
+  const novo = { ...lista[i], revisado: true };
+  if (RESULTADOS.includes(m.resultado)) novo.resultado = m.resultado;
+  if (QUEM.includes(m.quem) || m.quem === '') novo.quem = m.quem;
+  if (MOMENTOS.includes(m.momento) || m.momento === '') novo.momento = m.momento;
+  if (m.todosNaCall === true || m.todosNaCall === false || m.todosNaCall === null) novo.todosNaCall = m.todosNaCall;
+  lista[i] = novo;
+  return (await salvarDoDrive(closerId, lista))[Math.min(i, lista.length - 1)];
+}
+
+const diasEntreDatas = (a, b) => Math.abs(Date.parse(a + 'T12:00:00Z') - Date.parse(b + 'T12:00:00Z')) / 86400000;
+
+/**
+ * Tudo o que se sabe das calls do closer: o pacote das transcrições, as lidas do Drive e as reuniões com
+ * resultado marcado. A mesma reunião pode chegar pelo Drive e por um report: aí vale a do Drive (tem mais
+ * detalhe), reconhecida pelo primeiro nome do lead em datas próximas.
+ */
 async function doCloser(closerId, reports) {
-  return (await importados(closerId)).concat(dosReports(reports, closerId));
+  const drive = await doDrive(closerId);
+  const jaNoDrive = (r) => {
+    const h = impressaoDoNome(r.lead || r.contato);
+    const dia = r.dataReuniao || r.dia || '';
+    return Boolean(h) && drive.some((c) => (c.leadPrimeiros || []).includes(h) && c.data && dia && diasEntreDatas(c.data, dia) <= 12);
+  };
+  const dosResultados = dosReports((reports || []).filter((r) => r && !jaNoDrive(r)), closerId);
+  return (await importados(closerId)).concat(drive, dosResultados);
+}
+
+/**
+ * Casos parecidos com um lead: as contas dos recortes em que ele se encaixa (quem decide, momento, presença)
+ * e alguns exemplos reais, do mais parecido para o menos — os que fecharam e os que não, com o motivo.
+ * @param {object[]} casos
+ * @param {{quem?: string, momento?: string, todosNaCall?: boolean|null}} alvo
+ */
+function parecidos(casos, alvo = {}) {
+  const lista = casos || [];
+  const quem = QUEM.includes(alvo.quem) ? alvo.quem : '';
+  const momento = MOMENTOS.includes(alvo.momento) ? alvo.momento : '';
+  const pres = alvo.todosNaCall === true || alvo.todosNaCall === false ? alvo.todosNaCall : null;
+  const rotuloPres = pres === true ? 'todos os decisores na call' : 'faltando decisor na call';
+  const linhas = [];
+  const add = (rotulo, filtro) => {
+    const l = lista.filter(filtro);
+    if (l.length && !linhas.some((x) => x.total === l.length && x.rotulo === rotulo)) {
+      linhas.push({ rotulo, total: l.length, vendas: l.filter((c) => c.resultado === 'venda').length, acordos: l.filter((c) => c.resultado === 'acordo').length });
+    }
+  };
+  if (quem && momento && pres !== null) add(`${ROTULO_QUEM[quem]}, ${ROTULO_MOMENTO[momento]}, ${rotuloPres}`, (c) => c.quem === quem && c.momento === momento && c.todosNaCall === pres);
+  if (quem && pres !== null) add(`${ROTULO_QUEM[quem]}, ${rotuloPres}`, (c) => c.quem === quem && c.todosNaCall === pres);
+  if (quem && momento) add(`${ROTULO_QUEM[quem]}, ${ROTULO_MOMENTO[momento]}`, (c) => c.quem === quem && c.momento === momento);
+  if (quem) add(`Quem decide: ${ROTULO_QUEM[quem]}`, (c) => c.quem === quem);
+  if (momento) add(`Momento: ${ROTULO_MOMENTO[momento]}`, (c) => c.momento === momento);
+  if (pres !== null) add(pres ? 'Todos os decisores na call' : 'Faltando decisor na call', (c) => c.todosNaCall === pres);
+
+  // Exemplos: só caso com descrição, pontuado por quantas dimensões batem; no empate, o mais recente.
+  const pontos = (c) => (quem && c.quem === quem ? 2 : 0) + (momento && c.momento === momento ? 1 : 0) + (pres !== null && c.todosNaCall === pres ? 1 : 0);
+  const candidatos = lista.filter((c) => c.perfil && pontos(c) >= 2).sort((a, b) => pontos(b) - pontos(a) || String(b.data).localeCompare(String(a.data)));
+  const exemplo = (c) => ({ resultado: c.resultado, perfil: c.perfil, motivo: c.motivo || '', reunioes: c.reunioes || null, travas: (c.travas || []).slice(0, 2) });
+  const exemplos = candidatos.filter((c) => c.resultado === 'venda').slice(0, 3).map(exemplo)
+    .concat(candidatos.filter((c) => c.resultado !== 'venda').slice(0, 3).map(exemplo));
+  return { linhas, exemplos };
+}
+
+/** Os casos parecidos em texto, para a IA usar ao montar o plano da call. '' se não há nada. */
+function textoDosParecidos(p) {
+  if (!p || (!p.linhas.length && !p.exemplos.length)) return '';
+  const partes = p.linhas.map((l) => `${l.rotulo}: ${l.vendas} venda(s) em ${l.total} caso(s)` + (l.acordos ? ` (+${l.acordos} acordo(s) a pagar)` : ''));
+  p.exemplos.forEach((e) => {
+    partes.push((e.resultado === 'venda' ? 'FECHOU' : e.resultado === 'acordo' ? 'ACORDO, PAGAR DEPOIS' : 'NÃO FECHOU') + ': ' + e.perfil +
+      (e.resultado !== 'venda' && e.motivo ? ` (${e.motivo})` : '') + (e.travas.length ? ` [trava: ${e.travas.join(', ')}]` : ''));
+  });
+  return partes.join('\n');
 }
 
 const ROTULO_QUEM = { sozinho: 'sozinho(a)', casal: 'casal', socios: 'sócios', familia: 'depende de pai, irmão ou filho' };
@@ -194,4 +315,5 @@ function textoDoPadrao(p) {
 module.exports = {
   importar, importados, removerDoCloser, dosReports, doCloser, padrao, textoDoPadrao, normalizarCaso,
   chaveDeQuem, chaveDoMomento, simNao, ROTULO_QUEM, ROTULO_MOMENTO, ROTULO_TEMPO, MAX_CASOS,
+  doDrive, salvarDoDrive, editarDoDrive, impressaoDoNome, parecidos, textoDosParecidos, QUEM, MOMENTOS, RESULTADOS,
 };
