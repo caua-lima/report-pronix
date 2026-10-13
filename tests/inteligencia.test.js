@@ -466,6 +466,21 @@ test('IA gratuita: modelo fora do ar ou no limite passa para o próximo; tudo no
   groq = () => ({ status: 401, corpo: {} });
   await assert.rejects(() => chatGroq({ system: 's', user: 'u' }), /GROQ_API_KEY inválida/);
   groq = () => ({ status: 200, corpo: { choices: [{ message: { content: '{}' } }] } });
+
+  // com prazo: sem tempo sobrando, nem chama a IA; com tempo, chama normalmente
+  chamadasGroq.length = 0;
+  await assert.rejects(() => chatGroq({ system: 's', user: 'u', prazoMs: 500 }), /demorou demais/);
+  assert.equal(chamadasGroq.length, 0, 'não gasta chamada que não daria tempo de responder');
+  assert.equal(await chatGroq({ system: 's', user: 'u', prazoMs: 20000 }), '{}');
+  assert.equal(chamadasGroq.length, 1);
+});
+
+test('match: o plano da call só é tentado com o tempo que sobrou da avaliação', () => {
+  const { tempoParaOPlano } = require('../src/afinidade');
+  assert.equal(tempoParaOPlano(5000), 47000, 'avaliação rápida: o plano fica com o resto');
+  assert.equal(tempoParaOPlano(46000), 6000);
+  assert.equal(tempoParaOPlano(47000), 0, 'sobrou pouco: não tenta, a avaliação sai sozinha');
+  assert.equal(tempoParaOPlano(90000), 0);
 });
 
 // ---------------------------------------------------------------- base de conhecimento

@@ -20,6 +20,17 @@ const { matrizCloserPerfil } = require('./inteligencia');
 const { padrao, textoDoPadrao, chaveDoMomento, chaveDeQuem, simNao, parecidos, textoDosParecidos } = require('./casos');
 
 const VERSAO = 'a4'; // sobe quando o prompt mudar (invalida o cache)
+
+// A análise são dois pedidos dentro de uma função que a Vercel corta em 60 s: a avaliação tem o seu
+// tempo e o plano fica com o que sobrar. Sem tempo para o plano, a avaliação sai sozinha.
+const PRAZO_AVALIACAO_MS = 38000;
+const PRAZO_TOTAL_MS = 52000;
+const MINIMO_DO_PLANO_MS = 6000;
+/** Quanto tempo o plano da call pode levar, dado o que a avaliação já gastou. 0 = não tenta. */
+function tempoParaOPlano(gastoMs) {
+  const resta = PRAZO_TOTAL_MS - Math.max(0, Number(gastoMs) || 0);
+  return resta >= MINIMO_DO_PLANO_MS ? resta : 0;
+}
 // O plano gratuito limita os tokens por minuto: tudo entra enxuto.
 const MAX_CONVERSA = Number(process.env.MAX_AFINIDADE_CHARS) || 5000;
 const MAX_INTELIGENCIA = 6500;
@@ -169,7 +180,8 @@ async function analisar({ closer, dados, mensagens, nome, reports, casos }) {
     `<lead>\n${neutralizarMarcas(lead) || 'Sem leitura do report; use a conversa.'}\n</lead>\n\n` +
     (conversa ? `<conversa>\n${conversa}\n</conversa>\n\n` : '') +
     'Responda agora só com o JSON.';
-  const bruto = await chatGroq({ system: SYSTEM, user, modelo: process.env.GROQ_COACH_MODEL, maxTokens: 1500 });
+  const inicio = Date.now();
+  const bruto = await chatGroq({ system: SYSTEM, user, modelo: process.env.GROQ_COACH_MODEL, maxTokens: 1500, prazoMs: PRAZO_AVALIACAO_MS });
   const j = extrairJson(bruto);
 
   const n = Math.round(Number(j.nota));
@@ -223,7 +235,10 @@ async function analisar({ closer, dados, mensagens, nome, reports, casos }) {
       `<lead>\n${neutralizarMarcas(lead) || 'Sem leitura do report; use a conversa.'}\n</lead>\n\n` +
       (conversa ? `<conversa>\n${conversa.slice(-3500)}\n</conversa>\n\n` : '') +
       'Responda agora só com o JSON.';
-    const p = extrairJson(await chatGroq({ system: SYSTEM_PLANO, user: userPlano, modelo: process.env.GROQ_COACH_MODEL, maxTokens: 1700 }));
+    // O que sobrou do tempo da análise: sem tempo, o plano fica para a próxima tentativa.
+    const prazoMs = tempoParaOPlano(Date.now() - inicio);
+    if (!prazoMs) throw new Error('não sobrou tempo depois da avaliação');
+    const p = extrairJson(await chatGroq({ system: SYSTEM_PLANO, user: userPlano, modelo: process.env.GROQ_COACH_MODEL, maxTokens: 1700, prazoMs }));
     afinidade.plano = normalizarPlano(p, msgs, dados);
   } catch (err) {
     console.error('[afinidade] o plano da call não saiu:', err.message);
@@ -274,4 +289,4 @@ function normalizarPlano(p, msgs, dados) {
   return cheio ? plano : null;
 }
 
-module.exports = { analisar, historicoDoCloser, blocoDoLead, faixaDaNota, normalizarPlano, SYSTEM, SYSTEM_PLANO, VERSAO };
+module.exports = { analisar, historicoDoCloser, blocoDoLead, faixaDaNota, normalizarPlano, tempoParaOPlano, SYSTEM, SYSTEM_PLANO, VERSAO };
