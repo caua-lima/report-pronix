@@ -1556,6 +1556,74 @@ test('Base: mostra os seis campos, avisa quando é a recomendada e deixa voltar 
   p.fechar();
 });
 
+test('Closers: pasta do Drive com as transcrições — salvar o link, ler agora, conferir, corrigir e apagar os casos lidos', async () => {
+  let lista = [{ id: 'c1', nome: 'Paulo Henrique', email: '', apelido: 'PH', inteligencia: 'Fecha com casal.' }];
+  let casosLidos = [];
+  let ultima = null;
+  const api = apiMaster()
+    .quando('GET /api/admin/closers', () => ({ corpo: { closers: lista } }))
+    .quando('GET /api/admin/closers/c1/padrao', () => ({ corpo: { ok: true, padrao: { geral: { total: 0, vendas: 0, acordos: 0 }, origem: { transcricao: 0, resultado: 0 }, quem: {}, presenca: {}, quemPresenca: {}, momento: {}, reunioes: {}, tempo: {} } } }))
+    .quando('PATCH /api/admin/closers/c1', ({ corpo }) => {
+      if (/exemplo\.com/.test(corpo.drivePasta)) return { status: 400, corpo: { erro: 'Não reconheci o link da pasta do Drive. Cole o endereço da pasta (…/folders/…).' } };
+      lista = [{ ...lista[0], drivePasta: corpo.drivePasta ? 'pasta_das_calls_0001' : '', driveDesde: corpo.driveDesde }];
+      return { corpo: { ok: true, closer: lista[0] } };
+    })
+    .quando('GET /api/admin/closers/c1/drive', () => ({ corpo: { ok: true, pasta: lista[0].drivePasta || '', desde: lista[0].driveDesde || '', ultima, total: casosLidos.length, casos: casosLidos } }))
+    .quando('POST /api/admin/closers/c1/drive/ler', () => {
+      casosLidos = [
+        { id: 'd_a', data: '2026-10-12', quem: 'casal', todosNaCall: true, momento: 'loja', resultado: 'venda', motivo: 'onboarding iniciado pela casa', perfil: 'casal dono de loja <b>física</b>', reunioes: 1, minutos: 130, revisado: false },
+        { id: 'd_b', data: '2026-10-10', quem: '', todosNaCall: null, momento: 'online', resultado: 'nao', motivo: 'foi consultar o sócio', perfil: 'vendedor com sócio fora da call', reunioes: 1, minutos: 80, revisado: true },
+      ];
+      ultima = { em: '2026-10-13T15:00:00.000Z', lidos: 3, casos: 2, semConversa: 1, restantes: 4, erro: '' };
+      return { corpo: { ok: true, lidos: 3, casos: 2, semConversa: 1, erros: [], restantes: 4, total: 7 } };
+    })
+    .quando('PATCH /api/admin/closers/c1/casos/d_b', () => ({ corpo: { ok: true, caso: {} } }))
+    .quando('DELETE /api/admin/closers/c1/casos/d_a', () => { casosLidos = casosLidos.filter((c) => c.id !== 'd_a'); return { corpo: { ok: true } }; });
+  const p = abrirPainel(api, { hash: '#closers' });
+  await esperar(() => p.$('listaClosers').textContent.includes('Paulo Henrique'), { motivo: 'lista de closers' });
+  p.document.querySelector('[data-inteligencia-closer="c1"]').click();
+  const bloco = () => p.$('listaClosers').querySelector('[data-drive-closer="c1"]');
+  const status = () => bloco().querySelector('[data-status-drive]').textContent;
+  await esperar(() => visivel(bloco()), { motivo: 'bloco do Drive' });
+  assert.ok(!visivel(bloco().querySelector('[data-ler-drive]')), 'sem pasta, não há o que ler');
+
+  // link que não é pasta: o erro do servidor aparece; link certo: salva e libera o "Ler agora"
+  bloco().querySelector('[data-drive-pasta]').value = 'https://exemplo.com/x';
+  bloco().querySelector('[data-salvar-drive]').click();
+  await esperar(() => /Não reconheci o link/.test(status()), { motivo: 'erro do link' });
+  bloco().querySelector('[data-drive-pasta]').value = 'https://drive.google.com/drive/u/0/folders/pasta_das_calls_0001';
+  bloco().querySelector('[data-drive-desde]').value = '2026-10-09';
+  bloco().querySelector('[data-salvar-drive]').click();
+  await esperar(() => /Pasta salva/.test(status()), { motivo: 'pasta salva' });
+  assert.deepEqual(api.corpos('PATCH /api/admin/closers/c1').pop(), { drivePasta: 'https://drive.google.com/drive/u/0/folders/pasta_das_calls_0001', driveDesde: '2026-10-09' });
+  assert.ok(visivel(bloco().querySelector('[data-ler-drive]')));
+
+  // ler agora: resumo do que aconteceu e a lista do que a leitura entendeu
+  bloco().querySelector('[data-ler-drive]').click();
+  await esperar(() => /3 documento\(s\) lido\(s\)/.test(status()), { motivo: 'leitura' });
+  assert.match(status(), /3 documento\(s\) lido\(s\): 2 call\(s\) viraram caso, 1 sem conversa \(não compareceu ou caiu\)\. Faltam 4: clique de novo\./);
+  const casos = () => [...bloco().querySelectorAll('[data-caso]')];
+  await esperar(() => casos().length === 2, { motivo: 'casos na tela' });
+  const textoCaso = (i) => casos()[i].textContent.replace(/\s+/g, ' ').trim();
+  assert.match(textoCaso(0), /^12\/10\/2026 casal dono de loja <b>física<\/b> ?onboarding iniciado pela casa/);
+  assert.equal(bloco().querySelector('[data-caso] b'), null, 'o que veio da leitura nunca vira HTML');
+  assert.deepEqual([casos()[0].querySelector('[data-caso-campo="quem"]').value, casos()[0].querySelector('[data-caso-campo="resultado"]').value], ['casal', 'venda']);
+  assert.match(textoCaso(1), /corrigido por você/);
+  assert.match(bloco().querySelector('[data-drive-casos]').textContent, /Última leitura: 13\/10[\s\S]*3 documento\(s\), 2 caso\(s\), 4 na fila\./);
+
+  // corrigir como terminou, e apagar um caso
+  const resultado = casos()[1].querySelector('[data-caso-campo="resultado"]');
+  resultado.value = 'acordo';
+  resultado.dispatchEvent(new p.w.Event('change', { bubbles: true }));
+  await esperar(() => api.contar('PATCH /api/admin/closers/c1/casos/d_b') === 1, { motivo: 'correção enviada' });
+  assert.deepEqual(api.corpos('PATCH /api/admin/closers/c1/casos/d_b')[0], { resultado: 'acordo' });
+  casos()[0].querySelector('[data-apagar-caso]').click();
+  await esperar(() => casos().length === 1, { motivo: 'caso apagado' });
+  await dormir(60);
+  assert.deepEqual(p.erros, []);
+  p.fechar();
+});
+
 test('Closers: um numerozinho mostra quantos estão cadastrados (na aba e no título) e acompanha a lista', async () => {
   let lista = [{ id: 'c1', nome: 'Vitor', email: '' }, { id: 'c2', nome: 'Rafa', email: '' }];
   const api = apiMaster()
