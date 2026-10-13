@@ -124,11 +124,15 @@ const MODELOS_CHAT = ['openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'llama-3.3-70
 /**
  * Chat de texto no Groq (plano gratuito: sem custo, com limite de chamadas). Devolve o texto da resposta.
  * Tenta a fila de modelos: se um saiu do ar ou bateu no limite, passa para o seguinte.
+ * `prazoMs` é o tempo total que a chamada pode levar, somando as tentativas (a função da Vercel tem
+ * tempo contado: quem faz mais de um pedido reparte o tempo entre eles).
  */
-async function chatGroq({ system, user, modelo, maxTokens = 900, json = true }) {
+async function chatGroq({ system, user, modelo, maxTokens = 900, json = true, prazoMs }) {
   const key = process.env.GROQ_API_KEY;
   if (!key) throw new Error('GROQ_API_KEY não configurada — é ela que mantém o coach sem custo.');
   const modelos = filaDeModelos(modelo, MODELOS_CHAT);
+  const porTentativa = Number(process.env.GROQ_TIMEOUT_MS) || 50000;
+  const fim = Number(prazoMs) > 0 ? Date.now() + Number(prazoMs) : 0;
   let ultimoErro = null;
   let limite = false;
 
@@ -147,8 +151,10 @@ async function chatGroq({ system, user, modelo, maxTokens = 900, json = true }) 
       };
       if (comExtras && json) corpo.response_format = { type: 'json_object' };
       if (comExtras && raciocina) corpo.reasoning_effort = 'low';
+      const resta = fim ? fim - Date.now() : porTentativa;
+      if (resta < 2000) throw new Error('A IA gratuita demorou demais. Tente de novo.');
       const r = await fetch(GROQ_CHAT_URL, {
-        signal: AbortSignal.timeout(Number(process.env.GROQ_TIMEOUT_MS) || 50000),
+        signal: AbortSignal.timeout(Math.min(porTentativa, resta)),
         method: 'POST',
         headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
         body: JSON.stringify(corpo),
