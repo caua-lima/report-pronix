@@ -68,7 +68,8 @@ const ARQUIVOS = {
 const PASTAS = { [SUB]: { pai: PASTA, criado: '2026-10-01T10:00:00Z', nome: 'Gravações' } };
 
 // ---------------------------------------------------------------- Google, Drive e IA simulados
-const chamadas = { lista: [], export: [], ia: [], token: 0 };
+const chamadas = { lista: [], export: [], ia: [], pasta: [], token: 0 };
+const PASTAS_VISIVEIS = [PASTA, 'pasta_vazia_000003']; // as que a conta conectada enxerga
 let erroDoDrive = null; // { status, corpo } para todas as chamadas ao Drive
 let respostasIa = {}; // trecho do pedido -> resposta; '' -> padrão
 const fetchReal = global.fetch;
@@ -82,14 +83,21 @@ global.fetch = async (url, opts = {}) => {
     assert.equal(opts.method || 'GET', 'GET', 'no Drive, só leitura');
     if (erroDoDrive) return json(erroDoDrive.corpo, erroDoDrive.status);
     const m = /^\/drive\/v3\/files\/([^/]+)(\/export)?$/.exec(u.pathname);
+    // só os dados da pasta (a conferência de acesso): pasta que a conta não enxerga responde 404
+    if (m && !m[2] && u.searchParams.get('fields')) {
+      chamadas.pasta.push(m[1]);
+      if (ARQUIVOS[m[1]]) return json({ id: m[1], mimeType: ARQUIVOS[m[1]].tipo });
+      return PASTAS_VISIVEIS.includes(m[1]) ? json({ id: m[1], mimeType: 'application/vnd.google-apps.folder' }) : json({ error: { code: 404, message: 'File not found: ' + m[1] } }, 404);
+    }
     if (m) { chamadas.export.push(m[1]); return json(ARQUIVOS[m[1]].texto); }
     const q = u.searchParams.get('q');
     chamadas.lista.push(q);
-    const pai = /^'([^']+)' in parents/.exec(q)[1];
+    const pais = [...q.matchAll(/'([^']+)' in parents/g)].map((x) => x[1]);
+    assert.ok(pais.length >= 1 && pais.length <= 20, 'até 20 pastas por consulta');
     const desde = (/createdTime >= '([^']+)'/.exec(q) || [])[1];
-    if (/mimeType = 'application\/vnd\.google-apps\.folder'/.test(q)) return json({ files: Object.entries(PASTAS).filter(([, p]) => p.pai === pai).map(([id, p]) => ({ id, name: p.nome, mimeType: 'application/vnd.google-apps.folder', createdTime: p.criado })) });
+    if (/mimeType = 'application\/vnd\.google-apps\.folder'/.test(q)) return json({ files: Object.entries(PASTAS).filter(([, p]) => pais.includes(p.pai)).map(([id, p]) => ({ id, name: p.nome, mimeType: 'application/vnd.google-apps.folder', createdTime: p.criado })) });
     const files = Object.entries(ARQUIVOS)
-      .filter(([, a]) => a.pai === pai && q.includes(`mimeType = '${a.tipo}'`) && (!desde || a.criado >= desde))
+      .filter(([, a]) => pais.includes(a.pai) && q.includes(`mimeType = '${a.tipo}'`) && (!desde || a.criado >= desde))
       .map(([id, a]) => ({ id, name: a.nome, mimeType: a.tipo, createdTime: a.criado }));
     return json({ files });
   }
@@ -156,9 +164,10 @@ test('ler a pasta: só documento novo (a partir da data), poucos por vez; cada c
   await comPasta();
   let c = await closers.porId(closer.id);
   let r = await transcricoes.sincronizar(c, { porVez: 2 });
-  assert.deepEqual(r, { lidos: 2, casos: 2, semConversa: 0, erros: [], restantes: 2, total: 4 });
+  assert.deepEqual(r, { lidos: 2, casos: 2, semConversa: 0, erros: [], restantes: 2, total: 4, subpastas: 1, desde: '2026-10-09' });
   assert.deepEqual(chamadas.export, ['casal', 'bruno1'], 'do mais antigo para o mais novo; o vídeo e o documento de antes da data nem aparecem');
-  assert.match(chamadas.lista[0], /^'pasta_das_calls_0001' in parents and trashed = false and \(mimeType = 'application\/vnd\.google-apps\.document' or mimeType = 'text\/plain'\) and createdTime >= '2026-10-09T00:00:00'$/);
+  assert.equal(chamadas.lista.filter((q) => /document/.test(q)).length, 1, 'a pasta e as subpastas numa consulta só');
+  assert.match(chamadas.lista.find((q) => /document/.test(q)), /^\('pasta_das_calls_0001' in parents or 'subpasta_gravacoes_01' in parents\) and trashed = false and \(mimeType = 'application\/vnd\.google-apps\.document' or mimeType = 'text\/plain'\) and createdTime >= '2026-10-09T00:00:00'$/);
   for (const pedido of chamadas.ia) for (const nome of ['Marina', 'Ricardo', 'Bruno', 'Teixeira']) assert.ok(!pedido.includes(nome), 'nome de lead foi para a IA: ' + nome);
 
   let lista = await casos.doDrive(closer.id);
@@ -169,8 +178,10 @@ test('ler a pasta: só documento novo (a partir da data), poucos por vez; cada c
   assert.equal(casal.perfil, 'o lead e o marido, donos de loja física há 8 anos, em queda de 40%');
 
   // segunda rodada: a reunião sem conversa não vira caso; a 2ª call do Bruno (na subpasta) soma no caso dele
+  c = await closers.porId(closer.id);
+  assert.equal(c.driveUltima.ate, '2026-10-11', 'a próxima leitura começa no dia do documento mais antigo que falta');
   r = await transcricoes.sincronizar(c, { porVez: 5 });
-  assert.deepEqual(r, { lidos: 2, casos: 1, semConversa: 1, erros: [], restantes: 0, total: 4 });
+  assert.deepEqual(r, { lidos: 2, casos: 1, semConversa: 1, erros: [], restantes: 0, total: 2, subpastas: 1, desde: '2026-10-11' });
   lista = await casos.doDrive(closer.id);
   assert.equal(lista.length, 2, 'duas reuniões do mesmo lead são UMA negociação');
   const bruno = lista.find((x) => x.arquivos.includes('bruno1'));
@@ -180,6 +191,7 @@ test('ler a pasta: só documento novo (a partir da data), poucos por vez; cada c
 
   // terceira: nada novo, nenhuma chamada à IA nem download
   chamadas.export.length = 0; chamadas.ia.length = 0;
+  c = await closers.porId(closer.id);
   r = await transcricoes.sincronizar(c, { porVez: 5 });
   assert.deepEqual([r.lidos, r.casos, r.restantes, chamadas.export.length, chamadas.ia.length], [0, 0, 0, 0, 0]);
 
@@ -296,4 +308,75 @@ test('rotas: só o master configura a pasta, lê, corrige e apaga caso; a batida
   } finally {
     await new Promise((r) => servidor.close(r));
   }
+});
+
+// ---------------------------------------------------------------- uma subpasta por call
+test('uma subpasta por call (como o Meet organiza): acha as calls novas entre dezenas de pastas antigas, sem consultar as antigas', async () => {
+  const RAIZ = 'pasta_google_meet_0002';
+  // 30 calls antigas, cada uma na sua pasta com a data no nome (criadas no mesmo dia, como numa arrumação em lote)
+  for (let i = 1; i <= 30; i++) {
+    const dia = String(i).padStart(2, '0');
+    PASTAS['antiga_' + dia] = { pai: RAIZ, criado: '2026-10-08T10:00:00Z', nome: `2026-09-${dia} 09h46 · Lead Antigo ${i}` };
+    ARQUIVOS['doc_antigo_' + dia] = { ...ARQUIVOS.antigo, pai: 'antiga_' + dia, criado: `2026-09-${dia}T13:00:00Z` };
+  }
+  // 2 calls novas, e mais uma dentro de um agrupador sem data no nome
+  PASTAS.nova_a = { pai: RAIZ, criado: '2026-10-09T18:00:00Z', nome: '2026-10-09 14h30 · Marina e Ricardo' };
+  PASTAS.nova_b = { pai: RAIZ, criado: '2026-10-10T18:00:00Z', nome: '2026-10-10 09h30 · Bruno Teixeira' };
+  PASTAS.agrupador = { pai: RAIZ, criado: '2026-10-01T10:00:00Z', nome: 'Outubro' };
+  PASTAS.nova_c = { pai: 'agrupador', criado: '2026-10-12T20:00:00Z', nome: '12-10-2026 17h00 · Bruno Teixeira e Sócio' };
+  ARQUIVOS.meet_a = { ...ARQUIVOS.casal, pai: 'nova_a' };
+  ARQUIVOS.meet_a_video = { ...ARQUIVOS.video, pai: 'nova_a' };
+  ARQUIVOS.meet_b = { ...ARQUIVOS.bruno1, pai: 'nova_b' };
+  ARQUIVOS.meet_c = { ...ARQUIVOS.bruno2, pai: 'nova_c' };
+  const dosDocumentos = () => chamadas.lista.filter((q) => /document/.test(q));
+
+  assert.deepEqual(['2026-10-09 09h46 · X', '09-10-2026 Fulano', '09/10/2026', 'Outubro', '2026-13-40 x', '20261009 x'].map(drive.dataDoNome), ['2026-10-09', '2026-10-09', '2026-10-09', '', '', '']);
+
+  let lista = await drive.listar(RAIZ, { desde: '2026-10-09' });
+  assert.deepEqual(lista.map((a) => a.id), ['meet_a', 'meet_b', 'meet_c'], 'as três calls novas, a do agrupador inclusive; vídeo não');
+  assert.equal(dosDocumentos().length, 1, 'uma consulta só para os documentos');
+  assert.ok(!/antiga_/.test(dosDocumentos()[0]), 'pasta de call antiga nem é consultada');
+  assert.match(dosDocumentos()[0], /^\('pasta_google_meet_0002' in parents or 'nova_c' in parents or 'nova_b' in parents or 'nova_a' in parents or 'agrupador' in parents\)/, 'a raiz e as pastas mais novas primeiro');
+
+  // sem data de corte, todas as pastas entram: 20 por consulta
+  chamadas.lista.length = 0;
+  lista = await drive.listar(RAIZ, {});
+  assert.equal(lista.length, 33);
+  assert.deepEqual(dosDocumentos().map((q) => q.match(/in parents/g).length), [20, 15]);
+
+  // a leitura anda: começa de onde parou, e com a pasta em dia só olha as duas últimas semanas
+  const quarto = await closers.criar('Quarto Closer Ficticio');
+  await closers.definirDrive(quarto.id, { pasta: RAIZ, desde: '2026-10-09' });
+  const atual = () => closers.porId(quarto.id);
+  let r = await transcricoes.sincronizar(await atual(), { porVez: 2, hoje: '2026-10-13' });
+  assert.deepEqual([r.lidos, r.casos, r.restantes, r.total], [2, 2, 1, 3]);
+  assert.equal((await atual()).driveUltima.ate, '2026-10-12', 'falta a call do dia 12');
+  r = await transcricoes.sincronizar(await atual(), { porVez: 2, hoje: '2026-10-13' });
+  assert.deepEqual([r.lidos, r.restantes, r.total], [1, 0, 1]);
+  assert.equal((await casos.doDrive(quarto.id)).length, 2, 'a 2ª call do mesmo lead somou no caso dele');
+  await transcricoes.sincronizar(await atual(), { hoje: '2026-11-20' });
+  assert.equal((await atual()).driveUltima.ate, '2026-11-06');
+  chamadas.lista.length = 0;
+  r = await transcricoes.sincronizar(await atual(), { hoje: '2026-11-21' });
+  assert.deepEqual([r.lidos, r.total], [0, 0]);
+  assert.equal(dosDocumentos().length, 1);
+  assert.match(dosDocumentos()[0], /^\('pasta_google_meet_0002' in parents or 'agrupador' in parents\) and .*createdTime >= '2026-11-06T00:00:00'$/, 'pasta de call já lida não é mais consultada');
+
+  assert.deepEqual([r.subpastas, r.desde], [34, '2026-11-06'], 'a tela mostra o que foi olhado');
+
+  // pasta que a conta conectada não enxerga: a busca do Google volta vazia, e o sistema avisa em vez de dizer "nada novo"
+  await assert.rejects(() => drive.listar('pasta_sem_acesso_0004'), /Não achei a pasta no Drive: confira o link e se a conta conectada tem acesso/);
+  assert.deepEqual(await drive.listar('pasta_vazia_000003'), [], 'pasta vazia de verdade não é erro');
+  await assert.rejects(() => drive.listar('meet_a_video'), /é de um arquivo, não de uma pasta/);
+  chamadas.pasta.length = 0;
+  await drive.listar(RAIZ, { desde: '2027-01-01' });
+  assert.equal(chamadas.pasta.length, 0, 'pasta com subpastas não gasta a conferência de acesso');
+
+  // leitura que falhou não perde o ponto; mudar a data (ou a pasta) recomeça dela
+  await closers.anotarLeituraDoDrive(quarto.id, { erro: 'O Google recusou a conexão.' });
+  assert.equal((await atual()).driveUltima.ate, '2026-11-07');
+  await closers.definirDrive(quarto.id, { pasta: RAIZ, desde: '2026-10-09' });
+  assert.equal((await atual()).driveUltima.ate, '2026-11-07', 'salvar de novo o que já estava não mexe');
+  await closers.definirDrive(quarto.id, { desde: '2026-09-01' });
+  assert.equal((await atual()).driveUltima, undefined);
 });

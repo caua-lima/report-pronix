@@ -469,8 +469,13 @@ Drive** onde caem as transcrições das calls do closer (as anotações do Googl
 da qual ler. Todo documento novo vira um caso dele, e o padrão se atualiza (`src/transcricoes.js`,
 `src/driveGoogle.js`):
 
+- a pasta pode ter **uma subpasta por call** (com a gravação e o documento dentro), como o Meet costuma
+  ficar organizado: a busca desce até dois níveis, descarta as subpastas com data no nome anterior à
+  data de corte e pergunta pelos documentos de várias pastas por consulta. Com a pasta em dia, cada
+  leitura olha só as duas últimas semanas; mudar a pasta ou a data recomeça da data escolhida;
 - a leitura acontece sozinha de hora em hora (junto da batida da extensão; no máximo uma rodada a cada
-  45 min, dois documentos por closer) e no botão **Ler agora** (três por clique);
+  45 min, dois documentos por closer) e no botão **Ler agora** (três por clique). A tela diz quantas
+  subpastas e documentos foram olhados; se a conta conectada não enxerga a pasta, avisa;
 - reunião sem conversa (não compareceu, caiu) não vira caso; duas reuniões do mesmo lead em até 15
   dias viram **um** caso, com o melhor desfecho; o que chega pelo Drive e por um report com resultado
   conta uma vez só;
