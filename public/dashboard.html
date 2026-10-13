@@ -1793,7 +1793,10 @@
             const r = await api('POST', '/api/admin/closers/' + id + '/drive/ler', {});
             setStatus(st,
               `${r.lidos} documento(s) lido(s): ${r.casos} call(s) viraram caso` + (r.semConversa ? `, ${r.semConversa} sem conversa (não compareceu ou caiu)` : '') + '.' +
-              (r.restantes ? ` Faltam ${r.restantes}: clique de novo.` : r.lidos ? ' Pasta em dia.' : ' Nada novo na pasta.') + (r.erros && r.erros.length ? ' Erro: ' + r.erros[0] : ''),
+              (r.restantes ? ` Faltam ${r.restantes}: clique de novo.` : r.lidos ? ' Pasta em dia.' : ' Nada novo na pasta.') +
+              // O que foi olhado, para dar para entender um "nada novo": nenhuma subpasta = link ou acesso errado.
+              (r.subpastas != null ? ` (${r.subpastas} subpasta(s) na pasta; ${r.total || 0} documento(s) de ${r.desde ? r.desde.split('-').reverse().join('/') : 'qualquer data'} em diante)` : '') +
+              (r.erros && r.erros.length ? ' Erro: ' + r.erros[0] : ''),
               { ok: !(r.erros && r.erros.length), erro: Boolean(r.erros && r.erros.length) });
             await mostrarCasosDoDrive(id);
             await mostrarPadraoDoCloser(id);

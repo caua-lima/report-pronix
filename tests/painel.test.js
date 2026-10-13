@@ -1575,7 +1575,7 @@ test('Closers: pasta do Drive com as transcrições — salvar o link, ler agora
         { id: 'd_b', data: '2026-10-10', quem: '', todosNaCall: null, momento: 'online', resultado: 'nao', motivo: 'foi consultar o sócio', perfil: 'vendedor com sócio fora da call', reunioes: 1, minutos: 80, revisado: true },
       ];
       ultima = { em: '2026-10-13T15:00:00.000Z', lidos: 3, casos: 2, semConversa: 1, restantes: 4, erro: '' };
-      return { corpo: { ok: true, lidos: 3, casos: 2, semConversa: 1, erros: [], restantes: 4, total: 7 } };
+      return { corpo: { ok: true, lidos: 3, casos: 2, semConversa: 1, erros: [], restantes: 4, total: 7, subpastas: 31, desde: '2026-10-09' } };
     })
     .quando('PATCH /api/admin/closers/c1/casos/d_b', () => ({ corpo: { ok: true, caso: {} } }))
     .quando('DELETE /api/admin/closers/c1/casos/d_a', () => { casosLidos = casosLidos.filter((c) => c.id !== 'd_a'); return { corpo: { ok: true } }; });
@@ -1601,7 +1601,7 @@ test('Closers: pasta do Drive com as transcrições — salvar o link, ler agora
   // ler agora: resumo do que aconteceu e a lista do que a leitura entendeu
   bloco().querySelector('[data-ler-drive]').click();
   await esperar(() => /3 documento\(s\) lido\(s\)/.test(status()), { motivo: 'leitura' });
-  assert.match(status(), /3 documento\(s\) lido\(s\): 2 call\(s\) viraram caso, 1 sem conversa \(não compareceu ou caiu\)\. Faltam 4: clique de novo\./);
+  assert.match(status(), /3 documento\(s\) lido\(s\): 2 call\(s\) viraram caso, 1 sem conversa \(não compareceu ou caiu\)\. Faltam 4: clique de novo\. \(31 subpasta\(s\) na pasta; 7 documento\(s\) de 09\/10\/2026 em diante\)/);
   const casos = () => [...bloco().querySelectorAll('[data-caso]')];
   await esperar(() => casos().length === 2, { motivo: 'casos na tela' });
   const textoCaso = (i) => casos()[i].textContent.replace(/\s+/g, ' ').trim();
