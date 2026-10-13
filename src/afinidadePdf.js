@@ -1,14 +1,17 @@
 'use strict';
 
-// PDF "Afinidade com o closer": a nota de 0 a 10 de um lead para um closer, com os motivos, os
-// pontos de atenção e como conduzir a call. É o segundo documento que sai junto do handoff quando
-// o pré-vendedor clica em "Analisar Match com <closer>". Montado aqui no servidor: sem custo.
+// PDF "Match com o closer": a nota de 0 a 10 de um lead para um closer e o relatório completo para a
+// reunião — os pontos que dão match (cada um com a prova do lead e o número do closer), os pontos de
+// atenção (com como contornar), os casos parecidos nas calls dele, o plano da call fase a fase, as
+// objeções prováveis e o que confirmar antes. É o segundo documento que sai junto do handoff quando o
+// pré-vendedor clica em "Analisar Match com <closer>". Montado aqui no servidor: sem custo.
 
 const PDFDocument = require('pdfkit');
 const { visual } = require('./generatePdf');
 
 const { desenharMarca, tituloSecao, faixaNoTopo, bullet, novaPaginaSePreciso, semEmoji, OURO, OURO_ESC, PRETO, CLARO, BORDA, TEXTO, VERDE, MARGIN } = visual;
 const VERMELHO = '#d9553f';
+const CINZA = '#5f5b55';
 const corDaNota = (faixa) => (faixa === 'alta' ? VERDE : faixa === 'baixa' ? VERMELHO : OURO);
 const rotuloDaFaixa = (faixa) => (faixa === 'alta' ? 'MATCH ALTO' : faixa === 'baixa' ? 'MATCH BAIXO' : 'MATCH MÉDIO');
 const dataBr = (iso) => {
@@ -20,6 +23,7 @@ function render(doc, { afinidade: a, lead, sdr }) {
   const company = process.env.COMPANY_NAME || 'PRONIX';
   const larg = doc.page.width - MARGIN * 2;
   const cor = corDaNota(a.faixa);
+  const apelido = semEmoji(a.apelido || String(a.closerNome || '').split(' ')[0] || 'closer');
 
   // ---- Cabeçalho (o mesmo do handoff) ----
   doc.save().rect(0, 0, doc.page.width, 84).fill(PRETO).restore();
@@ -65,30 +69,165 @@ function render(doc, { afinidade: a, lead, sdr }) {
   doc.y = y0 + h + 14;
   doc.x = MARGIN;
 
-  // ---- Quem decide ----
-  if (a.composicao) {
-    doc.font('Helvetica-Bold').fontSize(10).fillColor(OURO_ESC).text('QUEM DECIDE: ', MARGIN, doc.y, { continued: true, characterSpacing: 0.4 })
-      .font('Helvetica').fillColor(TEXTO).text(semEmoji(a.composicao), { characterSpacing: 0 });
-    doc.moveDown(0.8);
-  }
+  // ---- Quem decide, momento e presença na call (o que mais pesa no fechamento) ----
+  const fatos = [
+    a.composicao ? ['QUEM DECIDE', semEmoji(a.composicao)] : null,
+    a.momento ? ['MOMENTO', { loja: 'loja ou empresa física', online: 'já vende online', zero: 'começando do zero' }[a.momento] || ''] : null,
+    a.decisoresNaCall === true || a.decisoresNaCall === false ? ['DECISORES NA CALL', a.decisoresNaCall ? 'sim' : 'não confirmados'] : null,
+  ].filter((x) => x && x[1]);
+  fatos.forEach(([rotulo, valor]) => {
+    doc.font('Helvetica-Bold').fontSize(10).fillColor(OURO_ESC).text(rotulo + ': ', MARGIN, doc.y, { continued: true, characterSpacing: 0.4 })
+      .font('Helvetica').fillColor(TEXTO).text(valor, { characterSpacing: 0 });
+  });
+  if (fatos.length) doc.moveDown(0.8);
 
-  const secao = (titulo, itens, numerada) => {
-    const limpos = (itens || []).map(semEmoji).filter(Boolean);
-    if (!limpos.length) return;
-    novaPaginaSePreciso(doc, 60);
+  // ---- peças de desenho ----
+  const abrirSecao = (titulo) => {
+    novaPaginaSePreciso(doc, 70);
     tituloSecao(doc, titulo);
+  };
+  /** Uma linha "Rótulo: texto" recuada, em cinza: a prova, o número, o como contornar. */
+  const detalhe = (rotulo, valor, corRotulo) => {
+    const v = semEmoji(valor);
+    if (!v) return;
+    novaPaginaSePreciso(doc, 22);
+    doc.font('Helvetica-Bold').fontSize(9.5).fillColor(corRotulo || CINZA).text(rotulo + ' ', MARGIN + 18, doc.y, { continued: true, width: larg - 18 })
+      .font('Helvetica').fillColor(CINZA).text(v, { width: larg - 18, lineGap: 0.5 });
+    doc.moveDown(0.12);
+  };
+  const itens = (lista, numerada) => {
     doc.font('Helvetica').fontSize(10.5).fillColor(TEXTO);
-    limpos.forEach((item, i) => {
+    lista.forEach((item, i) => {
       novaPaginaSePreciso(doc, 26);
       bullet(doc, numerada ? `${i + 1}.` : '•', item, MARGIN, larg);
       doc.moveDown(0.18);
     });
+  };
+  const secaoSimples = (titulo, lista, numerada) => {
+    const limpos = (lista || []).map(semEmoji).filter(Boolean);
+    if (!limpos.length) return;
+    abrirSecao(titulo);
+    itens(limpos, numerada);
     doc.moveDown(0.7);
   };
-  secao('Por que essa nota', a.motivos, false);
-  secao('Pontos de atenção', a.atencao, false);
-  secao('Como conduzir a call', a.comoConduzir, true);
-  secao('Confirmar antes da call', a.faltaSaber, false);
+  // Item com o texto em outra fonte (o bullet comum sempre escreve em fonte normal).
+  const marcado = (marcador, texto, fonte) => {
+    const y = doc.y;
+    doc.font('Helvetica-Bold').fontSize(10.5).fillColor(OURO_ESC).text(marcador, MARGIN, y, { width: 18 });
+    doc.font(fonte).fontSize(10.5).fillColor(TEXTO).text(texto, MARGIN + 18, y, { width: larg - 18, paragraphGap: 2 });
+  };
+  const ponto = (texto) => {
+    novaPaginaSePreciso(doc, 40);
+    marcado('•', semEmoji(texto), 'Helvetica-Bold');
+    doc.moveDown(0.1);
+  };
+
+  // ---- Pontos que dão match: o que o lead tem + a prova + o que o closer mostra ----
+  const match = (a.pontosMatch && a.pontosMatch.length ? a.pontosMatch : (a.motivos || []).map((m) => ({ ponto: m }))).filter((p) => p && p.ponto);
+  if (match.length) {
+    abrirSecao('Pontos que dão match');
+    match.forEach((p) => {
+      ponto(p.ponto);
+      detalhe('O lead:', p.prova);
+      detalhe(`O ${apelido}:`, p.historico, VERDE);
+      doc.moveDown(0.3);
+    });
+    doc.moveDown(0.5);
+  }
+
+  // ---- Pontos de atenção: de onde vem e como contornar ----
+  const atencao = (a.pontosAtencao && a.pontosAtencao.length ? a.pontosAtencao : (a.atencao || []).map((m) => ({ ponto: m }))).filter((p) => p && p.ponto);
+  if (atencao.length) {
+    abrirSecao('Pontos de atenção');
+    atencao.forEach((p) => {
+      ponto(p.ponto);
+      detalhe('De onde vem:', p.prova);
+      detalhe('Como contornar:', p.contornar, VERMELHO);
+      doc.moveDown(0.3);
+    });
+    doc.moveDown(0.5);
+  }
+
+  // ---- Casos parecidos nas calls do closer (contas e exemplos reais, sem nome de lead) ----
+  const par = a.parecidos || { linhas: [], exemplos: [] };
+  if ((par.linhas || []).length || (par.exemplos || []).length) {
+    abrirSecao(`Casos parecidos nas calls do ${apelido}`);
+    doc.font('Helvetica').fontSize(10.5).fillColor(TEXTO);
+    (par.linhas || []).slice(0, 5).forEach((l) => {
+      novaPaginaSePreciso(doc, 22);
+      const pct = l.total >= 5 ? ` (${Math.round((100 * l.vendas) / l.total)}%)` : '';
+      bullet(doc, '•', `${semEmoji(l.rotulo)}: fechou ${l.vendas} de ${l.total}${pct}` + (l.acordos ? `, mais ${l.acordos} com acordo e pagamento para depois` : ''), MARGIN, larg);
+      doc.moveDown(0.12);
+    });
+    (par.exemplos || []).forEach((e) => {
+      const rotulo = e.resultado === 'venda' ? 'Fechou:' : e.resultado === 'acordo' ? 'Acordo, pagar depois:' : 'Não fechou:';
+      const fim = e.resultado !== 'venda' && e.motivo ? ` (${e.motivo})` : '';
+      detalhe(rotulo, semEmoji(e.perfil) + fim, e.resultado === 'venda' ? VERDE : e.resultado === 'acordo' ? OURO_ESC : VERMELHO);
+    });
+    doc.moveDown(0.7);
+  }
+
+  // ---- Plano da call, fase a fase ----
+  const pl = a.plano;
+  if (pl) {
+    abrirSecao('Plano da call');
+    const fase = (n, titulo, texto, lista) => {
+      const t = semEmoji(texto);
+      const l = (lista || []).map(semEmoji).filter(Boolean);
+      if (!t && !l.length) return n;
+      novaPaginaSePreciso(doc, 46);
+      doc.font('Helvetica-Bold').fontSize(10.5).fillColor(OURO_ESC).text(`${n}. ${titulo.toUpperCase()}`, MARGIN, doc.y, { characterSpacing: 0.4 });
+      doc.moveDown(0.15);
+      doc.font('Helvetica').fontSize(10.5).fillColor(TEXTO);
+      if (t) {
+        doc.text(t, MARGIN + 14, doc.y, { width: larg - 14, lineGap: 1 });
+        doc.moveDown(0.15);
+      }
+      l.forEach((item, i) => {
+        novaPaginaSePreciso(doc, 24);
+        bullet(doc, `${String.fromCharCode(97 + i)})`, item, MARGIN + 14, larg - 14);
+        doc.moveDown(0.12);
+      });
+      doc.moveDown(0.45);
+      doc.x = MARGIN;
+      return n + 1;
+    };
+    let n = 1;
+    n = fase(n, 'Abertura', pl.abertura);
+    n = fase(n, 'Quem decide e quem paga', pl.decisores);
+    n = fase(n, 'Perguntas de diagnóstico', '', pl.perguntas);
+    n = fase(n, 'Devolver a dor', pl.dor);
+    n = fase(n, 'Prova', pl.prova);
+    n = fase(n, 'Proposta', pl.proposta);
+    n = fase(n, 'Pagamento', pl.pagamento);
+    fase(n, 'Fechamento', pl.fechamento);
+    doc.moveDown(0.3);
+
+    if ((pl.objecoes || []).length) {
+      abrirSecao('Objeções prováveis');
+      pl.objecoes.forEach((o) => {
+        ponto(o.objecao);
+        detalhe('Sinal na conversa:', o.sinal);
+        detalhe('Resposta:', o.resposta, VERDE);
+        doc.moveDown(0.3);
+      });
+      doc.moveDown(0.5);
+    }
+    secaoSimples('O que não fazer', pl.naoFazer, false);
+    if ((pl.falasDoLead || []).length) {
+      abrirSecao('Falas do lead para usar');
+      pl.falasDoLead.forEach((f) => {
+        novaPaginaSePreciso(doc, 24);
+        marcado('•', `“${semEmoji(f)}”`, 'Helvetica-Oblique');
+        doc.moveDown(0.15);
+      });
+      doc.moveDown(0.7);
+    }
+  } else {
+    // Sem o plano completo (a segunda etapa da IA não respondeu): ficam os passos curtos.
+    secaoSimples('Como conduzir a call', a.comoConduzir, true);
+  }
+  secaoSimples('Confirmar antes da call', a.faltaSaber, false);
 
   // ---- Em que a nota se apoia (para o leitor saber o peso dela) ----
   const b = a.base || {};
