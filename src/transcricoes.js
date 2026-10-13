@@ -197,7 +197,7 @@ async function lidosDe(closerId) {
  * Lê os documentos novos da pasta de um closer e transforma cada reunião em caso.
  * @param {object} closer  { id, nome, drivePasta, driveDesde }
  * @param {{porVez?: number}} o
- * @returns {Promise<{lidos: number, casos: number, semConversa: number, erros: string[], restantes: number, total: number, subpastas: number, desde: string}>}
+ * @returns {Promise<{lidos: number, casos: number, semConversa: number, erros: string[], restantes: number, total: number, subpastas: number, desde: string, maisNova: string, naJanela: number, dentro: object[]}>}
  */
 async function sincronizar(closer, { porVez = 2, hoje = new Date().toISOString().slice(0, 10) } = {}) {
   if (!closer || !closer.id) throw new Error('Closer não encontrado.');
@@ -205,13 +205,13 @@ async function sincronizar(closer, { porVez = 2, hoje = new Date().toISOString()
   // Procura a partir de onde a última leitura parou, e não da data inicial: a pasta ganha uma subpasta
   // por call, e reler tudo a cada hora ficaria mais lento a cada mês.
   const desde = [closer.driveDesde, closer.driveUltima && closer.driveUltima.ate].filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(String(d || ''))).sort().pop() || '';
-  const { arquivos, subpastas } = await drive.procurar(closer.drivePasta, { desde });
+  const { arquivos, subpastas, maisNova, naJanela, dentro } = await drive.procurar(closer.drivePasta, { desde });
   const { tudo, meus } = await lidosDe(closer.id);
   const pendentes = arquivos.filter((a) => !meus[a.id] || (meus[a.id].r === 'erro' && (meus[a.id].n || 0) < TENTATIVAS));
   const agora = pendentes.slice(0, Math.max(1, porVez));
   const lista = await casos.doDrive(closer.id);
-  // `total`, `subpastas` e `desde` dizem o que foi olhado: é o que explica um "nada novo" na tela.
-  const saida = { lidos: 0, casos: 0, semConversa: 0, erros: [], restantes: pendentes.length - agora.length, total: arquivos.length, subpastas, desde };
+  // `total` em diante diz o que foi olhado na pasta: é o que explica um "nada novo" na tela.
+  const saida = { lidos: 0, casos: 0, semConversa: 0, erros: [], restantes: pendentes.length - agora.length, total: arquivos.length, subpastas, desde, maisNova, naJanela, dentro };
 
   for (const a of agora) {
     const marca = { em: new Date().toISOString(), n: ((meus[a.id] && meus[a.id].n) || 0) + 1 };
