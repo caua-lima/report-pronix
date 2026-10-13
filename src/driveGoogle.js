@@ -9,11 +9,17 @@
 // documento dentro), e são centenas. Por isso a busca: (1) lista as subpastas, (2) descarta as que têm
 // no nome uma data anterior ao corte, (3) procura os documentos nas que sobraram, várias por consulta.
 
+const zlib = require('zlib');
 const agendaGoogle = require('./agendaGoogle');
 
 const API = 'https://www.googleapis.com/drive/v3';
 const DOC = 'application/vnd.google-apps.document';
+const DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+const TXT = 'text/plain';
+const ATALHO = 'application/vnd.google-apps.shortcut';
 const PASTA = 'application/vnd.google-apps.folder';
+const LEGIVEIS = [DOC, DOCX, TXT]; // o que dá para ler como texto
+const MAX_DOCX = 25 * 1024 * 1024;
 const MAX_PAGINAS = 6; // por consulta: 6 mil subpastas, 1.200 documentos
 const POR_CONSULTA = 20; // pastas procuradas de uma vez ('a' in parents or 'b' in parents ...)
 const MAX_PASTAS = 400; // pastas em que se procuram documentos a cada leitura (as mais novas)
@@ -60,8 +66,8 @@ function erroDoDrive(status, corpo) {
   return `O Google Drive respondeu ${status}.`;
 }
 
-/** Uma chamada ao Drive. `comoTexto` devolve o corpo como texto (é o conteúdo do documento). */
-async function pedir(caminho, params, { comoTexto = false } = {}) {
+/** Uma chamada ao Drive. `comoTexto` devolve o corpo como texto (o conteúdo do documento); `binario`, como Buffer. */
+async function pedir(caminho, params, { comoTexto = false, binario = false } = {}) {
   const token = await agendaGoogle.tokenDeAcesso();
   if (!token) throw new Error('O Google não está conectado. Conecte no painel (aba Extensão → Google Agenda).');
   let r;
@@ -75,7 +81,47 @@ async function pedir(caminho, params, { comoTexto = false } = {}) {
     throw new Error('Não consegui falar com o Google Drive.');
   }
   if (!r.ok) throw new Error(erroDoDrive(r.status, await r.json().catch(() => ({}))));
+  if (binario) return Buffer.from(await r.arrayBuffer());
   return comoTexto ? r.text() : r.json().catch(() => ({}));
+}
+
+/** Tira UM arquivo de dentro de um .zip (o .docx é um zip). Buffer com o conteúdo, ou null. */
+function doZip(buf, nome) {
+  if (!Buffer.isBuffer(buf) || buf.length < 22) return null;
+  let fim = -1; // registro do fim do diretório central, procurado de trás para frente
+  for (let i = buf.length - 22; i >= Math.max(0, buf.length - 22 - 65535); i--) {
+    if (buf.readUInt32LE(i) === 0x06054b50) { fim = i; break; }
+  }
+  if (fim < 0) return null;
+  const quantos = buf.readUInt16LE(fim + 10);
+  let p = buf.readUInt32LE(fim + 16);
+  for (let n = 0; n < quantos && p + 46 <= buf.length; n++) {
+    if (buf.readUInt32LE(p) !== 0x02014b50) return null;
+    const metodo = buf.readUInt16LE(p + 10);
+    const comprimido = buf.readUInt32LE(p + 20);
+    const tamanhoDoNome = buf.readUInt16LE(p + 28);
+    const local = buf.readUInt32LE(p + 42);
+    if (buf.toString('utf8', p + 46, p + 46 + tamanhoDoNome) === nome) {
+      if (local + 30 > buf.length || buf.readUInt32LE(local) !== 0x04034b50) return null;
+      const inicio = local + 30 + buf.readUInt16LE(local + 26) + buf.readUInt16LE(local + 28);
+      const dados = buf.subarray(inicio, inicio + comprimido);
+      if (metodo === 0) return dados;
+      return metodo === 8 ? zlib.inflateRawSync(dados, { maxOutputLength: 64 * 1024 * 1024 }) : null;
+    }
+    p += 46 + tamanhoDoNome + buf.readUInt16LE(p + 30) + buf.readUInt16LE(p + 32);
+  }
+  return null;
+}
+
+/** O texto de um arquivo do Word (.docx): os parágrafos do documento, sem a formatação. Nada do arquivo é executado. */
+function textoDoDocx(buf) {
+  let xml = null;
+  try { xml = doZip(buf, 'word/document.xml'); } catch (_e) { xml = null; }
+  if (!xml) throw new Error('Não consegui abrir o arquivo do Word.');
+  const entidades = (s) => s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'")
+    .replace(/&#(\d+);/g, (_t, n) => String.fromCodePoint(Number(n))).replace(/&amp;/g, '&');
+  return entidades(xml.toString('utf8').replace(/<w:tab\/>/g, '\t').replace(/<w:br\/>/g, '\n').replace(/<\/w:p>/g, '\n').replace(/<[^>]+>/g, ''))
+    .replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
 /** O que há dentro de uma ou várias pastas (os mais novos primeiro), `POR_CONSULTA` pastas por consulta. */
@@ -88,7 +134,7 @@ async function filhos(pastas, filtro, { porPagina = 200 } = {}) {
     for (let p = 0; p < MAX_PAGINAS; p++) {
       const r = await pedir('/files', {
         q: `(${onde}) and trashed = false and ${filtro}`,
-        fields: 'nextPageToken, files(id, name, mimeType, createdTime)',
+        fields: 'nextPageToken, files(id, name, mimeType, createdTime, shortcutDetails(targetId, targetMimeType))',
         orderBy: 'createdTime desc', pageSize: String(porPagina), supportsAllDrives: 'true', includeItemsFromAllDrives: 'true',
         ...(pagina ? { pageToken: pagina } : {}),
       });
@@ -102,17 +148,19 @@ async function filhos(pastas, filtro, { porPagina = 200 } = {}) {
 
 /**
  * Os documentos de texto da pasta e das subpastas dela, criados a partir de `desde` (AAAA-MM-DD), do
- * mais antigo para o mais novo. Vídeo, planilha e o resto ficam de fora. Desce até dois níveis: a
- * subpasta de cada call e, quando a subpasta não tem data no nome (um agrupador, como "Google Meet"
- * ou "Outubro"), as subpastas dela.
- * @returns {Promise<{arquivos: {id: string, nome: string, tipo: string, criadoEm: string}[], subpastas: number}>}
- *   `subpastas` é quantas subpastas a pasta tem (para a tela explicar um "nada novo").
+ * mais antigo para o mais novo: Documento Google, Word (.docx), .txt e atalho para um deles. Vídeo,
+ * planilha e o resto ficam de fora. Desce até dois níveis: a subpasta de cada call e, quando a
+ * subpasta não tem data no nome (um agrupador, como "Google Meet" ou "Outubro"), as subpastas dela.
+ * @returns {Promise<{arquivos: {id: string, nome: string, tipo: string, criadoEm: string}[], subpastas: number, maisNova: string, naJanela: number, dentro: {tipo: string, quantos: number, maisNovo: string}[]}>}
+ *   Além dos arquivos, o que foi olhado — é o que a tela usa para explicar um "nada novo", sem nome de
+ *   ninguém: quantas subpastas há, a data da mais nova (pelo nome), quantas são da data de corte em
+ *   diante e, se nelas não havia documento novo, que tipos de arquivo elas têm (`dentro`).
  */
 async function procurar(pasta, { desde } = {}) {
   const id = idDaPasta(pasta);
   if (!id) throw new Error('O link da pasta do Drive não é válido.');
   const corte = /^\d{4}-\d{2}-\d{2}$/.test(String(desde || '')) ? String(desde) : '';
-  const documentos = `(mimeType = '${DOC}' or mimeType = 'text/plain')` + (corte ? ` and createdTime >= '${corte}T00:00:00'` : '');
+  const documentos = `(${LEGIVEIS.concat(ATALHO).map((t) => `mimeType = '${t}'`).join(' or ')})` + (corte ? ` and createdTime >= '${corte}T00:00:00'` : '');
   const soPastas = `mimeType = '${PASTA}'`;
 
   const nivel1 = await filhos([id], soPastas, { porPagina: 1000 });
@@ -137,10 +185,29 @@ async function procurar(pasta, { desde } = {}) {
   }
   const vistos = new Set();
   const arquivos = lista
-    .filter((f) => f && f.id && !vistos.has(f.id) && vistos.add(f.id))
+    // Atalho vale pelo arquivo para onde aponta (se for um texto que dá para ler).
+    .map((f) => (f && f.mimeType === ATALHO ? { ...f, id: f.shortcutDetails && f.shortcutDetails.targetId, mimeType: (f.shortcutDetails && f.shortcutDetails.targetMimeType) || '' } : f))
+    .filter((f) => f && f.id && LEGIVEIS.includes(f.mimeType) && !vistos.has(f.id) && vistos.add(f.id))
     .map((f) => ({ id: String(f.id), nome: String(f.name || ''), tipo: String(f.mimeType || ''), criadoEm: String(f.createdTime || '') }))
     .sort((a, b) => a.criadoEm.localeCompare(b.criadoEm));
-  return { arquivos, subpastas: nivel1.length + nivel2.length };
+
+  // O que foi olhado, para a tela explicar um "nada novo" (só contas e datas, sem nome de arquivo).
+  const todas = nivel1.concat(nivel2);
+  const datas = todas.map((p) => dataDoNome(p.name)).filter(Boolean).sort();
+  const novas = corte ? todas.filter((p) => dataDoNome(p.name) >= corte).sort((a, b) => quando(b).localeCompare(quando(a))) : [];
+  let dentro = [];
+  if (!arquivos.length && novas.length) {
+    // Há subpasta da data em diante e nenhum documento que dê para ler: o que há nelas?
+    const porTipo = {};
+    for (const f of await filhos(novas.slice(0, POR_CONSULTA).map((p) => p.id), `mimeType != '${PASTA}'`)) {
+      const t = porTipo[f.mimeType] || (porTipo[f.mimeType] = { tipo: String(f.mimeType || ''), quantos: 0, maisNovo: '' });
+      t.quantos++;
+      const dia = String(f.createdTime || '').slice(0, 10);
+      if (dia > t.maisNovo) t.maisNovo = dia;
+    }
+    dentro = Object.values(porTipo).sort((a, b) => b.quantos - a.quantos).slice(0, 6);
+  }
+  return { arquivos, subpastas: todas.length, maisNova: datas[datas.length - 1] || '', naJanela: novas.length, dentro };
 }
 
 /** Só os documentos (ver `procurar`). */
@@ -148,13 +215,18 @@ async function listar(pasta, opcoes) {
   return (await procurar(pasta, opcoes)).arquivos;
 }
 
-/** O texto de um documento: Google Docs é exportado como texto puro; arquivo .txt é baixado como está. */
+/** O texto de um documento: Google Docs é exportado como texto puro; Word (.docx) é aberto; .txt é baixado como está. */
 async function texto(arquivo) {
   const id = encodeURIComponent(arquivo.id);
+  if (arquivo.tipo === DOCX) {
+    const buf = await pedir(`/files/${id}`, { alt: 'media', supportsAllDrives: 'true' }, { binario: true });
+    if (buf.length > MAX_DOCX) throw new Error('O arquivo do Word é grande demais para ler.');
+    return textoDoDocx(buf);
+  }
   const t = arquivo.tipo === DOC
     ? await pedir(`/files/${id}/export`, { mimeType: 'text/plain' }, { comoTexto: true })
     : await pedir(`/files/${id}`, { alt: 'media', supportsAllDrives: 'true' }, { comoTexto: true });
   return String(t || '').replace(/^﻿/, '').replace(/\r\n/g, '\n');
 }
 
-module.exports = { idDaPasta, dataDoNome, diasAntes, procurar, listar, texto, erroDoDrive, DOC };
+module.exports = { idDaPasta, dataDoNome, diasAntes, procurar, listar, texto, textoDoDocx, erroDoDrive, DOC, DOCX };
