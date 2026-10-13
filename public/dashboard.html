@@ -1704,6 +1704,26 @@
     // As calls que a leitura do Drive transformou em caso: para conferir e corrigir o que a IA classificou.
     const DRIVE_RESULTADO = [['venda', 'Fechou'], ['acordo', 'Acordo, pagar depois'], ['nao', 'Não fechou']];
     const DRIVE_QUEM = [['', 'Quem decide?'], ['sozinho', 'Sozinho(a)'], ['casal', 'Casal'], ['socios', 'Sócios'], ['familia', 'Pai, irmão ou filho']];
+    const DRIVE_TIPOS = {
+      'application/vnd.google-apps.document': 'Documento Google', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'Word',
+      'application/vnd.google-apps.shortcut': 'atalho', 'application/pdf': 'PDF', 'text/plain': 'texto', 'video/mp4': 'vídeo',
+    };
+    // O que a leitura olhou na pasta, para um "nada novo" se explicar sozinho: quantas subpastas, a data
+    // da mais nova e, quando há call nova sem documento que dê para ler, que arquivos ela tem.
+    function oQueFoiOlhadoNoDrive(r) {
+      if (r.subpastas == null) return '';
+      const br = (d) => String(d || '').split('-').reverse().join('/');
+      const desde = r.desde ? br(r.desde) : '';
+      let t = ` (${r.subpastas} subpasta(s) na pasta` + (r.maisNova ? `, a mais nova de ${br(r.maisNova)}` : '') + `; ${r.total || 0} documento(s) ${desde ? `de ${desde} em diante` : 'no total'})`;
+      if (r.total || !desde) return t;
+      if (r.maisNova && r.maisNova < r.desde) t += ` Ainda não há call de ${desde} em diante nessa pasta.`;
+      else if (r.dentro && r.dentro.length) {
+        t += ` Nas ${r.naJanela} subpasta(s) de ${desde} em diante há: ` +
+          r.dentro.map((x) => `${x.quantos} ${DRIVE_TIPOS[x.tipo] || x.tipo}` + (x.maisNovo ? ` (mais novo de ${br(x.maisNovo)})` : '')).join(', ') +
+          ` — nenhum texto criado de ${desde} em diante.`;
+      } else if (r.naJanela) t += ` As ${r.naJanela} subpasta(s) de ${desde} em diante estão vazias.`;
+      return t;
+    }
     async function mostrarCasosDoDrive(id) {
       const caixa = $('listaClosers').querySelector(`[data-drive-closer="${id}"] [data-drive-casos]`);
       if (!caixa) return;
@@ -1794,8 +1814,7 @@
             setStatus(st,
               `${r.lidos} documento(s) lido(s): ${r.casos} call(s) viraram caso` + (r.semConversa ? `, ${r.semConversa} sem conversa (não compareceu ou caiu)` : '') + '.' +
               (r.restantes ? ` Faltam ${r.restantes}: clique de novo.` : r.lidos ? ' Pasta em dia.' : ' Nada novo na pasta.') +
-              // O que foi olhado, para dar para entender um "nada novo": nenhuma subpasta = link ou acesso errado.
-              (r.subpastas != null ? ` (${r.subpastas} subpasta(s) na pasta; ${r.total || 0} documento(s) de ${r.desde ? r.desde.split('-').reverse().join('/') : 'qualquer data'} em diante)` : '') +
+              oQueFoiOlhadoNoDrive(r) +
               (r.erros && r.erros.length ? ' Erro: ' + r.erros[0] : ''),
               { ok: !(r.erros && r.erros.length), erro: Boolean(r.erros && r.erros.length) });
             await mostrarCasosDoDrive(id);

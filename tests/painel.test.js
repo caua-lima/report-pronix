@@ -1560,6 +1560,7 @@ test('Closers: pasta do Drive com as transcrições — salvar o link, ler agora
   let lista = [{ id: 'c1', nome: 'Paulo Henrique', email: '', apelido: 'PH', inteligencia: 'Fecha com casal.' }];
   let casosLidos = [];
   let ultima = null;
+  let respostaDoLer = null; // o que a leitura achou na pasta, quando não há nada novo
   const api = apiMaster()
     .quando('GET /api/admin/closers', () => ({ corpo: { closers: lista } }))
     .quando('GET /api/admin/closers/c1/padrao', () => ({ corpo: { ok: true, padrao: { geral: { total: 0, vendas: 0, acordos: 0 }, origem: { transcricao: 0, resultado: 0 }, quem: {}, presenca: {}, quemPresenca: {}, momento: {}, reunioes: {}, tempo: {} } } }))
@@ -1570,12 +1571,13 @@ test('Closers: pasta do Drive com as transcrições — salvar o link, ler agora
     })
     .quando('GET /api/admin/closers/c1/drive', () => ({ corpo: { ok: true, pasta: lista[0].drivePasta || '', desde: lista[0].driveDesde || '', ultima, total: casosLidos.length, casos: casosLidos } }))
     .quando('POST /api/admin/closers/c1/drive/ler', () => {
+      if (respostaDoLer) return { corpo: { ok: true, lidos: 0, casos: 0, semConversa: 0, erros: [], restantes: 0, ...respostaDoLer } };
       casosLidos = [
         { id: 'd_a', data: '2026-10-12', quem: 'casal', todosNaCall: true, momento: 'loja', resultado: 'venda', motivo: 'onboarding iniciado pela casa', perfil: 'casal dono de loja <b>física</b>', reunioes: 1, minutos: 130, revisado: false },
         { id: 'd_b', data: '2026-10-10', quem: '', todosNaCall: null, momento: 'online', resultado: 'nao', motivo: 'foi consultar o sócio', perfil: 'vendedor com sócio fora da call', reunioes: 1, minutos: 80, revisado: true },
       ];
       ultima = { em: '2026-10-13T15:00:00.000Z', lidos: 3, casos: 2, semConversa: 1, restantes: 4, erro: '' };
-      return { corpo: { ok: true, lidos: 3, casos: 2, semConversa: 1, erros: [], restantes: 4, total: 7, subpastas: 31, desde: '2026-10-09' } };
+      return { corpo: { ok: true, lidos: 3, casos: 2, semConversa: 1, erros: [], restantes: 4, total: 7, subpastas: 31, desde: '2026-10-09', maisNova: '2026-10-12', naJanela: 5, dentro: [] } };
     })
     .quando('PATCH /api/admin/closers/c1/casos/d_b', () => ({ corpo: { ok: true, caso: {} } }))
     .quando('DELETE /api/admin/closers/c1/casos/d_a', () => { casosLidos = casosLidos.filter((c) => c.id !== 'd_a'); return { corpo: { ok: true } }; });
@@ -1601,7 +1603,7 @@ test('Closers: pasta do Drive com as transcrições — salvar o link, ler agora
   // ler agora: resumo do que aconteceu e a lista do que a leitura entendeu
   bloco().querySelector('[data-ler-drive]').click();
   await esperar(() => /3 documento\(s\) lido\(s\)/.test(status()), { motivo: 'leitura' });
-  assert.match(status(), /3 documento\(s\) lido\(s\): 2 call\(s\) viraram caso, 1 sem conversa \(não compareceu ou caiu\)\. Faltam 4: clique de novo\. \(31 subpasta\(s\) na pasta; 7 documento\(s\) de 09\/10\/2026 em diante\)/);
+  assert.match(status(), /3 documento\(s\) lido\(s\): 2 call\(s\) viraram caso, 1 sem conversa \(não compareceu ou caiu\)\. Faltam 4: clique de novo\. \(31 subpasta\(s\) na pasta, a mais nova de 12\/10\/2026; 7 documento\(s\) de 09\/10\/2026 em diante\)$/);
   const casos = () => [...bloco().querySelectorAll('[data-caso]')];
   await esperar(() => casos().length === 2, { motivo: 'casos na tela' });
   const textoCaso = (i) => casos()[i].textContent.replace(/\s+/g, ' ').trim();
@@ -1619,6 +1621,21 @@ test('Closers: pasta do Drive com as transcrições — salvar o link, ler agora
   assert.deepEqual(api.corpos('PATCH /api/admin/closers/c1/casos/d_b')[0], { resultado: 'acordo' });
   casos()[0].querySelector('[data-apagar-caso]').click();
   await esperar(() => casos().length === 1, { motivo: 'caso apagado' });
+
+  // "nada novo" se explica: a pasta ainda não tem call da data em diante…
+  respostaDoLer = { total: 0, subpastas: 149, desde: '2026-10-09', maisNova: '2026-10-08', naJanela: 0, dentro: [] };
+  bloco().querySelector('[data-ler-drive]').click();
+  await esperar(() => /Nada novo na pasta/.test(status()), { motivo: 'nada novo' });
+  assert.match(status(), /Nada novo na pasta\. \(149 subpasta\(s\) na pasta, a mais nova de 08\/10\/2026; 0 documento\(s\) de 09\/10\/2026 em diante\) Ainda não há call de 09\/10\/2026 em diante nessa pasta\.$/);
+  // …ou tem, mas sem documento que dê para ler: diz o que há nas subpastas novas
+  respostaDoLer = { total: 0, subpastas: 152, desde: '2026-10-09', maisNova: '2026-10-13', naJanela: 3, dentro: [{ tipo: 'video/mp4', quantos: 3, maisNovo: '2026-10-13' }, { tipo: 'application/pdf', quantos: 2, maisNovo: '2026-10-12' }, { tipo: 'application/x-desconhecido', quantos: 1, maisNovo: '' }] };
+  bloco().querySelector('[data-ler-drive]').click();
+  await esperar(() => /152 subpasta/.test(status()), { motivo: 'o que há nas subpastas novas' });
+  assert.match(status(), /a mais nova de 13\/10\/2026; 0 documento\(s\) de 09\/10\/2026 em diante\) Nas 3 subpasta\(s\) de 09\/10\/2026 em diante há: 3 vídeo \(mais novo de 13\/10\/2026\), 2 PDF \(mais novo de 12\/10\/2026\), 1 application\/x-desconhecido — nenhum texto criado de 09\/10\/2026 em diante\.$/);
+  respostaDoLer = { total: 0, subpastas: 152, desde: '2026-10-09', maisNova: '2026-10-13', naJanela: 2, dentro: [] };
+  bloco().querySelector('[data-ler-drive]').click();
+  await esperar(() => /estão vazias/.test(status()), { motivo: 'subpastas vazias' });
+  assert.match(status(), /As 2 subpasta\(s\) de 09\/10\/2026 em diante estão vazias\.$/);
   await dormir(60);
   assert.deepEqual(p.erros, []);
   p.fechar();
