@@ -2126,3 +2126,29 @@ test('Match com o closer pelo PDF do handoff: some sem closer com análise; envi
   assert.deepEqual(p.erros, []);
   p.fechar();
 });
+
+// ---------------------------------------------------------------- trazer do Report Closer
+test('Resultados: trazer do Report Closer manda o arquivo em lotes de 5 e conta o que entrou; arquivo errado é recusado na hora', async () => {
+  const api = apiMaster().quando('POST /api/master/importar-reports', ({ corpo }) => ({ corpo: { ok: true, importados: corpo.reports.length - 1, jaEstavam: 1, deOutroSdr: 0, invalidos: 0, comPdf: corpo.reports.length - 1 } }));
+  const p = abrirPainel(api, { hash: '#resultados' });
+  await esperar(() => p.document.querySelectorAll('#listaRes tr').length > 0, { motivo: 'linhas' });
+  const escolher = (texto) => Object.defineProperty(p.$('impArquivo'), 'files', { configurable: true, value: texto == null ? [] : [{ name: 'report-closer.json', text: async () => texto }] });
+
+  p.$('impEnviar').click();
+  await esperar(() => /Escolha o arquivo/.test(p.$('impStatus').textContent), { motivo: 'sem arquivo' });
+  escolher('{"qualquer": 1}');
+  p.$('impEnviar').click();
+  await esperar(() => /não é a exportação do Report Closer/.test(p.$('impStatus').textContent), { motivo: 'arquivo errado' });
+  assert.equal(api.contar('POST /api/master/importar-reports'), 0);
+
+  const reports = Array.from({ length: 7 }, (_, i) => ({ id: 'r' + i, lead: 'Lead ' + i, usuarioNome: 'Cauã', quando: '2026-10-07T14:00:00.000Z' }));
+  escolher(JSON.stringify({ formato: 'report-closer/1', reports }));
+  p.$('impEnviar').click();
+  await esperar(() => /importado/.test(p.$('impStatus').textContent), { motivo: 'importou' });
+  assert.deepEqual(api.corpos('POST /api/master/importar-reports').map((c) => [c.formato, c.reports.length]), [['report-closer/1', 5], ['report-closer/1', 2]]);
+  assert.equal(p.$('impStatus').textContent, '5 report(s) importado(s), 5 com PDF; 2 já estavam aqui.');
+  await dormir(60);
+  assert.deepEqual(p.erros, []);
+  p.fechar();
+});
+

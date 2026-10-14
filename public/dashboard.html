@@ -554,6 +554,15 @@
             <button id="resVendasRd" class="btn sec" title="Confere agora no RD todos os leads do período escolhido (retroativo): o closer, e o resultado pelo estado do card — vendido (com produto e ticket), follow-up, não comprou ou não compareceu. Só leitura no RD. Também roda sozinho de hora em hora.">Puxar do RD</button>
           </div>
           <div id="statusRes" class="status"></div>
+          <details id="importarBox" style="margin-top:10px">
+            <summary style="cursor:pointer;color:var(--text-2);font-size:.85rem">Trazer do Report Closer</summary>
+            <div class="row" style="margin-top:8px;align-items:flex-end">
+              <div class="grow"><label for="impArquivo">Arquivo exportado do Report Closer (.json)</label><input id="impArquivo" type="file" accept="application/json,.json" /></div>
+              <button id="impEnviar" class="btn sec">Importar</button>
+            </div>
+            <div class="hint" style="margin-top:6px">No Report Closer: Resultados → <b>Puxar do RD</b> (para o closer e a venda estarem preenchidos) → <b>Levar para o Report PRONIX</b>. Entram só os seus reports, com o PDF; o que já estiver aqui não duplica.</div>
+            <div id="impStatus" class="status"></div>
+          </details>
         </div>
 
         <div class="card">
@@ -2328,6 +2337,47 @@
     $('resVisao').addEventListener('change', carregarResultados);
     $('resEscopo').addEventListener('change', carregarResultados);
     $('resVer').addEventListener('click', carregarResultados);
+    // Trazer do Report Closer: o arquivo exportado de lá vai em lotes pequenos (cada report leva o PDF).
+    $('impEnviar').addEventListener('click', async () => {
+      const btn = $('impEnviar');
+      const arquivo = $('impArquivo').files && $('impArquivo').files[0];
+      if (!arquivo) {
+        setStatus('impStatus', 'Escolha o arquivo .json exportado do Report Closer.', { erro: true });
+        return;
+      }
+      btn.disabled = true;
+      try {
+        let dados = null;
+        try { dados = JSON.parse(await arquivo.text()); } catch (_) { dados = null; }
+        if (!dados || dados.formato !== 'report-closer/1' || !Array.isArray(dados.reports)) {
+          throw new Error('Esse arquivo não é a exportação do Report Closer (lá: Resultados → Levar para o Report PRONIX).');
+        }
+        const lotes = [];
+        let atual = [];
+        let tamanho = 0;
+        for (const r of dados.reports) {
+          const t = JSON.stringify(r).length;
+          if (atual.length && (atual.length >= 5 || tamanho + t > 2500000)) { lotes.push(atual); atual = []; tamanho = 0; }
+          atual.push(r);
+          tamanho += t;
+        }
+        if (atual.length) lotes.push(atual);
+        const soma = { importados: 0, jaEstavam: 0, deOutroSdr: 0, invalidos: 0, comPdf: 0 };
+        for (let i = 0; i < lotes.length; i++) {
+          setStatus('impStatus', `Importando… lote ${i + 1} de ${lotes.length}`, { loading: true });
+          const j = await api('POST', '/api/master/importar-reports', { formato: dados.formato, reports: lotes[i] });
+          Object.keys(soma).forEach((k) => { soma[k] += Number(j[k]) || 0; });
+        }
+        setStatus('impStatus', `${soma.importados} report(s) importado(s), ${soma.comPdf} com PDF` + (soma.jaEstavam ? `; ${soma.jaEstavam} já estavam aqui` : '') +
+          (soma.deOutroSdr ? `; ${soma.deOutroSdr} de outro SDR (ficaram de fora)` : '') + (soma.invalidos ? `; ${soma.invalidos} inválido(s)` : '') + '.', { ok: true });
+        await carregarResultados();
+      } catch (e) {
+        setStatus('impStatus', e.message, { erro: true });
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
     // Puxar do RD: confere TODO o período escolhido (retroativo), um lote por vez, até não sobrar nenhum.
     $('resVendasRd').addEventListener('click', async () => {
       $('resVendasRd').disabled = true;
