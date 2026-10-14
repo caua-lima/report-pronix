@@ -2391,9 +2391,18 @@
           soma.conferidos += j.conferidos || 0;
           soma.vendidos += j.vendidos || 0;
           soma.encerrados += j.encerrados || 0;
+          faltam = j.restantes || 0;
+          // O RD pediu uma pausa: espera um minuto e continua de onde parou.
+          if (j.limitado && faltam) {
+            for (let s = 60; s > 0; s -= 5) {
+              setStatus('statusRes', `O RD pediu uma pausa nas consultas. Continuo em ${s} s… (${soma.conferidos} conferido(s), faltam ${faltam})`, { loading: true });
+              // a página de teste encurta a espera
+              await new Promise((ok) => setTimeout(ok, (Number(window.ESPERA_DO_RD_MS) || 60000) / 12));
+            }
+            continue;
+          }
           // Acabou, ou não andou (nada conferido nesta volta): para.
-          if (!j.restantes || !j.conferidos) { faltam = j.restantes || 0; break; }
-          faltam = j.restantes;
+          if (!faltam || !j.conferidos) break;
         }
         setStatus('statusRes', '');
         await carregarResultados();

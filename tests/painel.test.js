@@ -2152,3 +2152,18 @@ test('Resultados: trazer do Report Closer manda o arquivo em lotes de 5 e conta 
   p.fechar();
 });
 
+test('Puxar do RD: o RD pediu uma pausa — o painel espera e continua até acabar', async () => {
+  const respostas = [{ conferidos: 2, vendidos: 1, encerrados: 0, restantes: 3, limitado: true }, { conferidos: 3, vendidos: 0, encerrados: 1, restantes: 0 }];
+  const api = apiMaster().quando('POST /api/master/vendas-rd', () => ({ corpo: respostas.shift() || { conferidos: 0, restantes: 0 } }));
+  const p = abrirPainel(api, { hash: '#resultados' });
+  await esperar(() => p.document.querySelectorAll('#listaRes tr').length > 0, { motivo: 'linhas' });
+  p.w.ESPERA_DO_RD_MS = 60;
+  p.$('resVendasRd').click();
+  await esperar(() => /5 lead\(s\) conferido\(s\) no RD · 1 vendido\(s\) · 1 não comprou/.test(p.$('toast').textContent), { motivo: 'terminou depois da pausa' });
+  const pedidos = api.pedidos.filter((x) => x.chave === 'POST /api/master/vendas-rd');
+  assert.equal(pedidos.length, 2);
+  assert.equal(pedidos[0].query.get('varredura'), pedidos[1].query.get('varredura'), 'a mesma varredura continua');
+  await dormir(60);
+  assert.deepEqual(p.erros, []);
+  p.fechar();
+});

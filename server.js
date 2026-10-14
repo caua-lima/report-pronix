@@ -472,7 +472,7 @@ app.post('/api/master/vendas-rd', acesso(['resultados'], SO_MASTER_ERRO), async 
   try {
     const varredura = /^\d{4}-\d{2}-\d{2}T[\d:.]+Z$/.test(String(req.query.varredura || '')) ? String(req.query.varredura) : '';
     const reports = await reportsDoEscopo(donoDoEscopo(req), filtroDaQuery(req.query));
-    res.json(await vendasRd.sincronizar(reports, varredura ? { varredura, porVez: 15 } : {}));
+    res.json(await vendasRd.sincronizar(reports, varredura ? { varredura, porVez: 10 } : {}));
   } catch (err) {
     res.status(502).json({ erro: err.message });
   }
