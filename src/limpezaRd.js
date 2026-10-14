@@ -114,26 +114,71 @@ async function contexto(usuario, funilId) {
   const dest = acharEtapa(funil, destino());
 
   const avisos = [];
-  // Campo SDR: a opção com o nome de quem pediu (o primeiro nome basta: "Cauã").
+  const { sdr, aviso } = await sdrDoUsuario(usuario);
+  if (aviso) avisos.push(aviso);
+  const primeiro = norm(usuario.nome).split(' ')[0];
+  // Usuário do RD de quem pediu: é o filtro de "só os meus".
+  const usuariosRd = await crm.usuariosRd().catch(() => []);
+  const eu = usuariosRd.find((u) => norm(u.nome) === norm(usuario.nome)) || (usuariosRd.filter((u) => norm(u.nome).split(' ')[0] === primeiro).length === 1 ? usuariosRd.find((u) => norm(u.nome).split(' ')[0] === primeiro) : null);
+  return { funil: { id: funil.id, nome: funil.nome }, regras, destino: { id: dest.id, nome: dest.nome }, sdr, usuarioRd: eu ? { id: String(eu.id), nome: eu.nome } : null, avisos };
+}
+
+/**
+ * O campo "SDR" do card (obrigatório ao desqualificar) com a opção de quem pede: o nome inteiro ou o
+ * primeiro nome ("Cauã"). Sem o campo no RD, segue sem ele (com aviso); com opções e nenhuma dele, erro.
+ */
+async function sdrDoUsuario(usuario) {
   const campos = await emCache('crm:campos-negociacao', async () =>
     lista(await crm.rd('/custom_fields', { for: 'deal' }), 'custom_fields').map((c) => ({
       id: idDe(c), rotulo: crm.consertarAcentos(c.label || ''), opcoes: lista(c.opts || c.options || []).map((o) => crm.consertarAcentos(String(o))),
     }))
   );
   const campo = campos.find((c) => norm(c.rotulo) === campoSdr());
+  if (!campo) return { sdr: null, aviso: 'Não achei o campo "SDR" nas negociações do RD: os cards serão movidos sem preencher esse campo.' };
   const primeiro = norm(usuario.nome).split(' ')[0];
-  let sdr = null;
-  if (!campo) avisos.push('Não achei o campo "SDR" nas negociações do RD: os cards serão movidos sem preencher esse campo.');
-  else {
-    const opcao = campo.opcoes.find((o) => norm(o) === norm(usuario.nome)) || campo.opcoes.find((o) => norm(o) === primeiro) || campo.opcoes.find((o) => norm(o).startsWith(primeiro));
-    if (opcao) sdr = { id: campo.id, valor: opcao };
-    else if (!campo.opcoes.length) sdr = { id: campo.id, valor: String(usuario.nome).split(' ')[0] };
-    else throw new Error(`O campo SDR do RD não tem uma opção com o seu nome ("${usuario.nome}"). Opções: ${campo.opcoes.join(', ')}.`);
-  }
-  // Usuário do RD de quem pediu: é o filtro de "só os meus".
-  const usuariosRd = await crm.usuariosRd().catch(() => []);
-  const eu = usuariosRd.find((u) => norm(u.nome) === norm(usuario.nome)) || (usuariosRd.filter((u) => norm(u.nome).split(' ')[0] === primeiro).length === 1 ? usuariosRd.find((u) => norm(u.nome).split(' ')[0] === primeiro) : null);
-  return { funil: { id: funil.id, nome: funil.nome }, regras, destino: { id: dest.id, nome: dest.nome }, sdr, usuarioRd: eu ? { id: String(eu.id), nome: eu.nome } : null, avisos };
+  const opcao = campo.opcoes.find((o) => norm(o) === norm(usuario.nome)) || campo.opcoes.find((o) => norm(o) === primeiro) || campo.opcoes.find((o) => norm(o).startsWith(primeiro));
+  if (opcao) return { sdr: { id: campo.id, valor: opcao }, aviso: '' };
+  if (!campo.opcoes.length) return { sdr: { id: campo.id, valor: String(usuario.nome).split(' ')[0] }, aviso: '' };
+  throw new Error(`O campo SDR do RD não tem uma opção com o seu nome ("${usuario.nome}"). Opções: ${campo.opcoes.join(', ')}.`);
+}
+
+// ---------------------------------------------------------------- desqualificar pelo WhatsApp
+/**
+ * O botão "Desqualificar" do cartão do lead no WhatsApp: o card vira PERDA com o motivo que o
+ * pré-vendedor escolheu, vai para "Desqualificados" (se o funil dele tiver essa etapa) e o campo SDR é
+ * preenchido. O card é lido de novo antes (fechado nesse meio-tempo não é mexido) e a mudança entra no
+ * mesmo registro da limpeza: aparece no relatório e dá para desfazer pelo painel.
+ * @returns {Promise<{motivo: string, etapa: string, dealId: string}>}
+ */
+async function desqualificarCard({ usuario, dealId, motivoId }) {
+  if (!crm.configurado()) throw new Error('O RD Station CRM não está configurado no servidor (RDSTATION_CRM_TOKEN).');
+  if (!crm.moverLigado()) throw new Error('A escrita no RD está desligada no servidor (CRM_MOVER_ETAPA=0).');
+  const id = /^[A-Za-z0-9_-]{1,40}$/.test(String(dealId || '')) ? String(dealId) : '';
+  if (!id) throw new Error('Não sei qual é o card deste lead. Abra a conversa de novo.');
+  const motivo = (await motivosDePerda()).find((m) => m.id === String(motivoId || ''));
+  if (!motivo) throw new Error('Escolha um dos motivos de perda da lista.');
+  const deal = await crm.rd(`/deals/${encodeURIComponent(id)}`);
+  if (!deal) throw new Error('Não achei este card no RD.');
+  if (!aberto(deal)) throw new Error(deal.win === false ? 'Este card já está como perdido no RD.' : 'Este card já foi fechado no RD.');
+  const de = { id: idDe(deal.deal_stage), nome: crm.consertarAcentos((deal.deal_stage && deal.deal_stage.name) || '') };
+  const funil = (await crm.funis()).find((f) => f.etapas.some((e) => e.id === de.id));
+  const dest = funil ? acharEtapa(funil, destino()) : null;
+  const { sdr } = await sdrDoUsuario(usuario);
+
+  const resp = await crm.rd(`/deals/${encodeURIComponent(id)}`, {}, {
+    metodo: 'PUT',
+    corpo: { ...(dest && dest.id !== de.id ? { deal_stage_id: dest.id } : {}), deal: { win: false, deal_lost_reason_id: motivo.id, deal_custom_fields: camposComSdr(deal, sdr) } },
+  });
+  if (!resp) throw new Error('O RD não achou o card na hora de gravar.');
+  if (resp.win !== undefined && resp.win !== false) throw new Error('O RD respondeu, mas não marcou a perda.');
+
+  const nome = crm.consertarAcentos(deal.name || '').slice(0, 120);
+  const dia = emDiaLocal(new Date().toISOString());
+  await db.push(CHAVE_LOG, {
+    dealId: id, nome, funil: funil ? funil.nome : '', de, motivo: motivo.nome, dias: diasParado(deal),
+    em: new Date().toISOString(), por: String(usuario.nome || '').slice(0, 80), usuarioId: usuario.id, execucao: `wpp-${String(usuario.id || '').slice(0, 20)}-${dia}`,
+  }, LIMITE_LOG);
+  return { motivo: motivo.nome, etapa: dest ? dest.nome : de.nome, dealId: id };
 }
 
 /** Os cards em aberto de uma etapa (todas as páginas). */
@@ -585,5 +630,6 @@ async function relatorio({ de, ate } = {}) {
 
 module.exports = {
   previa, executar, desfazer, relatorio, relatoriosSalvos, contexto, funisElegiveis, emailDoCard, diasParado, camposComSdr, DIAS_PADRAO, LOTE_MAX,
+  motivosDePerda, desqualificarCard,
   previaDuplicados, fecharDuplicados, chaveDoTelefone, chavesDoCard, escolherQuemFica, LOTE_DUPLICADOS,
 };

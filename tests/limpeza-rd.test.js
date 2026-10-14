@@ -334,3 +334,70 @@ test('rotas: só o master usa; a prévia e o relatório respondem pelo painel', 
     await new Promise((r) => servidor.close(r));
   }
 });
+
+// ---------------------------------------------------------------- desqualificar pelo WhatsApp
+test('desqualificar pelo cartão: o card vira perda com o motivo escolhido, vai para Desqualificados com o SDR e dá para desfazer', async () => {
+  const r = await limpeza.desqualificarCard({ usuario: EU, dealId: 'd3', motivoId: 'm3' });
+  assert.deepEqual(r, { motivo: 'Outros', etapa: 'Desqualificados', dealId: 'd3' });
+  assert.equal(escritas.length, 1);
+  assert.deepEqual(escritas[0].corpo, { deal_stage_id: 'e9', deal: { win: false, deal_lost_reason_id: 'm3', deal_custom_fields: [{ custom_field_id: 'cfSdr', value: 'Cauã' }] } });
+  assert.equal(deals.d3.win, false);
+  // fica no registro da limpeza: o desfazer do painel devolve o card para onde estava
+  const volta = await limpeza.desfazer({ usuario: EU, ids: ['d3'] });
+  assert.deepEqual(volta.desfeitos.map((x) => x.etapa), ['Contato iniciado']);
+  assert.deepEqual([deals.d3.deal_stage._id, deals.d3.win], ['e1', null]);
+
+  // card já perdido, motivo que não existe e escrita desligada: nada muda
+  escritas = [];
+  await assert.rejects(() => limpeza.desqualificarCard({ usuario: EU, dealId: 'd9', motivoId: 'm3' }), /já está como perdido/);
+  await assert.rejects(() => limpeza.desqualificarCard({ usuario: EU, dealId: 'd5', motivoId: 'nao-existe' }), /Escolha um dos motivos/);
+  await assert.rejects(() => limpeza.desqualificarCard({ usuario: EU, dealId: '../x', motivoId: 'm3' }), /Não sei qual é o card/);
+  process.env.CRM_MOVER_ETAPA = '0';
+  try {
+    await assert.rejects(() => limpeza.desqualificarCard({ usuario: EU, dealId: 'd5', motivoId: 'm3' }), /escrita no RD está desligada/);
+  } finally {
+    delete process.env.CRM_MOVER_ETAPA;
+  }
+  assert.equal(escritas.length, 0);
+});
+
+test('desqualificar: rotas do cartão — motivos do RD e a perda só no card do lead da conversa, para quem tem a automação', async () => {
+  const servidor = http.createServer(app);
+  await new Promise((r) => servidor.listen(0, '127.0.0.1', r));
+  const base = `http://127.0.0.1:${servidor.address().port}`;
+  const antes = crm.consultarLead;
+  crm.consultarLead = async (busca) => ({ configurado: true, encontrado: true, ficha: { nome: 'Lead Dois', negociacoes: busca.telefone === '5511900000002' ? [{ id: 'd2', escolhida: true, aberta: true }] : [] } });
+  try {
+    const admin = { 'Content-Type': 'application/json', 'x-admin-pass': 'senha-de-teste' };
+    const criar = async (nome, papel) => (await (await fetch(base + '/api/admin/usuarios', { method: 'POST', headers: admin, body: JSON.stringify({ nome, papel }) })).json()).usuario;
+    const comAutomacao = await criar('Cauã Silva', 'sdr');
+    const semAutomacao = await criar('Outra Pessoa', 'sdr');
+    const usuarios = require('../src/usuarios');
+    await usuarios.definirAutomacao(comAutomacao.id, true);
+    await usuarios.definirFichaCrm(comAutomacao.id, true);
+    const chamar = async (metodo, rota, corpo, u) => {
+      const r = await fetch(base + rota, { method: metodo, headers: { 'Content-Type': 'application/json', 'x-cr-key': u.chave }, body: corpo ? JSON.stringify(corpo) : undefined });
+      return { status: r.status, json: await r.json().catch(() => null) };
+    };
+    assert.equal((await chamar('GET', '/api/crm/motivos-perda', undefined, semAutomacao)).status, 403);
+    const m = await chamar('GET', '/api/crm/motivos-perda', undefined, comAutomacao);
+    assert.deepEqual(m.json.motivos.map((x) => x.nome), ['Nunca Respondeu (SDR)', 'Parou de Responder (SDR/Closer)', 'Outros']);
+
+    assert.equal((await chamar('POST', '/api/crm/desqualificar', { telefone: '5511900000002', dealId: 'd2', motivoId: 'm3' }, semAutomacao)).status, 403);
+    const deOutro = await chamar('POST', '/api/crm/desqualificar', { telefone: '5511900000002', dealId: 'd5', motivoId: 'm3' }, comAutomacao);
+    assert.equal(deOutro.status, 400, 'card que não é do lead da conversa não é mexido');
+    assert.match(deOutro.json.erro, /não é do lead desta conversa/);
+    assert.equal(escritas.length, 0);
+
+    const ok = await chamar('POST', '/api/crm/desqualificar', { telefone: '5511900000002', dealId: 'd2', motivoId: 'm3' }, comAutomacao);
+    assert.equal(ok.status, 200, JSON.stringify(ok.json));
+    assert.deepEqual([ok.json.ok, ok.json.motivo, ok.json.etapa], [true, 'Outros', 'Desqualificados']);
+    // o SDR do card passa a ser quem desqualificou; o campo de origem continua lá
+    assert.deepEqual(escritas[0].corpo.deal.deal_custom_fields, [{ custom_field_id: 'cfOrigem', value: 'Instagram' }, { custom_field_id: 'cfSdr', value: 'Cauã' }]);
+    const deNovo = await chamar('POST', '/api/crm/desqualificar', { telefone: '5511900000002', dealId: 'd2', motivoId: 'm3' }, comAutomacao);
+    assert.deepEqual([deNovo.status, deNovo.json.erro], [400, 'Este card já está como perdido no RD.']);
+  } finally {
+    crm.consultarLead = antes;
+    await new Promise((r) => servidor.close(r));
+  }
+});
