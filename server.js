@@ -38,6 +38,7 @@ const limpezaRd = require('./src/limpezaRd');
 const diagnostico = require('./src/diagnostico');
 const { gerarAfinidadePdfBuffer, nomeDoArquivo: nomeDoArquivoAfinidade } = require('./src/afinidadePdf');
 const { textoDoPdf } = require('./src/textoDoPdf');
+const importarReports = require('./src/importarReports');
 const aprendizado = require('./src/aprendizado');
 const { normalizarConsciencia } = require('./src/consciencia');
 const { normalizarDores } = require('./src/dores');
@@ -474,6 +475,23 @@ app.post('/api/master/vendas-rd', acesso(['resultados'], SO_MASTER_ERRO), async 
     res.json(await vendasRd.sincronizar(reports, varredura ? { varredura, porVez: 15 } : {}));
   } catch (err) {
     res.status(502).json({ erro: err.message });
+  }
+});
+
+/**
+ * Trazer do Report Closer: os reports (com o PDF) exportados de lá, em Resultados → "Levar para o Report
+ * PRONIX". Entram só os do próprio usuário, sem duplicar; o painel manda em lotes pequenos.
+ */
+app.post('/api/master/importar-reports', acesso(['resultados'], SO_MASTER_ERRO), async (req, res) => {
+  try {
+    const { formato, reports } = req.body || {};
+    if (formato !== importarReports.FORMATO || !Array.isArray(reports)) {
+      return res.status(400).json({ erro: 'Esse arquivo não é a exportação do Report Closer (lá: Resultados → Levar para o Report PRONIX).' });
+    }
+    if (reports.length > importarReports.MAX_POR_VEZ) return res.status(400).json({ erro: `Mande no máximo ${importarReports.MAX_POR_VEZ} reports por vez.` });
+    res.json({ ok: true, ...(await importarReports.importar(reports, { usuario: req.usuario })) });
+  } catch (err) {
+    res.status(500).json({ erro: err.message });
   }
 });
 
