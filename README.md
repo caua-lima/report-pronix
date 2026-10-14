@@ -385,6 +385,25 @@ funciona**.
 - **Escopo.** Resultados e inteligência usam os reports de quem está olhando; o seletor "Toda a
   equipe" inclui os demais.
 
+### Report automático do dia
+
+Na aba **Reports do dia**, o cartão **Report automático** monta o fechamento do dia no formato que se manda
+à liderança (`src/reportDoDia.js`):
+
+- **Leads novos contatados / Respostas / Recontatos** — a extensão (com a automação do cartão ligada) olha
+  as conversas que passam pela tela e avisa, por conversa e por dia, três sinais: você escreveu hoje, já
+  havia mensagens de antes, o lead escreveu hoje. **Novo** = escreveu hoje e não havia nada antes;
+  **recontato** = escreveu hoje e já havia histórico; **resposta** = o lead escreveu hoje. Cada contato
+  conta uma vez. Do contato fica só uma impressão (hash), nunca telefone nem nome. Conversa que não passou
+  pela tela não é vista, e mensagem de áudio ou foto (sem hora) vale a hora da mensagem de antes.
+- **Desqualificados** — as perdas do dia por motivo: os cards seus que o RD mostra como perdidos hoje,
+  juntos com o registro do sistema (botão Desqualificar e limpeza do funil), sem contar duas vezes e sem
+  as desfeitas. Se o RD não responder, vale o registro do sistema e o cartão avisa.
+- **Digitado** — automáticas, realizadas, agendas que caíram, no-show e observações dos desqualificados
+  ficam salvos por dia (não há como contar isso sozinho).
+
+O texto sai pronto, editável, com o botão **Copiar o report** (`GET/PUT /api/report-dia`, `POST /api/atividade`).
+
 ### Linha do tempo do contato no report
 
 Das **datas das mensagens** (sem IA), o resumo do report ganha, quando faz sentido:
@@ -603,6 +622,8 @@ Autenticação por cabeçalho `x-cr-key` (a chave do usuário). `gestor+` = mast
 | `POST /api/crm/lead` | chave + popup do lead | Ficha do RD do lead da conversa. |
 | `POST /api/crm/respondeu` | chave + automação | Avança o card para "Respondeu". |
 | `GET /api/master/diagnostico` | master | Confere, sem alterar nada, se a automação do "Respondeu" e a cor da agenda têm tudo no lugar, e mostra a última vez que cada uma funcionou. |
+| `GET /api/report-dia` · `PUT /api/report-dia` | chave | Report automático do dia: contagem, desqualificados, o que foi digitado e o texto pronto. |
+| `POST /api/atividade` | chave com a automação do cartão | A extensão avisa o que viu numa conversa hoje (escrevi / havia histórico / o lead escreveu). |
 | `GET /api/crm/motivos-perda` · `POST /api/crm/desqualificar` | chave com a automação do cartão | Botão Desqualificar: os motivos de perda do RD e a perda no card do lead da conversa. |
 | `GET /api/master/limpeza-rd/funis` · `GET …/previa` · `POST …/executar` · `POST …/desfazer` · `GET …/relatorio` | master | Limpeza do funil no RD: prévia, lotes, desfazer e relatório por motivo. |
 | `GET/POST /api/master/limpeza-rd/duplicados` | master | Cadastros duplicados no funil: a busca (sem alterar nada) e o fechamento em lotes como "Duplicado". |
