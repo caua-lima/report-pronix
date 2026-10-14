@@ -464,6 +464,8 @@ terminou. Os casos vêm de dois lugares (`src/casos.js`):
 O padrão ("casal com os dois na call: 9 de 17") vai dentro do histórico no pedido à IA e aparece no
 painel, em Closers → Inteligência.
 
+**Conversa por ligação.** Sem conversa escrita, a extensão não tem o que ler. No painel, aba Gerar report, o cartão **Match com o closer** recebe o **PDF do handoff** (o que o próprio sistema gera) ou o texto do report colado, e devolve o PDF do match (`POST /api/afinidade/handoff`, `src/textoDoPdf.js`). Report gerado ali mesmo nem precisa do PDF: é só clicar. O PDF enviado não fica guardado; "falas do lead" no plano só as que estão entre aspas no report.
+
 **Transcrições novas, direto do Drive.** Em Closers → Inteligência, cole o link da **pasta do Google
 Drive** onde caem as transcrições das calls do closer (as anotações do Google Meet) e a data a partir
 da qual ler. Todo documento novo vira um caso dele, e o padrão se atualiza (`src/transcricoes.js`,
