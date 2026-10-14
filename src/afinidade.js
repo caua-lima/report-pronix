@@ -35,6 +35,7 @@ function tempoParaOPlano(gastoMs) {
 const MAX_CONVERSA = Number(process.env.MAX_AFINIDADE_CHARS) || 5000;
 const MAX_INTELIGENCIA = 6500;
 const MAX_LEAD = 2600;
+const MAX_RELATO = 5000; // o report de handoff, quando a conversa foi por ligação
 
 const texto = (v, max) => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, max) : '');
 const lista = (v, max, n) => (Array.isArray(v) ? v.map((x) => texto(x, max)).filter(Boolean).slice(0, n) : []);
@@ -123,18 +124,23 @@ function blocoDoLead(dados, nome) {
 const faixaDaNota = (n) => (n >= 7 ? 'alta' : n >= 4 ? 'media' : 'baixa');
 
 /**
- * @param {{closer: object, dados?: object, mensagens?: object[], nome?: string, reports?: object[], casos?: object[]}} entrada
+ * @param {{closer: object, dados?: object, mensagens?: object[], nome?: string, relato?: string, reports?: object[], casos?: object[]}} entrada
+ *   relato = o texto do report de handoff, quando a conversa foi por ligação e não há conversa escrita
  *   closer = { id, nome, apelido, inteligencia, inteligenciaEm }
  *   casos = as negociações dele já classificadas (src/casos.js); viram o padrão dentro do histórico
  * @returns {Promise<{afinidade: object, cache: boolean}>}
  */
-async function analisar({ closer, dados, mensagens, nome, reports, casos }) {
+async function analisar({ closer, dados, mensagens, nome, relato, reports, casos }) {
   if (!closer || !closer.id) throw new Error('Closer não encontrado.');
   const inteligencia = String(closer.inteligencia || '').trim().slice(0, MAX_INTELIGENCIA);
   if (!inteligencia) {
     throw new Error(`Ainda não há inteligência cadastrada para ${closer.nome}. Cadastre em Closers, no painel.`);
   }
-  const lead = blocoDoLead(dados, nome);
+  const doReport = String(relato || '').replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim().slice(0, MAX_RELATO);
+  const lead = [
+    blocoDoLead(dados, nome),
+    doReport ? 'Report de handoff do pré-vendedor (a conversa com o lead foi por ligação; este é o relato dela):\n' + doReport : '',
+  ].filter(Boolean).join('\n\n');
   const msgs = (Array.isArray(mensagens) ? mensagens : [])
     .map((m) => ({
       from: m && m.from === 'eu' ? 'eu' : 'eles',
@@ -239,7 +245,7 @@ async function analisar({ closer, dados, mensagens, nome, reports, casos }) {
     const prazoMs = tempoParaOPlano(Date.now() - inicio);
     if (!prazoMs) throw new Error('não sobrou tempo depois da avaliação');
     const p = extrairJson(await chatGroq({ system: SYSTEM_PLANO, user: userPlano, modelo: process.env.GROQ_COACH_MODEL, maxTokens: 1700, prazoMs }));
-    afinidade.plano = normalizarPlano(p, msgs, dados);
+    afinidade.plano = normalizarPlano(p, msgs, dados, doReport);
   } catch (err) {
     console.error('[afinidade] o plano da call não saiu:', err.message);
   }
@@ -271,10 +277,12 @@ const semPontuacao = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u
  * O plano da call, limpo. As "falas do lead" só ficam se o lead disse mesmo (estão numa mensagem dele ou nas
  * citações do report): fala inventada na boca do lead é o pior erro que este relatório pode ter.
  */
-function normalizarPlano(p, msgs, dados) {
+function normalizarPlano(p, msgs, dados, relato) {
   if (!p || typeof p !== 'object') return null;
+  // No report de handoff, a fala do lead é a que está entre aspas ("Nas palavras do lead"); o resto é o relato do pré-vendedor.
+  const entreAspas = [...String(relato || '').matchAll(/[“"]([^”"]{8,400})[”"]/g)].map((m) => m[1]);
   const doLead = (msgs || []).filter((m) => m.from !== 'eu').map((m) => semPontuacao(m.content))
-    .concat(lista(dados && dados.citacoes, 400, 6).map(semPontuacao));
+    .concat(lista(dados && dados.citacoes, 400, 6).map(semPontuacao), entreAspas.map(semPontuacao));
   const dita = (fala) => { const k = semPontuacao(fala); return k.length >= 8 && doLead.some((x) => x.includes(k)); };
   const plano = {
     abertura: texto(p.abertura, 500), decisores: texto(p.decisores, 400),
