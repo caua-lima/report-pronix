@@ -453,6 +453,30 @@
         <div class="hint" style="margin:0 0 10px">Clique em qualquer trecho para editar. O PDF é gerado com as suas alterações.</div>
         <div id="report" class="report editavel"></div>
       </div>
+
+      <!-- Match com o closer: para quando a conversa foi por ligação (não dá para ler no WhatsApp). -->
+      <div id="matchCard" class="card hidden" style="margin-top:18px">
+        <div class="head"><div class="t"><i data-ic="users"></i>Match com o closer</div><div class="sub">— a conversa foi por ligação? Envie o PDF do handoff</div></div>
+        <div class="row">
+          <div id="matchCloserBox" style="min-width:170px">
+            <label for="matchCloser">Closer</label>
+            <select id="matchCloser"></select>
+          </div>
+          <div class="grow">
+            <label for="matchLead">Nome do lead</label>
+            <input id="matchLead" type="text" placeholder="Opcional: sem ele, vale o nome que está no PDF" />
+          </div>
+        </div>
+        <label for="matchPdf" style="margin-top:10px">PDF do handoff</label>
+        <input id="matchPdf" type="file" accept="application/pdf,.pdf" />
+        <details id="matchTextoBox" style="margin-top:10px">
+          <summary style="cursor:pointer;color:var(--text-2);font-size:.85rem">Ou cole o texto do report</summary>
+          <textarea id="matchTexto" placeholder="Cole aqui o texto do report de handoff…" style="margin-top:8px"></textarea>
+        </details>
+        <button id="matchAnalisar" class="btn btn-block" style="margin-top:12px">Analisar Match com o closer</button>
+        <div id="matchStatus" class="status"></div>
+        <div class="hint" style="margin-top:6px">Gerou o report aqui em cima? Nem precisa do PDF: é só clicar. O PDF enviado não fica guardado; o match baixa em PDF, com os pontos que dão match e o plano da call.</div>
+      </div>
     </section>
 
     <!-- ================= ABA: REPORTS DO DIA (todo usuário, só os próprios) ================= -->
@@ -2549,6 +2573,62 @@
       $('files').appendChild(row);
       return row;
     }
+    // ---------- Match com o closer a partir do PDF do handoff (conversa por ligação) ----------
+    let closersDoMatch = [];
+    const apelidoDoMatch = (c) => (c ? c.apelido || String(c.nome || '').split(' ')[0] : 'o closer');
+    const closerDoMatch = () => closersDoMatch.find((x) => x.id === $('matchCloser').value) || closersDoMatch[0];
+    function prepararMatchDoHandoff(lista) {
+      closersDoMatch = Array.isArray(lista) ? lista.filter((c) => c && c.id) : [];
+      $('matchCard').classList.toggle('hidden', !closersDoMatch.length);
+      $('matchCloser').innerHTML = closersDoMatch.map((c) => `<option value="${esc(c.id)}">${esc(apelidoDoMatch(c))}</option>`).join('');
+      $('matchCloserBox').classList.toggle('hidden', closersDoMatch.length < 2);
+      $('matchAnalisar').textContent = 'Analisar Match com ' + apelidoDoMatch(closerDoMatch());
+    }
+    $('matchCloser').addEventListener('change', () => { $('matchAnalisar').textContent = 'Analisar Match com ' + apelidoDoMatch(closerDoMatch()); });
+    $('matchAnalisar').addEventListener('click', async () => {
+      const closer = closerDoMatch();
+      if (!closer) return;
+      const arquivo = $('matchPdf').files && $('matchPdf').files[0];
+      const texto = $('matchTexto').value.trim();
+      const nome = $('matchLead').value.trim();
+      // Sem PDF nem texto: vale o report gerado aqui em cima, se houver.
+      if (!arquivo && !texto && !reportAtual) {
+        setStatus('matchStatus', 'Escolha o PDF do handoff (ou cole o texto do report).', { erro: true });
+        return;
+      }
+      if (arquivo && arquivo.size > 15 * 1024 * 1024) {
+        setStatus('matchStatus', 'O PDF é grande demais (máximo 15 MB).', { erro: true });
+        return;
+      }
+      const btn = $('matchAnalisar');
+      btn.disabled = true;
+      setStatus('matchStatus', `Analisando o match com ${apelidoDoMatch(closer)}… (pode levar até um minuto)`, { loading: true });
+      try {
+        let rota = '/api/afinidade/handoff';
+        const corpo = { closerId: closer.id, nome };
+        if (arquivo) corpo.pdfBase64 = await fileToBase64(arquivo);
+        else if (texto) corpo.texto = texto;
+        else {
+          rota = '/api/afinidade';
+          corpo.dados = reportAtual;
+          corpo.nome = nome || $('nomeLead').value.trim() || reportAtual.lead || '';
+        }
+        const r = await fetchComTempo(rota, { method: 'POST', headers: hdr({ 'Content-Type': 'application/json' }), body: JSON.stringify(corpo) }, 90000);
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.erro || 'Não consegui analisar o match. Tente de novo.');
+        const a = document.createElement('a');
+        a.href = 'data:application/pdf;base64,' + j.arquivoBase64;
+        a.download = j.arquivo || 'match.pdf';
+        a.click();
+        const af = j.afinidade || {};
+        setStatus('matchStatus', `Match ${af.nota}/10 com ${af.apelido || apelidoDoMatch(closer)}. ${af.veredito || ''} O PDF com os pontos de match e o plano da call foi baixado.`, { ok: true });
+      } catch (e) {
+        setStatus('matchStatus', e.message, { erro: true });
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
     function fileToBase64(file) {
       return new Promise((resolve, reject) => {
         const rd = new FileReader();
@@ -3128,6 +3208,7 @@
         }
         souMaster = j.papel === 'master';
         meuId = String(j.id || '');
+        prepararMatchDoHandoff(j.analises);
         papelConhecido = true;
         souGestor = j.papel === 'gestor';
         souAdmin = souMaster || souGestor; // master e gestor veem e fazem tudo; só o master mexe em usuários
@@ -3145,6 +3226,7 @@
         }
         return true;
       } catch (e) {
+        prepararMatchDoHandoff([]);
         souAdmin = false;
         souGestor = false;
         souMaster = false;

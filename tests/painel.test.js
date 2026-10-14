@@ -2088,3 +2088,41 @@ test('Resultados: venda com tudo preenchido sai de "Em andamento" e vai para "Ve
   assert.deepEqual(p.erros, []);
   p.fechar();
 });
+
+// ---------------------------------------------------------------- match pelo PDF do handoff (ligação)
+test('Match com o closer pelo PDF do handoff: some sem closer com análise; envia o PDF, baixa o match; sem PDF usa o report gerado', async () => {
+  const comAnalise = [{ id: 'c1', nome: 'Paulo Henrique', apelido: 'PH' }];
+  let analises = [];
+  const api = apiBase({ papel: 'sdr', nome: 'Ana' })
+    .quando('GET /api/eu', () => ({ corpo: { ok: true, nome: 'Ana', id: '1', papel: 'sdr', analises } }))
+    .quando('POST /api/afinidade/handoff', () => ({ corpo: { ok: true, afinidade: { nota: 8, apelido: 'PH', veredito: 'Casal decidido.' }, arquivo: 'Match PH - Lead.pdf', arquivoBase64: 'UERG' } }));
+  let p = abrirPainel(api);
+  await aberto(p);
+  assert.ok(!visivel(p.$('matchCard')), 'sem closer com análise, o cartão nem aparece');
+  p.fechar();
+
+  analises = comAnalise;
+  p = abrirPainel(api);
+  await aberto(p);
+  await esperar(() => visivel(p.$('matchCard')), { motivo: 'cartão do match' });
+  assert.equal(p.$('matchAnalisar').textContent, 'Analisar Match com PH');
+  assert.ok(!visivel(p.$('matchCloserBox')), 'um closer só: nem precisa escolher');
+
+  // sem PDF, sem texto e sem report gerado: pede o PDF
+  p.$('matchAnalisar').click();
+  await esperar(() => /Escolha o PDF do handoff/.test(p.$('matchStatus').textContent), { motivo: 'pede o PDF' });
+  assert.equal(api.contar('POST /api/afinidade/handoff'), 0);
+
+  // com o PDF: vai em base64 e o match baixa
+  Object.defineProperty(p.$('matchPdf'), 'files', { configurable: true, value: [new p.w.File(['%PDF-1.3 handoff'], 'Handoff - Lead.pdf', { type: 'application/pdf' })] });
+  p.$('matchLead').value = 'Lead de Teste';
+  p.$('matchAnalisar').click();
+  await esperar(() => p.downloads.length === 1, { motivo: 'download do match' });
+  const corpo = api.corpos('POST /api/afinidade/handoff')[0];
+  assert.deepEqual([corpo.closerId, corpo.nome, Buffer.from(corpo.pdfBase64, 'base64').toString()], ['c1', 'Lead de Teste', '%PDF-1.3 handoff']);
+  assert.deepEqual(p.downloads[0], { href: 'data:application/pdf;base64,UERG', nome: 'Match PH - Lead.pdf' });
+  assert.match(p.$('matchStatus').textContent, /^Match 8\/10 com PH\. Casal decidido\. O PDF com os pontos de match e o plano da call foi baixado\.$/);
+  await dormir(60);
+  assert.deepEqual(p.erros, []);
+  p.fechar();
+});
