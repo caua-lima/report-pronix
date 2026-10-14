@@ -1869,6 +1869,102 @@
     };
   }
 
+  // ---------------------------------------------------------------- desqualificar pelo cartão
+  // Os motivos de perda do RD (buscados uma vez por página).
+  let motivosDePerda = null;
+  /** O card do lead que pode ser desqualificado: o escolhido na ficha, ainda em aberto. */
+  function cardParaDesqualificar(estado) {
+    if (!estado || estado.tipo !== 'ok' || !estado.ficha) return null;
+    const card = (estado.ficha.negociacoes || []).find((c) => c && c.escolhida);
+    return card && card.id && card.aberta && !card.perdida && !card.ganha ? card : null;
+  }
+  function abrirDesqualificar(estado) {
+    estado.desq = { motivos: motivosDePerda, escolhido: null, enviando: false, erro: '' };
+    redesenharFicha();
+    if (motivosDePerda) return;
+    try {
+      chrome.runtime.sendMessage({ action: 'crmMotivosPerda' }, (r) => {
+        if (chrome.runtime.lastError || !estado.desq) return;
+        if (r && r.ok && r.motivos.length) {
+          motivosDePerda = r.motivos;
+          estado.desq.motivos = r.motivos;
+        } else {
+          estado.desq.erro = (r && r.erro) || 'Não consegui buscar os motivos de perda no RD.';
+        }
+        if (ficha.ultimoEstado === estado) redesenharFicha();
+      });
+    } catch (_) {
+      /* extensão recarregada */
+    }
+  }
+  function confirmarDesqualificar(estado, card) {
+    const d = estado.desq;
+    if (!d || !d.escolhido || d.enviando) return;
+    d.enviando = true;
+    d.erro = '';
+    redesenharFicha();
+    const b = estado.busca || {};
+    try {
+      chrome.runtime.sendMessage({ action: 'crmDesqualificar', telefone: b.telefone || '', nome: b.nome || '', contatoId: b.contatoId || '', dealId: card.id, motivoId: d.escolhido.id }, (r) => {
+        if (chrome.runtime.lastError) return;
+        if (r && r.ok) {
+          // O cartão já mostra a perda (etiqueta DESQUALIFICADO com o motivo); a próxima consulta vem do RD.
+          Object.assign(card, { perdida: true, aberta: false, motivoPerda: r.motivo || d.escolhido.nome, etapa: r.etapa || card.etapa });
+          if (estado.ficha.negociacao && r.etapa) estado.ficha.negociacao.etapa = r.etapa;
+          estado.desq = null;
+          estado.aviso = { texto: `Card dado como perdido no RD: ${r.motivo || d.escolhido.nome}.` };
+        } else {
+          d.enviando = false;
+          d.erro = (r && r.erro) || 'O servidor não respondeu. Tente de novo.';
+        }
+        if (ficha.ultimoEstado === estado) redesenharFicha();
+      });
+    } catch (_) {
+      /* extensão recarregada */
+    }
+  }
+  /** A caixinha do "Desqualificar": a lista de motivos e, escolhido um, a confirmação. */
+  function caixaDesqualificar(estado, card) {
+    const d = estado.desq;
+    const caixa = elem('div', 'flex-basis:100%;margin-top:4px;padding:8px;border:1px solid #ff6f5c;border-radius:8px;background:rgba(255,111,92,.07)');
+    caixa.id = 'cr-desqualificar';
+    const botao = (texto, estilo, aoClicar) => {
+      const x = elem('button', 'cursor:pointer;border-radius:6px;padding:4px 9px;font-size:12px;font-family:inherit;' + estilo, texto);
+      x.type = 'button';
+      x.addEventListener('click', aoClicar);
+      return x;
+    };
+    const fechar = () => { estado.desq = null; redesenharFicha(); };
+    if (d.escolhido) {
+      caixa.appendChild(elem('div', 'font-size:12px;margin-bottom:6px', 'Dar perda no RD com o motivo:'));
+      caixa.appendChild(elem('div', 'font-weight:700;color:#ff6f5c;margin-bottom:8px', d.escolhido.nome));
+      if (d.enviando) caixa.appendChild(elem('div', 'font-size:12px;color:#a39e93', 'Dando perda no RD…'));
+      else {
+        const acoes = elem('div', 'display:flex;gap:6px');
+        const sim = botao('Confirmar perda', 'border:0;background:#ff6f5c;color:#18171b;font-weight:700', () => confirmarDesqualificar(estado, card));
+        sim.id = 'cr-desq-confirmar';
+        acoes.appendChild(sim);
+        acoes.appendChild(botao('Voltar', 'border:1px solid #55515b;background:transparent;color:#f3efe6', () => { d.escolhido = null; d.erro = ''; redesenharFicha(); }));
+        caixa.appendChild(acoes);
+      }
+    } else {
+      caixa.appendChild(elem('div', 'font-size:12px;margin-bottom:6px;color:#a39e93', 'Por que desqualificar? O card vira perda no RD com este motivo.'));
+      if (!d.motivos && !d.erro) caixa.appendChild(elem('div', 'font-size:12px;color:#a39e93', 'Buscando os motivos no RD…'));
+      if (d.motivos) {
+        const lista = elem('div', 'display:flex;flex-direction:column;gap:4px;max-height:190px;overflow:auto');
+        d.motivos.forEach((m) => {
+          const x = botao(m.nome, 'text-align:left;border:1px solid #3a373f;background:#121113;color:#f3efe6', () => { d.escolhido = m; redesenharFicha(); });
+          x.dataset.motivo = m.id;
+          lista.appendChild(x);
+        });
+        caixa.appendChild(lista);
+      }
+      caixa.appendChild(elem('div', 'margin-top:6px', botao('Cancelar', 'border:1px solid #55515b;background:transparent;color:#a39e93', fechar)));
+    }
+    if (d.erro) caixa.appendChild(elem('div', 'font-size:12px;color:#ff6f5c;margin-top:6px', d.erro));
+    return caixa;
+  }
+
   /** Linha de etiquetas no topo do cartão: perda no RD, "Qualificado" (liga/desliga à mão), o agendamento e o formulário. */
   function blocoEtiquetas(estado) {
     if (estado.tipo === 'carregando') return null;
@@ -1954,6 +2050,17 @@
       }
       linha.appendChild(doForm);
     }
+    // Desqualificar: só no card em aberto do lead, para quem tem a automação do cartão.
+    const paraPerder = ficha.automacao && !perda ? cardParaDesqualificar(estado) : null;
+    if (paraPerder && !estado.desq) {
+      const b = elem('button', `${base};cursor:pointer;border:1px dashed #ff6f5c;background:transparent;color:#ff6f5c`, 'Desqualificar');
+      b.type = 'button';
+      b.id = 'cr-desqualificar-btn';
+      b.title = 'Dar perda no RD com um motivo, sem abrir o card';
+      b.addEventListener('click', () => abrirDesqualificar(estado));
+      linha.appendChild(b);
+    }
+    if (paraPerder && estado.desq) linha.appendChild(caixaDesqualificar(estado, paraPerder));
     if (estado.aviso) linha.appendChild(elem('div', `flex-basis:100%;font-size:11px;color:${estado.aviso.erro ? '#ff6f5c' : '#3ddc84'}`, estado.aviso.texto));
     return linha;
   }

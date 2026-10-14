@@ -416,3 +416,66 @@ test('reunião do Google Agenda: o cartão mostra dia, hora e closer, e ela vale
   await esperar(() => /Estava agendado/.test(etiquetas(q)), { motivo: 'reunião passada' });
   assert.match(etiquetas(q), /Estava agendado: \S+, 10\/01 às 09:00$|Estava agendado: \S+, 10\/01 às 09:00[^·]*$/);
 });
+
+// ---------------------------------------------------------------- desqualificar pelo cartão
+test('Desqualificar: escolhe o motivo do RD, confirma e o cartão mostra DESQUALIFICADO — só no card em aberto, com a automação', async () => {
+  const srv = servidorFalso({ etapa: 'Respondeu' });
+  const pedidos = { motivos: 0, perda: [] };
+  let resposta = { ok: true, motivo: 'Sem dinheiro', etapa: 'Desqualificados' };
+  const original = srv.aoEnviar;
+  srv.aoEnviar = async (msg) => {
+    if (msg.action === 'crmMotivosPerda') { pedidos.motivos++; return { ok: true, motivos: [{ id: 'm1', nome: 'Nunca respondeu' }, { id: 'm2', nome: 'Sem dinheiro' }] }; }
+    if (msg.action === 'crmDesqualificar') { pedidos.perda.push(JSON.parse(JSON.stringify(msg))); return resposta; }
+    return original(msg);
+  };
+  const p = abrir(srv);
+  await fichaNaTela(p);
+  const btn = () => p.document.getElementById('cr-desqualificar-btn');
+  const caixa = () => p.document.getElementById('cr-desqualificar');
+  await esperar(() => btn(), { motivo: 'botão Desqualificar' });
+
+  btn().click();
+  await esperar(() => caixa() && caixa().querySelectorAll('[data-motivo]').length === 2, { motivo: 'motivos do RD' });
+  assert.equal(pedidos.motivos, 1);
+  // escolher o motivo pede confirmação; ainda não dá perda
+  caixa().querySelector('[data-motivo="m2"]').click();
+  await esperar(() => p.document.getElementById('cr-desq-confirmar'), { motivo: 'confirmação' });
+  assert.match(caixa().textContent, /Dar perda no RD com o motivo:Sem dinheiro/);
+  assert.equal(pedidos.perda.length, 0);
+
+  // o RD recusou: o erro aparece e dá para tentar de novo
+  resposta = { ok: false, erro: 'O RD Station não deixou alterar este card.' };
+  p.document.getElementById('cr-desq-confirmar').click();
+  await esperar(() => /não deixou alterar/.test(caixa().textContent), { motivo: 'erro do RD' });
+  resposta = { ok: true, motivo: 'Sem dinheiro', etapa: 'Desqualificados' };
+  p.document.getElementById('cr-desq-confirmar').click();
+  await esperar(() => /DESQUALIFICADO · Sem dinheiro/.test(etiquetas(p)), { motivo: 'etiqueta da perda' });
+  assert.deepEqual(pedidos.perda.map((x) => [x.dealId, x.motivoId]), [['d1', 'm2'], ['d1', 'm2']]);
+  assert.match(etiquetas(p), /Card dado como perdido no RD: Sem dinheiro\./);
+  assert.equal(btn(), null, 'perdido não tem mais o botão');
+  assert.equal(caixa(), null);
+});
+
+test('Desqualificar: sem a automação do cartão o botão não aparece; cancelar fecha sem dar perda', async () => {
+  const sem = abrir(servidorFalso({ automacao: false, etapa: 'Respondeu' }));
+  await fichaNaTela(sem);
+  await dormir(60);
+  assert.equal(sem.document.getElementById('cr-desqualificar-btn'), null);
+
+  const srv = servidorFalso({ etapa: 'Respondeu' });
+  const original = srv.aoEnviar;
+  let perdas = 0;
+  srv.aoEnviar = async (msg) => {
+    if (msg.action === 'crmMotivosPerda') return { ok: true, motivos: [{ id: 'm1', nome: 'Nunca respondeu' }] };
+    if (msg.action === 'crmDesqualificar') { perdas++; return { ok: true }; }
+    return original(msg);
+  };
+  const p = abrir(srv);
+  await fichaNaTela(p);
+  await esperar(() => p.document.getElementById('cr-desqualificar-btn'), { motivo: 'botão' });
+  p.document.getElementById('cr-desqualificar-btn').click();
+  await esperar(() => p.document.querySelector('#cr-desqualificar [data-motivo]'), { motivo: 'motivos' });
+  [...p.document.querySelectorAll('#cr-desqualificar button')].find((b) => b.textContent === 'Cancelar').click();
+  await esperar(() => !p.document.getElementById('cr-desqualificar') && p.document.getElementById('cr-desqualificar-btn'), { motivo: 'fechou' });
+  assert.equal(perdas, 0);
+});
