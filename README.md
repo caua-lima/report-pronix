@@ -339,6 +339,20 @@ funciona**.
   - **não comprou** vira "Não fechou" com o motivo em "o que deu a reunião" e sai da lista.
 
   Só vale desfecho registrado depois de o report existir.
+- **O resultado acompanha o estado do card.** O que o RD deu (e não o que foi marcado à mão) muda
+  junto com o card: "Não compraram" vira "Não fechou"; perda com motivo de falta ("no-show", "não
+  compareceu") vira **No-show**; o lead que "não comprou" e voltou a negociar volta para **Em
+  follow-up**; e se ele comprar depois, vira **Venda em follow-up**. Resultado escolhido à mão nunca
+  é trocado (o report guarda de onde o resultado veio: `resultadoOrigem`).
+- **Puxar do RD é retroativo.** O botão confere **todo o período escolhido** em Resultados — um lote
+  por vez, até acabar (`?varredura=`) —, inclusive os reports com resultado à mão que estão sem
+  closer (ganham o closer; o resultado fica). Para preencher o mês, escolha o período e clique uma vez.
+- **Trazer do Report Closer.** Report gerado só no Report Closer (o sistema da empresa) fica só no
+  banco de lá. Lá, em Resultados → **Levar para o Report PRONIX** (período, closer, só vendas), sai um
+  .json com cada report e o PDF; aqui, em Resultados → **Trazer do Report Closer**, ele é importado
+  (`POST /api/master/importar-reports`, `src/importarReports.js`): só os reports do próprio usuário, o
+  closer achado pelo nome no cadastro daqui, sem duplicar (mesmo report, ou o mesmo lead com até 3 dias
+  de diferença).
 - **De hora em hora.** A conferência roda sozinha: a extensão bate no servidor a cada hora enquanto o
   Chrome está aberto (`POST /api/rd/atualizar`), a aba Resultados confere ao abrir, o agendador da
   Vercel roda uma vez por dia (`/api/cron/rd`, com `CRON_SECRET`) e o botão **Puxar do RD** confere
