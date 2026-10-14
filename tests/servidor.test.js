@@ -723,3 +723,24 @@ test('sem nenhum master, o dono (MASTER_NOME, padrão "Cauã Lima") é promovido
     fs2.writeFileSync(arq, original);
   }
 });
+
+// ---------------------------------------------------------------- linha do tempo do contato
+test('report: com as datas das mensagens, o resumo diz desde quando conversa com o lead e desde quando a reunião está confirmada', async () => {
+  const ha = (dias, minutos = 0) => new Date(Date.now() - dias * 86400000 - minutos * 60000).toISOString();
+  const conversa = [
+    { from: 'eu', type: 'texto', content: 'Oi Marcos, tudo bem? ' + Date.now(), timestamp: ha(20) },
+    { from: 'eles', type: 'texto', content: 'Tudo sim, quero entender o método', timestamp: ha(20, -5) },
+    { from: 'eu', type: 'texto', content: 'Posso confirmar a sua reunião de sábado?', timestamp: ha(3) },
+    { from: 'eles', type: 'texto', content: 'Sim, confirmado', timestamp: ha(3, -10) },
+    { from: 'eu', type: 'texto', content: 'Bom dia! Confirmado pra hoje?', timestamp: ha(0, 3) },
+    { from: 'eles', type: 'texto', content: 'Confirmado!', timestamp: ha(0, 1) },
+  ];
+  const r = await api('POST', '/api/report-direto', { chave: E.ana, corpo: { mensagens: conversa, nome: 'Marcos' } });
+  assert.equal(r.status, 200);
+  const resumo = r.json.dados.resumo;
+  assert.deepEqual(resumo.slice(0, 2).map((x) => x.rotulo), ['Contato', 'Confirmação']);
+  assert.match(resumo[0].valor, /^Conversando com o lead desde \d{2}\/\d{2} \(20 dias\)$/);
+  assert.match(resumo[1].valor, /^Confirmado desde [a-zçáéíóúâêôãõ-]+ \(\d{2}\/\d{2}\) · reconfirmado no dia \([a-zçáéíóúâêôãõ-]+, \d{2}\/\d{2}\)$/);
+  const pdf = textoDoPdf(r.json.arquivoBase64).replace(/\s+/g, ' ');
+  assert.ok(pdf.includes('Conversando com o lead desde') && pdf.includes('Confirmado desde'), 'as duas linhas vão para o PDF');
+});

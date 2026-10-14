@@ -17,6 +17,7 @@ const LLM_PROVIDER = (process.env.LLM_PROVIDER || 'anthropic').toLowerCase();
 // a reportKey em src/idempotencia.js — sem isso, um prompt novo poderia ser
 // confundido com o antigo e nunca rodar de novo pra mesma conversa.
 const { normalizarDores } = require('./dores');
+const linhaDoTempo = require('./linhaDoTempo');
 
 const PROMPT_VERSAO = 'v10';
 
@@ -779,6 +780,9 @@ async function dadosDireto({ mensagens, nome, sdr, qualidade } = {}) {
     dados,
     historico.filter((m) => m.from === 'eles').map((m) => m.content)
   );
+  // Desde quando conversa com o lead e desde quando a reunião está confirmada: das datas das mensagens
+  // (a conversa inteira, não a resumida), sem IA.
+  linhaDoTempo.aplicarNoReport(dados, bruto);
   return dados;
 }
 
