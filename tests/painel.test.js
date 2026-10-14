@@ -2167,3 +2167,43 @@ test('Puxar do RD: o RD pediu uma pausa — o painel espera e continua até acab
   assert.deepEqual(p.erros, []);
   p.fechar();
 });
+
+// ---------------------------------------------------------------- report automático
+test('Report automático: mostra a contagem e os desqualificados do dia, guarda o que se digita e copia o texto pronto', async () => {
+  const dia = (corpo = {}) => ({
+    dia: '2026-10-14', contagem: { novos: 28, respostas: 16, recontatos: 53, conversas: 70 },
+    desqualificados: { total: 3, motivos: [{ motivo: 'Nunca respondeu', qtd: 2 }, { motivo: 'Número inválido', qtd: 1 }], aviso: '' },
+    manual: { automaticas: null, realizadas: null, agendasCaidas: '', noShow: '', extras: '', ...corpo },
+    texto: 'REPORT Ana | 14/10\n\n\n---------------------------------- \nLeads novos contatados: 28' + (corpo.automaticas != null ? '\nAutomáticas: ' + corpo.automaticas : ''),
+  });
+  const api = apiDoDia()
+    .quando('GET /api/report-dia', () => ({ corpo: { ok: true, ...dia() } }))
+    .quando('PUT /api/report-dia', ({ corpo }) => ({ corpo: { ok: true, ...dia(corpo.manual) } }));
+  const p = abrirPainel(api, { hash: '#dia' });
+  await esperar(() => /Leads novos/.test(p.$('repContagem').textContent), { motivo: 'contagem' });
+  assert.deepEqual([...p.$('repContagem').children].map((c) => c.lastElementChild.textContent), ['28', '16', '53', '3']);
+  assert.equal(p.$('repDesq').textContent, 'Desqualificados: 2x Nunca respondeu · 1x Número inválido');
+  assert.match(p.$('repTexto').value, /^REPORT Ana \| 14\/10/);
+  assert.equal(api.pedidos.find((x) => x.chave === 'GET /api/report-dia').query.get('dia'), p.$('repDia').value);
+
+  // digitar guarda (sem apagar o que a pessoa está escrevendo) e o texto pronto se refaz
+  p.$('repAutomaticas').value = '11';
+  p.$('repAutomaticas').dispatchEvent(new p.w.Event('input', { bubbles: true }));
+  p.$('repNoShow').value = 'Nelson às 15h30';
+  p.$('repNoShow').dispatchEvent(new p.w.Event('input', { bubbles: true }));
+  await esperar(() => /Automáticas: 11/.test(p.$('repTexto').value), { motivo: 'texto refeito' });
+  assert.equal(api.contar('PUT /api/report-dia'), 1, 'duas digitações seguidas, um só envio');
+  assert.deepEqual(api.corpos('PUT /api/report-dia')[0].manual, { automaticas: '11', realizadas: '', agendasCaidas: '', noShow: 'Nelson às 15h30', extras: '' });
+  assert.equal(p.$('repNoShow').value, 'Nelson às 15h30');
+
+  // copiar
+  let copiado = '';
+  Object.defineProperty(p.w.navigator, 'clipboard', { configurable: true, value: { writeText: async (x) => { copiado = x; } } });
+  p.$('repCopiar').click();
+  await esperar(() => copiado !== '', { motivo: 'copiou' });
+  assert.equal(copiado, p.$('repTexto').value);
+  await esperar(() => /Report copiado/.test(p.$('toast').textContent), { motivo: 'aviso' });
+  await dormir(60);
+  assert.deepEqual(p.erros, []);
+  p.fechar();
+});

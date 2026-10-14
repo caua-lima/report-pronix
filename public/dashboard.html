@@ -481,6 +481,30 @@
 
     <!-- ================= ABA: REPORTS DO DIA (todo usuário, só os próprios) ================= -->
     <section id="aba-dia" class="hidden">
+      <div class="card" id="reportAuto">
+        <div class="head"><div class="t"><i data-ic="clipboard"></i>Report automático</div><div class="sub">— o fechamento do dia, com o que dá para contar sozinho</div></div>
+        <div class="row" style="align-items:flex-end">
+          <div style="min-width:160px"><label for="repDia">Dia</label><input id="repDia" type="date" /></div>
+          <button id="repAtualizar" class="btn sec"><i data-ic="refresh"></i>Atualizar</button>
+        </div>
+        <div id="repContagem" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-top:12px"></div>
+        <div id="repDesq" class="hint" style="margin:10px 0 0"></div>
+        <div class="row" style="margin-top:12px">
+          <div style="min-width:130px"><label for="repAutomaticas">Automáticas</label><input id="repAutomaticas" type="number" min="0" inputmode="numeric" placeholder="Opcional" /></div>
+          <div style="min-width:130px"><label for="repRealizadas">Realizadas</label><input id="repRealizadas" type="number" min="0" inputmode="numeric" placeholder="Opcional" /></div>
+        </div>
+        <label for="repAgendas" style="margin-top:10px">Agendas que caíram</label>
+        <textarea id="repAgendas" rows="3" placeholder="Ex.: Vivian às 9h30 - pediu pra remarcar"></textarea>
+        <label for="repNoShow" style="margin-top:10px">No-show</label>
+        <textarea id="repNoShow" rows="2" placeholder="Ex.: Nelson às 15h30 confirmou e sumiu, liguei 20x"></textarea>
+        <label for="repExtras" style="margin-top:10px">Observações dos desqualificados (entram depois da contagem)</label>
+        <textarea id="repExtras" rows="2" placeholder="Opcional"></textarea>
+        <label for="repTexto" style="margin-top:12px">Texto pronto (pode editar antes de copiar)</label>
+        <textarea id="repTexto" rows="12" style="font-family:ui-monospace,Consolas,monospace;font-size:.82rem"></textarea>
+        <div class="acoes" style="margin-top:8px"><button id="repCopiar" class="btn"><i data-ic="clipboard"></i>Copiar o report</button></div>
+        <div id="repStatus" class="status"></div>
+        <div class="hint" style="margin-top:6px">A contagem vem das conversas que passaram pela sua tela no WhatsApp (precisa da extensão com a automação ligada): <b>novo</b> = você escreveu hoje e não havia mensagem de antes; <b>recontato</b> = você escreveu hoje e já havia histórico; <b>resposta</b> = o lead escreveu hoje. Conversa que você não abriu não é vista. Os desqualificados são as perdas do dia no RD, por motivo.</div>
+      </div>
       <div class="card">
         <div class="head"><div class="t"><i data-ic="download"></i>Baixar o .zip</div><div class="sub">— escolha o dia e, se quiser, marque ou desmarque na lista</div></div>
         <div class="hint" style="margin:0 0 12px">Gerou mais de um report do mesmo lead? O .zip leva só o <b>último</b> de cada um. Se precisar, marque ou desmarque na lista antes de baixar. Gestor e admin podem escolher <b>Todos os SDRs</b>: o .zip vem com uma pasta por SDR.</div>
@@ -1200,7 +1224,7 @@
       $('subPagina').textContent = PAGINAS[aba][1];
       location.hash = aba;
       if (SO_ADMIN.includes(aba)) pedirAdmin();
-      if (aba === 'dia') carregarMeus();
+      if (aba === 'dia') { carregarMeus(); carregarReportDia(); }
     }
 
     /** Mostra ou esconde as abas de admin conforme o papel da chave. */
@@ -3366,6 +3390,62 @@
         { ok: true });
     }
     let ultimoMeus = null;
+
+    // ---------- Report automático (aba Reports do dia) ----------
+    const CAMPOS_REPORT = { automaticas: 'repAutomaticas', realizadas: 'repRealizadas', agendasCaidas: 'repAgendas', noShow: 'repNoShow', extras: 'repExtras' };
+    let repSeq = 0;
+    function mostrarReportDia(j, { preencherCampos }) {
+      const c = j.contagem || {};
+      $('repContagem').innerHTML = [['Leads novos', c.novos], ['Respostas', c.respostas], ['Recontatos', c.recontatos], ['Desqualificados', (j.desqualificados || {}).total]]
+        .map(([r, v]) => `<div style="border:1px solid var(--border);border-radius:8px;padding:8px 10px"><div style="font-size:.72rem;color:var(--muted)">${esc(r)}</div><div style="font-size:1.4rem;font-weight:800">${Number(v) || 0}</div></div>`).join('');
+      const d = j.desqualificados || {};
+      $('repDesq').textContent = (d.motivos || []).length ? 'Desqualificados: ' + d.motivos.map((m) => `${m.qtd}x ${m.motivo}`).join(' · ') + (d.aviso ? ' — ' + d.aviso : '') : (d.aviso || 'Nenhuma desqualificação neste dia.');
+      if (preencherCampos) {
+        Object.entries(CAMPOS_REPORT).forEach(([campo, id]) => { const v = (j.manual || {})[campo]; $(id).value = v === null || v === undefined ? '' : String(v); });
+      }
+      $('repTexto').value = j.texto || '';
+    }
+    async function carregarReportDia() {
+      if (!$('repDia').value) $('repDia').value = hojeISO();
+      const seq = ++repSeq;
+      setStatus('repStatus', 'Contando…', { loading: true });
+      try {
+        const j = await api('GET', '/api/report-dia?' + new URLSearchParams({ dia: $('repDia').value }));
+        if (seq !== repSeq) return;
+        mostrarReportDia(j, { preencherCampos: true });
+        setStatus('repStatus', '');
+      } catch (e) {
+        if (seq === repSeq) setStatus('repStatus', e.message, { erro: true });
+      }
+    }
+    let repTimer = null;
+    function guardarReportDia() {
+      clearTimeout(repTimer);
+      repTimer = setTimeout(async () => {
+        const seq = ++repSeq;
+        const manual = Object.fromEntries(Object.entries(CAMPOS_REPORT).map(([campo, id]) => [campo, $(id).value]));
+        try {
+          const j = await api('PUT', '/api/report-dia', { dia: $('repDia').value, manual });
+          if (seq === repSeq) mostrarReportDia(j, { preencherCampos: false });
+        } catch (e) {
+          setStatus('repStatus', e.message, { erro: true });
+        }
+      }, 500);
+    }
+    Object.values(CAMPOS_REPORT).forEach((id) => $(id).addEventListener('input', guardarReportDia));
+    $('repAtualizar').addEventListener('click', carregarReportDia);
+    $('repDia').addEventListener('change', carregarReportDia);
+    $('repCopiar').addEventListener('click', async () => {
+      const texto = $('repTexto').value;
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) await navigator.clipboard.writeText(texto);
+        else { $('repTexto').select(); document.execCommand('copy'); }
+        toast('Report copiado.');
+      } catch (_) {
+        $('repTexto').select();
+        setStatus('repStatus', 'Não consegui copiar sozinho: o texto está selecionado, use Ctrl+C.', { erro: true });
+      }
+    });
 
     async function carregarMeus() {
       if (!$('diaMeus').value) $('diaMeus').value = hojeISO();
