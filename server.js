@@ -37,6 +37,7 @@ const driveGoogle = require('./src/driveGoogle');
 const limpezaRd = require('./src/limpezaRd');
 const diagnostico = require('./src/diagnostico');
 const { gerarAfinidadePdfBuffer, nomeDoArquivo: nomeDoArquivoAfinidade } = require('./src/afinidadePdf');
+const { textoDoPdf } = require('./src/textoDoPdf');
 const aprendizado = require('./src/aprendizado');
 const { normalizarConsciencia } = require('./src/consciencia');
 const { normalizarDores } = require('./src/dores');
@@ -350,9 +351,12 @@ app.post('/api/reports/:id/closer', auth, async (req, res) => {
  * conduzir a call, mais o PDF. Vem depois do report: a extensão manda o que o report levantou e a
  * conversa. IA gratuita (Groq) e PDF montado aqui: não entra no gasto.
  */
-app.post('/api/afinidade', auth, async (req, res) => {
+/**
+ * A análise de match e o PDF dela. `entrada` = { closerId, reportId, dados, mensagens, nome, relato }:
+ * do WhatsApp vêm a conversa e o report; de uma ligação, o texto do report de handoff (`relato`).
+ */
+async function responderMatch(req, res, { closerId, reportId, dados, mensagens, nome, relato }) {
   try {
-    const { closerId, reportId, dados, mensagens, nome } = req.body || {};
     const closer = await closers.porId(String(closerId || ''));
     if (!closer) return res.status(404).json({ erro: 'Closer não encontrado.' });
     if (closer.analiseDesligada) {
@@ -363,7 +367,7 @@ app.post('/api/afinidade', auth, async (req, res) => {
     // Os casos das calls dele (transcrições importadas + reuniões com resultado) valem para todos: é o padrão do closer.
     const todos = usuarios.ehAdmin(req.usuario) ? reports : await stats.listar().catch(() => []);
     const casos = await casosDoCloser.doCloser(closer.id, todos).catch(() => []);
-    const r = await afinidadeIa.analisar({ closer, dados, mensagens, nome, reports, casos });
+    const r = await afinidadeIa.analisar({ closer, dados, mensagens, nome, relato, reports, casos });
     const lead = String((dados && dados.lead) || nome || '').slice(0, 80);
     const buffer = await gerarAfinidadePdfBuffer({ afinidade: r.afinidade, lead, sdr: req.usuario.nome });
     // A nota fica no report (só no do próprio usuário, ou de qualquer um para master/gestor).
@@ -377,6 +381,40 @@ app.post('/api/afinidade', auth, async (req, res) => {
   } catch (err) {
     res.status(/inteligência cadastrada|Sem dados do lead/.test(err.message) ? 400 : 502).json({ erro: err.message });
   }
+}
+
+app.post('/api/afinidade', auth, (req, res) => {
+  const { closerId, reportId, dados, mensagens, nome } = req.body || {};
+  return responderMatch(req, res, { closerId, reportId, dados, mensagens, nome });
+});
+
+/**
+ * Match quando a conversa foi por LIGAÇÃO: não há conversa escrita, então a análise lê o PDF do handoff
+ * (o que o próprio sistema gera) — ou o texto do report colado. O PDF não fica guardado.
+ */
+app.post('/api/afinidade/handoff', auth, (req, res) => {
+  const { closerId, pdfBase64, texto, nome } = req.body || {};
+  let relato = '';
+  if (pdfBase64) {
+    const buf = Buffer.from(String(pdfBase64).replace(/^data:[^,]*,/, ''), 'base64');
+    if (buf.length > 15 * 1024 * 1024) return res.status(400).json({ erro: 'O PDF é grande demais (máximo 15 MB).' });
+    if (buf.subarray(0, 5).toString('latin1') !== '%PDF-') return res.status(400).json({ erro: 'Esse arquivo não é um PDF. Envie o PDF do handoff.' });
+    relato = textoDoPdf(buf);
+  } else {
+    relato = String(texto || '');
+  }
+  relato = relato.replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+  if (relato.replace(/[^A-Za-zÀ-ÿ]/g, '').length < 120) {
+    return res.status(400).json({
+      erro: pdfBase64
+        ? 'Não consegui ler o texto deste PDF (pode ser um PDF de imagem ou escaneado). Use o PDF do handoff gerado pelo Report PRONIX, ou cole o texto do report.'
+        : 'Cole o texto do report de handoff (ou envie o PDF dele).',
+    });
+  }
+  // O nome do lead vem do campo; sem ele, da linha "Lead:" do próprio report.
+  const doTexto = (/^Lead:\s*(.+)$/m.exec(relato) || [])[1] || '';
+  const lead = String(nome || doTexto || '').trim().slice(0, 80);
+  return responderMatch(req, res, { closerId, dados: { lead }, nome: lead, relato });
 });
 
 // ---------------------------------------------------------------------------
