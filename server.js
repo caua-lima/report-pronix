@@ -39,6 +39,7 @@ const diagnostico = require('./src/diagnostico');
 const { gerarAfinidadePdfBuffer, nomeDoArquivo: nomeDoArquivoAfinidade } = require('./src/afinidadePdf');
 const { textoDoPdf } = require('./src/textoDoPdf');
 const importarReports = require('./src/importarReports');
+const reportDoDia = require('./src/reportDoDia');
 const aprendizado = require('./src/aprendizado');
 const { normalizarConsciencia } = require('./src/consciencia');
 const { normalizarDores } = require('./src/dores');
@@ -314,6 +315,44 @@ app.post('/api/rd/atualizar', auth, async (_req, res) => {
     res.json(r ? { ok: true, ...r, ...transc } : { ok: true, emDia: true, ...transc });
   } catch (err) {
     res.status(502).json({ erro: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Report automático do dia: o que a extensão viu nas conversas (novos, respostas, recontatos), as
+// desqualificações por motivo e o que o pré-vendedor digita; o texto sai pronto para mandar.
+// ---------------------------------------------------------------------------
+/** A extensão avisa o que viu numa conversa hoje (escrevi / já havia histórico / o lead escreveu). Só flags. */
+app.post('/api/atividade', auth, async (req, res) => {
+  try {
+    if (!req.usuario.automacao) return res.status(403).json({ erro: 'Automação do cartão não liberada para este usuário.' });
+    const { telefone, nome, eu, antes, eles } = req.body || {};
+    const ok = await reportDoDia.registrarAtividade({
+      usuarioId: req.usuario.id, telefone: String(telefone || '').slice(0, 30), nome: String(nome || '').slice(0, 80), eu, antes, eles,
+    });
+    res.json({ ok: true, registrado: ok });
+  } catch (err) {
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+app.get('/api/report-dia', auth, async (req, res) => {
+  try {
+    res.json({ ok: true, ...(await reportDoDia.montar(req.usuario, req.query.dia)) });
+  } catch (err) {
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+/** Guarda o que o pré-vendedor digitou no dia (automáticas, realizadas, agendas que caíram, no-show, observações). */
+app.put('/api/report-dia', auth, async (req, res) => {
+  try {
+    const dia = /^\d{4}-\d{2}-\d{2}$/.test(String((req.body || {}).dia || '')) ? req.body.dia : undefined;
+    const d = dia || stats.hojeStr();
+    await reportDoDia.salvarManual(req.usuario.id, d, (req.body || {}).manual);
+    res.json({ ok: true, ...(await reportDoDia.montar(req.usuario, d)) });
+  } catch (err) {
+    res.status(500).json({ erro: err.message });
   }
 });
 
