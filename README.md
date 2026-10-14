@@ -385,6 +385,28 @@ funciona**.
 - **Escopo.** Resultados e inteligência usam os reports de quem está olhando; o seletor "Toda a
   equipe" inclui os demais.
 
+### Linha do tempo do contato no report
+
+Das **datas das mensagens** (sem IA), o resumo do report ganha, quando faz sentido:
+
+- **Contato:** "Conversando com o lead desde 23/09 (24 dias)" — quando o primeiro contato tem mais de 7 dias;
+- **Confirmação:** "Confirmado desde quarta-feira (14/10)" — quando o lead confirmou a reunião num dia
+  anterior ao do report (inclusive 1 ou 2 dias antes), e "· reconfirmado no dia (sábado, 17/10)" quando
+  ele confirmou de novo no dia. Conta como confirmação o lead escrever que confirma ("confirmado",
+  "confirmo", "estarei lá") ou responder que sim logo depois de você pedir a confirmação; se a reunião foi
+  remarcada, vale a confirmação de depois (`src/linhaDoTempo.js`).
+
+Conversa colada como texto, sem datas, não ganha essas linhas.
+
+### Desqualificar pelo WhatsApp
+
+No cartão do lead, o botão **Desqualificar** (para quem tem a automação do cartão) mostra os motivos de
+perda cadastrados no RD; escolhido o motivo e confirmado, o card do lead vira **perda** com esse motivo,
+vai para "Desqualificados" (se o funil dele tiver essa etapa) e o campo SDR recebe o seu nome — sem abrir o
+card no RD. Só vale o card em aberto do lead da conversa (o servidor confere na ficha), e a mudança entra
+no registro da limpeza: aparece no relatório por motivo e dá para **desfazer** pelo painel
+(`GET /api/crm/motivos-perda`, `POST /api/crm/desqualificar`, `desqualificarCard` em `src/limpezaRd.js`).
+
 ### Limpeza do funil no RD
 
 Card parado no começo do funil vira **perda em "Desqualificados"**, com o motivo certo:
@@ -581,6 +603,7 @@ Autenticação por cabeçalho `x-cr-key` (a chave do usuário). `gestor+` = mast
 | `POST /api/crm/lead` | chave + popup do lead | Ficha do RD do lead da conversa. |
 | `POST /api/crm/respondeu` | chave + automação | Avança o card para "Respondeu". |
 | `GET /api/master/diagnostico` | master | Confere, sem alterar nada, se a automação do "Respondeu" e a cor da agenda têm tudo no lugar, e mostra a última vez que cada uma funcionou. |
+| `GET /api/crm/motivos-perda` · `POST /api/crm/desqualificar` | chave com a automação do cartão | Botão Desqualificar: os motivos de perda do RD e a perda no card do lead da conversa. |
 | `GET /api/master/limpeza-rd/funis` · `GET …/previa` · `POST …/executar` · `POST …/desfazer` · `GET …/relatorio` | master | Limpeza do funil no RD: prévia, lotes, desfazer e relatório por motivo. |
 | `GET/POST /api/master/limpeza-rd/duplicados` | master | Cadastros duplicados no funil: a busca (sem alterar nada) e o fechamento em lotes como "Duplicado". |
 | `POST /api/rd/atualizar` | chave | Batida de hora em hora da extensão: põe venda, follow-up, perda e closer dos reports em dia com o RD (no máximo a cada 30 min). |
