@@ -106,6 +106,29 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
+  // Botão "Desqualificar" do cartão: os motivos de perda do RD e a perda no card do lead.
+  if (msg && msg.action === 'crmMotivosPerda') {
+    (async () => {
+      const r = await chamar('/api/crm/motivos-perda', null, { metodo: 'GET', timeoutMs: 20000 });
+      sendResponse(r.ok ? { ok: true, motivos: Array.isArray(r.data.motivos) ? r.data.motivos : [] } : { ok: false, erro: r.erro });
+    })();
+    return true;
+  }
+  if (msg && msg.action === 'crmDesqualificar') {
+    (async () => {
+      const corpo = {
+        telefone: String(msg.telefone || '').slice(0, 30),
+        nome: String(msg.nome || '').slice(0, 80),
+        contatoId: String(msg.contatoId || '').slice(0, 40),
+        dealId: String(msg.dealId || '').slice(0, 40),
+        motivoId: String(msg.motivoId || '').slice(0, 40),
+      };
+      const r = await chamar('/api/crm/desqualificar', corpo, { timeoutMs: 30000 });
+      sendResponse(r.ok ? { ok: true, motivo: r.data.motivo || '', etapa: r.data.etapa || '' } : { ok: false, erro: r.erro });
+    })();
+    return true;
+  }
+
   // Etiqueta "Qualificado" e o dia/horário agendado do lead (vai só a data lida — nunca o texto da conversa).
   if (msg && msg.action === 'leadMarca') {
     (async () => {
