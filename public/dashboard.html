@@ -551,7 +551,7 @@
               </select>
             </div>
             <button id="resVer" class="btn sec"><i data-ic="refresh"></i>Atualizar</button>
-            <button id="resVendasRd" class="btn sec" title="Confere agora no RD o que os closers registraram destes leads: vendido, ou não comprou com o motivo (só leitura). Isso também roda sozinho uma vez por dia.">Puxar do RD</button>
+            <button id="resVendasRd" class="btn sec" title="Confere agora no RD todos os leads do período escolhido (retroativo): o closer, e o resultado pelo estado do card — vendido (com produto e ticket), follow-up, não comprou ou não compareceu. Só leitura no RD. Também roda sozinho de hora em hora.">Puxar do RD</button>
           </div>
           <div id="statusRes" class="status"></div>
         </div>
@@ -2328,14 +2328,26 @@
     $('resVisao').addEventListener('change', carregarResultados);
     $('resEscopo').addEventListener('change', carregarResultados);
     $('resVer').addEventListener('click', carregarResultados);
+    // Puxar do RD: confere TODO o período escolhido (retroativo), um lote por vez, até não sobrar nenhum.
     $('resVendasRd').addEventListener('click', async () => {
       $('resVendasRd').disabled = true;
-      setStatus('statusRes', 'Conferindo no RD…', { loading: true });
+      const soma = { conferidos: 0, vendidos: 0, encerrados: 0 };
+      let faltam = null;
       try {
-        const q = new URLSearchParams({ de: $('resDe').value, ate: $('resAte').value, escopo: $('resEscopo').value });
-        const j = await api('POST', '/api/master/vendas-rd?' + q, {});
+        const q = new URLSearchParams({ de: $('resDe').value, ate: $('resAte').value, escopo: $('resEscopo').value, varredura: new Date().toISOString() });
+        for (let volta = 0; volta < 80; volta++) {
+          setStatus('statusRes', `Conferindo no RD… ${soma.conferidos} lead(s) até agora` + (faltam ? `, faltam ${faltam}` : ''), { loading: true });
+          const j = await api('POST', '/api/master/vendas-rd?' + q, {});
+          soma.conferidos += j.conferidos || 0;
+          soma.vendidos += j.vendidos || 0;
+          soma.encerrados += j.encerrados || 0;
+          // Acabou, ou não andou (nada conferido nesta volta): para.
+          if (!j.restantes || !j.conferidos) { faltam = j.restantes || 0; break; }
+          faltam = j.restantes;
+        }
+        setStatus('statusRes', '');
         await carregarResultados();
-        toast(`${j.conferidos} lead(s) conferido(s) no RD · ${j.vendidos} vendido(s) · ${j.encerrados || 0} não comprou` + (j.restantes ? ` · faltam ${j.restantes}: clique de novo` : ''));
+        toast(`${soma.conferidos} lead(s) conferido(s) no RD · ${soma.vendidos} vendido(s) · ${soma.encerrados} não comprou` + (faltam ? ` · ${faltam} não deu para conferir agora` : ''));
       } catch (e) {
         setStatus('statusRes', e.message, { erro: true });
       } finally {

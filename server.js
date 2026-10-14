@@ -462,10 +462,16 @@ app.get('/api/cron/rd', async (req, res) => {
   }
 });
 
-/** Botão "Puxar vendas do RD": confere agora os leads do período (vendidos e os que não compraram). */
+/**
+ * Botão "Puxar do RD": confere agora os leads do período (vendidos, follow-up, os que não compraram e
+ * o closer). Com ?varredura=<quando começou>, é o retroativo: o painel chama de novo até não sobrar
+ * nenhum report do período sem conferir desde aquele momento.
+ */
 app.post('/api/master/vendas-rd', acesso(['resultados'], SO_MASTER_ERRO), async (req, res) => {
   try {
-    res.json(await vendasRd.sincronizar(await reportsDoEscopo(donoDoEscopo(req), filtroDaQuery(req.query))));
+    const varredura = /^\d{4}-\d{2}-\d{2}T[\d:.]+Z$/.test(String(req.query.varredura || '')) ? String(req.query.varredura) : '';
+    const reports = await reportsDoEscopo(donoDoEscopo(req), filtroDaQuery(req.query));
+    res.json(await vendasRd.sincronizar(reports, varredura ? { varredura, porVez: 15 } : {}));
   } catch (err) {
     res.status(502).json({ erro: err.message });
   }
