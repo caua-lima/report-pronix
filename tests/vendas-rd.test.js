@@ -131,8 +131,10 @@ test('não comprou no RD: o report é encerrado sozinho com o motivo, sem apagar
     assert.equal(p2.resultado, 'sem_venda', 'estava em follow-up: o RD encerra');
     assert.equal(p2.obsReuniao, 'pediu para falar depois do dia 10 | RD: Sem dinheiro no momento — vai tentar em janeiro');
     assert.equal((await stats.buscarPorId('p3')).resultado, '');
-    // encerrado não é conferido de novo
-    assert.equal((await vendasRd.sincronizar((await stats.listar({})).filter((x) => x.id === 'p1'))).conferidos, 0);
+    // encerrado PELO RD continua acompanhado (o lead pode voltar e comprar), sem contar de novo como encerrado
+    const deNovo = await vendasRd.sincronizar((await stats.listar({})).filter((x) => x.id === 'p1'));
+    assert.deepEqual([deNovo.conferidos, deNovo.encerrados], [1, 0]);
+    assert.equal((await stats.buscarPorId('p1')).obsReuniao, 'RD: Sem dinheiro no momento — vai tentar em janeiro', 'o motivo não se repete');
   } finally {
     crm.consultarLead = antes;
   }
@@ -380,4 +382,81 @@ test('rodada automática: recentes primeiro, um terço para os antigos, e quem f
   assert.deepEqual(ids({ porVez: 12, minutosQuente: 50, horasFrio: 20 }), ['q3', 'q4', 'q2', 'c1', 'f3', 'f1'], 'q1 (há 12 min) e f2 (há 3 h) esperam');
   assert.deepEqual(ids({ porVez: 12 }), ['q3', 'q4', 'q2', 'c1', 'q1', 'f3', 'f1', 'f2'], 'sem intervalo (botão), entra tudo que está em aberto');
   assert.equal(vendasRd.escolherFila(reports, { agora, porVez: 2, minutosQuente: 50, horasFrio: 20 }).total, 6);
+});
+
+// ---------------------------------------------------------------- o resultado acompanha o estado do card
+test('estado do card: o RD encerra, o lead volta a negociar (follow-up) e compra (venda em follow-up); "no-show" na perda vira não compareceu; o que é à mão fica', async () => {
+  const antes = crm.consultarLead;
+  const depois = (h) => new Date(Date.now() + h * 3600000).toISOString();
+  let cards = [];
+  crm.consultarLead = async (busca) => ({ configurado: true, encontrado: true, ficha: { nome: 'x', negociacoes: busca.nome === 'Contato e1' ? cards : [] } });
+  const um = async () => vendasRd.sincronizar((await stats.listar({})).filter((x) => x.id === 'e1'));
+  try {
+    await report0('e1');
+    cards = [{ id: 'c1', ganha: false, perdida: true, motivoPerda: 'Sem dinheiro', etapa: 'Não Compraram', atualizadaEm: depois(1) }];
+    assert.equal((await um()).encerrados, 1);
+    let e1 = await stats.buscarPorId('e1');
+    assert.deepEqual([e1.resultado, e1.resultadoOrigem, Boolean(e1.encerradoPeloRd)], ['sem_venda', 'rd', true]);
+    // o lead voltou: card novo no follow-up, mais recente que a perda
+    cards = cards.concat([{ id: 'c2', ganha: false, perdida: false, etapa: 'Fluxo de FUP', atualizadaEm: depois(2) }]);
+    await um();
+    e1 = await stats.buscarPorId('e1');
+    assert.deepEqual([e1.resultado, e1.resultadoOrigem, e1.encerradoPeloRd], ['em_followup', 'rd', ''], 'voltou a negociar: em follow-up');
+    // comprou
+    cards = [cards[0], { ...cards[1], ganha: true, etapa: 'Vendido', valor: 18624, fechadaEm: depois(3) }];
+    assert.equal((await um()).vendidos, 1);
+    e1 = await stats.buscarPorId('e1');
+    assert.deepEqual([e1.resultado, e1.ticket, Boolean(e1.vendidoNoRd)], ['venda_fup', 18624, true]);
+
+    // perda com motivo de falta: não compareceu
+    assert.deepEqual(vendasRd.desfecho({ negociacoes: [{ id: 'n', perdida: true, motivoPerda: 'No-show', atualizadaEm: depois(1) }] }, { quando: new Date().toISOString() }),
+      { perda: true, motivo: 'No-show', noShow: true });
+    assert.equal(vendasRd.desfecho({ negociacoes: [{ id: 'n', perdida: true, motivoPerda: 'Não compareceu à reunião', atualizadaEm: depois(1) }] }, { quando: new Date().toISOString() }).noShow, true);
+    await report0('e2');
+    cards = [];
+    crm.consultarLead = async (busca) => ({ configurado: true, encontrado: true, ficha: { nome: 'x', negociacoes: busca.nome === 'Contato e2' ? [{ id: 'n', perdida: true, motivoPerda: 'No show', atualizadaEm: depois(1) }] : [] } });
+    await vendasRd.sincronizar((await stats.listar({})).filter((x) => x.id === 'e2'));
+    assert.equal((await stats.buscarPorId('e2')).resultado, 'no_show');
+
+    // resultado marcado à mão não acompanha o RD
+    await report0('e3');
+    await stats.atualizarResultado('e3', { resultado: 'sem_venda' });
+    assert.equal((await stats.buscarPorId('e3')).resultadoOrigem, '');
+    crm.consultarLead = async () => ({ configurado: true, encontrado: true, ficha: { nome: 'x', negociacoes: [{ id: 'v', ganha: true, etapa: 'Vendido', fechadaEm: depois(1) }] } });
+    assert.equal((await vendasRd.sincronizar((await stats.listar({})).filter((x) => x.id === 'e3'))).conferidos, 0, 'nem entra na conferência');
+    assert.equal((await stats.buscarPorId('e3')).resultado, 'sem_venda');
+  } finally {
+    crm.consultarLead = antes;
+  }
+});
+
+test('Puxar do RD retroativo (varredura): cada report do período uma vez, os em aberto e os sem closer; resultado à mão não muda, mas ganha o closer', async () => {
+  const closers = require('../src/closers');
+  const lista = await closers.listar();
+  const ph = lista.find((c) => c.nome === 'Paulo Henrique') || (await closers.criar('Paulo Henrique'));
+  const antes = crm.consultarLead;
+  crm.consultarLead = async () => ({ configurado: true, encontrado: true, ficha: {
+    nome: 'x', negociacao: { etapa: 'Vendido', funil: 'CLOSERS', responsavel: 'Paulo Henrique Pagoti' },
+    negociacoes: [{ id: 'w', ganha: true, perdida: false, etapa: 'Vendido', funil: 'CLOSERS', responsavel: 'Paulo Henrique Pagoti', valor: 9000, fechadaEm: new Date(Date.now() + 3600000).toISOString() }],
+  } });
+  try {
+    for (const id of ['vz1', 'vz2', 'vz3', 'vz4']) await report0(id);
+    await stats.atualizarResultado('vz2', { resultado: 'sem_venda' }); // à mão, sem closer
+    await stats.atualizarResultado('vz3', { resultado: 'venda_call', closerId: ph.id, closerNome: ph.nome }); // fechado e com closer: fora
+    const doLote = async () => (await stats.listar({})).filter((x) => x.id.startsWith('vz'));
+    const inicio = new Date(Date.now() - 1000).toISOString();
+    assert.deepEqual(vendasRd.escolherFila(await doLote(), { porVez: 10, varredura: inicio }).escolhidos.map((x) => x.id).sort(), ['vz1', 'vz2', 'vz4']);
+    let r = await vendasRd.sincronizar(await doLote(), { porVez: 2, varredura: inicio });
+    assert.deepEqual([r.conferidos, r.restantes], [2, 1], 'um lote por chamada');
+    r = await vendasRd.sincronizar(await doLote(), { porVez: 2, varredura: inicio });
+    assert.deepEqual([r.conferidos, r.restantes], [1, 0]);
+    r = await vendasRd.sincronizar(await doLote(), { porVez: 2, varredura: inicio });
+    assert.deepEqual([r.conferidos, r.restantes], [0, 0], 'acabou: quem já foi conferido nesta varredura não volta');
+    const vz1 = await stats.buscarPorId('vz1');
+    assert.deepEqual([vz1.resultado, vz1.ticket, vz1.closerNome], ['venda_call', 9000, 'Paulo Henrique']);
+    const vz2 = await stats.buscarPorId('vz2');
+    assert.deepEqual([vz2.resultado, Boolean(vz2.vendidoNoRd), vz2.closerNome], ['sem_venda', false, 'Paulo Henrique'], 'o que foi marcado à mão fica; o closer entra');
+  } finally {
+    crm.consultarLead = antes;
+  }
 });

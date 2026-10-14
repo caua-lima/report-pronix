@@ -41,8 +41,17 @@ function emFollowUp(card) {
   return /closer/.test(normalizar(card.funil)) && (naEtapa(card, 'em contato') || naEtapa(card, 'negociacao avanc'));
 }
 
-/** Ainda vale acompanhar no RD? Sem venda, sem "não fechou" e sem no-show. */
-const emAberto = (r) => !r.vendidoNoRd && !stats.ehVenda(r.resultado) && r.resultado !== 'no_show' && r.resultado !== 'sem_venda';
+/**
+ * O resultado foi o RD que deu (e não a mão de alguém)? Então ele acompanha o estado do card: o lead
+ * que "não comprou" e voltou a negociar, ou comprou depois, muda junto. Report encerrado pelo RD antes
+ * de existir a marca também conta.
+ */
+const doRd = (r) => r.resultadoOrigem === 'rd' || (r.resultado === 'sem_venda' && Boolean(r.encerradoPeloRd));
+/** Ainda vale acompanhar no RD? Sem resultado, em follow-up, ou com um resultado que o próprio RD deu (menos venda). */
+const emAberto = (r) => !r.vendidoNoRd && !stats.ehVenda(r.resultado) &&
+  (!r.resultado || r.resultado === 'em_followup' || doRd(r));
+// Motivo de perda que é, na verdade, falta: o lead não apareceu na reunião.
+const NO_SHOW = /no ?show|nao (compareceu|apareceu|veio|entrou)|faltou|ausente na reuniao/;
 /**
  * Vendido no RD, mas ainda falta levar algo da venda: quem foi anotado antes de o sistema ler o tipo,
  * o produto e o ticket (uma vez), e venda recente sem produto ou ticket (o closer pode preencher depois).
@@ -69,8 +78,9 @@ function produtoPeloNome(nomes) {
 
 /**
  * O que o RD diz deste lead, para um report:
- * { venda: true, cardId?, valor?, produto?, fechadaEm? } | { perda: true, motivo } | { fup: true } | null.
- * Venda vale mais que perda (lead que perdeu num card e comprou em outro, comprou).
+ * { venda: true, cardId?, valor?, produto?, fechadaEm? } | { perda: true, motivo, noShow? } | { fup: true } | null.
+ * Venda vale mais que perda (lead que perdeu num card e comprou em outro, comprou). Entre perda e
+ * follow-up, vale o card mexido por último: o lead que "não comprou" e voltou a negociar está no follow-up.
  */
 function desfecho(ficha, report) {
   const cards = ((ficha && ficha.negociacoes) || []).filter((c) => depoisDoReport(c, report));
@@ -84,11 +94,17 @@ function desfecho(ficha, report) {
     if (vendido.fechadaEm) d.fechadaEm = vendido.fechadaEm;
     return d;
   }
-  const perdido = cards.find((c) => c.perdida || naEtapa(c, etapaNaoComprou()));
+  const quando = (c) => Date.parse(c.atualizadaEm || c.fechadaEm || '') || 0;
+  const maisNovo = (lista) => lista.slice().sort((a, b) => quando(b) - quando(a))[0];
+  const perdido = maisNovo(cards.filter((c) => c.perdida || naEtapa(c, etapaNaoComprou())));
+  const fup = maisNovo(cards.filter((c) => !c.perdida && emFollowUp(c)));
   // Ainda em negociação, mas o closer já colocou no follow-up.
-  if (!perdido) return cards.some(emFollowUp) ? { fup: true } : null;
+  if (fup && (!perdido || quando(fup) > quando(perdido))) return { fup: true };
+  if (!perdido) return null;
   const motivo = [perdido.motivoPerda, perdido.notaPerda].map((x) => String(x || '').replace(/\s+/g, ' ').trim()).filter(Boolean).join(' — ');
-  return { perda: true, motivo: motivo || (perdido.perdida ? 'Marcado como perdido no RD (sem motivo informado).' : `Movido para "${perdido.etapa}" no RD.`) };
+  const d = { perda: true, motivo: motivo || (perdido.perdida ? 'Marcado como perdido no RD (sem motivo informado).' : `Movido para "${perdido.etapa}" no RD.`) };
+  if (NO_SHOW.test(normalizar(perdido.motivoPerda))) d.noShow = true;
+  return d;
 }
 const temVenda = (ficha) => Boolean((desfecho(ficha, null) || {}).venda);
 const temDesfecho = (ficha) => { const d = desfecho(ficha, null); return Boolean(d && (d.venda || d.perda)); };
@@ -191,7 +207,8 @@ function situacaoNoRd(ficha) {
 
 /** Venda em call ou em follow-up? Follow-up se o card já tinha passado por lá ou fechou depois do dia da reunião. */
 function tipoDaVenda(r, d) {
-  if (r.resultado === 'em_followup') return 'venda_fup';
+  // Estava em follow-up, ou o RD já tinha dado como "não comprou" / no-show: comprou depois.
+  if (r.resultado === 'em_followup' || (doRd(r) && ['sem_venda', 'no_show'].includes(r.resultado))) return 'venda_fup';
   const diaDaVenda = d.fechadaEm ? stats.emDiaLocal(d.fechadaEm) : '';
   if (r.dataReuniao && diaDaVenda && diaDaVenda > r.dataReuniao) return 'venda_fup';
   return 'venda_call';
@@ -209,8 +226,12 @@ async function aplicar(r, d, extra = {}) {
   }
   if (d.venda) {
     const campos = { ...extra, vendidoNoRd: r.vendidoNoRd || agora, rdVendaLida: agora, rdConferidoEm: agora };
-    // O tipo da venda só entra se ninguém escolheu; o que foi preenchido à mão nunca é trocado.
-    if (!r.resultado || r.resultado === 'em_followup') campos.resultado = tipoDaVenda(r, d);
+    // O tipo da venda só entra se ninguém escolheu (ou se foi o RD que deu o resultado); o que foi
+    // preenchido à mão nunca é trocado.
+    if (!r.resultado || r.resultado === 'em_followup' || doRd(r)) {
+      Object.assign(campos, { resultado: tipoDaVenda(r, d), resultadoOrigem: 'rd' });
+      if (r.encerradoPeloRd) campos.encerradoPeloRd = '';
+    }
     if (d.valor && !r.ticket) campos.ticket = d.valor;
     if (d.produto && !r.produto) campos.produto = d.produto;
     if (d.fechadaEm && !r.dataFechamento) campos.dataFechamento = stats.emDiaLocal(d.fechadaEm);
@@ -218,16 +239,26 @@ async function aplicar(r, d, extra = {}) {
     return r.vendidoNoRd ? '' : 'venda';
   }
   if (d.fup) {
-    // Só preenche se ninguém marcou nada ainda; o report continua em aberto, esperando o desfecho.
-    await stats.atualizarResultado(r.id, r.resultado ? { ...extra, rdConferidoEm: agora } : { ...extra, resultado: 'em_followup', rdConferidoEm: agora });
+    // Sem resultado, ou o RD tinha encerrado e o lead voltou a negociar: em follow-up, esperando o desfecho.
+    // Resultado marcado à mão fica.
+    const reabre = !r.resultado || (doRd(r) && r.resultado !== 'em_followup');
+    await stats.atualizarResultado(r.id, reabre
+      ? { ...extra, resultado: 'em_followup', resultadoOrigem: 'rd', encerradoPeloRd: '', rdConferidoEm: agora }
+      : { ...extra, rdConferidoEm: agora });
+    return '';
+  }
+  // Não comprou (ou não apareceu, pelo motivo da perda). Já estava assim pelo RD: só anota a conferência.
+  const resultado = d.noShow ? 'no_show' : 'sem_venda';
+  if (r.resultado === resultado && doRd(r)) {
+    await stats.atualizarResultado(r.id, { ...extra, rdConferidoEm: agora });
     return '';
   }
   // O motivo do RD entra em "o que deu a reunião" sem apagar o que já estava anotado.
   const anotado = String(r.obsReuniao || '').trim();
-  const doRd = 'RD: ' + d.motivo;
+  const doRdTexto = 'RD: ' + d.motivo;
   await stats.atualizarResultado(r.id, {
-    ...extra, resultado: 'sem_venda', encerradoPeloRd: agora, rdConferidoEm: agora,
-    obsReuniao: anotado ? (anotado.includes(d.motivo) ? anotado : `${anotado} | ${doRd}`) : doRd,
+    ...extra, resultado, resultadoOrigem: 'rd', encerradoPeloRd: agora, rdConferidoEm: agora,
+    obsReuniao: anotado ? (anotado.includes(d.motivo) ? anotado : `${anotado} | ${doRdTexto}`) : doRdTexto,
   });
   return 'perda';
 }
@@ -244,8 +275,16 @@ async function comProduto(d) {
  * da rodada fica para os antigos — a perda pode vir semanas depois. Dentro de cada grupo, os conferidos
  * há mais tempo. Com `minutosQuente`/`horasFrio`, quem foi conferido há pouco fica para a próxima.
  */
-function escolherFila(reports, { porVez, minutosQuente = 0, horasFrio = 0, agora = Date.now() }) {
+function escolherFila(reports, { porVez, minutosQuente = 0, horasFrio = 0, agora = Date.now(), varredura = '' }) {
   const limite = stats.emDiaLocal(new Date(agora - DIAS * 86400000).toISOString());
+  // Varredura (o "Puxar tudo do RD", retroativo): cada report do período uma vez — os em aberto e também
+  // os sem closer —, até não sobrar nenhum que não tenha sido conferido desde que ela começou.
+  if (varredura) {
+    const fila = (reports || [])
+      .filter((r) => (acompanhar(r, agora) || !r.closerId) && buscasDoReport(r).length && !(String(r.rdConferidoEm || '') >= varredura))
+      .sort((a, b) => String(b.quando || '').localeCompare(String(a.quando || '')));
+    return { escolhidos: fila.slice(0, porVez), total: fila.length };
+  }
   const quente = (r) => agora - Date.parse(r.quando || 0) < DIAS_QUENTE * 86400000 || faltaDadoDaVenda(r, agora);
   const recemConferido = (r) => {
     const t = Date.parse(r.rdConferidoEm || '');
@@ -265,19 +304,24 @@ function escolherFila(reports, { porVez, minutosQuente = 0, horasFrio = 0, agora
 /**
  * Confere no RD os reports ainda em aberto.
  * @param {object[]} reports
- * @param {{porVez?: number, minutosQuente?: number, horasFrio?: number}} opcoes  os dois últimos são o
- *   intervalo mínimo da rodada automática (o botão "Puxar do RD" não usa: confere na hora)
+ * @param {{porVez?: number, minutosQuente?: number, horasFrio?: number, varredura?: string}} opcoes
+ *   minutosQuente/horasFrio: o intervalo mínimo da rodada automática (o botão "Puxar do RD" não usa:
+ *   confere na hora); varredura: quando começou o "Puxar tudo do RD" (ver escolherFila)
  * @returns {Promise<{conferidos: number, vendidos: number, encerrados: number, restantes: number}>}
  */
-async function sincronizar(reports, { porVez = POR_VEZ, minutosQuente = 0, horasFrio = 0 } = {}) {
+async function sincronizar(reports, { porVez = POR_VEZ, minutosQuente = 0, horasFrio = 0, varredura = '' } = {}) {
   if (!crm.configurado()) throw new Error('O RD Station não está configurado no servidor.');
-  const { escolhidos, total } = escolherFila(reports, { porVez, minutosQuente, horasFrio });
+  const { escolhidos, total } = escolherFila(reports, { porVez, minutosQuente, horasFrio, varredura });
   const cadastrados = escolhidos.some((r) => !r.closerId) ? await closers.listar() : [];
   let vendidos = 0;
   let encerrados = 0;
   for (const r of escolhidos) {
     const achado = await acharNoRd(r).catch(() => undefined); // um lead que falhou não para os outros
-    if (achado === undefined) continue;
+    if (achado === undefined) {
+      // Na varredura, quem falhou também conta como visto (a rodada de hora em hora tenta de novo): senão ela não acaba.
+      if (varredura) await stats.atualizarResultado(r.id, { rdConferidoEm: new Date().toISOString() }).catch(() => {});
+      continue;
+    }
     if (!achado.ficha) {
       const porque = achado.candidatos > 1 ? `Não achei no RD: ${achado.candidatos} contatos com esse nome. Informe o e-mail ou o telefone do lead.` : 'Não achei este lead no RD. Informe o e-mail ou o telefone dele.';
       await stats.atualizarResultado(r.id, { rdConferidoEm: new Date().toISOString(), rdSituacao: porque });
@@ -294,7 +338,8 @@ async function sincronizar(reports, { porVez = POR_VEZ, minutosQuente = 0, horas
       else if (!c && normalizar(nomeNoRd) !== normalizar(r.usuarioNome)) aviso = ' — este closer não está cadastrado em Closers (ou o nome não bate)';
     }
     const extra = { ...vinculoQueFalta(r, ficha), rdSituacao: (situacaoNoRd(ficha) + aviso).slice(0, 160) };
-    const feito = await aplicar(r, await comProduto(desfecho(ficha, r)), extra);
+    // Resultado já fechado à mão (só entrou na varredura para ganhar o closer): o desfecho não mexe nele.
+    const feito = await aplicar(r, acompanhar(r) ? await comProduto(desfecho(ficha, r)) : null, extra);
     if (feito === 'venda') vendidos++;
     if (feito === 'perda') encerrados++;
   }

@@ -418,7 +418,11 @@ async function atualizarResultado(id, campos = {}, { versaoEsperada } = {}) {
       // O que o RD mostrou na última conferência (etapa, funil, responsável) — ou que o lead não foi achado.
       if (tem('rdSituacao')) novo.rdSituacao = String(campos.rdSituacao || '').replace(/\s+/g, ' ').trim().slice(0, 160);
       if (tem('rdVendaLida')) novo.rdVendaLida = String(campos.rdVendaLida || '').slice(0, 30);
-      if (tem('resultado')) novo.resultado = RESULTADOS_VALIDOS.has(campos.resultado) ? campos.resultado : '';
+      if (tem('resultado')) {
+        novo.resultado = RESULTADOS_VALIDOS.has(campos.resultado) ? campos.resultado : '';
+        // 'rd' quando foi a conferência no RD que deu o resultado (ele acompanha o card); '' quando foi à mão.
+        novo.resultadoOrigem = novo.resultado && campos.resultadoOrigem === 'rd' ? 'rd' : '';
+      }
       if (tem('dataReuniao')) novo.dataReuniao = DATA_OK.test(campos.dataReuniao || '') ? campos.dataReuniao : '';
       if (tem('produto')) novo.produto = PRODUTOS_VALIDOS.includes(campos.produto) ? campos.produto : '';
       if (tem('ticket')) novo.ticket = valorEmReais(campos.ticket);
