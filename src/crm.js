@@ -668,14 +668,20 @@ async function moverParaRespondeu(busca = {}, { usuarioNome = '' } = {}) {
   if (nova && nova !== alvo.id) throw new Error('O RD Station respondeu, mas o card não mudou de etapa.');
 
   // A ficha em cache ainda diz a etapa antiga: a próxima consulta busca de novo.
-  const chave = chaveDaBusca({
-    telefone: soDigitos(busca.telefone), nome: String(busca.nome || '').trim().slice(0, 80), contatoId: idOk(busca.contatoId),
-  });
-  if (chave) await db.cacheDel('crm:' + chave);
+  await esquecerLead(busca);
   await db
     .push('crm_movimentos', { quando: new Date().toISOString(), card: card.id, de: onde.etapa.nome, para: alvo.nome, por: usuarioNome }, 500)
     .catch(() => {});
   return { movido: true, de: onde.etapa.nome, para: alvo.nome };
+}
+
+/** Depois de escrever num card: a ficha do lead em cache está velha, a próxima consulta busca de novo. */
+async function esquecerLead(busca = {}) {
+  const idOk = (v) => (/^[A-Za-z0-9_-]{1,40}$/.test(String(v || '')) ? String(v) : '');
+  const chave = chaveDaBusca({
+    telefone: soDigitos(busca.telefone), nome: String(busca.nome || '').trim().slice(0, 80), contatoId: idOk(busca.contatoId),
+  });
+  if (chave) await db.cacheDel('crm:' + chave);
 }
 
 module.exports = {
@@ -684,6 +690,7 @@ module.exports = {
   funis,
   usuariosRd: usuarios,
   moverLigado,
+  esquecerLead,
   consultarLead,
   produtosDoCard,
   saoAMesmaPessoa,
