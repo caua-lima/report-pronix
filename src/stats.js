@@ -138,7 +138,10 @@ const emDiaLocal = (iso) => {
 const dia = (r) => r.dia || emDiaLocal(r.quando); // dia: gravado a partir de agora; quando: histórico
 const hojeStr = () => emDiaLocal(new Date());
 
-/** Mesmo filtro usado por resumo() e listar() — de/ate em YYYY-MM-DD, sdr é o nome. */
+/**
+ * Mesmo filtro usado por resumo() e listar() — de/ate em YYYY-MM-DD, sdr é o nome. Sai em ordem de
+ * geração: os reports importados (que entram no fim da lista) ficam no lugar do dia deles.
+ */
 function filtrar(todos, { de, ate, sdr } = {}) {
   return todos.filter((r) => {
     const d = dia(r);
@@ -146,7 +149,37 @@ function filtrar(todos, { de, ate, sdr } = {}) {
     if (ate && d > ate) return false;
     if (sdr && (r.usuarioNome || '') !== sdr) return false;
     return true;
-  });
+  }).sort((a, b) => String(a.quando || '').localeCompare(String(b.quando || '')));
+}
+
+/**
+ * Report que veio de outro sistema (o Report Closer, da empresa), com o que já se sabe dele: quando foi
+ * gerado, a leitura da IA, o closer, o resultado e a venda. Entra na mesma lista, sem consumo (a IA rodou
+ * lá). O id, o dono e o closer já vêm resolvidos por src/importarReports.js; o resto é conferido aqui.
+ */
+async function importar(r) {
+  const quando = r.quando;
+  const v = vinculoLimpo({ telefone: r.telefone, email: r.leadEmail, contatoId: r.rdContatoId, dealId: r.rdDealId });
+  const texto = (s, n) => String(s == null ? '' : s).replace(/\s+/g, ' ').trim().slice(0, n);
+  const marca = (x) => texto(x === true ? quando : x, 30);
+  const registro = {
+    id: r.id, usuarioId: r.usuarioId, usuarioNome: r.usuarioNome, lead: texto(r.lead, 120), contato: texto(r.contato, 120),
+    origem: 'report-closer', quando, dia: emDiaLocal(quando), reportKey: '', arquivo: texto(r.arquivo, 120), qualidade: 'standard',
+    closerId: r.closerId || '', closerNome: r.closerNome || '', closerEmail: '', closerOrigem: '', closerEm: r.closerId ? new Date().toISOString() : '',
+    leadEmail: v.email, telefone: v.telefone, rdContatoId: v.contatoId, rdDealId: v.dealId,
+    resultado: RESULTADOS_VALIDOS.has(r.resultado) ? r.resultado : '', resultadoOrigem: '',
+    dataReuniao: DATA_OK.test(r.dataReuniao || '') ? r.dataReuniao : '', dataFechamento: DATA_OK.test(r.dataFechamento || '') ? r.dataFechamento : '',
+    diasParaFechar: null, versao: 0, captura: null, citacoesRemovidas: 0,
+    perfil: texto(r.perfil, 40), perfilEvidencia: texto(r.perfilEvidencia, 400), consciencia: texto(r.consciencia, 40), conscienciaPorque: texto(r.conscienciaPorque, 400),
+    analise: r.analise && typeof r.analise === 'object' && !Array.isArray(r.analise) ? r.analise : null,
+    perfilReal: texto(r.perfilReal, 40), conscienciaReal: texto(r.conscienciaReal, 40), obsReuniao: texto(r.obsReuniao, 500),
+    produto: PRODUTOS_VALIDOS.includes(r.produto) ? r.produto : '', ticket: valorEmReais(r.ticket), pagamento: texto(r.pagamento, 80),
+    vendidoNoRd: marca(r.vendidoNoRd), encerradoPeloRd: marca(r.encerradoPeloRd), rdSituacao: texto(r.rdSituacao, 160),
+    modelo: '', entrada: 0, saida: 0, cacheLeitura: 0, cacheEscrita: 0, custo: 0,
+    importadoDe: 'report-closer', importadoEm: new Date().toISOString(),
+  };
+  await db.push(CHAVE_DB, registro, LIMITE);
+  return registro;
 }
 
 /**
@@ -500,6 +533,6 @@ async function registrarResumoRapido({ usuarioNome, uso }) {
 }
 
 module.exports = {
-  registrar, resumo, listar, remover, buscarPorChave, buscarPorId, atualizarResultado, anotarAfinidade, hojeStr, registrarResumoRapido,
+  registrar, importar, resumo, listar, remover, buscarPorChave, buscarPorId, atualizarResultado, anotarAfinidade, hojeStr, registrarResumoRapido,
   RESULTADOS_VALIDOS, PRODUTOS_VALIDOS, valorEmReais, ehVenda, emDiaLocal, vinculoLimpo,
 };
