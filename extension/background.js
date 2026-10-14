@@ -129,6 +129,19 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
+  // Report automático: o que se viu na conversa hoje (escrevi / havia histórico / o lead escreveu). Só três sinais.
+  if (msg && msg.action === 'atividade') {
+    (async () => {
+      const corpo = {
+        telefone: String(msg.telefone || '').slice(0, 30), nome: String(msg.nome || '').slice(0, 80),
+        eu: msg.eu === true, antes: msg.antes === true, eles: msg.eles === true,
+      };
+      const r = await chamar('/api/atividade', corpo, { timeoutMs: 15000 });
+      sendResponse(r.ok ? { ok: true } : { ok: false, erro: r.erro });
+    })();
+    return true;
+  }
+
   // Etiqueta "Qualificado" e o dia/horário agendado do lead (vai só a data lida — nunca o texto da conversa).
   if (msg && msg.action === 'leadMarca') {
     (async () => {

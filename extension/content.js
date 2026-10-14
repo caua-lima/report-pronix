@@ -1807,6 +1807,55 @@
     const mensagens = mensagensVisiveis(els);
     avancarParaRespondeu(est, mensagens);
     anotarAgendamento(mensagens, ficha.conversa);
+    anotarAtividade(mensagens, ficha.conversa);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Report automático: a contagem do dia (leads novos, respostas, recontatos). Daqui sai só o que se viu
+  // na conversa hoje — escrevi, já havia mensagens de antes, o lead escreveu —, nunca o texto.
+  // ---------------------------------------------------------------------------
+  const atividadeEnviada = new Map(); // conversa|dia -> o que já foi avisado
+  /** O que a conversa mostra de hoje. null quando nenhuma mensagem tem data (não dá para dizer o dia). */
+  function atividadeDeHoje(mensagens, agora) {
+    const datas = [];
+    let ultima = null;
+    for (const m of mensagens) {
+      const t = m && m.timestamp ? Date.parse(m.timestamp) : NaN;
+      if (Number.isFinite(t)) ultima = t;
+      datas.push(ultima); // áudio e foto não têm hora: valem a da mensagem de antes
+    }
+    let proxima = null;
+    for (let i = datas.length - 1; i >= 0; i--) {
+      if (datas[i] !== null) proxima = datas[i];
+      else datas[i] = proxima; // as primeiras, sem hora, valem a da primeira que tem
+    }
+    if (!datas.length || datas[0] === null) return null;
+    const inicio = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate()).getTime();
+    const saida = { eu: false, antes: false, eles: false };
+    mensagens.forEach((m, i) => {
+      if (datas[i] < inicio) saida.antes = true;
+      else if (m.from === 'eu') saida.eu = true;
+      else saida.eles = true;
+    });
+    return saida;
+  }
+  function anotarAtividade(mensagens, conversa) {
+    if (!conversa || !(conversa.telefone || conversa.nome)) return;
+    const agora = new Date();
+    const hoje = atividadeDeHoje(mensagens, agora);
+    if (!hoje || (!hoje.eu && !hoje.eles)) return;
+    const chave = chaveDaConversa(conversa) + '|' + agora.toDateString();
+    const antes = atividadeEnviada.get(chave) || { eu: false, antes: false, eles: false };
+    const novo = { eu: antes.eu || hoje.eu, antes: antes.antes || hoje.antes, eles: antes.eles || hoje.eles };
+    if (novo.eu === antes.eu && novo.antes === antes.antes && novo.eles === antes.eles) return; // nada de novo para avisar
+    atividadeEnviada.set(chave, novo);
+    try {
+      chrome.runtime.sendMessage({ action: 'atividade', telefone: conversa.telefone || '', nome: conversa.nome || '', ...novo }, () => {
+        void chrome.runtime.lastError;
+      });
+    } catch (_) {
+      /* extensão recarregada: volta a avisar quando a conversa for aberta de novo */
+    }
   }
 
   /**

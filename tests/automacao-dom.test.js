@@ -479,3 +479,50 @@ test('Desqualificar: sem a automação do cartão o botão não aparece; cancela
   await esperar(() => !p.document.getElementById('cr-desqualificar') && p.document.getElementById('cr-desqualificar-btn'), { motivo: 'fechou' });
   assert.equal(perdas, 0);
 });
+
+// ---------------------------------------------------------------- report automático: a contagem do dia
+const horaWpp = (d) => { const p = (n) => String(n).padStart(2, '0'); return `${p(d.getHours())}:${p(d.getMinutes())}, ${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()}`; };
+const AGORA_DO_TESTE = new Date();
+const HOJE_WPP = horaWpp(new Date(AGORA_DO_TESTE.getFullYear(), AGORA_DO_TESTE.getMonth(), AGORA_DO_TESTE.getDate(), 12, 0));
+const ONTEM_WPP = horaWpp(new Date(AGORA_DO_TESTE.getFullYear(), AGORA_DO_TESTE.getMonth(), AGORA_DO_TESTE.getDate() - 1, 12, 0));
+
+/** Abre a conversa e devolve o que a extensão avisou ao servidor sobre o dia (action "atividade"). */
+async function atividadeDe(conversa, opcoes = {}) {
+  const srv = servidorFalso(opcoes);
+  const avisos = [];
+  const original = srv.aoEnviar;
+  srv.aoEnviar = async (msg) => { if (msg.action === 'atividade') { avisos.push(JSON.parse(JSON.stringify(msg))); return { ok: true }; } return original(msg); };
+  const p = abrir(srv, conversa);
+  await fichaNaTela(p);
+  await dormir(150);
+  return { avisos, p };
+}
+
+test('contagem do dia: lead novo (só eu escrevi hoje), lead que respondeu, recontato (já havia histórico) — e só avisa uma vez', async () => {
+  let r = await atividadeDe([{ from: 'eu', texto: 'Oi Marcos, tudo bem?', hora: HOJE_WPP }]);
+  assert.deepEqual(r.avisos.map((a) => [a.telefone, a.eu, a.antes, a.eles]), [['5571999998888', true, false, false]]);
+  await dormir(150);
+  assert.equal(r.avisos.length, 1, 'nada mudou: não avisa de novo');
+
+  r = await atividadeDe([{ from: 'eu', texto: 'Oi Marcos, tudo bem?', hora: HOJE_WPP }, { from: 'eles', texto: 'Tudo sim, pode falar', hora: HOJE_WPP }]);
+  assert.deepEqual(r.avisos.map((a) => [a.eu, a.antes, a.eles]), [[true, false, true]]);
+
+  r = await atividadeDe([
+    { from: 'eu', texto: 'Oi Marcos', hora: ONTEM_WPP }, { from: 'eles', texto: 'Oi', hora: ONTEM_WPP },
+    { from: 'eu', texto: 'Voltando aqui, conseguiu pensar?', hora: HOJE_WPP },
+  ]);
+  assert.deepEqual(r.avisos.map((a) => [a.eu, a.antes, a.eles]), [[true, true, false]], 'recontato: havia mensagens de antes');
+
+  // áudio e foto não têm hora: valem a da mensagem de antes (aqui, a de hoje)
+  r = await atividadeDe([{ from: 'eles', texto: 'Oi', hora: ONTEM_WPP }, { from: 'eu', texto: 'Bom dia!', hora: HOJE_WPP }, { from: 'eu', tipo: 'audio' }]);
+  assert.deepEqual(r.avisos.map((a) => [a.eu, a.antes, a.eles]), [[true, true, false]]);
+});
+
+test('contagem do dia: conversa só com mensagens de ontem, ou sem nenhuma data, não gera aviso; sem a automação a extensão nem conta', async () => {
+  let r = await atividadeDe([{ from: 'eu', texto: 'Oi', hora: ONTEM_WPP }, { from: 'eles', texto: 'Oi', hora: ONTEM_WPP }]);
+  assert.deepEqual(r.avisos, []);
+  r = await atividadeDe([{ from: 'eu', tipo: 'audio' }]);
+  assert.deepEqual(r.avisos, [], 'sem nenhuma hora não dá para dizer o dia');
+  r = await atividadeDe([{ from: 'eu', texto: 'Oi Marcos', hora: HOJE_WPP }], { automacao: false });
+  assert.deepEqual(r.avisos, []);
+});
