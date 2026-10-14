@@ -1057,6 +1057,40 @@ const semAutomacao = (req, res) => {
   return true;
 };
 
+/** Os motivos de perda cadastrados no RD: são as opções do botão "Desqualificar" do cartão. */
+app.get('/api/crm/motivos-perda', auth, async (req, res) => {
+  try {
+    if (semAutomacao(req, res)) return;
+    if (!crm.configurado()) return res.status(400).json({ erro: 'O RD Station CRM não está configurado no servidor.' });
+    res.json({ ok: true, motivos: await limpezaRd.motivosDePerda() });
+  } catch (err) {
+    res.status(502).json({ erro: err.message });
+  }
+});
+
+/**
+ * Botão "Desqualificar" do cartão: o card deste lead vira perda no RD, com o motivo escolhido. O card
+ * tem de ser do lead da conversa aberta (confere na ficha) — id de outro lead não é mexido.
+ */
+app.post('/api/crm/desqualificar', auth, async (req, res) => {
+  try {
+    if (semAutomacao(req, res)) return;
+    if (!req.usuario.fichaCrm) return res.status(403).json({ erro: 'Ficha do lead desligada para este usuário.' });
+    const { telefone, nome, contatoId, dealId, motivoId } = req.body || {};
+    const busca = { telefone, nome, contatoId };
+    const lead = await crm.consultarLead(busca);
+    const cards = (lead && lead.ficha && lead.ficha.negociacoes) || [];
+    if (!cards.some((c) => String(c.id) === String(dealId || ''))) {
+      return res.status(400).json({ erro: 'Este card não é do lead desta conversa. Abra a conversa de novo e tente outra vez.' });
+    }
+    const r = await limpezaRd.desqualificarCard({ usuario: req.usuario, dealId, motivoId });
+    await crm.esquecerLead(busca).catch(() => {});
+    res.json({ ok: true, ...r });
+  } catch (err) {
+    res.status(/Escolha um|não é do lead|já está como perdido|já foi fechado|Não sei qual/.test(err.message) ? 400 : 502).json({ erro: err.message });
+  }
+});
+
 /** O lead respondeu no WhatsApp: avança o card para "Respondeu" (só se ainda estiver antes dela). */
 app.post('/api/crm/respondeu', auth, async (req, res) => {
   try {
