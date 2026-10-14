@@ -460,3 +460,26 @@ test('Puxar do RD retroativo (varredura): cada report do período uma vez, os em
     crm.consultarLead = antes;
   }
 });
+
+test('o RD pediu uma pausa no meio do lote: para ali, sem dar ninguém como visto, e avisa (limitado)', async () => {
+  const antes = crm.consultarLead;
+  let chamadas = 0;
+  crm.consultarLead = async () => {
+    chamadas++;
+    if (chamadas === 2) throw new Error('O RD Station CRM limitou as consultas. Tente de novo em 1 minuto.');
+    return { configurado: true, encontrado: true, ficha: { nome: 'x', negociacoes: [] } };
+  };
+  try {
+    for (const id of ['lim1', 'lim2', 'lim3']) await report0(id);
+    const inicio = new Date(Date.now() - 1000).toISOString();
+    const lote = async () => (await stats.listar({})).filter((x) => x.id.startsWith('lim'));
+    const r = await vendasRd.sincronizar(await lote(), { porVez: 3, varredura: inicio });
+    assert.deepEqual(r, { conferidos: 1, vendidos: 0, encerrados: 0, restantes: 2, limitado: true });
+    const vistos = (await lote()).filter((x) => x.rdConferidoEm >= inicio).length;
+    assert.equal(vistos, 1, 'os que não deu para consultar continuam na fila da varredura');
+    const depois = await vendasRd.sincronizar(await lote(), { porVez: 3, varredura: inicio });
+    assert.deepEqual([depois.conferidos, depois.restantes, depois.limitado], [2, 0, undefined]);
+  } finally {
+    crm.consultarLead = antes;
+  }
+});

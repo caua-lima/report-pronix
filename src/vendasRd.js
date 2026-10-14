@@ -307,7 +307,8 @@ function escolherFila(reports, { porVez, minutosQuente = 0, horasFrio = 0, agora
  * @param {{porVez?: number, minutosQuente?: number, horasFrio?: number, varredura?: string}} opcoes
  *   minutosQuente/horasFrio: o intervalo mínimo da rodada automática (o botão "Puxar do RD" não usa:
  *   confere na hora); varredura: quando começou o "Puxar tudo do RD" (ver escolherFila)
- * @returns {Promise<{conferidos: number, vendidos: number, encerrados: number, restantes: number}>}
+ * @returns {Promise<{conferidos: number, vendidos: number, encerrados: number, restantes: number, limitado?: boolean}>}
+ *   limitado: o RD limitou as consultas no meio do lote (os que faltaram ficam para depois)
  */
 async function sincronizar(reports, { porVez = POR_VEZ, minutosQuente = 0, horasFrio = 0, varredura = '' } = {}) {
   if (!crm.configurado()) throw new Error('O RD Station não está configurado no servidor.');
@@ -315,8 +316,17 @@ async function sincronizar(reports, { porVez = POR_VEZ, minutosQuente = 0, horas
   const cadastrados = escolhidos.some((r) => !r.closerId) ? await closers.listar() : [];
   let vendidos = 0;
   let encerrados = 0;
+  let feitos = 0;
+  let limitado = false;
   for (const r of escolhidos) {
-    const achado = await acharNoRd(r).catch(() => undefined); // um lead que falhou não para os outros
+    let falha = '';
+    const achado = await acharNoRd(r).catch((err) => { falha = String((err && err.message) || ''); return undefined; }); // um lead que falhou não para os outros
+    // O RD pediu uma pausa: para o lote aqui, sem dar ninguém como visto (o painel espera e continua).
+    if (/limitou/i.test(falha)) {
+      limitado = true;
+      break;
+    }
+    feitos++;
     if (achado === undefined) {
       // Na varredura, quem falhou também conta como visto (a rodada de hora em hora tenta de novo): senão ela não acaba.
       if (varredura) await stats.atualizarResultado(r.id, { rdConferidoEm: new Date().toISOString() }).catch(() => {});
@@ -343,7 +353,7 @@ async function sincronizar(reports, { porVez = POR_VEZ, minutosQuente = 0, horas
     if (feito === 'venda') vendidos++;
     if (feito === 'perda') encerrados++;
   }
-  return { conferidos: escolhidos.length, vendidos, encerrados, restantes: total - escolhidos.length };
+  return { conferidos: feitos, vendidos, encerrados, restantes: total - feitos, ...(limitado ? { limitado: true } : {}) };
 }
 
 /**
