@@ -50,7 +50,7 @@ function diasAntes(data, dias) {
 }
 
 /** O que o Google respondeu de errado, em português e dizendo o que fazer. */
-function erroDoDrive(status, corpo) {
+function erroDoDrive(status, corpo, { documento = false } = {}) {
   const e = (corpo && corpo.error) || {};
   const razoes = [].concat((e.errors || []).map((x) => x && x.reason), (e.details || []).map((x) => x && x.reason), [e.status]).filter(Boolean).join(' ');
   if (status === 401) return 'O Google recusou a conexão. Conecte de novo no painel (aba Extensão → Google Agenda).';
@@ -61,13 +61,19 @@ function erroDoDrive(status, corpo) {
     return 'A API do Google Drive não está ativada no projeto do Google Cloud. Ative "Google Drive API" em console.cloud.google.com (APIs e serviços → Biblioteca) e tente de novo.';
   }
   if (status === 404) return 'Não achei a pasta no Drive: confira o link e se a conta conectada tem acesso a ela.';
+  if (status === 403 && documento) {
+    // Problema de UM documento (não da pasta): quem lê pula esse e segue com os outros.
+    if (/exportSizeLimitExceeded/i.test(razoes)) return 'um documento é grande demais para o Google exportar (limite de 10 MB)';
+    if (/download|copyRequires|cannotDownload|cannotCopy/i.test(razoes + ' ' + (e.message || ''))) return 'o dono de um documento bloqueou o download e a cópia para quem só visualiza';
+    return 'a conta conectada não tem acesso a um dos documentos da pasta (ou o dono bloqueou a leitura)';
+  }
   if (status === 403) return 'O Google não deixou ler esta pasta: a conta conectada precisa ter acesso a ela.';
   if (status === 429) return 'O Google limitou as consultas ao Drive. Tente de novo em alguns minutos.';
   return `O Google Drive respondeu ${status}.`;
 }
 
 /** Uma chamada ao Drive. `comoTexto` devolve o corpo como texto (o conteúdo do documento); `binario`, como Buffer. */
-async function pedir(caminho, params, { comoTexto = false, binario = false } = {}) {
+async function pedir(caminho, params, { comoTexto = false, binario = false, documento = false } = {}) {
   const token = await agendaGoogle.tokenDeAcesso();
   if (!token) throw new Error('O Google não está conectado. Conecte no painel (aba Extensão → Google Agenda).');
   let r;
@@ -80,7 +86,11 @@ async function pedir(caminho, params, { comoTexto = false, binario = false } = {
     if (e && (e.name === 'TimeoutError' || e.name === 'AbortError')) throw new Error('O Google Drive demorou para responder.');
     throw new Error('Não consegui falar com o Google Drive.');
   }
-  if (!r.ok) throw new Error(erroDoDrive(r.status, await r.json().catch(() => ({}))));
+  if (!r.ok) {
+    const erro = new Error(erroDoDrive(r.status, await r.json().catch(() => ({})), { documento }));
+    erro.doDocumento = documento && r.status === 403; // problema de um documento: quem lê pula e segue
+    throw erro;
+  }
   if (binario) return Buffer.from(await r.arrayBuffer());
   return comoTexto ? r.text() : r.json().catch(() => ({}));
 }
@@ -215,18 +225,28 @@ async function listar(pasta, opcoes) {
   return (await procurar(pasta, opcoes)).arquivos;
 }
 
+/** O nome de um arquivo do Drive ('' se não deu para ler): usado para dar nome às calls já lidas. */
+async function nomeDoArquivo(id) {
+  try {
+    const r = await pedir(`/files/${encodeURIComponent(id)}`, { fields: 'name', supportsAllDrives: 'true' });
+    return String((r && r.name) || '');
+  } catch (_) {
+    return '';
+  }
+}
+
 /** O texto de um documento: Google Docs é exportado como texto puro; Word (.docx) é aberto; .txt é baixado como está. */
 async function texto(arquivo) {
   const id = encodeURIComponent(arquivo.id);
   if (arquivo.tipo === DOCX) {
-    const buf = await pedir(`/files/${id}`, { alt: 'media', supportsAllDrives: 'true' }, { binario: true });
+    const buf = await pedir(`/files/${id}`, { alt: 'media', supportsAllDrives: 'true' }, { binario: true, documento: true });
     if (buf.length > MAX_DOCX) throw new Error('O arquivo do Word é grande demais para ler.');
     return textoDoDocx(buf);
   }
   const t = arquivo.tipo === DOC
-    ? await pedir(`/files/${id}/export`, { mimeType: 'text/plain' }, { comoTexto: true })
-    : await pedir(`/files/${id}`, { alt: 'media', supportsAllDrives: 'true' }, { comoTexto: true });
+    ? await pedir(`/files/${id}/export`, { mimeType: 'text/plain' }, { comoTexto: true, documento: true })
+    : await pedir(`/files/${id}`, { alt: 'media', supportsAllDrives: 'true' }, { comoTexto: true, documento: true });
   return String(t || '').replace(/^﻿/, '').replace(/\r\n/g, '\n');
 }
 
-module.exports = { idDaPasta, dataDoNome, diasAntes, procurar, listar, texto, textoDoDocx, erroDoDrive, DOC, DOCX };
+module.exports = { nomeDoArquivo, idDaPasta, dataDoNome, diasAntes, procurar, listar, texto, textoDoDocx, erroDoDrive, DOC, DOCX };

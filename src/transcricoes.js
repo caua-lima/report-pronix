@@ -148,6 +148,9 @@ async function classificar(e, { closerNome = '' } = {}) {
   };
 }
 
+/** O nome do documento da call sem a extensão nem o sufixo do Meet ("— Anotações do Gemini"). */
+const rotuloDaCall = (nome) => String(nome || '').replace(/\.(docx?|txt)$/i, '').replace(/\s*[-–—]\s*(Anota[cç][oõ]es do Gemini|Notes by Gemini|Transcri[cç][aã]o|Transcript)\s*$/i, '').replace(/\s+/g, ' ').trim().slice(0, 90);
+
 const ORDEM = { venda: 3, acordo: 2, nao: 1 };
 const diasEntre = (a, b) => Math.abs(Date.parse(a + 'T12:00:00Z') - Date.parse(b + 'T12:00:00Z')) / 86400000;
 
@@ -184,6 +187,7 @@ function juntar(lista, novo) {
     perfil: melhor && novo.perfil ? novo.perfil : mesmo.perfil || novo.perfil,
     travas: [...new Set((mesmo.travas || []).concat(novo.travas || []))].slice(0, 4),
     lidoEm: new Date().toISOString(),
+    rotulo: mesmo.rotulo || novo.rotulo || '',
   });
   return mesmo;
 }
@@ -207,7 +211,12 @@ async function sincronizar(closer, { porVez = 2, hoje = new Date().toISOString()
   const desde = [closer.driveDesde, closer.driveUltima && closer.driveUltima.ate].filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(String(d || ''))).sort().pop() || '';
   const { arquivos, subpastas, maisNova, naJanela, dentro } = await drive.procurar(closer.drivePasta, { desde });
   const { tudo, meus } = await lidosDe(closer.id);
-  const pendentes = arquivos.filter((a) => !meus[a.id] || (meus[a.id].r === 'erro' && (meus[a.id].n || 0) < TENTATIVAS));
+  // Os que nunca foram tentados vão primeiro; o documento que já deu erro fica para o fim da fila (assim um
+  // documento travado não ocupa a vez dos outros a cada rodada).
+  const comErro = (a) => Boolean(meus[a.id] && meus[a.id].r === 'erro');
+  const pendentes = arquivos
+    .filter((a) => !meus[a.id] || (comErro(a) && (meus[a.id].n || 0) < TENTATIVAS))
+    .sort((a, b) => Number(comErro(a)) - Number(comErro(b)));
   const agora = pendentes.slice(0, Math.max(1, porVez));
   const lista = await casos.doDrive(closer.id);
   // `total` em diante diz o que foi olhado na pasta: é o que explica um "nada novo" na tela.
@@ -228,22 +237,31 @@ async function sincronizar(closer, { porVez = 2, hoje = new Date().toISOString()
       juntar(lista, {
         ...c, id: 'd_' + a.id.slice(0, 40), data: /^\d{4}-\d{2}-\d{2}$/.test(data) ? data : '',
         reunioes: 1, minutos: e.minutos, arquivos: [a.id], momentos: e.quando ? [e.quando] : [], momentoDaReuniao: e.quando || '',
-        leadPrimeiros: e.leadPrimeiros, lidoEm: marca.em,
+        leadPrimeiros: e.leadPrimeiros, lidoEm: marca.em, rotulo: rotuloDaCall(a.nome),
       });
       meus[a.id] = { ...marca, r: 'caso' };
       saida.casos++;
     } catch (err) {
       meus[a.id] = { ...marca, r: 'erro' };
-      saida.erros.push(err.message);
+      // Erro de um documento (sem acesso, bloqueio de download, grande demais): diz de que dia é, sem nome de ninguém.
+      saida.erros.push(err.doDocumento ? `Pulei o documento "${rotuloDaCall(a.nome) || String(a.criadoEm || '').slice(8, 10) + '/' + String(a.criadoEm || '').slice(5, 7)}": ${err.message}.` : err.message);
       // Problema da conexão, do limite ou da IA lenta: não adianta insistir nos próximos nesta rodada.
-      if (/Conecte|permissão para ler o Drive|não está ativada|limitou|limite|demorou demais/i.test(err.message)) {
+      if (!err.doDocumento && /Conecte|permissão para ler o Drive|não está ativada|limitou|limite|demorou demais/i.test(err.message)) {
         delete meus[a.id]; // não foi culpa do arquivo: não gasta tentativa
         saida.restantes += agora.length - agora.indexOf(a);
         break;
       }
     }
   }
-  if (saida.casos) await casos.salvarDoDrive(closer.id, lista);
+  // Calls lidas antes de existir o nome: busca o nome de algumas por rodada (de graça: é uma consulta curta ao Drive).
+  let nomeou = 0;
+  for (const c of lista) {
+    if (nomeou >= 12) break;
+    if (c.rotulo || !(c.arquivos || [])[0]) continue;
+    const nome = rotuloDaCall(await drive.nomeDoArquivo(c.arquivos[0]));
+    if (nome) { c.rotulo = nome; nomeou++; }
+  }
+  if (saida.casos || nomeou) await casos.salvarDoDrive(closer.id, lista);
   // Só os ids e o que aconteceu: nome de arquivo (que traz o nome do lead) não fica guardado.
   const ids = Object.keys(meus);
   if (ids.length > MAX_LIDOS) ids.sort((x, y) => String(meus[x].em).localeCompare(String(meus[y].em))).slice(0, ids.length - MAX_LIDOS).forEach((k) => delete meus[k]);
