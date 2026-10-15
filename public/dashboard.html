@@ -578,6 +578,16 @@
             <button id="resVendasRd" class="btn sec" title="Confere agora no RD todos os leads do período escolhido (retroativo): o closer, e o resultado pelo estado do card — vendido (com produto e ticket), follow-up, não comprou ou não compareceu. Só leitura no RD. Também roda sozinho de hora em hora.">Puxar do RD</button>
           </div>
           <div id="statusRes" class="status"></div>
+          <details id="vendasRdBox" style="margin-top:10px">
+            <summary style="cursor:pointer;color:var(--text-2);font-size:.85rem">Trazer as vendas de um closer direto do RD</summary>
+            <div class="row" style="margin-top:8px;align-items:flex-end">
+              <div style="min-width:200px"><label for="vrCloser">Closer</label><input id="vrCloser" type="text" value="Paulo Henrique" /></div>
+              <div style="min-width:150px"><label for="vrDesde">Vendas desde</label><input id="vrDesde" type="date" /></div>
+              <button id="vrTrazer" class="btn sec">Trazer vendas</button>
+            </div>
+            <div class="hint" style="margin-top:6px">Lê no RD os cards <b>ganhos</b> desse closer em que o campo <b>SDR</b> é o seu nome. Quem já tem report aqui é completado (closer, ticket, produto, data) sem trocar o que você marcou; quem não tem ganha um report com a venda (sem PDF). Só leitura no RD.</div>
+            <div id="vrStatus" class="status"></div>
+          </details>
           <details id="importarBox" style="margin-top:10px">
             <summary style="cursor:pointer;color:var(--text-2);font-size:.85rem">Trazer do Report Closer</summary>
             <div class="row" style="margin-top:8px;align-items:flex-end">
@@ -2361,6 +2371,26 @@
     $('resVisao').addEventListener('change', carregarResultados);
     $('resEscopo').addEventListener('change', carregarResultados);
     $('resVer').addEventListener('click', carregarResultados);
+    // Trazer as vendas de um closer direto do RD (cards ganhos em que o SDR é o usuário).
+    $('vrDesde').value = hojeISO().slice(0, 8) + '01';
+    $('vrTrazer').addEventListener('click', async () => {
+      const btn = $('vrTrazer');
+      btn.disabled = true;
+      setStatus('vrStatus', 'Lendo as vendas no RD… (pode levar até um minuto)', { loading: true });
+      try {
+        const j = await api('POST', '/api/master/trazer-vendas-rd', { closer: $('vrCloser').value.trim(), desde: $('vrDesde').value });
+        setStatus('vrStatus',
+          `${j.vistos} venda(s) do closer no período: ${j.criados} report(s) criado(s), ${j.completados} completado(s), ${j.jaEstavam} já estavam completos` +
+          (j.semSdr ? `; ${j.semSdr} sem o campo SDR preenchido no card (ficaram de fora)` : '') + (j.deOutroSdr ? `; ${j.deOutroSdr} de outro SDR` : '') +
+          (j.truncado ? '. O RD tem mais cards do que dá para ler de uma vez: use uma data de início mais recente.' : '.'), { ok: true });
+        await carregarResultados();
+      } catch (e) {
+        setStatus('vrStatus', e.message, { erro: true });
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
     // Trazer do Report Closer: o arquivo exportado de lá vai em lotes pequenos (cada report leva o PDF).
     $('impEnviar').addEventListener('click', async () => {
       const btn = $('impEnviar');

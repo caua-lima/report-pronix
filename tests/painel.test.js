@@ -2207,3 +2207,17 @@ test('Report automático: mostra a contagem e os desqualificados do dia, guarda 
   assert.deepEqual(p.erros, []);
   p.fechar();
 });
+
+test('Resultados: trazer as vendas do closer direto do RD manda o closer e a data e conta o que entrou', async () => {
+  const api = apiMaster().quando('POST /api/master/trazer-vendas-rd', () => ({ corpo: { ok: true, vistos: 9, criados: 6, completados: 2, jaEstavam: 1, semSdr: 1, deOutroSdr: 0, paginas: 1, truncado: false } }));
+  const p = abrirPainel(api, { hash: '#resultados' });
+  await esperar(() => p.document.querySelectorAll('#listaRes tr').length > 0, { motivo: 'linhas' });
+  assert.match(p.$('vrDesde').value, /^\d{4}-\d{2}-01$/, 'começa no dia 1 do mês');
+  assert.equal(p.$('vrCloser').value, 'Paulo Henrique');
+  p.$('vrTrazer').click();
+  await esperar(() => /9 venda\(s\) do closer no período: 6 report\(s\) criado\(s\), 2 completado\(s\), 1 já estavam completos; 1 sem o campo SDR/.test(p.$('vrStatus').textContent), { motivo: 'resumo' });
+  assert.deepEqual(api.corpos('POST /api/master/trazer-vendas-rd'), [{ closer: 'Paulo Henrique', desde: p.$('vrDesde').value }]);
+  await dormir(60);
+  assert.deepEqual(p.erros, []);
+  p.fechar();
+});
