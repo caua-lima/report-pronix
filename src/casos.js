@@ -150,6 +150,9 @@ function normalizarCasoDoDrive(b) {
   // Dia e hora de cada reunião que entrou no caso: o mesmo encontro em dois arquivos não conta duas vezes.
   c.momentos = (Array.isArray(b.momentos) ? b.momentos : []).map((x) => txt(x, 16)).filter((x) => /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(x)).slice(-12);
   c.lidoEm = txt(b.lidoEm, 30) || new Date().toISOString();
+  // Nome da call (o do documento no Drive, que costuma ter o do lead): só aparece no painel do master, para achar
+  // a call e corrigir. Nunca vai para a IA nem para o PDF.
+  c.rotulo = txt(b.rotulo, 90);
   if (b.revisado) c.revisado = true; // o master corrigiu à mão: a leitura automática não mexe mais
   return c;
 }
