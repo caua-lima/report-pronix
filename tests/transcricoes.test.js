@@ -89,10 +89,11 @@ global.fetch = async (url, opts = {}) => {
     // só os dados da pasta (a conferência de acesso): pasta que a conta não enxerga responde 404
     if (m && !m[2] && u.searchParams.get('fields')) {
       chamadas.pasta.push(m[1]);
+      if (ARQUIVOS[m[1]] && /name/.test(u.searchParams.get('fields'))) return json({ name: ARQUIVOS[m[1]].nome });
       if (ARQUIVOS[m[1]]) return json({ id: m[1], mimeType: ARQUIVOS[m[1]].tipo });
       return PASTAS_VISIVEIS.includes(m[1]) ? json({ id: m[1], mimeType: 'application/vnd.google-apps.folder' }) : json({ error: { code: 404, message: 'File not found: ' + m[1] } }, 404);
     }
-    if (m) { chamadas.export.push(m[1]); return json(ARQUIVOS[m[1]].texto); }
+    if (m) { chamadas.export.push(m[1]); if (ARQUIVOS[m[1]].erroDoDocumento) return json(ARQUIVOS[m[1]].erroDoDocumento, 403); return json(ARQUIVOS[m[1]].texto); }
     const q = u.searchParams.get('q');
     chamadas.lista.push(q);
     const pais = [...q.matchAll(/'([^']+)' in parents/g)].map((x) => x[1]);
@@ -199,9 +200,11 @@ test('ler a pasta: só documento novo (a partir da data), poucos por vez; cada c
   r = await transcricoes.sincronizar(c, { porVez: 5 });
   assert.deepEqual([r.lidos, r.casos, r.restantes, chamadas.export.length, chamadas.ia.length], [0, 0, 0, 0, 0]);
 
-  // nada de nome guardado: nem nos casos, nem na lista do que foi lido
-  const guardado = fs.readFileSync(path.join(DADOS, 'closers_casos.json'), 'utf8') + fs.readFileSync(path.join(DADOS, 'drive_lidos.json'), 'utf8');
-  for (const nome of ['Marina', 'Ricardo', 'Souza', 'Bruno', 'Teixeira', 'Anotações do Gemini']) assert.ok(!guardado.includes(nome), 'ficou guardado: ' + nome);
+  // o caso guarda o nome da call (só o master vê, para achar e corrigir); a lista do que foi lido não guarda nome
+  assert.equal(casal.rotulo, 'Marina e Ricardo', 'o nome do documento, sem o sufixo do Meet');
+  assert.equal(bruno.rotulo, 'Bruno Teixeira - 1ª');
+  const lidos = fs.readFileSync(path.join(DADOS, 'drive_lidos.json'), 'utf8');
+  for (const nome of ['Marina', 'Ricardo', 'Souza', 'Bruno', 'Teixeira', 'Anotações do Gemini']) assert.ok(!lidos.includes(nome), 'ficou na lista de lidos: ' + nome);
   c = await closers.porId(closer.id);
   assert.deepEqual([c.driveUltima.lidos, c.driveUltima.casos, c.driveUltima.erro], [0, 0, '']);
 
@@ -279,7 +282,9 @@ test('rotas: só o master configura a pasta, lê, corrige e apaga caso; a batida
     r = await chamar('GET', `/api/admin/closers/${novo.id}/drive`, undefined, master);
     assert.deepEqual([r.json.pasta, r.json.total, r.json.ultima.casos], [PASTA, 2, 2]);
     assert.deepEqual(r.json.casos.map((c) => [c.id, c.resultado, c.revisado]), [['d_bruno1', 'nao', false], ['d_casal', 'venda', false]]);
-    assert.ok(!JSON.stringify(r.json).includes('Marina'));
+    // o painel mostra o nome da call (é o que o master pediu); o resumo da IA continua sem nome de gente
+    assert.deepEqual(r.json.casos.map((c) => c.rotulo), ['Bruno Teixeira - 1ª', 'Marina e Ricardo']);
+    assert.ok(!r.json.casos.some((c) => /Marina|Ricardo|Souza/.test(c.perfil + c.motivo)));
 
     // corrigir: vira "revisado" e a leitura não mexe mais nele (a 2ª call do Bruno vira outro caso)
     r = await chamar('PATCH', `/api/admin/closers/${novo.id}/casos/d_bruno1`, { resultado: 'acordo', quem: 'casal' }, master);
@@ -424,3 +429,36 @@ test('a call nova vem como Word (.docx) ou como atalho: é lida do mesmo jeito; 
   assert.deepEqual([vazio.arquivos, vazio.naJanela, vazio.dentro], [[], 3, [{ tipo: 'video/mp4', quantos: 1, maisNovo: '2026-10-13' }]]);
   assert.ok(!JSON.stringify(vazio).includes('Gravação'), 'nome de pasta ou de arquivo não sai daqui');
 });
+
+test('um documento que o Google não deixa ler: avisa qual dia e por quê, segue com os outros e esse vai para o fim da fila', async () => {
+  const RAIZ = 'pasta_com_documento_travado';
+  const base = { pai: RAIZ, tipo: DOC };
+  ARQUIVOS.trava = { ...base, criado: '2026-10-12T10:00:00Z', nome: 'travado', texto: ARQUIVOS.bruno1.texto, erroDoDocumento: { error: { code: 403, message: 'Export size limit', errors: [{ reason: 'exportSizeLimitExceeded' }] } } };
+  ARQUIVOS.bom1 = { ...base, criado: '2026-10-12T11:00:00Z', nome: 'bom 1', texto: ARQUIVOS.bruno1.texto };
+  ARQUIVOS.bom2 = { ...base, criado: '2026-10-12T12:00:00Z', nome: 'bom 2', texto: ARQUIVOS.bruno1.texto };
+  const sexto = await closers.criar('Sexto Closer Ficticio');
+  await closers.definirDrive(sexto.id, { pasta: RAIZ, desde: '2026-10-09' });
+  chamadas.export.length = 0;
+  let r = await transcricoes.sincronizar(await closers.porId(sexto.id), { porVez: 2, hoje: '2026-10-13' });
+  assert.deepEqual(chamadas.export, ['trava', 'bom1']);
+  assert.deepEqual([r.lidos, r.erros.length], [1, 1]);
+  assert.equal(r.erros[0], 'Pulei o documento "travado": um documento é grande demais para o Google exportar (limite de 10 MB).');
+  // a vez dele passa para o fim: o que ainda não foi tentado vai primeiro
+  chamadas.export.length = 0;
+  r = await transcricoes.sincronizar(await closers.porId(sexto.id), { porVez: 2, hoje: '2026-10-13' });
+  assert.deepEqual(chamadas.export, ['bom2', 'trava']);
+  // acesso negado e download bloqueado têm mensagens próprias; erro de pasta continua sendo o da pasta
+  assert.match(drive.erroDoDrive(403, { error: { message: 'The user does not have sufficient permissions' } }, { documento: true }), /não tem acesso a um dos documentos/);
+  assert.match(drive.erroDoDrive(403, { error: { errors: [{ reason: 'cannotDownloadFile' }] } }, { documento: true }), /bloqueou o download/);
+  assert.match(drive.erroDoDrive(403, { error: {} }), /não deixou ler esta pasta/);
+});
+
+test('calls lidas antes de existir o nome ganham o nome na rodada seguinte, e o painel mostra', async () => {
+  const quinto = await closers.criar('Setimo Closer Ficticio');
+  await closers.definirDrive(quinto.id, { pasta: 'pasta_com_documento_travado', desde: '2026-10-09' });
+  await casos.salvarDoDrive(quinto.id, [{ id: 'd_antigo', data: '2026-10-12', resultado: 'nao', quem: 'sozinho', momento: 'online', perfil: 'x', motivo: 'y', arquivos: ['bom2'], leadPrimeiros: [], momentos: [], origem: 'drive' }]);
+  assert.equal((await casos.doDrive(quinto.id))[0].rotulo, '');
+  await transcricoes.sincronizar(await closers.porId(quinto.id), { porVez: 1, hoje: '2026-10-13' });
+  assert.equal((await casos.doDrive(quinto.id)).find((c) => c.id === 'd_antigo').rotulo, 'bom 2');
+});
+

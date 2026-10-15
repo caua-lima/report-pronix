@@ -753,7 +753,7 @@ app.get('/api/admin/closers/:id/drive', acesso(['closers'], SO_MASTER_ERRO), asy
     res.json({
       ok: true, pasta: closer.drivePasta || '', desde: closer.driveDesde || '', ultima: closer.driveUltima || null, total: lista.length,
       casos: lista.slice().sort((a, b) => String(b.data).localeCompare(String(a.data))).slice(0, 60).map((c) => ({
-        id: c.id, data: c.data, quem: c.quem, todosNaCall: c.todosNaCall, momento: c.momento, resultado: c.resultado, motivo: c.motivo, perfil: c.perfil, reunioes: c.reunioes, minutos: c.minutos, revisado: Boolean(c.revisado),
+        id: c.id, data: c.data, rotulo: c.rotulo || '', quem: c.quem, todosNaCall: c.todosNaCall, momento: c.momento, resultado: c.resultado, motivo: c.motivo, perfil: c.perfil, reunioes: c.reunioes, minutos: c.minutos, revisado: Boolean(c.revisado),
       })),
     });
   } catch (err) {

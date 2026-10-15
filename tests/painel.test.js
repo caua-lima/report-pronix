@@ -1573,7 +1573,7 @@ test('Closers: pasta do Drive com as transcrições — salvar o link, ler agora
     .quando('POST /api/admin/closers/c1/drive/ler', () => {
       if (respostaDoLer) return { corpo: { ok: true, lidos: 0, casos: 0, semConversa: 0, erros: [], restantes: 0, ...respostaDoLer } };
       casosLidos = [
-        { id: 'd_a', data: '2026-10-12', quem: 'casal', todosNaCall: true, momento: 'loja', resultado: 'venda', motivo: 'onboarding iniciado pela casa', perfil: 'casal dono de loja <b>física</b>', reunioes: 1, minutos: 130, revisado: false },
+        { id: 'd_a', data: '2026-10-12', rotulo: 'Marina e <i>Ricardo</i>', quem: 'casal', todosNaCall: true, momento: 'loja', resultado: 'venda', motivo: 'onboarding iniciado pela casa', perfil: 'casal dono de loja <b>física</b>', reunioes: 1, minutos: 130, revisado: false },
         { id: 'd_b', data: '2026-10-10', quem: '', todosNaCall: null, momento: 'online', resultado: 'nao', motivo: 'foi consultar o sócio', perfil: 'vendedor com sócio fora da call', reunioes: 1, minutos: 80, revisado: true },
       ];
       ultima = { em: '2026-10-13T15:00:00.000Z', lidos: 3, casos: 2, semConversa: 1, restantes: 4, erro: '' };
@@ -1607,7 +1607,8 @@ test('Closers: pasta do Drive com as transcrições — salvar o link, ler agora
   const casos = () => [...bloco().querySelectorAll('[data-caso]')];
   await esperar(() => casos().length === 2, { motivo: 'casos na tela' });
   const textoCaso = (i) => casos()[i].textContent.replace(/\s+/g, ' ').trim();
-  assert.match(textoCaso(0), /^12\/10\/2026 casal dono de loja <b>física<\/b> ?onboarding iniciado pela casa/);
+  assert.match(textoCaso(0), /^12\/10\/2026 ?Marina e <i>Ricardo<\/i> ?casal dono de loja <b>física<\/b> ?onboarding iniciado pela casa/, 'o nome da call aparece sob a data, e nunca vira HTML');
+  assert.equal(bloco().querySelector('[data-caso] i'), null);
   assert.equal(bloco().querySelector('[data-caso] b'), null, 'o que veio da leitura nunca vira HTML');
   assert.deepEqual([casos()[0].querySelector('[data-caso-campo="quem"]').value, casos()[0].querySelector('[data-caso-campo="resultado"]').value], ['casal', 'venda']);
   assert.match(textoCaso(1), /corrigido por você/);

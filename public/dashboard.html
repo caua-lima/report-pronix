@@ -1711,7 +1711,7 @@
                   <button class="btn sec ${c.drivePasta ? '' : 'hidden'}" data-ler-drive="${esc(c.id)}">Ler agora</button>
                 </div>
                 <div class="status" data-status-drive style="margin:6px 0 0"></div>
-                <div class="hint">Toda transcrição nova que entrar nessa pasta vira um caso deste closer e atualiza o padrão das calls. A leitura acontece sozinha de hora em hora (com a extensão aberta) e no botão "Ler agora", três documentos por clique. Só leitura: nada muda no Drive, e a transcrição não fica guardada aqui — só o caso, sem nome de lead. Use a data para não reler as calls que já vieram no pacote.</div>
+                <div class="hint">Toda transcrição nova que entrar nessa pasta vira um caso deste closer e atualiza o padrão das calls. A leitura acontece sozinha de hora em hora (com a extensão aberta) e no botão "Ler agora", três documentos por clique. Só leitura: nada muda no Drive, e a transcrição não fica guardada aqui — só o caso e o nome da call, que só você vê. Use a data para não reler as calls que já vieram no pacote.</div>
                 <div data-drive-casos style="margin-top:10px"></div>
               </div>
             </td>
@@ -1803,7 +1803,7 @@
       const opcoes = (lista, atual) => lista.map(([v, t]) => `<option value="${v}" ${v === (atual || '') ? 'selected' : ''}>${t}</option>`).join('');
       const linhas = (d.casos || []).map((c) => `
         <tr data-caso="${esc(c.id)}">
-          <td style="white-space:nowrap">${esc(c.data ? c.data.split('-').reverse().join('/') : '—')}</td>
+          <td style="white-space:nowrap">${esc(c.data ? c.data.split('-').reverse().join('/') : '—')}${c.rotulo ? `<div style="white-space:normal;max-width:190px;color:var(--text-2);font-size:.76rem;font-weight:600" title="Nome da call no Drive">${esc(c.rotulo)}</div>` : ''}</td>
           <td>${esc(c.perfil || '—')}${c.motivo ? `<div style="color:var(--muted);font-size:.78rem">${esc(c.motivo)}</div>` : ''}</td>
           <td><select class="mini-select" data-caso-campo="quem" data-closer="${esc(id)}">${opcoes(DRIVE_QUEM, c.quem)}</select></td>
           <td><select class="mini-select" data-caso-campo="resultado" data-closer="${esc(id)}">${opcoes(DRIVE_RESULTADO, c.resultado)}</select>${c.revisado ? '<div style="color:var(--muted);font-size:.72rem">corrigido por você</div>' : ''}</td>
