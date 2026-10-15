@@ -1831,10 +1831,13 @@
     }
     if (!datas.length || datas[0] === null) return null;
     const inicio = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate()).getTime();
-    const saida = { eu: false, antes: false, eles: false };
+    // elesAntes: o lead já tinha escrito em algum dia anterior — então o que ele escreve hoje não é a primeira resposta.
+    const saida = { eu: false, antes: false, eles: false, elesAntes: false };
     mensagens.forEach((m, i) => {
-      if (datas[i] < inicio) saida.antes = true;
-      else if (m.from === 'eu') saida.eu = true;
+      if (datas[i] < inicio) {
+        saida.antes = true;
+        if (m.from !== 'eu') saida.elesAntes = true;
+      } else if (m.from === 'eu') saida.eu = true;
       else saida.eles = true;
     });
     return saida;
@@ -1845,9 +1848,9 @@
     const hoje = atividadeDeHoje(mensagens, agora);
     if (!hoje || (!hoje.eu && !hoje.eles)) return;
     const chave = chaveDaConversa(conversa) + '|' + agora.toDateString();
-    const antes = atividadeEnviada.get(chave) || { eu: false, antes: false, eles: false };
-    const novo = { eu: antes.eu || hoje.eu, antes: antes.antes || hoje.antes, eles: antes.eles || hoje.eles };
-    if (novo.eu === antes.eu && novo.antes === antes.antes && novo.eles === antes.eles) return; // nada de novo para avisar
+    const antes = atividadeEnviada.get(chave) || { eu: false, antes: false, eles: false, elesAntes: false };
+    const novo = { eu: antes.eu || hoje.eu, antes: antes.antes || hoje.antes, eles: antes.eles || hoje.eles, elesAntes: antes.elesAntes || hoje.elesAntes };
+    if (novo.eu === antes.eu && novo.antes === antes.antes && novo.eles === antes.eles && novo.elesAntes === antes.elesAntes) return; // nada de novo para avisar
     atividadeEnviada.set(chave, novo);
     try {
       chrome.runtime.sendMessage({ action: 'atividade', telefone: conversa.telefone || '', nome: conversa.nome || '', ...novo }, () => {

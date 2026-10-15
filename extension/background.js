@@ -134,7 +134,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     (async () => {
       const corpo = {
         telefone: String(msg.telefone || '').slice(0, 30), nome: String(msg.nome || '').slice(0, 80),
-        eu: msg.eu === true, antes: msg.antes === true, eles: msg.eles === true,
+        eu: msg.eu === true, antes: msg.antes === true, eles: msg.eles === true, elesAntes: msg.elesAntes === true,
       };
       const r = await chamar('/api/atividade', corpo, { timeoutMs: 15000 });
       sendResponse(r.ok ? { ok: true } : { ok: false, erro: r.erro });

@@ -505,7 +505,7 @@ test('contagem do dia: lead novo (só eu escrevi hoje), lead que respondeu, reco
   assert.equal(r.avisos.length, 1, 'nada mudou: não avisa de novo');
 
   r = await atividadeDe([{ from: 'eu', texto: 'Oi Marcos, tudo bem?', hora: HOJE_WPP }, { from: 'eles', texto: 'Tudo sim, pode falar', hora: HOJE_WPP }]);
-  assert.deepEqual(r.avisos.map((a) => [a.eu, a.antes, a.eles]), [[true, false, true]]);
+  assert.deepEqual(r.avisos.map((a) => [a.eu, a.antes, a.eles, a.elesAntes]), [[true, false, true, false]], 'primeira resposta: o lead nunca tinha escrito antes');
 
   r = await atividadeDe([
     { from: 'eu', texto: 'Oi Marcos', hora: ONTEM_WPP }, { from: 'eles', texto: 'Oi', hora: ONTEM_WPP },
@@ -547,3 +547,18 @@ test('etiquetas do funil de Análise: MOMENTO vira "Já vende", FATURAMENTO vira
   await esperar(() => !!q.document.getElementById('cr-etiquetas'), { motivo: 'etiquetas' });
   assert.deepEqual(chips(q), ['Fat. R$ 50k+', 'Ainda não vende', 'Revenda de semijoias']);
 });
+
+test('primeira resposta: o lead que já tinha escrito em outro dia e escreve de novo hoje avisa elesAntes (não é a primeira resposta)', async () => {
+  // recontato de lead que nunca respondeu e responde hoje pela primeira vez
+  let r = await atividadeDe([
+    { from: 'eu', texto: 'Oi Marcos', hora: ONTEM_WPP }, { from: 'eu', texto: 'Voltando aqui, conseguiu ver?', hora: HOJE_WPP }, { from: 'eles', texto: 'Oi, pode falar', hora: HOJE_WPP },
+  ]);
+  assert.deepEqual(r.avisos.map((a) => [a.eu, a.antes, a.eles, a.elesAntes]), [[true, true, true, false]]);
+  // o lead já tinha respondido ontem e escreve de novo hoje
+  r = await atividadeDe([
+    { from: 'eu', texto: 'Oi Marcos', hora: ONTEM_WPP }, { from: 'eles', texto: 'Oi', hora: ONTEM_WPP },
+    { from: 'eu', texto: 'Conseguiu ver?', hora: HOJE_WPP }, { from: 'eles', texto: 'Vi sim', hora: HOJE_WPP },
+  ]);
+  assert.deepEqual(r.avisos.map((a) => [a.eu, a.antes, a.eles, a.elesAntes]), [[true, true, true, true]]);
+});
+
