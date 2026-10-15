@@ -163,7 +163,10 @@ async function desqualificarCard({ usuario, dealId, motivoId }) {
   const de = { id: idDe(deal.deal_stage), nome: crm.consertarAcentos((deal.deal_stage && deal.deal_stage.name) || '') };
   const funil = (await crm.funis()).find((f) => f.etapas.some((e) => e.id === de.id));
   const dest = funil ? acharEtapa(funil, destino()) : null;
-  const { sdr } = await sdrDoUsuario(usuario);
+  // O campo SDR (obrigatório ao desqualificar em alguns funis) recebe o nome de quem pede. Se o campo não tem uma opção
+  // com o nome dele, segue sem mexer nele: o botão tem de funcionar para qualquer SDR, em qualquer funil — o RD
+  // responde se faltar algo e o cartão mostra o motivo.
+  const { sdr } = await sdrDoUsuario(usuario).catch(() => ({ sdr: null }));
 
   const resp = await crm.rd(`/deals/${encodeURIComponent(id)}`, {}, {
     metodo: 'PUT',

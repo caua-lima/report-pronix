@@ -401,3 +401,18 @@ test('desqualificar: rotas do cartão — motivos do RD e a perda só no card do
     await new Promise((r) => servidor.close(r));
   }
 });
+
+// ---------------------------------------------------------------- desqualificar em qualquer funil, para qualquer SDR
+test('desqualificar: funil sem a etapa Desqualificados só marca a perda no lugar; SDR sem opção no campo SDR não trava o botão', async () => {
+  const funisAntes = crm.funis;
+  crm.funis = async () => [{ id: 'f2', nome: 'MQL', etapas: [{ id: 'e1', nome: 'Contato iniciado', ordem: 0 }, { id: 'e2', nome: 'Respondeu', ordem: 1 }] }];
+  campos = [{ _id: 'cfSdr', label: 'SDR', opts: ['Reinaldo Ramos Rocha Junior', 'Samuel Filipe'] }]; // nenhuma opção com o nome do usuário
+  try {
+    const r = await limpeza.desqualificarCard({ usuario: { id: 'sdr-novo', nome: 'Pessoa Nova' }, dealId: 'd3', motivoId: 'm3' });
+    assert.deepEqual(r, { motivo: 'Outros', etapa: 'Contato iniciado', dealId: 'd3' }, 'fica na etapa em que estava');
+    assert.deepEqual(escritas[0].corpo, { deal: { win: false, deal_lost_reason_id: 'm3', deal_custom_fields: [] } }, 'sem mudar de etapa e sem mexer no campo SDR');
+    assert.equal(deals.d3.win, false);
+  } finally {
+    crm.funis = funisAntes;
+  }
+});
