@@ -327,9 +327,9 @@ app.post('/api/rd/atualizar', auth, async (_req, res) => {
 app.post('/api/atividade', auth, async (req, res) => {
   try {
     if (!req.usuario.automacao) return res.status(403).json({ erro: 'Automação do cartão não liberada para este usuário.' });
-    const { telefone, nome, eu, antes, eles } = req.body || {};
+    const { telefone, nome, eu, antes, eles, elesAntes } = req.body || {};
     const ok = await reportDoDia.registrarAtividade({
-      usuarioId: req.usuario.id, telefone: String(telefone || '').slice(0, 30), nome: String(nome || '').slice(0, 80), eu, antes, eles,
+      usuarioId: req.usuario.id, telefone: String(telefone || '').slice(0, 30), nome: String(nome || '').slice(0, 80), eu, antes, eles, elesAntes,
     });
     res.json({ ok: true, registrado: ok });
   } catch (err) {

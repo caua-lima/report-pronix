@@ -400,9 +400,10 @@ Na aba **Reports do dia**, o cartão **Report automático** monta o fechamento d
 
 - **Leads novos contatados / Respostas / Recontatos** — a extensão (com a automação do cartão ligada) olha
   as conversas que passam pela tela e avisa, por conversa e por dia, três sinais: você escreveu hoje, já
-  havia mensagens de antes, o lead escreveu hoje. **Novo** = escreveu hoje e não havia nada antes;
-  **recontato** = escreveu hoje e já havia histórico; **resposta** = o lead escreveu hoje. Cada contato
-  conta uma vez. Do contato fica só uma impressão (hash), nunca telefone nem nome. Conversa que não passou
+  havia mensagens de antes, o lead escreveu hoje (e se já tinha escrito em outro dia). **Novo** = escreveu
+  hoje e não havia nada antes; **recontato** = escreveu hoje e já havia histórico (lead que parou ou nunca
+  respondeu e você chama de novo); **resposta** = a **primeira** vez que o lead responde, que é quando o
+  card vai para Respondeu no RD — quem já tinha escrito em outro dia não conta. Cada contato conta uma vez. Do contato fica só uma impressão (hash), nunca telefone nem nome. Conversa que não passou
   pela tela não é vista, e mensagem de áudio ou foto (sem hora) vale a hora da mensagem de antes.
 - **Desqualificados** — as perdas do dia por motivo: os cards seus que o RD mostra como perdidos hoje,
   juntos com o registro do sistema (botão Desqualificar e limpeza do funil), sem contar duas vezes e sem
