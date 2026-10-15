@@ -385,6 +385,14 @@ funciona**.
 - **Escopo.** Resultados e inteligência usam os reports de quem está olhando; o seletor "Toda a
   equipe" inclui os demais.
 
+### Vendas de um closer direto do RD
+
+Em Resultados, **Trazer as vendas de um closer direto do RD** (`POST /api/master/trazer-vendas-rd`,
+`src/vendasDoRd.js`): lê os cards **ganhos** do closer desde a data escolhida em que o campo **SDR** é o seu
+nome. Quem já tem report aqui é completado (closer, ticket, produto, data) sem trocar o que foi marcado à
+mão; quem não tem ganha um report com a venda (origem "rd", sem PDF). Card sem o campo SDR preenchido fica
+de fora (e a tela diz quantos). Só leitura no RD.
+
 ### Report automático do dia
 
 Na aba **Reports do dia**, o cartão **Report automático** monta o fechamento do dia no formato que se manda
@@ -622,6 +630,7 @@ Autenticação por cabeçalho `x-cr-key` (a chave do usuário). `gestor+` = mast
 | `POST /api/crm/lead` | chave + popup do lead | Ficha do RD do lead da conversa. |
 | `POST /api/crm/respondeu` | chave + automação | Avança o card para "Respondeu". |
 | `GET /api/master/diagnostico` | master | Confere, sem alterar nada, se a automação do "Respondeu" e a cor da agenda têm tudo no lugar, e mostra a última vez que cada uma funcionou. |
+| `POST /api/master/trazer-vendas-rd` | master | Traz as vendas de um closer direto do RD (cards ganhos em que o usuário é o SDR). |
 | `GET /api/report-dia` · `PUT /api/report-dia` | chave | Report automático do dia: contagem, desqualificados, o que foi digitado e o texto pronto. |
 | `POST /api/atividade` | chave com a automação do cartão | A extensão avisa o que viu numa conversa hoje (escrevi / havia histórico / o lead escreveu). |
 | `GET /api/crm/motivos-perda` · `POST /api/crm/desqualificar` | chave com a automação do cartão | Botão Desqualificar: os motivos de perda do RD e a perda no card do lead da conversa. |
