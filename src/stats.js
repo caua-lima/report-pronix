@@ -164,7 +164,7 @@ async function importar(r) {
   const marca = (x) => texto(x === true ? quando : x, 30);
   const registro = {
     id: r.id, usuarioId: r.usuarioId, usuarioNome: r.usuarioNome, lead: texto(r.lead, 120), contato: texto(r.contato, 120),
-    origem: 'report-closer', quando, dia: emDiaLocal(quando), reportKey: '', arquivo: texto(r.arquivo, 120), qualidade: 'standard',
+    origem: r.origem === 'rd' ? 'rd' : 'report-closer', quando, dia: emDiaLocal(quando), reportKey: '', arquivo: texto(r.arquivo, 120), qualidade: 'standard',
     closerId: r.closerId || '', closerNome: r.closerNome || '', closerEmail: '', closerOrigem: '', closerEm: r.closerId ? new Date().toISOString() : '',
     leadEmail: v.email, telefone: v.telefone, rdContatoId: v.contatoId, rdDealId: v.dealId,
     resultado: RESULTADOS_VALIDOS.has(r.resultado) ? r.resultado : '', resultadoOrigem: '',
@@ -176,7 +176,7 @@ async function importar(r) {
     produto: PRODUTOS_VALIDOS.includes(r.produto) ? r.produto : '', ticket: valorEmReais(r.ticket), pagamento: texto(r.pagamento, 80),
     vendidoNoRd: marca(r.vendidoNoRd), encerradoPeloRd: marca(r.encerradoPeloRd), rdSituacao: texto(r.rdSituacao, 160),
     modelo: '', entrada: 0, saida: 0, cacheLeitura: 0, cacheEscrita: 0, custo: 0,
-    importadoDe: 'report-closer', importadoEm: new Date().toISOString(),
+    importadoDe: r.origem === 'rd' ? 'rd' : 'report-closer', importadoEm: new Date().toISOString(),
   };
   await db.push(CHAVE_DB, registro, LIMITE);
   return registro;
