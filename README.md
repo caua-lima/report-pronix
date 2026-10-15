@@ -551,8 +551,10 @@ da qual ler. Todo documento novo vira um caso dele, e o padrão se atualiza (`sr
   não é mais mexido. Tarefa para a pessoa do onboarding nas "Próximas etapas" vale como prova de venda
   (`TRANSCRICAO_ONBOARDING`, padrão `Carlos`);
 - **privacidade:** só leitura no Drive; a transcrição não fica guardada no servidor; antes de ir para a
-  IA os nomes, e-mails e telefones são mascarados; o caso guardado não tem nome de lead (só uma
-  impressão do primeiro nome, para juntar as reuniões).
+  IA os nomes, e-mails e telefones são mascarados; o caso guarda o **nome da call** (o do documento no
+  Drive, que costuma ter o do lead) só para o master achar e corrigir na tela — esse nome nunca vai para a
+  IA nem para o PDF do match —, e uma impressão do primeiro nome para juntar as reuniões. Um documento
+  que o Google não deixa ler é pulado, com o aviso de qual, e vai para o fim da fila.
 
 Para funcionar: ative a **Google Drive API** no projeto do Google Cloud do aplicativo e conecte o
 Google de novo no painel (a permissão `drive.readonly` é nova). A conta conectada precisa ter acesso à
