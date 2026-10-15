@@ -526,3 +526,24 @@ test('contagem do dia: conversa só com mensagens de ontem, ou sem nenhuma data,
   r = await atividadeDe([{ from: 'eu', texto: 'Oi Marcos', hora: HOJE_WPP }], { automacao: false });
   assert.deepEqual(r.avisos, []);
 });
+
+// ---------------------------------------------------------------- etiquetas de outros funis (ex.: Análise)
+test('etiquetas do funil de Análise: MOMENTO vira "Já vende", FATURAMENTO vira faixa, e o modelo não preenchido ({{…}}) é ignorado', async () => {
+  const comCampos = (campos) => ({
+    aoEnviar: async (msg) => {
+      if (msg.action !== 'crmLead') return { ok: true };
+      return { ok: true, configurado: true, encontrado: true, ficha: { ...fichaDoRd('Sem contato'), formulario: { campos, autor: 'Gustavo Dias', quando: '' } }, coach: false, etiquetas: true };
+    },
+  });
+  const chips = (p) => [...p.document.getElementById('cr-etiquetas').querySelectorAll('span')].map((x) => x.textContent);
+  const p = abrir(comCampos([
+    { rotulo: 'MOMENTO', valor: 'Sim, já vendo' }, { rotulo: 'FATURAMENTO', valor: 'Entre R$10.000 a R$50.000' },
+    { rotulo: 'BUSCA', valor: '{{data.Qual Modalidade você trabalha hoje?}}' },
+  ]));
+  await esperar(() => !!p.document.getElementById('cr-etiquetas'), { motivo: 'etiquetas' });
+  assert.deepEqual(chips(p), ['Fat. R$ 10 a 50k', 'Já vende']);
+  // BUSCA já preenchida aparece
+  const q = abrir(comCampos([{ rotulo: 'MOMENTO', valor: 'Ainda não vendo' }, { rotulo: 'FATURAMENTO', valor: 'Acima de R$50.000' }, { rotulo: 'BUSCA', valor: 'Revenda de semijoias' }]));
+  await esperar(() => !!q.document.getElementById('cr-etiquetas'), { motivo: 'etiquetas' });
+  assert.deepEqual(chips(q), ['Fat. R$ 50k+', 'Ainda não vende', 'Revenda de semijoias']);
+});

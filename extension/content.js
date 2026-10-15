@@ -1866,17 +1866,19 @@
    * Sem o campo no formulário (ou resposta que não dá para ler), a etiqueta não aparece.
    */
   function etiquetasDoFormulario(f) {
-    const saida = { investimento: '', vende: '', profissao: '' };
+    const saida = { investimento: '', faturamento: '', vende: '', profissao: '', busca: '' };
     if (!f) return saida;
     const campos = ((f.formulario && f.formulario.campos) || []).concat(f.campos || []);
     const semAcento = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+    // Valor que ficou como modelo não preenchido ("{{data.Qual modalidade…}}") não é resposta de ninguém.
     const valorDe = (re) => {
-      const c = campos.find((x) => re.test(semAcento(x.rotulo)));
+      const c = campos.find((x) => re.test(semAcento(x.rotulo)) && !/\{\{/.test(String(x.valor || '')));
       return c ? String(c.valor || '') : '';
     };
-
-    const inv = semAcento(valorDe(/invest/));
-    if (inv) {
+    // "R$3.000 a R$5.000" -> "3 a 5k"; "+ de R$5.000" -> "5k+"; "até R$3.000" -> "até 3k"
+    const emFaixa = (texto) => {
+      const inv = semAcento(texto);
+      if (!inv) return '';
       const emK = (v) => (v >= 1000 ? String(Math.round(v / 100) / 10).replace('.', ',') + 'k' : String(v));
       const numeros = [...inv.matchAll(/(\d{1,3}(?:\.\d{3})+|\d+)\s*(mil\b|k\b)?/g)]
         .map((m) => {
@@ -1884,20 +1886,26 @@
           return m[2] && n < 1000 ? n * 1000 : n;
         })
         .filter((n) => n > 0);
-      if (numeros.length >= 2) saida.investimento = `${emK(numeros[0]).replace(/k$/, '')} a ${emK(numeros[1])}`;
-      else if (numeros.length === 1) {
-        if (/\+|mais de|acima|a partir/.test(inv)) saida.investimento = emK(numeros[0]) + '+';
-        else if (/ate|menos de|abaixo/.test(inv)) saida.investimento = 'até ' + emK(numeros[0]);
-        else saida.investimento = emK(numeros[0]);
+      if (numeros.length >= 2) return `${emK(numeros[0]).replace(/k$/, '')} a ${emK(numeros[1])}`;
+      if (numeros.length === 1) {
+        if (/\+|mais de|acima|a partir/.test(inv)) return emK(numeros[0]) + '+';
+        if (/ate|menos de|abaixo/.test(inv)) return 'até ' + emK(numeros[0]);
+        return emK(numeros[0]);
       }
-    }
+      return '';
+    };
+    saida.investimento = emFaixa(valorDe(/invest/));
+    saida.faturamento = emFaixa(valorDe(/fatur/)); // funil de análise: "FATURAMENTO: Entre R$10.000 a R$50.000"
 
-    const vende = semAcento(valorDe(/vend/));
+    // "Vende online?" (formulário) ou "MOMENTO: Sim, já vendo" (funil de análise)
+    const vende = semAcento(valorDe(/vend|momento/));
     if (/comec|ainda nao|nao vend|do zero|quero vender|^nao\b/.test(vende)) saida.vende = 'Ainda não vende';
     else if (/ja vend|ja tenho|aumentar|^sim\b/.test(vende)) saida.vende = 'Já vende';
 
     const profissao = valorDe(/profiss|ocupac/).replace(/\s+/g, ' ').trim();
     if (profissao) saida.profissao = profissao.length > 30 ? profissao.slice(0, 29).trimEnd() + '…' : profissao;
+    const busca = valorDe(/busca|modalidade/).replace(/\s+/g, ' ').trim();
+    if (busca) saida.busca = busca.length > 30 ? busca.slice(0, 29).trimEnd() + '…' : busca;
     return saida;
   }
 
@@ -2077,13 +2085,18 @@
     }
     // Do formulário do RD, para ver de relance: quanto o lead disse que investe, se já vende e a profissão.
     // Cheias e maiores que as outras: são o que se bate o olho primeiro, mesmo com o cartão minimizado.
-    const doFormulario = ficha.etiquetas ? etiquetasDoFormulario(estado.ficha) : { investimento: '', vende: '', profissao: '' };
+    const doFormulario = ficha.etiquetas ? etiquetasDoFormulario(estado.ficha) : { investimento: '', faturamento: '', vende: '', profissao: '', busca: '' };
     const cheia = (fundo, cor) => `border-radius:5px;padding:3px 10px;font-size:12px;font-weight:800;line-height:1.5;letter-spacing:.01em;border:1px solid ${fundo};background:${fundo};color:${cor}`;
-    if (doFormulario.investimento || doFormulario.vende || doFormulario.profissao) {
+    if (doFormulario.investimento || doFormulario.faturamento || doFormulario.vende || doFormulario.profissao || doFormulario.busca) {
       const doForm = elem('div', 'flex-basis:100%;display:flex;flex-wrap:wrap;gap:6px');
       if (doFormulario.investimento) {
         const c = elem('span', cheia('#ffc233', '#18171b'), 'R$ ' + doFormulario.investimento);
         c.title = 'Investimento informado no formulário';
+        doForm.appendChild(c);
+      }
+      if (doFormulario.faturamento) {
+        const c = elem('span', cheia('#ff9f43', '#2a1500'), 'Fat. R$ ' + doFormulario.faturamento);
+        c.title = 'Faturamento informado no formulário';
         doForm.appendChild(c);
       }
       if (doFormulario.vende) {
@@ -2095,6 +2108,11 @@
       if (doFormulario.profissao) {
         const c = elem('span', cheia('#b79cff', '#17102b'), doFormulario.profissao);
         c.title = 'Profissão informada no formulário';
+        doForm.appendChild(c);
+      }
+      if (doFormulario.busca) {
+        const c = elem('span', cheia('#5ad1d1', '#06201f'), doFormulario.busca);
+        c.title = 'O que o lead busca (modalidade)';
         doForm.appendChild(c);
       }
       linha.appendChild(doForm);
