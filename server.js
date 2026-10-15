@@ -40,6 +40,7 @@ const { gerarAfinidadePdfBuffer, nomeDoArquivo: nomeDoArquivoAfinidade } = requi
 const { textoDoPdf } = require('./src/textoDoPdf');
 const importarReports = require('./src/importarReports');
 const reportDoDia = require('./src/reportDoDia');
+const vendasDoRd = require('./src/vendasDoRd');
 const aprendizado = require('./src/aprendizado');
 const { normalizarConsciencia } = require('./src/consciencia');
 const { normalizarDores } = require('./src/dores');
@@ -496,9 +497,24 @@ app.get('/api/cron/rd', async (req, res) => {
   if (!segredo || req.get('authorization') !== 'Bearer ' + segredo) return res.status(401).json({ erro: 'Não autorizado.' });
   try {
     await db.destravar('rd-desfechos'); // a rodada diária não depende de quando a aba foi aberta
-    res.json({ ok: true, ...(await conferirDesfechosNoRd({ porVez: 25 })) });
+    // A rodada diária também lê as transcrições novas do Drive (vale mesmo com o Chrome fechado).
+    const lidas = await db.travar('drive-transcricoes', 2700).then((ok) => (ok ? transcricoes.sincronizarTodos({ porVez: 4 }) : null)).catch((err) => { console.error('Falha ao ler o Drive no agendador:', err.message); return null; });
+    res.json({ ok: true, ...(await conferirDesfechosNoRd({ porVez: 25 })), ...(lidas ? { transcricoes: { lidos: lidas.lidos, casos: lidas.casos } } : {}) });
   } catch (err) {
     res.status(502).json({ erro: err.message });
+  }
+});
+
+/**
+ * Trazer as vendas de um closer direto do RD (cards ganhos em que o usuário é o SDR): completa o report
+ * que já existe ou cria um com a venda. Para quem gerou o report em outro sistema.
+ */
+app.post('/api/master/trazer-vendas-rd', acesso(['resultados'], SO_MASTER_ERRO), async (req, res) => {
+  try {
+    const { desde, closer } = req.body || {};
+    res.json({ ok: true, ...(await vendasDoRd.trazer({ usuario: req.usuario, desde, closer })) });
+  } catch (err) {
+    res.status(/Informe/.test(err.message) ? 400 : 502).json({ erro: err.message });
   }
 });
 
