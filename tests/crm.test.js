@@ -388,3 +388,9 @@ test('escolherCard: preferido, depois aberto mais recente, depois o mais recente
   assert.equal(crm.escolherCard([d('a'), d('b')], 'z').id, 'b', 'preferido que não existe é ignorado');
   assert.equal(crm.escolherCard([]), null);
 });
+
+test('anotação com valor de modelo não preenchido ({{…}}) de uma integração: esse campo não vira resposta', () => {
+  assert.deepEqual(crm.extrairCampos('MOMENTO:Sim, já vendo\nFATURAMENTO:Entre R$10.000 a R$50.000\nBUSCA:{{data.Qual Modalidade você trabalha hoje?}}'), [
+    { rotulo: 'MOMENTO', valor: 'Sim, já vendo' }, { rotulo: 'FATURAMENTO', valor: 'Entre R$10.000 a R$50.000' },
+  ]);
+});

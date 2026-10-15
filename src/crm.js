@@ -149,7 +149,8 @@ function extrairCampos(texto) {
   for (const linha of String(texto || '').split('\n')) {
     const m = /^([^:]{2,40}):\s*(.+)$/.exec(linha.trim());
     // "http://..." não é campo: rótulo não pode terminar em http/https
-    if (m && !/https?$/i.test(m[1].trim())) campos.push({ rotulo: m[1].trim(), valor: m[2].trim().slice(0, 300) });
+    // Valor que ficou como modelo não preenchido ("{{data.Qual modalidade…}}", de uma integração) não é resposta.
+    if (m && !/https?$/i.test(m[1].trim()) && !/\{\{.*\}\}/.test(m[2])) campos.push({ rotulo: m[1].trim(), valor: m[2].trim().slice(0, 300) });
   }
   return campos;
 }
