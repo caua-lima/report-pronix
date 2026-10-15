@@ -3,8 +3,9 @@
 // "Report automático" do pré-vendedor: o fechamento do dia com o que dá para contar sozinho.
 //  - Leads novos contatados / Respostas / Recontatos: a extensão olha as conversas que passam pela tela e
 //    avisa, por conversa e por dia, três coisas — eu escrevi hoje, já havia mensagens de antes, o lead
-//    escreveu hoje. Daí: novo = escrevi hoje e não havia nada antes; recontato = escrevi hoje e já havia
-//    histórico; resposta = o lead escreveu hoje. Só conta o que passou pela tela (conversa que nunca foi
+//    escreveu hoje (e se já tinha escrito em algum dia anterior). Daí: novo = escrevi hoje e não havia nada
+//    antes; recontato = escrevi hoje e já havia histórico (lead que parou ou nunca respondeu e eu chamo de
+//    novo); resposta = a PRIMEIRA resposta do lead (ele escreveu hoje e nunca tinha escrito antes). Só conta o que passou pela tela (conversa que nunca foi
 //    aberta não é vista). Do contato guarda-se só uma impressão (hash), nunca telefone nem nome.
 //  - Desqualificados: as perdas do dia, por motivo, lidas do RD (cards do próprio usuário fechados hoje como
 //    perdidos) e do registro do sistema (botão Desqualificar e limpeza do funil), sem contar duas vezes.
@@ -38,10 +39,10 @@ function impressaoDaConversa(usuarioId, { telefone, nome }) {
 }
 
 /** A extensão avisa o que viu numa conversa hoje. Cada aviso é um evento; a leitura junta os do mesmo contato. */
-async function registrarAtividade({ usuarioId, telefone, nome, eu, antes, eles }) {
+async function registrarAtividade({ usuarioId, telefone, nome, eu, antes, eles, elesAntes }) {
   const h = impressaoDaConversa(usuarioId, { telefone, nome });
   if (!h || !usuarioId) return false;
-  const flags = { eu: eu === true, antes: antes === true, eles: eles === true };
+  const flags = { eu: eu === true, antes: antes === true, eles: eles === true, elesAntes: elesAntes === true };
   if (!flags.eu && !flags.eles) return false;
   await db.push(`atividade_${usuarioId}_${hoje()}`, { h, ...flags }, LIMITE_EVENTOS);
   return true;
@@ -53,17 +54,20 @@ async function contagemDoDia(usuarioId, dia) {
   const porContato = new Map();
   for (const e of eventos) {
     if (!e || !e.h) continue;
-    const c = porContato.get(e.h) || { eu: false, antes: false, eles: false };
+    const c = porContato.get(e.h) || { eu: false, antes: false, eles: false, elesAntes: false };
     c.eu = c.eu || e.eu === true;
     c.antes = c.antes || e.antes === true; // viu histórico em algum momento: não é lead novo
     c.eles = c.eles || e.eles === true;
+    c.elesAntes = c.elesAntes || e.elesAntes === true; // o lead já tinha escrito antes de hoje
     porContato.set(e.h, c);
   }
   const lista = [...porContato.values()];
   return {
     novos: lista.filter((c) => c.eu && !c.antes).length,
     recontatos: lista.filter((c) => c.eu && c.antes).length,
-    respostas: lista.filter((c) => c.eles).length,
+    // Resposta = a PRIMEIRA vez que o lead responde (é quando o card vai para "Respondeu" no RD): quem já tinha
+    // escrito em outro dia e escreve de novo hoje não conta.
+    respostas: lista.filter((c) => c.eles && !c.elesAntes).length,
     conversas: lista.length,
   };
 }

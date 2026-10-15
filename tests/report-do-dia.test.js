@@ -58,7 +58,7 @@ const chamar = async (metodo, rota, corpo, u = E.caua) => {
   const r = await fetch(base + rota, { method: metodo, headers: { 'Content-Type': 'application/json', 'x-cr-key': u.chave }, body: corpo ? JSON.stringify(corpo) : undefined });
   return { status: r.status, json: await r.json().catch(() => null) };
 };
-const aviso = (telefone, eu, antes, eles, nome = '') => chamar('POST', '/api/atividade', { telefone, nome, eu, antes, eles });
+const aviso = (telefone, eu, antes, eles, nome = '', elesAntes = false) => chamar('POST', '/api/atividade', { telefone, nome, eu, antes, eles, elesAntes });
 const perdida = (id, motivo, closedAt = new Date().toISOString()) => ({ _id: id, win: false, closed_at: closedAt, deal_lost_reason: { name: motivo } });
 
 test('contagem: novo = escrevi hoje sem histórico; recontato = escrevi hoje com histórico; resposta = o lead escreveu hoje; cada contato conta uma vez', async () => {
@@ -72,12 +72,16 @@ test('contagem: novo = escrevi hoje sem histórico; recontato = escrevi hoje com
   // Eva: viu primeiro só o que havia hoje (histórico cortado) e depois o antigo: vira recontato, não novo
   await aviso('71999990005', true, false, false);
   await aviso('71999990005', true, true, false);
+  // Gil: recontato em que o lead JÁ tinha escrito em outro dia e escreve de novo hoje: não é a primeira resposta
+  await aviso('71999990011', true, true, true, '', true);
+  // Hugo: recontato de lead que nunca tinha respondido e responde hoje pela primeira vez: conta
+  await aviso('71999990012', true, true, true, '', false);
   // Fábio: sem telefone, pelo nome; conversa que só tem mensagem antiga não gera nada
   assert.equal((await aviso('', true, false, false, 'Fábio Souza')).json.registrado, true);
   assert.equal((await aviso('71999990009', false, true, false)).json.registrado, false);
 
   const c = await rel.contagemDoDia(E.caua.id, HOJE);
-  assert.deepEqual([c.novos, c.recontatos, c.respostas, c.conversas], [3, 3, 2, 6]);
+  assert.deepEqual([c.novos, c.recontatos, c.respostas, c.conversas], [3, 5, 3, 8], 'resposta = só a primeira vez que o lead responde (Ana, Diego e Hugo; Gil já tinha escrito antes)');
   // nada de telefone nem nome guardado
   const guardado = fs.readdirSync(DADOS).map((f) => fs.readFileSync(path.join(DADOS, f), 'utf8')).join('');
   for (const dado of ['99999-0001', '71999990001', '999990002', 'Fábio', 'Souza']) assert.ok(!guardado.includes(dado), 'ficou guardado: ' + dado);
@@ -145,7 +149,7 @@ test('rotas: o dia vem com contagem, desqualificados e texto; o que se digita fi
   let r = await chamar('GET', '/api/report-dia');
   assert.equal(r.status, 200);
   assert.deepEqual([r.json.dia, r.json.contagem.novos, r.json.desqualificados.total], [HOJE, 4, 3]); // o RD (r1) e o registro do sistema (a1 e s1)
-  assert.match(r.json.texto, /^REPORT Cauã Lima \| \d{2}\/\d{2}\n\n\n-{34} \nLeads novos contatados: 4\nRespostas: 2\nRecontatos: 3\n\nDesqualificados:\n/);
+  assert.match(r.json.texto, /^REPORT Cauã Lima \| \d{2}\/\d{2}\n\n\n-{34} \nLeads novos contatados: 4\nRespostas: 3\nRecontatos: 5\n\nDesqualificados:\n/);
 
   r = await chamar('PUT', '/api/report-dia', { dia: HOJE, manual: { automaticas: 11, noShow: 'Nelson às 15h30' } });
   assert.equal(r.status, 200);
