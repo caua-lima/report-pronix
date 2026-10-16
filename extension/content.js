@@ -4,6 +4,15 @@
 (function () {
   'use strict';
 
+  // As duas extensões (Report PRONIX e PRONIX Closer Report) desenham o MESMO cartão e o mesmo coach. Com as duas
+  // instaladas, o cartão pulava de lugar e desligar um sumia com o outro. O Report PRONIX avisa na página que é
+  // ele quem desenha; o Closer Report, vendo o aviso, fica quieto.
+  try {
+    document.documentElement.setAttribute('data-report-dono', 'pronix');
+  } catch (_) {
+    /* página sem documentElement ainda: o aviso vem no próximo carregamento */
+  }
+
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const VERSAO = (() => {
     try {

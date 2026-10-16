@@ -562,3 +562,7 @@ test('primeira resposta: o lead que já tinha escrito em outro dia e escreve de 
   assert.deepEqual(r.avisos.map((a) => [a.eu, a.antes, a.eles, a.elesAntes]), [[true, true, true, true]]);
 });
 
+test('o Report PRONIX avisa na página que é ele quem desenha o cartão (o Closer Report fica quieto)', async () => {
+  const p = abrir(servidorFalso());
+  assert.equal(p.document.documentElement.getAttribute('data-report-dono'), 'pronix');
+});
