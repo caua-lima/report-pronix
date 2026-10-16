@@ -424,8 +424,31 @@ async function responderMatch(req, res, { closerId, reportId, dados, mensagens, 
   }
 }
 
-app.post('/api/afinidade', auth, (req, res) => {
-  const { closerId, reportId, dados, mensagens, nome } = req.body || {};
+/**
+ * O report mais recente DESTE usuário para este lead (pelo nome do contato), de até 30 dias: o que a análise de
+ * match aproveita (perfil e nível de consciência) quando o botão é só a análise, sem gerar report de novo.
+ */
+async function reportRecenteDoLead(usuarioId, nome) {
+  const norm = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+  const alvo = norm(nome);
+  if (!alvo) return null;
+  const de = stats.emDiaLocal(new Date(Date.now() - 30 * 86400000).toISOString());
+  const meus = (await stats.listar({ de })).filter((r) => r.usuarioId === usuarioId && (norm(r.contato) === alvo || norm(r.lead) === alvo));
+  return meus.length ? meus[meus.length - 1] : null;
+}
+
+app.post('/api/afinidade', auth, async (req, res) => {
+  let { closerId, reportId, dados, mensagens, nome } = req.body || {};
+  // Só a análise (sem report novo): se este lead já tem report seu, usa o perfil e a consciência dele.
+  if (!dados && nome) {
+    const rep = await reportRecenteDoLead(req.usuario.id, nome).catch(() => null);
+    if (rep) {
+      dados = { lead: rep.lead || nome };
+      if (rep.perfil) dados.perfil = { tipo: rep.perfilReal || rep.perfil, evidencia: rep.perfilEvidencia || '' };
+      if (rep.consciencia) dados.consciencia = { nivel: rep.conscienciaReal || rep.consciencia, porque: rep.conscienciaPorque || '' };
+      reportId = reportId || rep.id;
+    }
+  }
   return responderMatch(req, res, { closerId, reportId, dados, mensagens, nome });
 });
 

@@ -322,3 +322,23 @@ test('o histórico do closer conta só reunião com resultado (no-show fica de f
   assert.deepEqual([h.reunioes, h.vendas], [2, 1]);
   assert.deepEqual(afinidade.historicoDoCloser([], E.ph.id), { reunioes: 0, vendas: 0, linhas: [] });
 });
+
+test('só a análise (o botão do closer não gera report): sem dados do report, usa o perfil e a consciência do report recente do lead e anota a nota nele', async () => {
+  await stats.registrar({ id: 'rep-so-analise', usuarioId: E.sdr.id, usuarioNome: E.sdr.nome, lead: 'Marcos Pereira', contato: 'Marcos Pereira', origem: 'extensao', leitura: { perfil: 'analitico', perfilEvidencia: 'Pediu números.', consciencia: 'pronto', conscienciaPorque: 'Perguntou quando começa.' } });
+  pedidosIa.length = 0;
+  const r = await chamar('POST', '/api/afinidade', { closerId: E.ph.id, mensagens: CONVERSA, nome: 'marcos  PEREIRA' }, E.sdr);
+  assert.equal(r.status, 200, JSON.stringify(r.json));
+  const lead = pedidosIa.find((p) => !/PLANO DA CALL/.test(p.messages[0].content)).messages[1].content;
+  assert.match(lead, /Perfil do lead: [^\n]*\(Pediu números\.\)/);
+  assert.match(lead, /Nível de consciência: [^\n]*Perguntou quando começa\./);
+  assert.equal((await stats.buscarPorId('rep-so-analise')).afinidade.closerId, E.ph.id, 'a nota fica no report que já existia');
+  // lead sem report: segue só com a conversa
+  const sem = await chamar('POST', '/api/afinidade', { closerId: E.ph.id, mensagens: CONVERSA, nome: 'Lead Sem Report' }, E.sdr);
+  assert.equal(sem.status, 200);
+  // report de outra pessoa não é usado
+  await stats.registrar({ id: 'rep-de-outro', usuarioId: 'outro', usuarioNome: 'Outro', lead: 'Lead Alheio', contato: 'Lead Alheio', origem: 'extensao', leitura: { perfil: 'cetico', consciencia: 'inconsciente' } });
+  pedidosIa.length = 0;
+  await chamar('POST', '/api/afinidade', { closerId: E.ph.id, mensagens: CONVERSA, nome: 'Lead Alheio' }, E.sdr);
+  assert.doesNotMatch(pedidosIa[0].messages[1].content, /Perfil do lead|Nível de consciência/);
+});
+
