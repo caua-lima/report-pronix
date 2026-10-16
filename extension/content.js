@@ -995,6 +995,17 @@
         return;
       }
 
+      // "Analisar Match com o closer" é SÓ a análise: não gera report (não chama a IA paga nem cria report novo).
+      // O servidor usa o perfil e o nível de consciência do report que já existir deste lead, se houver.
+      if (closerDaAnalise && afinidadeUi) {
+        capturaAtiva = false;
+        restaurarAudios();
+        mostrarBadge({ texto: '<b>Match com ' + escHtml(closerDaAnalise.apelido || closerDaAnalise.nome || 'o closer') + '</b>', cor: '#ffc233' });
+        anexarAfinidade(closerDaAnalise, null, mensagens, nome);
+        jobEmAndamento = false;
+        return;
+      }
+
       const linhaAudio =
         stats.audios > 0
           ? `<svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:-2px;flex:none" fill="none" stroke="#ffc233" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/></svg> ${stats.audios} áudio(s), ${stats.audiosTranscritos} com transcrição` +

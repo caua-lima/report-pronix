@@ -199,7 +199,7 @@ async function testarConexao() {
 
 /**
  * Botões "Analisar Match com <closer>": um por closer com inteligência cadastrada no painel.
- * Clicar gera o report normal e, junto, a análise de afinidade com esse closer (nota de 0 a 10 e PDF).
+ * Clicar gera SÓ a análise de afinidade com esse closer (nota de 0 a 10 e PDF): nenhum report é gerado.
  */
 function mostrarAnalises(lista, faltando) {
   const caixa = $('analises');
@@ -249,9 +249,10 @@ async function gerar(afinidade) {
     setStatus('Iniciando…', { loading: true });
     await enviarStart(tab.id, server, plataforma.arquivos, afinidade);
     setStatus(
-      '<b>Report iniciado!</b> Acompanhe o aviso no canto inferior direito da tela. ' +
-        'Você pode fechar este popup, mas não troque de conversa até o report ficar pronto.' +
-        (afinidade ? ` O match com ${escapeHtml(afinidade.apelido)} aparece no mesmo aviso.` : ''),
+      afinidade
+        ? `<b>Analisando o match com ${escapeHtml(afinidade.apelido)}…</b> Só a análise: nenhum report é gerado. Acompanhe o aviso no canto inferior direito da tela e não troque de conversa até ele ficar pronto.`
+        : '<b>Report iniciado!</b> Acompanhe o aviso no canto inferior direito da tela. ' +
+          'Você pode fechar este popup, mas não troque de conversa até o report ficar pronto.',
       { html: true }
     );
   } catch (err) {

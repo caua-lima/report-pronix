@@ -67,18 +67,18 @@ const caixa = (p) => p.document.querySelector('#closer-report-badge #cr-afinidad
 const pronto = (p) => esperar(() => /Report pronto/.test(p.badge()), { motivo: 'report pronto' });
 
 // ---------------------------------------------------------------- WhatsApp
-test('WhatsApp: pedido pelo botão do closer, o aviso final traz a nota, o veredito e o segundo PDF', async () => {
+test('WhatsApp: o botão do closer gera SÓ a análise — nenhum report é pedido; o aviso traz a nota, o veredito e o PDF do match', async () => {
   const servidor = servidorFalso();
   const p = whatsapp(servidor);
   p.iniciar('https://servidor.teste', { afinidade: PH });
-  await pronto(p);
   await esperar(() => caixa(p) && /Match com PH/.test(caixa(p).textContent), { motivo: 'análise no aviso' });
+  assert.equal(servidor.pedidos.reports.length, 0, 'sem report novo (nem custo da IA paga)');
+  assert.doesNotMatch(p.badge(), /Report pronto|Gerando report/);
 
-  // o que foi pedido: o closer, o report recém-gerado, o que ele levantou e a conversa
+  // o que foi pedido: o closer e a conversa lida (o servidor junta o perfil do report que o lead já tiver)
   assert.equal(servidor.pedidos.afinidade.length, 1);
   const pedido = servidor.pedidos.afinidade[0];
-  assert.deepEqual([pedido.closerId, pedido.reportId], ['c1', 'rep123']);
-  assert.deepEqual(pedido.dados, RESPOSTA_PDF.dados);
+  assert.deepEqual([pedido.closerId, pedido.reportId, pedido.dados], ['c1', '', null]);
   assert.equal(pedido.mensagens.length, 4);
   assert.equal(pedido.mensagens[1].content, 'Com a minha esposa, ela vai na reunião');
 
@@ -97,9 +97,9 @@ test('WhatsApp: pedido pelo botão do closer, o aviso final traz a nota, o vered
   const link = caixa(p).querySelector('a[download]');
   assert.equal(link.getAttribute('download'), 'Match_PH_Marcos_11-10-2026.pdf');
   assert.equal(link.getAttribute('href'), 'data:application/pdf;base64,CCCC');
-  // o report normal continua lá, com o próprio botão
+  // só o PDF do match: o do report não é gerado
   const baixar = [...p.document.querySelectorAll('#closer-report-badge a[download]')].map((a) => a.getAttribute('download'));
-  assert.deepEqual(baixar, ['Report_Marcos.pdf', 'Match_PH_Marcos_11-10-2026.pdf']);
+  assert.deepEqual(baixar, ['Match_PH_Marcos_11-10-2026.pdf']);
 });
 
 test('WhatsApp: pelo "Gerar report" comum, nada de análise (nem pedido, nem bloco no aviso)', async () => {
@@ -112,30 +112,25 @@ test('WhatsApp: pelo "Gerar report" comum, nada de análise (nem pedido, nem blo
   assert.equal(caixa(p), null);
 });
 
-test('WhatsApp: se a análise falha, o report continua pronto e dá para tentar de novo', async () => {
+test('WhatsApp: se a análise falha, dá para tentar de novo (sem gerar report)', async () => {
   const servidor = servidorFalso({ analise: (_msg, n) => (n === 1 ? { ok: false, erro: 'A IA gratuita chegou no limite. Tente em 1 minuto.' } : AFINIDADE) });
   const p = whatsapp(servidor);
   p.iniciar('https://servidor.teste', { afinidade: PH });
-  await pronto(p);
   await esperar(() => caixa(p) && /chegou no limite/.test(caixa(p).textContent), { motivo: 'erro da análise' });
-  assert.ok(p.document.querySelector('#closer-report-badge a[download="Report_Marcos.pdf"]'), 'o report não some por causa da análise');
+  assert.equal(servidor.pedidos.reports.length, 0);
   [...caixa(p).querySelectorAll('button')].find((b) => b.textContent === 'Tentar de novo').click();
   await esperar(() => /Match com PH/.test(caixa(p).textContent), { motivo: 'análise na segunda tentativa' });
   assert.equal(servidor.pedidos.afinidade.length, 2);
 });
 
-test('WhatsApp: report que já existia — a análise sai da conversa lida e a nota vai para aquele report', async () => {
+test('WhatsApp: lead que já tem report — o botão do closer não pergunta de duplicado nem abre o report: só a análise', async () => {
   const servidor = servidorFalso({ duplicado: true });
   const p = whatsapp(servidor);
   p.iniciar('https://servidor.teste', { afinidade: PH });
-  await esperar(() => /Já existe/.test(p.badge()), { motivo: 'aviso de duplicado' });
-  p.document.querySelector('[data-cr-acao="abrir"]').click();
-  await esperar(() => servidor.pedidos.afinidade.length === 1, { motivo: 'análise pedida' });
-  const pedido = servidor.pedidos.afinidade[0];
-  assert.deepEqual([pedido.reportId, pedido.dados], ['abc', null]);
-  assert.equal(pedido.mensagens.length, 4);
-  assert.equal(servidor.pedidos.reports.length, 1, 'nenhuma geração nova (sem custo)');
   await esperar(() => caixa(p) && /Match com PH/.test(caixa(p).textContent), { motivo: 'análise no aviso' });
+  assert.equal(servidor.pedidos.reports.length, 0);
+  assert.doesNotMatch(p.badge(), /Já existe/);
+  assert.equal(servidor.pedidos.afinidade[0].mensagens.length, 4);
 });
 
 test('pedido de análise malformado vindo de fora (sem id) é ignorado', async () => {
@@ -154,9 +149,9 @@ test('Instagram: o mesmo botão funciona — nota e segundo PDF no aviso', async
   abertas.push(p);
   montarInstagram(p, CONVERSA.map((m) => ({ from: m.from, texto: m.texto })), { visiveis: 6 });
   p.iniciar('https://servidor.teste', { afinidade: PH });
-  await pronto(p);
   await esperar(() => caixa(p) && /Match com PH/.test(caixa(p).textContent), { motivo: 'análise no aviso' });
-  assert.deepEqual([servidor.pedidos.afinidade[0].closerId, servidor.pedidos.afinidade[0].reportId], ['c1', 'rep123']);
+  assert.equal(servidor.pedidos.reports.length, 0, 'só a análise, sem report');
+  assert.deepEqual([servidor.pedidos.afinidade[0].closerId, servidor.pedidos.afinidade[0].reportId], ['c1', '']);
   assert.ok(caixa(p).querySelector('a[download="Match_PH_Marcos_11-10-2026.pdf"]'));
 });
 
@@ -230,8 +225,8 @@ test('popup: um botão por closer com inteligência; clicar manda gerar o report
   p.botoes()[0].click();
   await esperar(() => p.enviadas.length === 1, { motivo: 'start enviado' });
   assert.deepEqual(p.enviadas[0], { action: 'start', server: 'https://report-pronix.vercel.app', afinidade: PH });
-  await esperar(() => /Report iniciado/.test(p.document.getElementById('status').textContent), { motivo: 'status' });
-  assert.match(p.document.getElementById('status').textContent, /O match com PH aparece no mesmo aviso/);
+  await esperar(() => /Analisando o match com PH/.test(p.document.getElementById('status').textContent), { motivo: 'status' });
+  assert.match(p.document.getElementById('status').textContent, /Só a análise: nenhum report é gerado/);
 
   // o botão comum continua mandando só o report
   p.document.getElementById('gerar').click();

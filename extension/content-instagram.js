@@ -859,6 +859,16 @@
       });
       const { mensagens, nome, stats } = await coletarConversa(server, true);
 
+      // "Analisar Match com o closer" é SÓ a análise: não gera report (não chama a IA paga nem cria report novo).
+      if (closerDaAnalise && afinidadeUi) {
+        capturaAtiva = false;
+        restaurarAudios();
+        mostrarBadge({ texto: '<b>Match com ' + escHtml(closerDaAnalise.apelido || closerDaAnalise.nome || 'o closer') + '</b>', cor: '#ffc233' });
+        anexarAfinidade(closerDaAnalise, null, mensagens, nome);
+        jobEmAndamento = false;
+        return;
+      }
+
       const linhaAudio =
         stats.audios > 0
           ? `${stats.audios} áudio(s), ${stats.audiosTranscritos} com transcrição` +
