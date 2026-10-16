@@ -426,6 +426,13 @@ Das **datas das mensagens** (sem IA), o resumo do report ganha, quando faz senti
 
 Conversa colada como texto, sem datas, não ganha essas linhas.
 
+### As duas extensões no mesmo Chrome
+
+O Report PRONIX e o PRONIX Closer Report desenham o **mesmo** cartão e o mesmo coach no WhatsApp Web. Com as
+duas ligadas, o cartão pulava de lugar e desligar a "Popup do lead" de uma sumia com a do outro. O Report PRONIX
+(1.5.3+) avisa na página (`data-report-dono="pronix"`) que é ele quem desenha; o Closer Report (1.13.2+),
+vendo o aviso, não consulta o RD nem desenha nada. Sem o Report PRONIX, o Closer Report volta a funcionar sozinho.
+
 ### Desqualificar pelo WhatsApp
 
 No cartão do lead, o botão **Desqualificar** (para quem tem a automação do cartão) mostra os motivos de
