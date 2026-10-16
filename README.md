@@ -490,8 +490,9 @@ outros vão para "Desqualificados" com a perda **"Duplicado"** e o campo SDR pre
 ### Afinidade com o closer ("Analisar Match com PH")
 
 Para cada closer com **inteligência cadastrada** (aba Closers → Inteligência), o popup da extensão
-ganha um botão **"Analisar Match com {apelido}"**. Clicar gera o report normal e, logo abaixo
-do "Report pronto!", a análise:
+ganha um botão **"Analisar Match com {apelido}"**. Clicar gera **só a análise** — não gera report (não usa a
+IA paga nem cria report novo). Se o lead já tem report seu dos últimos 30 dias, o servidor aproveita o perfil e o
+nível de consciência dele, e a nota fica naquele report. O aviso traz a análise:
 
 - **nota de 0 a 10** da combinação lead × closer (não é "o lead é bom?", é "é bom *para ele*?");
 - no aviso: o veredito, até três motivos, um ponto de atenção e a base da nota;
