@@ -25,6 +25,12 @@ const FICHA_MARCOS = {
 };
 
 /** "Service worker" falso: responde a ficha conforme a função passada; guarda cada consulta. */
+const MAPA_FALSO = [
+  { id: 'financeiro', nome: 'Investimento / capacidade financeira', perguntou: 'sim', respondeu: 'parcial', resumo: 'Disse que vai ver com a esposa.', evidencia: 'Vou ver com ela', quando: '21/09 10:05' },
+  { id: 'decisor', nome: 'Decisor', perguntou: 'sim', respondeu: 'sim', resumo: 'Decide com a esposa.', evidencia: '', quando: '' },
+  { id: 'prazo', nome: 'Prazo / urgência', perguntou: 'nao', respondeu: 'nao', resumo: 'ainda não perguntado', evidencia: '', quando: '' },
+  { id: 'pagamento', nome: 'Forma de pagamento', perguntou: 'sim', respondeu: 'nao', resumo: '', evidencia: '', quando: '' },
+];
 const RESUMO_FALSO = {
   cenario: 'Marcos tem loja de moto peças e quer vender no Mercado Livre.',
   peQueParou: 'Você perguntou se ele consegue investir R$3 mil e ele ainda não respondeu.',
@@ -61,13 +67,21 @@ function crmFalso(responder, opcoes = {}) {
       feedbacks.push(msg);
       return { ok: true };
     }
+    if (msg.action === 'conversaMapa') {
+      (opcoes.mapasPedidos || (opcoes.mapasPedidos = [])).push(msg);
+      return opcoes.mapa ? opcoes.mapa(msg) : { ok: true, qualificadoFinanceiramente: 'parcial', mapa: MAPA_FALSO };
+    }
+    if (msg.action === 'conversaPergunta') {
+      (opcoes.perguntasPedidas || (opcoes.perguntasPedidas = [])).push(msg);
+      return opcoes.pergunta ? opcoes.pergunta(msg) : { ok: true, veredito: 'parcial', resposta: 'Em parte: ele disse que vai ver com a esposa.', evidencias: [{ quem: 'lead', trecho: 'Tudo sim', quando: '21/09 10:05' }] };
+    }
     if (msg.action === 'resumoRapido') {
       resumosPedidos.push(msg);
       return opcoes.resumo ? opcoes.resumo(msg) : { ok: true, resumo: RESUMO_FALSO, cache: false };
     }
     return { ok: true };
   };
-  return { aoEnviar, consultas, resumosPedidos, coachPedidos, feedbacks };
+  return { aoEnviar, consultas, resumosPedidos, coachPedidos, feedbacks, opcoes };
 }
 
 const CONVERSA = [
@@ -441,3 +455,76 @@ test('coach liberado: o cartão da ficha continua só com a ficha e o resumo; CR
   assert.equal(cartao(r), null);
   r.fechar();
 });
+
+// ---------------------------------------------------------------- mapa da conversa e perguntas
+const resumoPronto = async (srv) => {
+  const p = abrir(srv);
+  await esperar(() => /Investimento/.test(textoCartao(p)), { motivo: 'ficha' });
+  botao(p, 'Resumo rápido da conversa').click();
+  await esperar(() => /Onde parou/.test(textoCartao(p)), { motivo: 'resumo na tela' });
+  return p;
+};
+
+test('depois do resumo rápido: "Mapear a conversa" mostra o que já foi perguntado e respondido, com a evidência', async () => {
+  const srv = crmFalso(() => ({ ok: true, configurado: true, encontrado: true, ficha: FICHA_MARCOS }));
+  const p = await resumoPronto(srv);
+  assert.ok(botao(p, 'Mapear a conversa'), 'o botão aparece depois do resumo');
+  botao(p, 'Mapear a conversa').click();
+  await esperar(() => /Qualificado financeiramente: Em parte/.test(textoCartao(p)), { motivo: 'mapa na tela' });
+  // a conversa já lida (com os áudios) vai junto, sem reler
+  assert.deepEqual(srv.opcoes.mapasPedidos[0].mensagens.map((m) => m.content), ['Oi, tudo bem?', 'Tudo sim']);
+  const t = textoCartao(p);
+  for (const x of ['Investimento / capacidade financeira', 'respondeu em parte', '“Vou ver com ela” · 21/09 10:05', 'Decisor', 'ainda não perguntado', 'perguntou, sem resposta']) assert.ok(t.includes(x), 'faltou: ' + x);
+  const simbolos = [...p.document.querySelectorAll('#cr-mapa span')].map((s) => s.textContent).filter((s) => ['✓', '◐', '?', '–'].includes(s));
+  assert.deepEqual(simbolos, ['◐', '✓', '–', '?']);
+  assert.equal(p.document.querySelector('#cr-mapa i'), null);
+  p.fechar();
+});
+
+test('depois do resumo rápido: perguntas prontas e livres; a resposta traz Sim/Não/Em parte e a evidência; o texto digitado não se perde', async () => {
+  const srv = crmFalso(() => ({ ok: true, configurado: true, encontrado: true, ficha: FICHA_MARCOS }));
+  const p = await resumoPronto(srv);
+  botao(p, 'Já está qualificado financeiramente?').click();
+  await esperar(() => /Em parte\. Em parte: ele disse/.test(textoCartao(p)), { motivo: 'resposta' });
+  assert.deepEqual(srv.opcoes.perguntasPedidas.map((m) => m.pergunta), ['Já está qualificado financeiramente?']);
+  assert.match(textoCartao(p), /Lead \(21\/09 10:05\): “Tudo sim”/);
+
+  // digitar e apertar Enter; o cartão se redesenha e o que está sendo digitado continua lá
+  const input = () => p.document.getElementById('cr-pergunta-texto');
+  input().value = 'ele falou do prazo?';
+  input().dispatchEvent(new p.w.Event('input', { bubbles: true }));
+  botao(p, 'Mapear a conversa').click(); // redesenha o cartão no meio da digitação
+  await esperar(() => /Qualificado financeiramente/.test(textoCartao(p)), { motivo: 'mapa' });
+  assert.equal(input().value, 'ele falou do prazo?', 'o texto digitado sobrevive ao redesenho');
+  input().dispatchEvent(new p.w.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+  await esperar(() => srv.opcoes.perguntasPedidas.length === 2, { motivo: 'segunda pergunta' });
+  assert.equal(srv.opcoes.perguntasPedidas[1].pergunta, 'ele falou do prazo?');
+  assert.equal(input().value, '', 'a caixa limpa depois de perguntar');
+  // a mais nova vem primeiro
+  const perguntasNaTela = [...cartao(p).querySelectorAll('#cr-perguntas div')].filter((d) => !d.children.length).map((d) => d.textContent).filter((x) => x.startsWith('Você: '));
+  assert.deepEqual(perguntasNaTela, ['Você: ele falou do prazo?', 'Você: Já está qualificado financeiramente?']);
+  p.fechar();
+});
+
+test('mapa e perguntas: erro do servidor aparece e dá para tentar de novo; sem o resumo, nada disso aparece', async () => {
+  let vez = 0;
+  const srv = crmFalso(() => ({ ok: true, configurado: true, encontrado: true, ficha: FICHA_MARCOS }), {
+    mapa: () => (++vez === 1 ? { ok: false, erro: 'O limite gratuito da IA foi atingido por agora. Tente de novo em 1 minuto.' } : { ok: true, qualificadoFinanceiramente: 'nao', mapa: MAPA_FALSO }),
+    pergunta: () => ({ ok: false, erro: 'A IA não respondeu. Tente de novo.' }),
+  });
+  const sem = abrir(srv);
+  await esperar(() => /Investimento/.test(textoCartao(sem)), { motivo: 'ficha' });
+  assert.equal(botao(sem, 'Mapear a conversa'), undefined, 'sem o resumo (a conversa lida) não há mapa nem pergunta');
+  assert.equal(sem.document.getElementById('cr-perguntas'), null);
+  sem.fechar();
+
+  const p = await resumoPronto(srv);
+  botao(p, 'Mapear a conversa').click();
+  await esperar(() => /limite gratuito da IA/.test(textoCartao(p)), { motivo: 'erro do mapa' });
+  botao(p, 'Tentar de novo').click();
+  await esperar(() => /Qualificado financeiramente: Não/.test(textoCartao(p)), { motivo: 'mapa na segunda' });
+  botao(p, 'Já perguntei do decisor?').click();
+  await esperar(() => /A IA não respondeu/.test(textoCartao(p)), { motivo: 'erro da pergunta' });
+  p.fechar();
+});
+

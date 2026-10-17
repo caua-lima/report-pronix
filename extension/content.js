@@ -1298,7 +1298,13 @@
       anotarAgendamento(mensagens, conversa); // a leitura completa (com áudios) pode trazer o agendamento
       const r = await new Promise((res) => chrome.runtime.sendMessage({ action: 'resumoRapido', mensagens, nome }, res));
       if (!r || !r.ok) throw new Error((r && r.erro) || 'Não consegui gerar o resumo.');
-      resumos.set(chave, { tipo: 'ok', dados: r.resumo });
+      // A conversa lida (com os áudios já transcritos) fica na memória desta aba: o mapa e as perguntas usam
+      // ela, sem reler nem retranscrever. Nada disso é guardado em disco.
+      resumos.set(chave, {
+        tipo: 'ok', dados: r.resumo, nome,
+        mensagens: mensagens.slice(-1500).map(({ from, type, content, timestamp }) => ({ from, type: type === 'audio' ? 'audio' : 'texto', content, timestamp })),
+        mapa: null, perguntas: [], rascunho: '',
+      });
     } catch (e) {
       resumos.set(chave, { tipo: 'erro', erro: e.message || 'Não consegui gerar o resumo.' });
     } finally {
@@ -1684,6 +1690,138 @@
     corpo.appendChild(controles('Atualizar'));
   }
 
+  // ---------------------------------------------------------------------------
+  // Depois do resumo rápido: o "mapa da conversa" (o que já foi perguntado e respondido) e perguntas livres.
+  // Conversa com áudios longos não se reouve: a IA lê tudo e responde, citando quem disse o quê.
+  // ---------------------------------------------------------------------------
+  const VEREDITO = { sim: ['Sim', '#3ddc84'], parcial: ['Em parte', '#ffc233'], nao: ['Não', '#ff6f5c'], aberta: ['', '#f3efe6'] };
+  const PERGUNTAS_RAPIDAS = ['Já está qualificado financeiramente?', 'Já perguntei do decisor?', 'Já falei de prazo e pagamento?', 'O que ele quer com o projeto?'];
+
+  function pedirMapa(chave) {
+    const r = resumos.get(chave);
+    if (!r || r.tipo !== 'ok' || (r.mapa && r.mapa.tipo === 'carregando')) return;
+    r.mapa = { tipo: 'carregando' };
+    redesenharFicha();
+    try {
+      chrome.runtime.sendMessage({ action: 'conversaMapa', mensagens: r.mensagens, nome: r.nome }, (resp) => {
+        if (chrome.runtime.lastError) return;
+        r.mapa = resp && resp.ok
+          ? { tipo: 'ok', itens: resp.mapa || [], qualificado: resp.qualificadoFinanceiramente || 'nao' }
+          : { tipo: 'erro', erro: (resp && resp.erro) || 'Não consegui mapear a conversa.' };
+        if (ficha.chave === chave) redesenharFicha();
+      });
+    } catch (_) {
+      /* extensão recarregada */
+    }
+  }
+
+  function perguntarNaConversa(chave, pergunta) {
+    const r = resumos.get(chave);
+    const p = String(pergunta || '').trim();
+    if (!r || r.tipo !== 'ok' || p.length < 3) return;
+    const item = { pergunta: p, tipo: 'carregando' };
+    r.perguntas.unshift(item);
+    r.perguntas.length = Math.min(r.perguntas.length, 6);
+    r.rascunho = '';
+    redesenharFicha();
+    try {
+      chrome.runtime.sendMessage({ action: 'conversaPergunta', mensagens: r.mensagens, nome: r.nome, pergunta: p }, (resp) => {
+        if (chrome.runtime.lastError) return;
+        if (resp && resp.ok) Object.assign(item, { tipo: 'ok', veredito: resp.veredito, resposta: resp.resposta, evidencias: resp.evidencias || [] });
+        else Object.assign(item, { tipo: 'erro', erro: (resp && resp.erro) || 'Não consegui responder.' });
+        if (ficha.chave === chave) redesenharFicha();
+      });
+    } catch (_) {
+      /* extensão recarregada */
+    }
+  }
+
+  const rotuloPequeno = 'font-size:10.5px;color:#a39e93;text-transform:uppercase;letter-spacing:.1em;font-family:Bahnschrift,DIN Alternate,Roboto Condensed,Arial Narrow,sans-serif';
+
+  function blocoMapa(r) {
+    const caixa = elem('div', 'margin-top:10px;padding-top:8px;border-top:1px solid #3a373f');
+    caixa.id = 'cr-mapa';
+    if (!r.mapa) {
+      const b = botaoFicha('Mapear a conversa', () => pedirMapa(ficha.chave));
+      b.title = 'Mostra o que você já perguntou e o que o lead respondeu: investimento, decisor, momento, objetivo, prazo, pagamento e reunião';
+      caixa.appendChild(b);
+      return caixa;
+    }
+    caixa.appendChild(elem('div', rotuloPequeno, 'Mapa da conversa'));
+    if (r.mapa.tipo === 'carregando') {
+      caixa.appendChild(elem('div', 'color:#a39e93;margin-top:4px', 'Lendo a conversa toda…'));
+      return caixa;
+    }
+    if (r.mapa.tipo === 'erro') {
+      caixa.appendChild(elem('div', 'color:#ff6f5c;margin:4px 0', r.mapa.erro));
+      caixa.appendChild(botaoFicha('Tentar de novo', () => pedirMapa(ficha.chave)));
+      return caixa;
+    }
+    const [qRot, qCor] = VEREDITO[r.mapa.qualificado] || VEREDITO.nao;
+    caixa.appendChild(elem('div', `margin:4px 0 6px;font-weight:700;color:${qCor}`, 'Qualificado financeiramente: ' + qRot));
+    r.mapa.itens.forEach((it) => {
+      const [simbolo, cor] = it.respondeu === 'sim' ? ['✓', '#3ddc84'] : it.respondeu === 'parcial' ? ['◐', '#ffc233'] : it.perguntou === 'sim' ? ['?', '#ff6f5c'] : ['–', '#6f6b75'];
+      const estado = it.respondeu === 'sim' ? '' : it.respondeu === 'parcial' ? 'respondeu em parte' : it.perguntou === 'sim' ? 'perguntou, sem resposta' : 'ainda não perguntado';
+      const linha = elem('div', 'display:flex;gap:6px;margin-top:4px;font-size:12px');
+      linha.appendChild(elem('span', `flex:none;width:12px;color:${cor};font-weight:800`, simbolo));
+      const texto = elem('div', 'flex:1;min-width:0');
+      texto.appendChild(elem('div', 'font-weight:600', it.nome));
+      const detalhe = [estado, it.resumo && it.resumo !== estado ? it.resumo : ''].filter(Boolean).join(' · ');
+      if (detalhe) texto.appendChild(elem('div', 'color:#a39e93', detalhe));
+      if (it.evidencia) {
+        const e = elem('div', 'color:#d5d0c5;font-style:italic', '“' + it.evidencia + '”' + (it.quando ? ' · ' + it.quando : ''));
+        e.title = 'O que o lead escreveu ou disse';
+        texto.appendChild(e);
+      }
+      linha.appendChild(texto);
+      caixa.appendChild(linha);
+    });
+    return caixa;
+  }
+
+  function blocoPerguntas(r) {
+    const caixa = elem('div', 'margin-top:10px;padding-top:8px;border-top:1px solid #3a373f');
+    caixa.id = 'cr-perguntas';
+    caixa.appendChild(elem('div', rotuloPequeno, 'Pergunte sobre a conversa'));
+    const rapidas = elem('div', 'display:flex;flex-wrap:wrap;gap:5px;margin:5px 0');
+    PERGUNTAS_RAPIDAS.forEach((q) => {
+      const b = botaoFicha(q, () => perguntarNaConversa(ficha.chave, q));
+      b.style.fontSize = '11px';
+      rapidas.appendChild(b);
+    });
+    caixa.appendChild(rapidas);
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.id = 'cr-pergunta-texto';
+    input.maxLength = 300;
+    input.placeholder = 'Ex.: ele disse quem decide?';
+    input.value = r.rascunho || '';
+    input.style.cssText = 'flex:1;min-width:0;background:#121113;color:#f3efe6;border:1px solid #3a373f;border-radius:7px;padding:6px 8px;font:inherit;font-size:12px';
+    input.addEventListener('input', () => { r.rascunho = input.value; });
+    const enviar = () => perguntarNaConversa(ficha.chave, input.value);
+    input.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.stopPropagation(); enviar(); } });
+    ['keyup', 'keypress'].forEach((nome) => input.addEventListener(nome, (ev) => ev.stopPropagation())); // o WhatsApp não pode roubar as teclas
+    const enviarBtn = botaoFicha('Perguntar', enviar, true);
+    enviarBtn.id = 'cr-pergunta-enviar';
+    caixa.appendChild(elem('div', 'display:flex;gap:6px', input, enviarBtn));
+    (r.perguntas || []).forEach((p) => {
+      const bloco = elem('div', 'margin-top:8px;padding:6px 8px;background:#1d1c1f;border-radius:7px');
+      bloco.appendChild(elem('div', 'font-size:11px;color:#a39e93', 'Você: ' + p.pergunta));
+      if (p.tipo === 'carregando') bloco.appendChild(elem('div', 'color:#a39e93;margin-top:3px', 'Lendo a conversa…'));
+      else if (p.tipo === 'erro') bloco.appendChild(elem('div', 'color:#ff6f5c;margin-top:3px', p.erro));
+      else {
+        const [rot, cor] = VEREDITO[p.veredito] || VEREDITO.aberta;
+        const linha = elem('div', 'margin-top:3px');
+        if (rot) linha.appendChild(elem('span', `font-weight:800;color:${cor}`, rot + '. '));
+        linha.appendChild(document.createTextNode(p.resposta));
+        bloco.appendChild(linha);
+        (p.evidencias || []).forEach((e) => bloco.appendChild(elem('div', 'margin-top:3px;font-size:11.5px;color:#d5d0c5;font-style:italic', (e.quem === 'voce' ? 'Você' : 'Lead') + (e.quando ? ' (' + e.quando + ')' : '') + ': “' + e.trecho + '”')));
+      }
+      caixa.appendChild(bloco);
+    });
+    return caixa;
+  }
+
   function blocoResumo() {
     const r = resumos.get(ficha.chave);
     const caixa = elem('div', 'margin:2px 0 10px;padding:8px 10px;background:#121113;border:1px solid #3a373f;border-radius:8px');
@@ -1725,6 +1863,11 @@
     atualizar.title = 'Ler a conversa de novo (se chegaram mensagens novas)';
     rodape.appendChild(atualizar);
     caixa.appendChild(rodape);
+    // Conversa lida: dá para mapear o que já foi perguntado e perguntar qualquer coisa sobre ela.
+    if (r.mensagens && r.mensagens.length) {
+      caixa.appendChild(blocoMapa(r));
+      caixa.appendChild(blocoPerguntas(r));
+    }
     return caixa;
   }
 

@@ -183,6 +183,21 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
+  // Depois do resumo rápido: mapa da conversa e perguntas sobre ela (a conversa já lida vai junto; nada fica guardado).
+  if (msg && (msg.action === 'conversaMapa' || msg.action === 'conversaPergunta')) {
+    (async () => {
+      const ehMapa = msg.action === 'conversaMapa';
+      const corpo = {
+        mensagens: Array.isArray(msg.mensagens) ? msg.mensagens : [],
+        nome: String(msg.nome || '').slice(0, 120),
+        ...(ehMapa ? {} : { pergunta: String(msg.pergunta || '').slice(0, 300) }),
+      };
+      const r = await chamar(ehMapa ? '/api/conversa/mapa' : '/api/conversa/perguntar', corpo, { timeoutMs: 55000 });
+      sendResponse(r.ok ? { ok: true, ...r.data } : { ok: false, erro: r.erro });
+    })();
+    return true;
+  }
+
   if (msg && msg.action === 'resumoRapido') {
     (async () => {
       const r = await chamar('/api/resumo-rapido', { mensagens: msg.mensagens, nome: msg.nome }, { timeoutMs: 65000 });
