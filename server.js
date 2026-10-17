@@ -28,6 +28,7 @@ const agendaGoogle = require('./src/agendaGoogle');
 const closerAuto = require('./src/closerAuto');
 const vendasRd = require('./src/vendasRd');
 const { gerarResumoRapido } = require('./src/resumoRapido');
+const perguntasDaConversa = require('./src/perguntasDaConversa');
 const coachIa = require('./src/coach');
 const inteligencia = require('./src/inteligencia');
 const afinidadeIa = require('./src/afinidade');
@@ -1250,6 +1251,30 @@ app.post('/api/resumo-rapido', auth, async (req, res) => {
     res.json({ resumo: r.resumo, cache: r.cache });
   } catch (err) {
     res.status(/Nenhuma mensagem/.test(err.message) ? 400 : 502).json({ erro: err.message });
+  }
+});
+
+/**
+ * Depois do resumo rápido: o mapa da conversa (o que já foi perguntado e respondido) e perguntas livres sobre ela.
+ * IA gratuita; a conversa vem do cartão a cada pedido e nada fica guardado. Mesma permissão do resumo rápido.
+ */
+app.post('/api/conversa/mapa', auth, async (req, res) => {
+  try {
+    if (!req.usuario.fichaCrm) return res.status(403).json({ erro: 'Resumo rápido desligado para este usuário.' });
+    const { mensagens, nome } = req.body || {};
+    res.json({ ok: true, ...(await perguntasDaConversa.mapear({ mensagens, nome })) });
+  } catch (err) {
+    res.status(/Nenhuma mensagem/.test(err.message) ? 400 : 502).json({ erro: err.message });
+  }
+});
+
+app.post('/api/conversa/perguntar', auth, async (req, res) => {
+  try {
+    if (!req.usuario.fichaCrm) return res.status(403).json({ erro: 'Resumo rápido desligado para este usuário.' });
+    const { mensagens, nome, pergunta } = req.body || {};
+    res.json({ ok: true, ...(await perguntasDaConversa.perguntar({ mensagens, nome, pergunta })) });
+  } catch (err) {
+    res.status(/Nenhuma mensagem|Escreva a pergunta/.test(err.message) ? 400 : 502).json({ erro: err.message });
   }
 });
 
