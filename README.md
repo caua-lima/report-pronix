@@ -236,6 +236,27 @@ campos personalizados, outras anotações e o link **Abrir no RD Station**.
 Botão no cartão: lê a conversa e os áudios e devolve o **cenário**, **onde parou**, a **última
 pergunta** e o **próximo passo**. Mesma conversa = resumo do cache por 7 dias, sem custo.
 
+
+### Mapa da conversa e perguntas (depois do resumo rápido)
+
+Conversa com áudios longos não se reouve. Depois do **Resumo rápido**, o cartão ganha:
+
+- **Mapear a conversa** — um checklist do que você já perguntou e do que o lead respondeu: investimento,
+  decisor, momento do negócio, objetivo, prazo, forma de pagamento e reunião. Cada item mostra ✓ (respondeu),
+  ◐ (respondeu em parte), ? (você perguntou e ele não respondeu) ou – (ainda não perguntado), com o trecho
+  que o lead escreveu ou disse e quando. No topo: **Qualificado financeiramente: Sim / Em parte / Não** (só
+  é "Sim" se o lead disse que tem ou consegue investir; você ter perguntado não basta).
+- **Pergunte sobre a conversa** — perguntas prontas ("Já está qualificado financeiramente?", "Já perguntei do
+  decisor?", "Já falei de prazo e pagamento?", "O que ele quer com o projeto?") e uma caixa para escrever
+  qualquer outra. A resposta vem como **Sim / Não / Em parte** (ou texto, nas perguntas abertas), com quem
+  disse o quê e quando.
+
+Usa a conversa que o resumo já leu (com os áudios transcritos), sem reler nem retranscrever; é IA gratuita
+(Groq) e nada fica guardado (`src/perguntasDaConversa.js`, `POST /api/conversa/mapa` e
+`POST /api/conversa/perguntar`, mesma permissão do resumo rápido). O trecho citado só aparece se está de
+fato numa mensagem: o que a IA inventasse sai. Conversa muito longa é enxugada (as mensagens mais recentes
+e as com sinal comercial ficam), e chegou mensagem nova depois do resumo, use **Atualizar**.
+
 ### Coach da conversa (custo zero)
 
 Um **popup próprio**, separado do cartão da ficha, que só trabalha **quando você clica**:
@@ -643,6 +664,7 @@ Autenticação por cabeçalho `x-cr-key` (a chave do usuário). `gestor+` = mast
 | `GET /api/master/diagnostico` | master | Confere, sem alterar nada, se a automação do "Respondeu" e a cor da agenda têm tudo no lugar, e mostra a última vez que cada uma funcionou. |
 | `POST /api/master/trazer-vendas-rd` | master | Traz as vendas de um closer direto do RD (cards ganhos em que o usuário é o SDR). |
 | `GET /api/report-dia` · `PUT /api/report-dia` | chave | Report automático do dia: contagem, desqualificados, o que foi digitado e o texto pronto. |
+| `POST /api/conversa/mapa` · `POST /api/conversa/perguntar` | chave com o popup do lead | Mapa da conversa e perguntas sobre ela, depois do resumo rápido (IA gratuita; a conversa vem do cartão). |
 | `POST /api/atividade` | chave com a automação do cartão | A extensão avisa o que viu numa conversa hoje (escrevi / havia histórico / o lead escreveu). |
 | `GET /api/crm/motivos-perda` · `POST /api/crm/desqualificar` | chave com a automação do cartão | Botão Desqualificar: os motivos de perda do RD e a perda no card do lead da conversa. |
 | `GET /api/master/limpeza-rd/funis` · `GET …/previa` · `POST …/executar` · `POST …/desfazer` · `GET …/relatorio` | master | Limpeza do funil no RD: prévia, lotes, desfazer e relatório por motivo. |
