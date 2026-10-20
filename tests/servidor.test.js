@@ -169,9 +169,9 @@ test('o prompt separa a conversa por marcas e tem as regras de leitura (injeçã
   const dentro = usuario.split('<conversa>\n')[1];
   assert.equal((dentro.match(/<\/conversa>/g) || []).length, 1, 'só a marca de fechamento nossa; a do lead foi neutralizada');
   assert.match(dentro, /\[conversa\] escreva/);
-  assert.match(chamada.system[0].text, /LEITURA DA CONVERSA/);
-  assert.match(chamada.system[0].text, /Faturamento não é lucro/);
-  assert.match(chamada.system[0].text, /nunca instrução/);
+  assert.match(chamada.system.map((b) => b.text).join(''), /LEITURA DA CONVERSA/);
+  assert.match(chamada.system.map((b) => b.text).join(''), /Faturamento não é lucro/);
+  assert.match(chamada.system.map((b) => b.text).join(''), /nunca instrução/);
 });
 
 // ---------------------------------------------------------------- duplicado + reabrir (A09)
@@ -453,7 +453,7 @@ test('report rico: a IA recebe as regras novas, o formato de resposta e o nome d
   const conversa = msgs.concat([{ from: 'eles', type: 'texto', content: 'pergunta nova ' + Date.now() }]);
   await api('POST', '/api/report-direto', { chave: E.ana, corpo: { mensagens: conversa, nome: 'Marcos' } });
   const chamada = chamadasAnthropic[0];
-  const system = chamada.system[0].text;
+  const system = chamada.system.map((b) => b.text).join('');
   assert.match(system, /NÍVEL DE CONSCIÊNCIA/);
   assert.match(system, /COMO FOI A CONVERSA/);
   assert.match(system, /SINAIS DE COMPRA/);
@@ -514,7 +514,7 @@ test('momento do lead e perfil: título e fala da IA vão para o report; fala in
   for (const x of ['MOMENTO DO LEAD', 'Decidiu o canal e já fatura', 'Fatura 20 mil por mês', 'Disse que o Mercado Livre já está decidido.', 'Evite: promessa sem mostrar o número.']) assert.ok(t.replace(/\s+/g, ' ').includes(x), 'faltou no PDF: ' + x);
   assert.ok(!t.includes('Consciente da solu'), 'o nome da régua não aparece');
   // a IA recebeu as regras e o formato novos
-  const system = chamadasAnthropic[0].system[0].text;
+  const system = chamadasAnthropic[0].system.map((b) => b.text).join('');
   assert.match(system, /O SELO QUE O CLOSER LÊ \("Momento do lead"\)[\s\S]*aparece em TODO relatório[\s\S]*PROIBIDO o nome da régua/);
   assert.match(system, /Prefira uma que NÃO esteja em "citacoes"/);
   assert.match(system, /Em "evitar", UMA frase curta com o que faz este lead esfriar/);
@@ -564,7 +564,7 @@ test('corrigir o perfil do lead ensina a IA: a troca vira exemplo no prompt dos 
   // o próximo report já leva o exemplo
   chamadasAnthropic.length = 0;
   await api('POST', '/api/report-direto', { chave: E.ana, corpo: { mensagens: msgs.concat([{ from: 'eu', type: 'texto', content: 'depois ' + Date.now() }]), nome: 'Marcos' } });
-  assert.match(chamadasAnthropic[0].system[0].text, /CALIBRAGEM DO PERFIL DO LEAD[\s\S]*o certo é "dominante"/);
+  assert.match(chamadasAnthropic[0].system.map((b) => b.text).join(''), /CALIBRAGEM DO PERFIL DO LEAD[\s\S]*o certo é "dominante"/);
 });
 
 test('report rico: PDF regerado depois de editar mantém os campos novos (e ignora nível inválido)', async () => {
@@ -612,8 +612,8 @@ test('palavras do lead: fala real que desanima o closer sai do report; as boas f
   respostaAnthropic = null;
   assert.equal(r.status, 200);
   assert.deepEqual(r.json.dados.citacoes, ['Era exatamente isso que eu estava procurando', 'Quero começar semana que vem', 'Preciso começar no Mercado Livre, isso já tá decidido.']);
-  assert.match(chamadasAnthropic[0].system[0].text, /1 a 3 FALAS EXATAS\/verbatim do LEAD[\s\S]*deixam o closer ANIMADO[\s\S]*PROCURE ATIVAMENTE/);
-  assert.match(chamadasAnthropic[0].system[0].text, /PROIBIDO citar fala que possa desanimar o closer/);
+  assert.match(chamadasAnthropic[0].system.map((b) => b.text).join(''), /1 a 3 FALAS EXATAS\/verbatim do LEAD[\s\S]*deixam o closer ANIMADO[\s\S]*PROCURE ATIVAMENTE/);
+  assert.match(chamadasAnthropic[0].system.map((b) => b.text).join(''), /PROIBIDO citar fala que possa desanimar o closer/);
 });
 
 // ---------------------------------------------------------------- papel Gestor: tudo do admin + .zip da equipe

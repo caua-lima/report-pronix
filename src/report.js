@@ -305,15 +305,38 @@ Preencha pela ferramenta "gerar_relatorio":
 - "dores": 0 a 3 dores do lead, cada uma com { "dor", "intensidade", "porque" }, conforme a seção TERMÔMETRO DE DORES.
 - "frase_impacto": uma frase única e afiada de fechamento (pode parafrasear).`;
 
+/**
+ * Dia e hora da mensagem no fuso do relatório. O carimbo ISO completo ("2026-10-14T13:05:00.000Z") gasta
+ * uns 15 tokens por mensagem e ainda vem em UTC (3h a mais que a hora do WhatsApp); aqui a data vira um
+ * cabeçalho por dia, com o dia da semana, e cada mensagem leva só a hora local.
+ */
+function diaEHora(timestamp) {
+  const d = new Date(timestamp);
+  if (!timestamp || Number.isNaN(d.getTime())) return null;
+  const partes = {};
+  new Intl.DateTimeFormat('pt-BR', {
+    timeZone: process.env.TZ_RELATORIO || 'America/Sao_Paulo',
+    weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).formatToParts(d).forEach((p) => { partes[p.type] = p.value; });
+  return { dia: `${partes.day}/${partes.month}/${partes.year}, ${partes.weekday}`, hora: `${partes.hour}:${partes.minute}` };
+}
+
 function montarHistoricoFormatado(historico) {
-  return historico
-    .map((m) => {
-      const quem = m.from === 'eu' ? 'VENDEDOR' : 'LEAD';
-      const tipo = m.type === 'audio' ? ' (áudio transcrito)' : '';
-      const quando = m.timestamp ? `[${m.timestamp}] ` : '';
-      return `${quando}${quem}${tipo}: ${m.content}`;
-    })
-    .join('\n');
+  const linhas = [];
+  let diaAtual = '';
+  for (const m of historico) {
+    const quem = m.from === 'eu' ? 'VENDEDOR' : 'LEAD';
+    const tipo = m.type === 'audio' ? ' (áudio transcrito)' : '';
+    const q = diaEHora(m.timestamp);
+    if (q && q.dia !== diaAtual) {
+      linhas.push(`— ${q.dia} —`);
+      diaAtual = q.dia;
+    }
+    // Carimbo que não é data (texto livre) segue como veio.
+    const quando = q ? `[${q.hora}] ` : m.timestamp ? `[${m.timestamp}] ` : '';
+    linhas.push(`${quando}${quem}${tipo}: ${m.content}`);
+  }
+  return linhas.join('\n');
 }
 
 // O cabeçalho do WhatsApp mostra o status junto do nome. Se a extensão capturar
@@ -617,7 +640,9 @@ async function chamarAnthropic(userPrompt, system, qualidade, opcoes = {}) {
         // report, então o cache relê esse prefixo a ~0,1x do preço. TTL de 1h (em vez
         // dos 5min padrão): num dia de trabalho o prefixo é reescrito ~1x/hora, não a
         // cada report espaçado — menos reescrita = menos gasto.
-        system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral', ttl: '1h' } }],
+        // Em blocos (ver montarSystem): a parte que quase nunca muda é um ponto de cache e a calibragem,
+        // que muda a cada correção do gestor, é outro — corrigir um report não reescreve o prefixo inteiro.
+        system: (Array.isArray(system) ? system : [system]).filter(Boolean).map((text) => ({ type: 'text', text, cache_control: { type: 'ephemeral', ttl: '1h' } })),
         tools: [ferramenta],
         tool_choice: { type: 'tool', name: ferramenta.name },
         messages: [{ role: 'user', content: userPrompt }],
@@ -654,6 +679,7 @@ async function chamarAnthropic(userPrompt, system, qualidade, opcoes = {}) {
     cacheEscrita: u.cache_creation_input_tokens || 0,
   };
   // A saída estruturada vem num bloco tool_use, com o objeto já pronto em .input.
+  if (opcoes.aceitarCorte) return { texto: '', uso };
   const toolUse = (json.content || []).find((b) => b.type === 'tool_use');
   if (toolUse && toolUse.input) return { texto: JSON.stringify(toolUse.input), uso };
   // Fallback: texto puro (caso o modelo não use a ferramenta).
@@ -662,7 +688,8 @@ async function chamarAnthropic(userPrompt, system, qualidade, opcoes = {}) {
   return { texto, uso };
 }
 
-async function chamarOllama(userPrompt, system) {
+async function chamarOllama(userPrompt, systemOuBlocos) {
+  const system = Array.isArray(systemOuBlocos) ? systemOuBlocos.join('') : systemOuBlocos;
   const model = process.env.OLLAMA_MODEL || 'llama3.1';
   const url = (process.env.OLLAMA_URL || 'http://localhost:11434').replace(/\/$/, '');
 
@@ -870,7 +897,21 @@ async function montarSystem() {
   } catch (err) {
     console.error('[report] não consegui ler a calibragem:', err.message);
   }
-  return comPlaybook + (calibragem ? `\n\n---\n\n${calibragem}` : '') + BLOCO_EXEMPLOS;
+  // Dois blocos, mesmo texto de antes emendado: o 1º (prompt + playbook) é o prefixo grande e estável;
+  // o 2º (calibragem + exemplos) é o que muda quando o gestor corrige um report.
+  return [comPlaybook, (calibragem ? `\n\n---\n\n${calibragem}` : '') + BLOCO_EXEMPLOS];
+}
+
+/**
+ * Mantém o cache do prompt vivo (ver src/aquecimento.js): manda o MESMO prefixo do report (ferramenta +
+ * system, modelo padrão) com uma mensagem de um caractere e 1 token de saída. Custa a leitura do cache
+ * (~0,1x da entrada) e renova a validade de 1h; deixar expirar faz o próximo report pagar a escrita (2x).
+ */
+async function aquecerCache() {
+  if (LLM_PROVIDER !== 'anthropic') return null;
+  const system = await montarSystem();
+  const { uso } = await chamarAnthropic('.', system, 'standard', { maxTokens: 1, aceitarCorte: true });
+  return uso;
 }
 
 async function processarComLLM(userPrompt, nome, qualidade) {
@@ -949,6 +990,8 @@ module.exports = {
   aplicarPerfilNoResumo,
   chamarFerramenta,
   montarHistoricoFormatado,
+  montarSystem,
+  aquecerCache,
   extrairJson,
 };
 

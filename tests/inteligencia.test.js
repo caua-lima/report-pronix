@@ -171,7 +171,7 @@ test('report: a IA recebe a régua de consciência, de perfil e de análise; o p
   E.r1 = r.json.id;
   assert.match(E.r1, /^[0-9a-f]{10}$/);
 
-  const system = chamadasAnthropic[0].system[0].text;
+  const system = chamadasAnthropic[0].system.map((b) => b.text).join('');
   for (const trecho of ['COMO CLASSIFICAR — teste de cima para baixo', 'ARMADILHAS', 'PERFIL DO LEAD', '"dominante" (Dominante)', 'ANÁLISE DA PROSPECÇÃO',
     'AS PERGUNTAS QUE DESTRAVARAM', 'RÉGUA DE QUALIFICAÇÃO (SPIN e BANT', 'Hendel Favarin e Josef Rubin', 'Método DVP'.toUpperCase().slice(0, 6)]) {
     assert.ok(system.includes(trecho), 'faltou no prompt: ' + trecho);
@@ -258,7 +258,7 @@ test('resultados: do mesmo lead gerado duas vezes no dia, aparece só o último'
 test('corrigir o nível de consciência ensina a IA: a correção entra no prompt dos próximos reports', async () => {
   chamadasAnthropic.length = 0;
   await gerar(E.master, 'Antes da correção');
-  assert.ok(!chamadasAnthropic[0].system[0].text.includes('CALIBRAGEM DO NÍVEL DE CONSCIÊNCIA'));
+  assert.ok(!chamadasAnthropic[0].system.map((b) => b.text).join('').includes('CALIBRAGEM DO NÍVEL DE CONSCIÊNCIA'));
 
   const r = await api('PATCH', `/api/admin/reports/${E.r1}/resultado`, {
     chave: E.master, corpo: { conscienciaReal: 'problema', notaConsciencia: 'Só falou da dor, não disse que procura ajuda.' },
@@ -269,7 +269,7 @@ test('corrigir o nível de consciência ensina a IA: a correção entra no promp
 
   chamadasAnthropic.length = 0;
   await gerar(E.master, 'Depois da correção');
-  const system = chamadasAnthropic[0].system[0].text;
+  const system = chamadasAnthropic[0].system.map((b) => b.text).join('');
   assert.match(system, /CALIBRAGEM DO NÍVEL DE CONSCIÊNCIA/);
   assert.match(system, /Evidência: "Disse que procura um passo a passo para começar\." → a IA classificou "solucao" \(Consciente da solução\); o certo é "problema" \(Consciente do problema\)\. Motivo: Só falou da dor/);
   assert.equal((system.match(/→ a IA classificou/g) || []).length, 1, 'um exemplo por report');
