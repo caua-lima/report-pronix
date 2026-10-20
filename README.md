@@ -190,7 +190,19 @@ PDF é refeito sem chamar a IA (`POST /api/pdf`).
 ### Custo
 
 - **Cache do prompt.** Instruções, exemplos e a base de conhecimento ficam num prefixo em cache
-  (1 h): a partir do segundo report, essa parte custa cerca de 0,1x.
+  (1 h): a partir do segundo report, essa parte custa cerca de 0,1x. Quando o cache vence, o
+  próximo report paga a reescrita (2x) — é a maior parte do custo de um report.
+  - **Dois blocos.** Regras + playbook formam o 1º ponto de cache; calibragem do gestor +
+    exemplos, o 2º. O texto emendado é o mesmo de antes, mas corrigir o nível ou o perfil de um
+    report só reescreve o bloco pequeno.
+  - **Aquecimento** (`src/aquecimento.js`, `POST /api/cache/aquecer`). ~55 min depois de um
+    report, a extensão bate no servidor; se o cache está para vencer e houve report nas últimas
+    2 h, o servidor manda o mesmo prefixo com 1 token de saída (paga só a leitura, ~20x menos que
+    a reescrita) e o cache fica valendo até ~2h50 depois do último report. Nunca bate com o cache
+    já vencido. `AQUECER_CACHE=nao` desliga; `AQUECER_JANELA_MIN` (120) muda a janela. O gasto das
+    batidas e quantos reports acharam o cache quente aparecem nos números do painel.
+- **Conversa compacta.** Cada mensagem vai com a hora local (`[10:05]`) e um cabeçalho por dia
+  com o dia da semana, em vez do carimbo ISO em UTC — menos tokens e a hora certa do WhatsApp.
 - **Idempotência.** A `reportKey` é o hash da conversa normalizada + versão do prompt + modo de
   qualidade (`src/idempotencia.js`). Conversa igual não chama a IA de novo: a extensão pergunta
   entre **Abrir o existente** e **Gerar de novo**. Uma trava por chave impede duas gerações
