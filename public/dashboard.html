@@ -255,6 +255,25 @@
     .chat-composer textarea:focus { outline: none; box-shadow: none; }
     @media (max-width: 640px) { .chat-composer { flex-wrap: wrap; } .chat-composer textarea { flex-basis: 100%; } }
     .conta { display: inline-block; min-width: 20px; margin-left: 7px; padding: 1px 6px; border-radius: 4px; background: var(--text); color: var(--bg); font-family: var(--f-mono); font-size: .68rem; font-weight: 700; text-align: center; line-height: 1.5; }
+    /* Match com o closer: medidor da meta, barras e tabela por mês */
+    .mt-topo { display: grid; grid-template-columns: minmax(220px, 280px) 1fr; gap: 18px; align-items: center; }
+    @media (max-width: 760px) { .mt-topo { grid-template-columns: 1fr; } }
+    .mt-medidor { text-align: center; }
+    .mt-medidor svg { width: 100%; max-width: 260px; height: auto; display: block; margin: 0 auto; }
+    .mt-medidor .v { font-family: var(--f-titulo); font-size: 1.55rem; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: -6px; }
+    .mt-medidor .s { color: var(--text-2); font-size: .82rem; }
+    .mt-barra { margin-bottom: 12px; }
+    .mt-barra .lin { display: flex; justify-content: space-between; gap: 10px; font-size: .82rem; margin-bottom: 5px; }
+    .mt-barra .lin b { font-weight: 600; }
+    .mt-barra .lin span { color: var(--text-2); font-variant-numeric: tabular-nums; }
+    .mt-trilho { height: 10px; border-radius: 999px; background: var(--card-2); border: 1px solid var(--border); overflow: hidden; }
+    .mt-trilho > div { height: 100%; border-radius: 999px; background: var(--ouro); }
+    .mt-trilho > div.ok { background: var(--ok); }
+    .mt-trilho > div.info { background: var(--info); }
+    .mt-num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .mt-delta { font-size: .76rem; font-weight: 600; margin-left: 6px; }
+    .mt-delta.sobe { color: var(--ok); } .mt-delta.desce { color: var(--danger); }
+    .mt-fat { display: inline-block; height: 6px; border-radius: 3px; background: var(--ouro); vertical-align: middle; margin-left: 8px; }
     .sec-t { font-family: var(--f-titulo); font-size: .98rem; font-weight: 700; margin: 22px 0 8px; color: var(--text); }
     .duas { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 0 24px; }
 
@@ -356,6 +375,7 @@
         <button class="tab so-admin hidden" data-aba="numeros"><i data-ic="chart"></i>Reports gerados</button>
         <button class="tab so-master hidden" data-aba="closers"><i data-ic="users"></i>Closers<span id="nClosersTab" class="conta hidden"></span></button>
         <button class="tab so-master hidden" data-aba="funil"><i data-ic="filter"></i>Limpeza do RD</button>
+        <button class="tab so-master hidden" data-aba="match"><i data-ic="chart"></i>Match com PH</button>
       </div>
       <div class="grupo">
         <div class="grupo-rotulo">Sistema</div>
@@ -737,6 +757,74 @@
     </section>
 
     <!-- ================= ABA: CLOSERS (só o master) ================= -->
+    <section id="aba-match" class="hidden">
+      <div class="card">
+        <div class="head"><div class="t"><i data-ic="chart"></i>Match com o closer</div><div class="sub">— as reuniões realizadas e as vendas em que você foi o SDR, lidas do RD</div></div>
+        <div class="row">
+          <div style="min-width:200px;flex:1"><label for="mtCloser">Closer</label><input id="mtCloser" value="Paulo Henrique" /></div>
+          <div style="min-width:150px"><label for="mtDesde">Desde</label><input id="mtDesde" type="date" value="2026-07-01" /></div>
+          <button id="mtAtualizar" class="btn sec"><i data-ic="refresh"></i>Atualizar do RD</button>
+        </div>
+        <div id="statusMt" class="status"></div>
+      </div>
+
+      <div id="mtConteudo" class="hidden">
+        <div class="card">
+          <div class="head"><div class="t"><i data-ic="target"></i>Meta do mês</div><div class="sub" id="mtMesNome"></div></div>
+          <div class="mt-topo">
+            <div class="mt-medidor" id="mtMedidor"></div>
+            <div id="mtBarras"></div>
+          </div>
+          <div class="kpis" id="mtPlano" style="margin-top:14px"></div>
+          <div class="hint" id="mtPlanoNota" style="margin:0 0 12px"></div>
+          <details id="mtMetaForm">
+            <summary class="mini" style="display:inline-block">Definir a meta do mês</summary>
+            <div class="row" style="margin-top:10px">
+              <div style="min-width:150px;flex:1"><label for="mtMeta1">Meta 1 (R$)</label><input id="mtMeta1" inputmode="decimal" placeholder="100.000" /></div>
+              <div style="min-width:150px;flex:1"><label for="mtMeta2">Meta 2 (R$)</label><input id="mtMeta2" inputmode="decimal" placeholder="opcional" /></div>
+              <div style="min-width:150px;flex:1"><label for="mtMeta3">Meta 3 (R$)</label><input id="mtMeta3" inputmode="decimal" placeholder="opcional" /></div>
+              <div style="min-width:140px"><label for="mtMetaReunioes">Meta de reuniões</label><input id="mtMetaReunioes" type="number" min="0" placeholder="opcional" /></div>
+            </div>
+            <label style="display:flex;gap:8px;align-items:center;margin:10px 0 0;font-weight:500"><input id="mtSabado" type="checkbox" style="width:auto" />Sábado conta como dia útil</label>
+            <div class="row" style="margin-top:10px"><button id="mtSalvarMeta" class="btn">Salvar a meta</button></div>
+            <div id="statusMtMeta" class="status"></div>
+          </details>
+        </div>
+
+        <div class="card">
+          <div class="head"><div class="t"><i data-ic="clock"></i>Mês atual x mesmo período do mês passado</div><div class="sub" id="mtPeriodoSub"></div></div>
+          <div class="kpis" id="mtComparativo" style="margin:0"></div>
+        </div>
+
+        <div class="card">
+          <div class="head"><div class="t"><i data-ic="chart"></i>Mês a mês</div><div class="sub">— conversão = vendas do mês ÷ reuniões realizadas do mês</div></div>
+          <div style="overflow:auto">
+            <table>
+              <thead><tr><th>Mês</th><th>Reuniões realizadas</th><th>Vendas</th><th>Conversão</th><th>Faturamento</th><th>Ticket médio</th></tr></thead>
+              <tbody id="mtMeses"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card">
+          <details>
+            <summary class="sec-t" style="margin:0;cursor:pointer">Reuniões e vendas, uma por uma <span id="mtNReunioes" class="hint"></span></summary>
+            <div class="hint" style="margin:8px 0">Confira aqui o que entrou na conta. "Data" é o dia da reunião; de onde ela veio aparece ao lado (campo do card, criação do card ou report).</div>
+            <div style="max-height:420px;overflow:auto">
+              <table>
+                <thead><tr><th>Data</th><th>Lead</th><th>Situação</th><th>Venda</th><th>Valor</th><th>Origem</th></tr></thead>
+                <tbody id="mtLista"></tbody>
+              </table>
+            </div>
+          </details>
+          <details style="margin-top:12px">
+            <summary class="sec-t" style="margin:0;cursor:pointer">O que ficou de fora (diagnóstico)</summary>
+            <div id="mtDiag" class="hint" style="margin:8px 0 0"></div>
+          </details>
+        </div>
+      </div>
+    </section>
+
     <section id="aba-closers" class="hidden">
       <div class="card admin-login hidden">
         <div class="head"><div class="t"><i data-ic="lock"></i>Área do master</div><div class="sub">— entre com a sua chave de master na aba "Gerar report"</div></div>
@@ -1183,8 +1271,8 @@
     }
 
     // ---------- Menu ----------
-    const ABAS = ['report', 'dia', 'acessos', 'numeros', 'resultados', 'closers', 'funil', 'arquivos', 'base', 'extensao'];
-    const SO_ADMIN = ['acessos', 'numeros', 'resultados', 'closers', 'funil', 'arquivos', 'base', 'extensao'];
+    const ABAS = ['report', 'dia', 'acessos', 'numeros', 'resultados', 'closers', 'funil', 'match', 'arquivos', 'base', 'extensao'];
+    const SO_ADMIN = ['acessos', 'numeros', 'resultados', 'closers', 'funil', 'match', 'arquivos', 'base', 'extensao'];
     let souAdmin = false;
     let souGestor = false;
     let souMaster = false;
@@ -1197,7 +1285,7 @@
       ['base', 'Base'], ['extensao', 'Extensão'], ['equipe', 'Reports do dia da equipe'],
     ];
     const podeAba = (a) =>
-      a === 'report' || a === 'dia' || (a === 'acessos' || a === 'funil' ? podeMexerEmUsuarios() : Boolean(senhaAdmin) || minhasAbas.has(a));
+      a === 'report' || a === 'dia' || (a === 'acessos' || a === 'funil' || a === 'match' ? podeMexerEmUsuarios() : Boolean(senhaAdmin) || minhasAbas.has(a));
     const temAbaDeGestao = () => SO_ADMIN.some(podeAba);
     let papelConhecido = false; // a chave já foi conferida (antes disso não dá para saber se é master)
     let validacaoPendente = false; // a chave ainda está sendo conferida (a lista do dia espera: o papel muda o que ela mostra)
@@ -1212,6 +1300,7 @@
       resultados: ['Resultados da reunião', 'O que deu cada reunião e o que o histórico ensina sobre closers e perfis de lead.'],
       numeros: ['Reports gerados', 'Volume, custo e quem gerou cada report.'],
       closers: ['Closers', 'Quem conduz as reuniões.'],
+      match: ['Match com PH', 'Reuniões realizadas, conversão e faturamento com o closer, mês a mês, e quanto falta para a meta.'],
       funil: ['Limpeza do RD', 'Card parado no começo do funil vira perda em Desqualificados, com o motivo.'],
       acessos: ['Acessos', 'Quem usa a ferramenta e o que cada pessoa vê e faz.'],
       arquivos: ['Arquivos', 'Os PDFs já gerados, para baixar por pessoa ou por período.'],
@@ -1294,12 +1383,158 @@
       }
     }
 
+    // ---------- Match com o closer (src/matchCloser.js) ----------
+    const brlMt = (v) => (Number(v) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
+    const pctMt = (v, casas = 0) => ((Number(v) || 0) * 100).toLocaleString('pt-BR', { maximumFractionDigits: casas, minimumFractionDigits: casas }) + '%';
+    const MESES_CURTOS_MT = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+    const MESES_LONGOS_MT = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+    const nomeMesMt = (m, longo) => (longo ? MESES_LONGOS_MT : MESES_CURTOS_MT)[Number(m.slice(5, 7)) - 1] + (longo ? ' de ' : '/') + (longo ? m.slice(0, 4) : m.slice(2, 4));
+    const diaMt = (d) => (d ? d.slice(8, 10) + '/' + d.slice(5, 7) : '');
+    const SITUACAO_MT = { venda: 'Vendeu', fup: 'Em follow-up', nao_comprou: 'Não comprou' };
+    const ORIGEM_MT = { campo: 'campo do card', criacao: 'criação do card', venda: 'dia da venda', report: 'report', 'dia-do-report': 'dia do report' };
+    let matchDados = null;
+
+    /** Medidor em meia-lua (como o do zxp-market): vermelho até 59%, ouro até 89%, verde a partir de 90%. */
+    function medidorMatch(p, valor, alvo) {
+      const v = Math.max(0, Math.min(1, p));
+      const cor = p >= 0.9 ? 'var(--ok)' : p >= 0.6 ? 'var(--ouro)' : 'var(--danger)';
+      const ponta = (f) => { const a = Math.PI * (1 - f); return [100 + 80 * Math.cos(a), 100 - 80 * Math.sin(a)]; };
+      const marcas = [0.6, 0.9].map((f) => { const [x1, y1] = ponta(f); const a = Math.PI * (1 - f); return `<line x1="${x1}" y1="${y1}" x2="${100 + 92 * Math.cos(a)}" y2="${100 - 92 * Math.sin(a)}" stroke="var(--border-forte)" stroke-width="2"/>`; }).join('');
+      return `<svg viewBox="0 0 200 112" role="img" aria-label="${esc(pctMt(p))} da meta 1">
+          <path d="M20 100 A80 80 0 0 1 180 100" fill="none" stroke="var(--card-2)" stroke-width="16" stroke-linecap="round"/>
+          <path d="M20 100 A80 80 0 0 1 180 100" fill="none" stroke="${cor}" stroke-width="16" stroke-linecap="round" pathLength="100" stroke-dasharray="${(v * 100).toFixed(2)} 100"/>
+          ${marcas}
+          <text x="100" y="86" text-anchor="middle" font-size="26" font-weight="700" fill="var(--text)" style="font-family:var(--f-titulo)">${esc(pctMt(p))}</text>
+        </svg>
+        <div class="v">${esc(brlMt(valor))}</div>
+        <div class="s">${alvo ? 'de ' + esc(brlMt(alvo)) + ' (meta 1)' : 'sem meta definida'}</div>`;
+    }
+    const barraMatch = (rotulo, atual, alvo, classe) => {
+      const p = alvo ? Math.min(1, atual / alvo) : 0;
+      return `<div class="mt-barra"><div class="lin"><b>${esc(rotulo)}${atual >= alvo && alvo ? ' ✓' : ''}</b><span>${esc(brlMt(atual))} / ${esc(brlMt(alvo))} · ${esc(pctMt(alvo ? atual / alvo : 0))}</span></div>
+        <div class="mt-trilho"><div class="${atual >= alvo && alvo ? 'ok' : classe || ''}" style="width:${(p * 100).toFixed(1)}%"></div></div></div>`;
+    };
+    const kpiMatch = (rotulo, valor, peq) => `<div class="kpi"><div class="l">${esc(rotulo)}</div><div class="n${peq ? ' peq' : ''}">${esc(valor)}</div></div>`;
+    const deltaMatch = (atual, antes) => {
+      if (!antes) return '';
+      const d = (atual - antes) / antes;
+      return `<span class="mt-delta ${d >= 0 ? 'sobe' : 'desce'}">${d >= 0 ? '▲' : '▼'} ${esc(pctMt(Math.abs(d)))}</span>`;
+    };
+
+    function desenharMatch(d) {
+      matchDados = d;
+      $('mtConteudo').classList.remove('hidden');
+      const p = d.plano;
+      const m1 = p.metas[0];
+      $('mtMesNome').textContent = '— ' + nomeMesMt(p.mes, true) + ` · ${p.diasRestantes} dia(s) útil(eis) pela frente de ${p.diasUteis}` + (p.sabado ? ' (sábado conta)' : '');
+      $('mtMedidor').innerHTML = medidorMatch(m1 ? m1.pct : 0, p.feito.faturamento, m1 ? m1.alvo : 0);
+      $('mtBarras').innerHTML = p.metas.length
+        ? p.metas.map((m, i) => barraMatch('Meta ' + (i + 1), p.feito.faturamento, m.alvo, i ? 'info' : '')).join('') +
+          barraMatch('Meta diária acumulada (onde deveria estar hoje)', p.feito.faturamento, m1.esperadoHoje, '')
+        : '<div class="hint" style="margin:0">Nenhuma meta para este mês ainda. Abra "Definir a meta do mês" logo abaixo.</div>';
+      const k = [
+        kpiMatch('Faturamento no mês', brlMt(p.feito.faturamento)),
+        kpiMatch('Reuniões realizadas', String(p.feito.reunioes) + (p.metaReunioes ? ' / ' + p.metaReunioes : ''), true),
+        kpiMatch('Vendas', String(p.feito.vendas), true),
+      ];
+      if (m1) {
+        k.push(m1.batida ? kpiMatch('Meta 1', 'Batida ✓', true) : kpiMatch('Falta para a meta 1', brlMt(m1.falta), true));
+        if (!m1.batida) k.push(kpiMatch('Por dia útil', brlMt(m1.porDia), true));
+        if (!m1.batida && m1.vendas != null) k.push(kpiMatch('Vendas que faltam', String(m1.vendas), true));
+        if (!m1.batida && m1.reunioes != null) k.push(kpiMatch('Reuniões que faltam', m1.reunioes + (m1.reunioesPorDia != null ? ` (${m1.reunioesPorDia.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}/dia)` : ''), true));
+      }
+      k.push(kpiMatch('Projeção no ritmo', brlMt(p.projecao), true));
+      if (p.reunioesPorDiaParaMeta != null) k.push(kpiMatch('Reuniões/dia p/ meta', p.reunioesPorDiaParaMeta.toLocaleString('pt-BR', { maximumFractionDigits: 1 }), true));
+      $('mtPlano').innerHTML = k.join('');
+      $('mtPlanoNota').textContent = p.ticketMedio
+        ? `Vendas e reuniões que faltam saem do período todo: ticket médio de ${brlMt(p.ticketMedio)} e conversão de ${pctMt(p.conversao, 1)}. A projeção leva o faturamento de até hoje para o mês inteiro, no mesmo ritmo por dia útil.` +
+          (p.metas.length > 1 ? ' ' + p.metas.slice(1).map((m, i) => `Meta ${i + 2}: falta ${brlMt(m.falta)} (${brlMt(m.porDia)}/dia útil).`).join(' ') : '')
+        : 'Ainda não há venda no período para calcular ticket médio e conversão.';
+      const meta = (d.metas || {})[p.mes] || {};
+      $('mtMeta1').value = meta.meta1 || '';
+      $('mtMeta2').value = meta.meta2 || '';
+      $('mtMeta3').value = meta.meta3 || '';
+      $('mtMetaReunioes').value = meta.metaReunioes || '';
+      $('mtSabado').checked = meta.sabado === true;
+
+      const mp = d.mesmoPeriodo;
+      $('mtPeriodoSub').textContent = `— do dia 1 ao dia ${Number(mp.atual.ate.slice(8, 10))}: ${nomeMesMt(mp.atual.mes)} x ${nomeMesMt(mp.anterior.mes)}`;
+      $('mtComparativo').innerHTML = [
+        ['Reuniões realizadas', mp.atual.reunioes, mp.anterior.reunioes, String],
+        ['Vendas', mp.atual.vendas, mp.anterior.vendas, String],
+        ['Faturamento', mp.atual.faturamento, mp.anterior.faturamento, brlMt],
+      ].map(([r, a, b, f]) => `<div class="kpi"><div class="l">${esc(r)}</div><div class="n peq">${esc(f(a))}${deltaMatch(a, b)}</div><div class="hint" style="margin:4px 0 0">antes: ${esc(f(b))}</div></div>`).join('');
+
+      const maxFat = Math.max(1, ...d.meses.map((m) => m.faturamento));
+      const tot = d.meses.reduce((s, m) => ({ reunioes: s.reunioes + m.reunioes, vendas: s.vendas + m.vendas, faturamento: s.faturamento + m.faturamento }), { reunioes: 0, vendas: 0, faturamento: 0 });
+      $('mtMeses').innerHTML = d.meses.map((m, i) => {
+        const ant = d.meses[i - 1];
+        return `<tr><td><b>${esc(nomeMesMt(m.mes))}</b>${m.mes === p.mes ? ' <span class="hint">(atual)</span>' : ''}</td>
+          <td class="mt-num">${m.reunioes}${ant ? deltaMatch(m.reunioes, ant.reunioes) : ''}</td>
+          <td class="mt-num">${m.vendas}</td>
+          <td class="mt-num">${m.reunioes ? esc(pctMt(m.conversao, 1)) : '—'}</td>
+          <td class="mt-num">${esc(brlMt(m.faturamento))}<span class="mt-fat" style="width:${Math.round((m.faturamento / maxFat) * 80)}px"></span>${ant ? deltaMatch(m.faturamento, ant.faturamento) : ''}</td>
+          <td class="mt-num">${m.vendas ? esc(brlMt(m.ticketMedio)) : '—'}</td></tr>`;
+      }).join('') + `<tr><td><b>Total</b></td><td class="mt-num"><b>${tot.reunioes}</b></td><td class="mt-num"><b>${tot.vendas}</b></td>
+          <td class="mt-num"><b>${tot.reunioes ? esc(pctMt(tot.vendas / tot.reunioes, 1)) : '—'}</b></td><td class="mt-num"><b>${esc(brlMt(tot.faturamento))}</b></td>
+          <td class="mt-num"><b>${tot.vendas ? esc(brlMt(tot.faturamento / tot.vendas)) : '—'}</b></td></tr>`;
+
+      $('mtNReunioes').textContent = `(${d.reunioes.length})`;
+      $('mtLista').innerHTML = d.reunioes.map((r) => `<tr><td class="mt-num">${esc(diaMt(r.dataReuniao))}${r.contaReuniao ? '' : ' <span class="hint">(antes do período)</span>'}</td><td>${esc(r.lead || '—')}</td>
+        <td>${esc(SITUACAO_MT[r.estado] || r.estado)}${r.etapa ? ` <span class="hint">· ${esc(r.etapa)}</span>` : ''}</td>
+        <td class="mt-num">${r.diaVenda ? esc(diaMt(r.diaVenda)) : ''}</td><td class="mt-num">${r.diaVenda ? esc(brlMt(r.ticket)) : ''}</td>
+        <td><span class="hint">${r.fonte === 'rd' ? 'RD' : 'report'} · ${esc(ORIGEM_MT[r.origemData] || r.origemData || '')}</span></td></tr>`).join('');
+
+      const g = d.diagnostico;
+      const etapas = Object.entries(g.etapasSemReuniao || {}).map(([e, n]) => `${esc(e)} (${n})`).join(', ');
+      $('mtDiag').innerHTML = [
+        `Closer no RD: <b>${esc(g.closerNoRd || 'não achei pelo nome — li os cards sem filtrar o responsável')}</b> · ${g.cardsLidos} card(s) lido(s) em ${g.paginas} consulta(s)${g.truncado ? ' · <b style="color:var(--danger)">parei no limite de páginas: pode faltar card antigo</b>' : ''}.`,
+        `Ficaram de fora: ${g.semSdr} sem o campo SDR preenchido, ${g.deOutroSdr} de outro SDR, ${g.deOutroCloser} de outro closer, ${g.noShow} no-show, ${g.aindaNaoAconteceu} com a reunião ainda por acontecer${etapas ? ' (' + etapas + ')' : ''} e ${g.foraDoPeriodo} fora do período.`,
+        `Data da reunião: ${g.dataPeloCampo} pelo campo de data do card, ${g.dataPelaCriacao} pela criação do card. ${g.doReport} reunião(ões) vieram só dos reports (o RD não trouxe).`,
+      ].map((x) => '<div style="margin-bottom:6px">' + x + '</div>').join('');
+    }
+
+    async function carregarMatch(atualizar) {
+      if (matchDados && !atualizar) return desenharMatch(matchDados);
+      setStatus('statusMt', atualizar ? 'Lendo os cards do closer no RD… (pode levar até um minuto)' : 'Carregando…', { loading: true });
+      $('mtAtualizar').disabled = true;
+      try {
+        const q = new URLSearchParams({ closer: $('mtCloser').value.trim(), desde: $('mtDesde').value });
+        if (atualizar) q.set('atualizar', '1');
+        const d = await api('GET', '/api/master/match?' + q.toString());
+        desenharMatch(d);
+        const quando = new Date(d.atualizadoEm).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+        setStatus('statusMt', `Lido do RD em ${quando}${d.cache ? ' (guardado por 20 min; "Atualizar do RD" lê de novo)' : ''}.`, { ok: true });
+      } catch (e) {
+        setStatus('statusMt', e.message, { erro: true });
+      } finally {
+        $('mtAtualizar').disabled = false;
+      }
+    }
+    $('mtAtualizar').addEventListener('click', () => carregarMatch(true));
+    $('mtSalvarMeta').addEventListener('click', async () => {
+      if (!matchDados) return;
+      setStatus('statusMtMeta', 'Salvando…', { loading: true });
+      try {
+        await api('PUT', '/api/master/match/meta', {
+          closer: matchDados.closer, mes: matchDados.plano.mes, meta1: $('mtMeta1').value, meta2: $('mtMeta2').value, meta3: $('mtMeta3').value,
+          metaReunioes: $('mtMetaReunioes').value, sabado: $('mtSabado').checked,
+        });
+        matchDados = null;
+        await carregarMatch(false);
+        setStatus('statusMtMeta', 'Meta salva.', { ok: true });
+      } catch (e) {
+        setStatus('statusMtMeta', e.message, { erro: true });
+      }
+    });
+
     const abaAtual = () => (location.hash || '').replace('#', '') || 'report';
 
     /** Carrega SÓ o que a aba pedida precisa (antes toda abertura de aba baixava acessos, closers, números, arquivos e base juntos). */
     async function carregarAba(aba) {
       if (aba === 'acessos') return carregarUsuarios();
       if (aba === 'funil') return prepararLimpeza();
+      if (aba === 'match') return carregarMatch(false);
       if (aba === 'numeros') {
         await carregarClosers(); // as linhas da tabela oferecem os closers no select
         return carregarStats();
