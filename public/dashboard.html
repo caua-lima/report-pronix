@@ -2081,7 +2081,9 @@
         $('baselineInfo').textContent =
           `No período: ${Math.round((qual.taxaCache || 0) * 100)}% da entrada veio do cache do prompt · ` +
           `captura parcial em ${qual.capturaParcial || 0} de ${qual.comCaptura || 0} reports da extensão · ` +
-          `${qual.citacoesRemovidas || 0} citação(ões) removida(s) por não baterem com a fala do lead.`;
+          `${qual.citacoesRemovidas || 0} citação(ões) removida(s) por não baterem com a fala do lead` +
+          (qual.reportsComCache ? ` · ${qual.reportsCacheQuente || 0} de ${qual.reportsComCache} reports acharam o prompt no cache (os outros pagaram a reescrita dele)` : '') +
+          ((s.geral.aquecimentos || {}).noPeriodo ? ` · cache mantido quente: ${s.geral.aquecimentos.noPeriodo} batida(s), ${usd(s.geral.aquecimentos.custoNoPeriodo)}` : '') + '.';
         // Excluir um report tira ele dos números acima, mas o gasto com a IA já aconteceu.
         const ex = (s.geral && s.geral.consumoExcluido) || { total: 0, custo: 0 };
         $('consumoExcluido').classList.toggle('hidden', !(ex.total > 0));
