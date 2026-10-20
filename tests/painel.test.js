@@ -2222,3 +2222,78 @@ test('Resultados: trazer as vendas do closer direto do RD manda o closer e a dat
   assert.deepEqual(p.erros, []);
   p.fechar();
 });
+
+test('Match com PH: medidor da meta, plano do mês, comparativo, mês a mês e a lista conferível; salvar a meta e atualizar do RD', async () => {
+  const plano = (meta1) => ({
+    mes: '2026-10', sabado: false, diasUteis: 22, diasPassados: 14, diasRestantes: 9, feito: { reunioes: 4, vendas: 1, faturamento: 20000 },
+    conversao: 0.6, ticketMedio: 15666.67, projecao: 31428.57, projecaoReunioes: 6.3, metaReunioes: 0, reunioesPorDiaParaMeta: null,
+    metas: meta1 ? [{ nome: 'meta1', alvo: meta1, falta: meta1 - 20000, pct: 20000 / meta1, batida: false, porDia: (meta1 - 20000) / 9, vendas: 6, reunioes: 10, reunioesPorDia: 10 / 9, esperadoHoje: 63636 }] : [],
+  });
+  let meta1 = 100000;
+  const dados = () => ({
+    ok: true, closer: 'Paulo Henrique', sdr: 'Cauã Lima', desde: '2026-07-01', ate: '2026-10-20', atualizadoEm: '2026-10-20T15:00:00.000Z', cache: false,
+    meses: [
+      { mes: '2026-07', reunioes: 2, vendas: 1, faturamento: 18000, conversao: 0.5, ticketMedio: 18000 },
+      { mes: '2026-08', reunioes: 1, vendas: 0, faturamento: 0, conversao: 0, ticketMedio: 0 },
+      { mes: '2026-09', reunioes: 1, vendas: 1, faturamento: 9000, conversao: 1, ticketMedio: 9000 },
+      { mes: '2026-10', reunioes: 4, vendas: 1, faturamento: 20000, conversao: 0.25, ticketMedio: 20000 },
+    ],
+    reunioes: [
+      { id: 'c1', fonte: 'rd', lead: 'Lead <b>Um</b>', dataReuniao: '2026-10-14', origemData: 'criacao', contaReuniao: true, estado: 'venda', etapa: 'Vendido', venda: true, diaVenda: '2026-10-15', ticket: 20000 },
+      { id: 'r_x', fonte: 'report', lead: 'Lead Dois', dataReuniao: '2026-09-10', origemData: 'report', contaReuniao: true, estado: 'fup', etapa: '', venda: false, diaVenda: '', ticket: 0 },
+    ],
+    diagnostico: { closerNoRd: 'Paulo Henrique Pagoti', cardsLidos: 120, paginas: 3, truncado: false, deOutroCloser: 0, semSdr: 7, deOutroSdr: 30, noShow: 2, aindaNaoAconteceu: 3, foraDoPeriodo: 40, dataPeloCampo: 0, dataPelaCriacao: 8, etapasSemReuniao: { 'Reunião agendada': 3 }, doReport: 1 },
+    metas: meta1 ? { '2026-10': { meta1, meta2: 0, meta3: 0, metaReunioes: 0, sabado: false } } : {},
+    plano: plano(meta1),
+    mesmoPeriodo: { atual: { mes: '2026-10', ate: '2026-10-20', reunioes: 4, vendas: 1, faturamento: 20000 }, anterior: { mes: '2026-09', ate: '2026-09-20', reunioes: 2, vendas: 1, faturamento: 9000 } },
+  });
+  const api = apiMaster()
+    .quando('GET /api/master/google', () => ({ corpo: { configurado: false, conectado: false, agendas: [] } }))
+    .quando('GET /api/master/match', () => ({ corpo: dados() }))
+    .quando('PUT /api/master/match/meta', ({ corpo }) => { meta1 = Number(String(corpo.meta1).replace(/\./g, '')); return { corpo: { ok: true, meta: {} } }; });
+  const p = abrirPainel(api, { hash: '#match' });
+  await esperar(() => visivel(p.$('mtConteudo')), { motivo: 'aba do match carregada' });
+  assert.ok(visivel(p.document.querySelector('.tab[data-aba="match"]')), 'item no menu');
+  assert.equal(p.$('tituloPagina').textContent, 'Match com PH');
+  const q = api.pedidos.find((x) => x.chave === 'GET /api/master/match').query;
+  assert.deepEqual([q.get('closer'), q.get('desde'), q.get('atualizar')], ['Paulo Henrique', '2026-07-01', null]);
+
+  assert.match(p.$('mtMedidor').textContent, /20%[\s\S]*R\$\s*20\.000[\s\S]*de R\$\s*100\.000 \(meta 1\)/);
+  assert.match(p.$('mtBarras').textContent, /Meta 1[\s\S]*Meta diária acumulada/);
+  const plan = p.$('mtPlano').textContent;
+  for (const x of ['Falta para a meta 1', '80.000', 'Por dia útil', '8.889', 'Vendas que faltam', 'Reuniões que faltam', '10 (1,1/dia)', 'Projeção no ritmo', '31.429']) assert.ok(plan.includes(x), 'faltou no plano: ' + x);
+  assert.match(p.$('mtMesNome').textContent, /outubro de 2026 · 9 dia\(s\) útil\(eis\) pela frente de 22/);
+  assert.match(p.$('mtComparativo').textContent, /Reuniões realizadas4▲ 100%antes: 2/);
+  const linhas = [...p.$('mtMeses').querySelectorAll('tr')].map((tr) => [...tr.cells].map((td) => td.textContent.replace(/\s+/g, ' ').trim()).join(' '));
+  assert.equal(linhas.length, 5, '4 meses + total');
+  assert.match(linhas[0], /^jul\/26 2 1 50,0% R\$\s*18\.000/);
+  assert.match(linhas[3], /^out\/26 \(atual\)/);
+  assert.match(linhas[4], /^Total 8 3 37,5% R\$\s*47\.000/);
+  assert.equal(p.$('mtLista').querySelector('b'), null, 'nome de lead com HTML não vira elemento');
+  assert.match(p.$('mtLista').textContent.replace(/\s+/g, ' '), /14\/10Lead <b>Um<\/b> Vendeu · Vendido 15\/10R\$ 20\.000 RD · criação do card/);
+  assert.match(p.$('mtDiag').textContent, /7 sem o campo SDR preenchido, 30 de outro SDR[\s\S]*Reunião agendada \(3\)/);
+
+  // Salvar a meta manda o mês e os valores e redesenha
+  p.$('mtMeta1').value = '150.000';
+  p.$('mtSabado').checked = true;
+  p.$('mtSalvarMeta').click();
+  await esperar(() => /Meta salva/.test(p.$('statusMtMeta').textContent), { motivo: 'meta salva' });
+  assert.deepEqual(api.corpos('PUT /api/master/match/meta')[0], { closer: 'Paulo Henrique', mes: '2026-10', meta1: '150.000', meta2: '', meta3: '', metaReunioes: '', sabado: true });
+  assert.match(p.$('mtMedidor').textContent, /de R\$\s*150\.000/);
+
+  // Atualizar do RD pede leitura nova
+  p.$('mtAtualizar').click();
+  await esperar(() => api.pedidos.some((x) => x.chave === 'GET /api/master/match' && x.query.get('atualizar') === '1'), { motivo: 'atualizar do RD' });
+  await esperar(() => !p.$('mtAtualizar').disabled && /Lido do RD/.test(p.$('statusMt').textContent), { motivo: 'leitura nova na tela' });
+  p.fechar();
+});
+
+test('Match com PH: SDR não vê a aba nem chama a rota', async () => {
+  const api = apiBase({ papel: 'sdr', nome: 'Ana' });
+  const p = abrirPainel(api, { hash: '#match' });
+  await aberto(p);
+  assert.ok(!visivel(p.document.querySelector('.tab[data-aba="match"]')));
+  assert.ok(!visivel(p.$('aba-match')));
+  assert.equal(api.contar('GET /api/master/match'), 0);
+  p.fechar();
+});
