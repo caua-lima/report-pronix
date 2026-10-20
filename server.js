@@ -1586,9 +1586,13 @@ async function responderReport(req, res, dados, nome, origem, reportKey, captura
       vinculo: await vinculoDoReport(vinculo, nome).catch(() => null),
     })
     .catch((err) => console.error('Falha ao registrar o report:', err.message));
-  await pdfStorage
-    .salvar(id, base64, arquivo)
-    .catch((err) => console.error('Falha ao salvar o PDF do report:', err.message));
+  // O PDF inteiro no banco enchia o plano grátis do Upstash. Em produção ele não é mais guardado (o SDR recebe
+  // o PDF na hora e o painel redesenha a partir dos dados); GUARDAR_PDF=sim religa.
+  if (process.env.GUARDAR_PDF === 'sim' || !process.env.VERCEL) {
+    await pdfStorage
+      .salvar(id, base64, arquivo)
+      .catch((err) => console.error('Falha ao salvar o PDF do report:', err.message));
+  }
   // Para a extensão oferecer o closer logo no aviso final (com a sugestão pelo perfil do lead).
   const semEscolha = { closers: [], sugestao: null, motivo: '' };
   const escolha = usuarios.ehMaster(req.usuario)
@@ -1617,7 +1621,11 @@ function nomeArquivoPdf(lead) {
  */
 async function checarDuplicataETravar(req, res, reportKey) {
   if (!req.body || !req.body.forcarNovo) {
-    const existente = await stats.buscarPorChave(reportKey);
+    // Banco fora do ar ou cheio: segue sem a conferência de duplicata — o report é o que importa.
+    const existente = await stats.buscarPorChave(reportKey).catch((err) => {
+      console.error('[report] sem conferir duplicata (banco):', err.message);
+      return null;
+    });
     if (existente) {
       res.json({
         duplicado: true,
@@ -1633,7 +1641,11 @@ async function checarDuplicataETravar(req, res, reportKey) {
       return false;
     }
   }
-  if (!(await db.travar(reportKey))) {
+  const travou = await db.travar(reportKey).catch((err) => {
+    console.error('[report] sem trava (banco):', err.message);
+    return true;
+  });
+  if (!travou) {
     res.status(409).json({ erro: 'Já existe uma geração em andamento para esta conversa.' });
     return false;
   }
