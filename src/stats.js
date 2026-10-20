@@ -208,13 +208,16 @@ async function resumo({ de, ate, sdr } = {}) {
   // exclusão —, então só conta o consumo a partir do report mais antigo que ainda existe.
   let excluidos = [];
   let resumosRapidos = [];
+  let aquecimentos = [];
   try {
     const ativos = new Set(todos.map((r) => r.id));
     const corte = todos.length >= LIMITE ? todos[0].quando : '';
     const consumo = await db.range(CHAVE_CONSUMO);
     // Resumos rápidos do cartão do WhatsApp não são reports: têm a conta deles.
     resumosRapidos = consumo.filter((c) => c.tipo === 'resumo');
-    excluidos = consumo.filter((c) => c.tipo !== 'resumo' && !ativos.has(c.id) && (!corte || c.quando >= corte));
+    // Batidas que mantêm o cache do prompt vivo (src/aquecimento.js): também não são reports.
+    aquecimentos = consumo.filter((c) => c.tipo === 'aquecimento');
+    excluidos = consumo.filter((c) => c.tipo !== 'resumo' && c.tipo !== 'aquecimento' && !ativos.has(c.id) && (!corte || c.quando >= corte));
   } catch (err) {
     console.error('Falha ao ler o consumo:', err.message);
   }
@@ -302,6 +305,9 @@ async function resumo({ de, ate, sdr } = {}) {
       const total = leitura + escrita + entrada;
       return {
         taxaCache: total ? leitura / total : 0,
+        // Report que achou o prefixo no cache (leu mais do que escreveu) x o que pagou a escrita.
+        reportsCacheQuente: dentro.filter((r) => (r.cacheLeitura || 0) > (r.cacheEscrita || 0)).length,
+        reportsComCache: dentro.filter((r) => (r.cacheLeitura || 0) + (r.cacheEscrita || 0) > 0).length,
         tokensCacheLeitura: leitura,
         tokensCacheEscrita: escrita,
         comCaptura: dentro.filter((r) => r.captura).length,
@@ -319,6 +325,7 @@ async function resumo({ de, ate, sdr } = {}) {
     geral: {
       consumoExcluido: { total: excluidos.length, custo: soma(excluidos) },
       resumosRapidos: { total: resumosRapidos.length, custo: soma(resumosRapidos) },
+      aquecimentos: { total: aquecimentos.length, custo: soma(aquecimentos), noPeriodo: filtrar(aquecimentos, { de, ate }).length, custoNoPeriodo: soma(filtrar(aquecimentos, { de, ate })) },
       total: todos.length,
       custo: soma(todos),
       hoje: todos.filter((r) => dia(r) === hoje).length,
@@ -532,7 +539,28 @@ async function registrarResumoRapido({ usuarioNome, uso }) {
   );
 }
 
+/** Batida que mantém o cache do prompt vivo: entra no gasto, não na lista de reports. */
+async function registrarAquecimento({ usuarioNome, uso }) {
+  const quando = new Date().toISOString();
+  const u = uso || {};
+  await db.push(
+    CHAVE_CONSUMO,
+    {
+      id: 'aq_' + crypto.randomBytes(5).toString('hex'),
+      tipo: 'aquecimento',
+      quando,
+      dia: emDiaLocal(quando),
+      usuarioNome: usuarioNome || '',
+      origem: 'aquecimento-cache',
+      modelo: u.modelo || '',
+      custo: custoUSD({ modelo: u.modelo, entrada: u.entrada, saida: u.saida, cacheLeitura: u.cacheLeitura, cacheEscrita: u.cacheEscrita, quando }),
+    },
+    LIMITE_CONSUMO
+  );
+}
+
 module.exports = {
+  registrarAquecimento,
   registrar, importar, resumo, listar, remover, buscarPorChave, buscarPorId, atualizarResultado, anotarAfinidade, hojeStr, registrarResumoRapido,
   RESULTADOS_VALIDOS, PRODUTOS_VALIDOS, valorEmReais, ehVenda, emDiaLocal, vinculoLimpo,
 };

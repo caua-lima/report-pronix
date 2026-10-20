@@ -29,6 +29,7 @@ const closerAuto = require('./src/closerAuto');
 const vendasRd = require('./src/vendasRd');
 const { gerarResumoRapido } = require('./src/resumoRapido');
 const perguntasDaConversa = require('./src/perguntasDaConversa');
+const aquecimento = require('./src/aquecimento');
 const coachIa = require('./src/coach');
 const inteligencia = require('./src/inteligencia');
 const afinidadeIa = require('./src/afinidade');
@@ -1544,6 +1545,10 @@ async function responderReport(req, res, dados, nome, origem, reportKey, captura
   dados.sdr = req.usuario.nome;
   const uso = dados.uso;
   delete dados.uso; // consumo é assunto do admin: não vai junto do report.
+  // Report no prompt padrão usou o cache do prompt: a partir daqui a extensão pode mantê-lo quente.
+  if (uso && (uso.cacheLeitura || uso.cacheEscrita) && (uso.qualidade || 'standard') === 'standard') {
+    await aquecimento.marcarReport().catch((err) => console.error('[aquecimento] marcar:', err.message));
+  }
   const meta = dados._meta || {};
   delete dados._meta; // métricas internas de qualidade: também não vão pro cliente.
   // Análise da prospecção (BANT/SPIN/perguntas-chave) é da gestão: fica no histórico, não no report.
@@ -1634,6 +1639,18 @@ async function checarDuplicataETravar(req, res, reportKey) {
   }
   return true;
 }
+
+// Batida da extensão ~55min depois de um report: renova o cache do prompt se ele está para vencer e
+// ainda houve report nas últimas 2h (src/aquecimento.js). proximoEmMs diz quando bater de novo (null = parar).
+app.post('/api/cache/aquecer', auth, async (req, res) => {
+  try {
+    const r = await aquecimento.aquecer({ usuarioNome: req.usuario.nome });
+    res.json({ ok: true, feito: r.feito, motivo: r.motivo, proximoEmMs: r.proximoEmMs });
+  } catch (err) {
+    console.error('[aquecimento]', err.message);
+    res.status(502).json({ erro: err.message, proximoEmMs: null });
+  }
+});
 
 app.post('/api/report-direto', auth, async (req, res) => {
   let reportKey = null;
