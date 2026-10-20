@@ -220,6 +220,32 @@ novo uma conversa já feita.
 
 ---
 
+## Match com PH (meta do mês com o closer)
+
+Aba do master (`src/matchCloser.js`, `GET /api/master/match`, `PUT /api/master/match/meta`). Mostra,
+desde 01/07/2026 (`MATCH_DESDE`) e com o closer Paulo Henrique (`MATCH_CLOSER`; dá para trocar na tela),
+as reuniões realizadas e as vendas em que você foi o SDR — mês a mês, com o mês atual.
+
+- **De onde vem.** Só leitura no RD: os cards do closer (responsável) com o campo **SDR** do card com o
+  seu nome. Reunião realizada = card ganho, perdido por outro motivo que não no-show, ou numa etapa do
+  funil dos closers que só existe depois da reunião (Reunião realizada, FUP agendado, Em contato, Fluxo
+  de FUP, Negociação avançada, Não compraram, Vendido). "Reunião agendada" e no-show não contam.
+  Reports seus com esse closer e resultado de reunião que o RD não trouxe também entram.
+- **Datas.** Dia da reunião = um campo de data do card com "reunião"/"call" no nome; sem ele, a criação
+  do card. Venda = o dia em que o card foi ganho, com o valor do card.
+- **Mês a mês.** Reuniões realizadas, vendas, conversão (vendas ÷ reuniões do mês), faturamento e ticket
+  médio, com a variação sobre o mês anterior; e o mês atual contra o mesmo período do mês passado (do
+  dia 1 até hoje), como no dashboard-pessoal.
+- **Meta.** Meta 1, 2 e 3 em reais e meta de reuniões, por mês. Medidor (até 59% vermelho, até 89%
+  ouro, 90%+ verde) e barras como no zxp-market, inclusive a meta diária acumulada (onde deveria estar
+  hoje). O plano diz quanto falta, quanto por dia útil (seg–sex; o sábado entra se marcar), quantas
+  vendas e reuniões isso pede (pelo ticket médio e pela conversão do período todo) e a projeção no ritmo.
+- **Conferir.** A lista de reuniões e vendas, uma por uma, diz de onde veio cada data; o diagnóstico
+  conta o que ficou de fora (sem o campo SDR, outro SDR, no-show, ainda agendada). A leitura do RD fica
+  guardada 20 min; **Atualizar do RD** lê de novo.
+
+---
+
 ## O cartão do lead no WhatsApp
 
 Ao abrir uma conversa no WhatsApp Web, um cartão aparece encostado na borda direita da conversa —
