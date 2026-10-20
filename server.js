@@ -30,6 +30,7 @@ const vendasRd = require('./src/vendasRd');
 const { gerarResumoRapido } = require('./src/resumoRapido');
 const perguntasDaConversa = require('./src/perguntasDaConversa');
 const aquecimento = require('./src/aquecimento');
+const matchCloser = require('./src/matchCloser');
 const coachIa = require('./src/coach');
 const inteligencia = require('./src/inteligencia');
 const afinidadeIa = require('./src/afinidade');
@@ -527,6 +528,26 @@ app.get('/api/cron/rd', async (req, res) => {
     res.json({ ok: true, ...(await conferirDesfechosNoRd({ porVez: 25 })), ...(lidas ? { transcricoes: { lidos: lidas.lidos, casos: lidas.casos } } : {}) });
   } catch (err) {
     res.status(502).json({ erro: err.message });
+  }
+});
+
+// Aba "Match com PH": reuniões realizadas, vendas, conversão e faturamento de cada mês com o closer, mais a meta
+// e o plano do mês (src/matchCloser.js). Só o master, com a chave dele (o SDR do match é quem pede).
+const soMasterComChave = (req, res, next) => (usuarios.ehMaster(req.usuario) ? next() : res.status(403).json({ erro: SO_MASTER_ERRO.erro }));
+app.get('/api/master/match', auth, soMasterComChave, async (req, res) => {
+  try {
+    const { closer, desde, atualizar } = req.query || {};
+    res.json({ ok: true, ...(await matchCloser.painel({ usuario: req.usuario, closer, desde, atualizar: atualizar === '1' })) });
+  } catch (err) {
+    res.status(502).json({ erro: err.message });
+  }
+});
+app.put('/api/master/match/meta', auth, soMasterComChave, async (req, res) => {
+  try {
+    const { closer, ...meta } = req.body || {};
+    res.json({ ok: true, meta: await matchCloser.salvarMeta(req.usuario.id, closer, meta) });
+  } catch (err) {
+    res.status(/Informe/.test(err.message) ? 400 : 500).json({ erro: err.message });
   }
 });
 
