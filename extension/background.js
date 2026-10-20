@@ -259,6 +259,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       if (r.data && r.data.duplicado) {
         return sendResponse({ ok: true, duplicado: true, existente: r.data.existente });
       }
+      agendarAquecimento(AQUECER_APOS_MS);
       sendResponse({
         ok: true,
         dados: r.data.dados,
@@ -286,5 +287,23 @@ if (chrome.alarms) {
   });
   chrome.alarms.onAlarm.addListener((alarme) => {
     if (alarme && alarme.name === ALARME_RD) chamar('/api/rd/atualizar', {}, { timeoutMs: 58000 }).catch(() => {});
+    if (alarme && alarme.name === ALARME_AQUECER) {
+      chamar('/api/cache/aquecer', {}, { timeoutMs: 58000 })
+        .then((r) => {
+          const ms = r && r.ok && r.data ? Number(r.data.proximoEmMs) : 0;
+          if (ms > 0) agendarAquecimento(ms);
+        })
+        .catch(() => {});
+    }
   });
+}
+
+// Cache do prompt do report: ~55min depois de um report a extensão avisa o servidor, que renova o cache
+// se ele está para vencer e ainda houve report há pouco (o próximo report não paga a reescrita do prompt).
+// O servidor responde quando bater de novo, ou para.
+const ALARME_AQUECER = 'aquecer-cache';
+const AQUECER_APOS_MS = 55 * 60 * 1000;
+function agendarAquecimento(ms) {
+  if (!chrome.alarms) return;
+  chrome.alarms.create(ALARME_AQUECER, { when: Date.now() + Math.max(60 * 1000, ms) });
 }
