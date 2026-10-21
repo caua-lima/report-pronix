@@ -273,6 +273,21 @@
     .mt-num { font-variant-numeric: tabular-nums; white-space: nowrap; }
     .mt-delta { font-size: .76rem; font-weight: 600; margin-left: 6px; }
     .mt-delta.sobe { color: var(--ok); } .mt-delta.desce { color: var(--danger); }
+    .mt-form { margin-top: 16px; padding: 16px; border: 1px solid var(--border); border-radius: var(--r); background: var(--card-2); }
+    .mt-form-t { font-family: var(--f-titulo); font-weight: 700; font-size: .98rem; margin-bottom: 12px; display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; align-items: baseline; }
+    .mt-form-t small { font-family: var(--f-texto); font-weight: 500; color: var(--text-2); font-size: .8rem; }
+    .mt-campos { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+    .mt-campo { display: flex; flex-direction: column; gap: 6px; margin: 0; }
+    .mt-campo > span { font-family: var(--f-titulo); font-size: .72rem; font-weight: 600; text-transform: uppercase; letter-spacing: .09em; color: var(--text-2); }
+    .mt-campo.principal > span { color: var(--ouro-tinta); }
+    .mt-entrada { display: flex; align-items: center; border: 1px solid var(--border-forte); border-radius: var(--r-sm); background: var(--campo); overflow: hidden; }
+    .mt-entrada:focus-within { border-color: var(--ouro); box-shadow: 0 0 0 3px var(--ring); }
+    .mt-entrada i { font-style: normal; color: var(--muted); font-weight: 600; padding: 0 10px; font-size: .9rem; }
+    .mt-entrada input { border: 0; background: transparent; box-shadow: none; padding: 10px 10px 10px 0; font-size: 1.15rem; font-weight: 700; font-variant-numeric: tabular-nums; width: 100%; min-width: 0; outline: none; }
+    .mt-entrada i + input { padding-left: 0; }
+    .mt-entrada input + i { padding-left: 4px; }
+    .mt-campo small { color: var(--text-2); font-size: .78rem; min-height: 1.1em; }
+    .mt-salvar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 14px; }
     .mt-fat { display: inline-block; height: 6px; border-radius: 3px; background: var(--ouro); vertical-align: middle; margin-left: 8px; }
     .sec-t { font-family: var(--f-titulo); font-size: .98rem; font-weight: 700; margin: 22px 0 8px; color: var(--text); }
     .duas { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 0 24px; }
@@ -777,18 +792,16 @@
           </div>
           <div class="kpis" id="mtPlano" style="margin-top:14px"></div>
           <div class="hint" id="mtPlanoNota" style="margin:0 0 12px"></div>
-          <details id="mtMetaForm">
-            <summary class="mini" style="display:inline-block">Definir a meta do mês</summary>
-            <div class="row" style="margin-top:10px">
-              <div style="min-width:150px;flex:1"><label for="mtMeta1">Meta 1 (R$)</label><input id="mtMeta1" inputmode="decimal" placeholder="100.000" /></div>
-              <div style="min-width:150px;flex:1"><label for="mtMeta2">Meta 2 (R$)</label><input id="mtMeta2" inputmode="decimal" placeholder="opcional" /></div>
-              <div style="min-width:150px;flex:1"><label for="mtMeta3">Meta 3 (R$)</label><input id="mtMeta3" inputmode="decimal" placeholder="opcional" /></div>
-              <div style="min-width:140px"><label for="mtMetaReunioes">Meta de reuniões</label><input id="mtMetaReunioes" type="number" min="0" placeholder="opcional" /></div>
+          <div class="mt-form" id="mtMetaForm">
+            <div class="mt-form-t">Definir a meta de <span id="mtFormMes"></span><small id="mtFormDias"></small></div>
+            <div class="mt-campos">
+              <label class="mt-campo principal"><span>Meta 1 · faturamento</span><div class="mt-entrada"><i>R$</i><input id="mtMeta1" inputmode="numeric" placeholder="100.000" autocomplete="off" /></div><small id="mtDica1"></small></label>
+              <label class="mt-campo"><span>Meta 2 · opcional</span><div class="mt-entrada"><i>R$</i><input id="mtMeta2" inputmode="numeric" placeholder="—" autocomplete="off" /></div><small id="mtDica2"></small></label>
+              <label class="mt-campo"><span>Meta 3 · opcional</span><div class="mt-entrada"><i>R$</i><input id="mtMeta3" inputmode="numeric" placeholder="—" autocomplete="off" /></div><small id="mtDica3"></small></label>
+              <label class="mt-campo"><span>Conversão alvo</span><div class="mt-entrada"><input id="mtConversao" inputmode="decimal" placeholder="25" autocomplete="off" style="padding-left:10px" /><i>%</i></div><small id="mtDicaConv"></small></label>
             </div>
-            <label style="display:flex;gap:8px;align-items:center;margin:10px 0 0;font-weight:500"><input id="mtSabado" type="checkbox" style="width:auto" />Sábado conta como dia útil</label>
-            <div class="row" style="margin-top:10px"><button id="mtSalvarMeta" class="btn">Salvar a meta</button></div>
-            <div id="statusMtMeta" class="status"></div>
-          </details>
+            <div class="mt-salvar"><button id="mtSalvarMeta" class="btn">Salvar meta</button><div id="statusMtMeta" class="status" style="margin:0"></div></div>
+          </div>
         </div>
 
         <div class="card">
@@ -1426,7 +1439,7 @@
       $('mtConteudo').classList.remove('hidden');
       const p = d.plano;
       const m1 = p.metas[0];
-      $('mtMesNome').textContent = '— ' + nomeMesMt(p.mes, true) + ` · ${p.diasRestantes} dia(s) útil(eis) pela frente de ${p.diasUteis}` + (p.sabado ? ' (sábado conta)' : '');
+      $('mtMesNome').textContent = '— ' + nomeMesMt(p.mes, true) + ` · ${p.diasRestantes} de ${p.diasUteis} dias úteis pela frente`;
       $('mtMedidor').innerHTML = medidorMatch(m1 ? m1.pct : 0, p.feito.faturamento, m1 ? m1.alvo : 0);
       $('mtBarras').innerHTML = p.metas.length
         ? p.metas.map((m, i) => barraMatch('Meta ' + (i + 1), p.feito.faturamento, m.alvo, i ? 'info' : '')).join('') +
@@ -1434,7 +1447,8 @@
         : '<div class="hint" style="margin:0">Nenhuma meta para este mês ainda. Abra "Definir a meta do mês" logo abaixo.</div>';
       const k = [
         kpiMatch('Faturamento no mês', brlMt(p.feito.faturamento)),
-        kpiMatch('Reuniões realizadas', String(p.feito.reunioes) + (p.metaReunioes ? ' / ' + p.metaReunioes : ''), true),
+        kpiMatch('Reuniões realizadas', String(p.feito.reunioes), true),
+        kpiMatch('Conversão no mês', (p.feito.reunioes ? pctMt(p.conversaoMes, 1) : '—') + (p.conversaoAlvo ? ' / alvo ' + pctMt(p.conversaoAlvo, 1) : ''), true),
         kpiMatch('Vendas', String(p.feito.vendas), true),
       ];
       if (m1) {
@@ -1444,18 +1458,19 @@
         if (!m1.batida && m1.reunioes != null) k.push(kpiMatch('Reuniões que faltam', m1.reunioes + (m1.reunioesPorDia != null ? ` (${m1.reunioesPorDia.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}/dia)` : ''), true));
       }
       k.push(kpiMatch('Projeção no ritmo', brlMt(p.projecao), true));
-      if (p.reunioesPorDiaParaMeta != null) k.push(kpiMatch('Reuniões/dia p/ meta', p.reunioesPorDiaParaMeta.toLocaleString('pt-BR', { maximumFractionDigits: 1 }), true));
       $('mtPlano').innerHTML = k.join('');
       $('mtPlanoNota').textContent = p.ticketMedio
-        ? `Vendas e reuniões que faltam saem do período todo: ticket médio de ${brlMt(p.ticketMedio)} e conversão de ${pctMt(p.conversao, 1)}. A projeção leva o faturamento de até hoje para o mês inteiro, no mesmo ritmo por dia útil.` +
+        ? `Vendas que faltam saem do ticket médio do período (${brlMt(p.ticketMedio)}); reuniões que faltam, da ${p.conversaoAlvo ? 'conversão alvo (' + pctMt(p.conversaoAlvo, 1) + ')' : 'conversão do período (' + pctMt(p.conversaoHistorica, 1) + ')'}. A projeção leva o faturamento de até hoje para o mês inteiro, no mesmo ritmo por dia útil.` +
           (p.metas.length > 1 ? ' ' + p.metas.slice(1).map((m, i) => `Meta ${i + 2}: falta ${brlMt(m.falta)} (${brlMt(m.porDia)}/dia útil).`).join(' ') : '')
         : 'Ainda não há venda no período para calcular ticket médio e conversão.';
       const meta = (d.metas || {})[p.mes] || {};
-      $('mtMeta1').value = meta.meta1 || '';
-      $('mtMeta2').value = meta.meta2 || '';
-      $('mtMeta3').value = meta.meta3 || '';
-      $('mtMetaReunioes').value = meta.metaReunioes || '';
-      $('mtSabado').checked = meta.sabado === true;
+      $('mtFormMes').textContent = nomeMesMt(p.mes, true);
+      $('mtFormDias').textContent = `Dias úteis: segunda a sexta + o último sábado (${diaMt(p.ultimoSabado)}) · ${p.diasUteis} no mês`;
+      $('mtMeta1').value = reaisMt(meta.meta1);
+      $('mtMeta2').value = reaisMt(meta.meta2);
+      $('mtMeta3').value = reaisMt(meta.meta3);
+      $('mtConversao').value = meta.conversaoAlvo ? String(meta.conversaoAlvo).replace('.', ',') : '';
+      previaMetaMt();
 
       const mp = d.mesmoPeriodo;
       $('mtPeriodoSub').textContent = `— do dia 1 ao dia ${Number(mp.atual.ate.slice(8, 10))}: ${nomeMesMt(mp.atual.mes)} x ${nomeMesMt(mp.anterior.mes)}`;
@@ -1512,19 +1527,48 @@
       }
     }
     $('mtAtualizar').addEventListener('click', () => carregarMatch(true));
+
+    // "100.000" no campo; o servidor aceita o texto como está.
+    const numeroMt = (s) => Number(String(s || '').replace(/[^\d,]/g, '').replace(',', '.')) || 0;
+    const reaisMt = (v) => (Number(v) > 0 ? Math.round(Number(v)).toLocaleString('pt-BR') : '');
+    /** O que cada meta pede por dia útil e a conversão: muda enquanto digita, antes de salvar. */
+    function previaMetaMt() {
+      if (!matchDados) return;
+      const p = matchDados.plano;
+      const conv = numeroMt($('mtConversao').value) / 100 || p.conversaoHistorica;
+      ['1', '2', '3'].forEach((n) => {
+        const alvo = numeroMt($('mtMeta' + n).value);
+        const dica = $('mtDica' + n);
+        if (!alvo) { dica.textContent = ''; return; }
+        const falta = Math.max(0, alvo - p.feito.faturamento);
+        if (!falta) { dica.textContent = 'Batida ✓'; return; }
+        const porDia = p.diasRestantes ? falta / p.diasRestantes : falta;
+        const vendas = p.ticketMedio ? Math.ceil(falta / p.ticketMedio) : 0;
+        const reunioes = vendas && conv ? Math.ceil(vendas / conv) : 0;
+        dica.textContent = `${brlMt(porDia)}/dia útil` + (vendas ? ` · ${vendas} venda(s)` : '') + (reunioes ? ` · ${reunioes} reunião(ões)` : '');
+      });
+      $('mtDicaConv').textContent = `No mês: ${p.feito.reunioes ? pctMt(p.conversaoMes, 1) : '—'} · desde ${nomeMesMt(matchDados.desde.slice(0, 7))}: ${pctMt(p.conversaoHistorica, 1)}`;
+    }
+    ['mtMeta1', 'mtMeta2', 'mtMeta3', 'mtConversao'].forEach((id) => $(id).addEventListener('input', previaMetaMt));
+    ['mtMeta1', 'mtMeta2', 'mtMeta3'].forEach((id) => $(id).addEventListener('blur', () => { $(id).value = reaisMt(numeroMt($(id).value)); }));
+    ['mtMeta1', 'mtMeta2', 'mtMeta3', 'mtConversao'].forEach((id) => $(id).addEventListener('keydown', (ev) => { if (ev.key === 'Enter') $('mtSalvarMeta').click(); }));
+
     $('mtSalvarMeta').addEventListener('click', async () => {
       if (!matchDados) return;
+      const botao = $('mtSalvarMeta');
+      botao.disabled = true;
       setStatus('statusMtMeta', 'Salvando…', { loading: true });
       try {
-        await api('PUT', '/api/master/match/meta', {
-          closer: matchDados.closer, mes: matchDados.plano.mes, meta1: $('mtMeta1').value, meta2: $('mtMeta2').value, meta3: $('mtMeta3').value,
-          metaReunioes: $('mtMetaReunioes').value, sabado: $('mtSabado').checked,
+        const d = await api('PUT', '/api/master/match/meta', {
+          closer: matchDados.closer, desde: matchDados.desde, mes: matchDados.plano.mes,
+          meta1: $('mtMeta1').value, meta2: $('mtMeta2').value, meta3: $('mtMeta3').value, conversaoAlvo: $('mtConversao').value,
         });
-        matchDados = null;
-        await carregarMatch(false);
-        setStatus('statusMtMeta', 'Meta salva.', { ok: true });
+        desenharMatch(d); // a resposta já vem com a meta nova e o plano refeito
+        setStatus('statusMtMeta', 'Meta salva às ' + new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) + '.', { ok: true });
       } catch (e) {
-        setStatus('statusMtMeta', e.message, { erro: true });
+        setStatus('statusMtMeta', 'Não salvou: ' + e.message, { erro: true });
+      } finally {
+        botao.disabled = false;
       }
     });
 
