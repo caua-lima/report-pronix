@@ -744,3 +744,35 @@ test('report: com as datas das mensagens, o resumo diz desde quando conversa com
   const pdf = textoDoPdf(r.json.arquivoBase64).replace(/\s+/g, ' ');
   assert.ok(pdf.includes('Conversando com o lead desde') && pdf.includes('Confirmado desde'), 'as duas linhas vão para o PDF');
 });
+
+// ---------------------------------------------------------------- profissão do formulário no report
+test('profissão do formulário: vai como 1ª linha do resumo e para o PDF só de quem tem "Profissão no report" (o master, por padrão)', async () => {
+  const conversa = (tag) => msgs.map((m, i) => (i === 0 ? { ...m, content: m.content + ' ' + tag } : m));
+  const pedir = (chave, tag, formulario) => api('POST', '/api/report-direto', { chave, corpo: { mensagens: conversa(tag), nome: 'Marcos', formulario } });
+  const prof = (r) => r.json.dados.resumo.find((x) => x.rotulo === 'Profissão (formulário)');
+
+  const lista = (await api('GET', '/api/admin/usuarios', { admin: true })).json.usuarios;
+  const chefe = lista.find((u) => u.nome === 'Chefe');
+  const bia = lista.find((u) => u.nome === 'Bia SDR');
+  assert.equal(chefe.profissaoNoReport, true, 'master começa com a profissão no report');
+  assert.equal(bia.profissaoNoReport, false, 'SDR começa sem');
+
+  const m = await pedir(E.chefe, 'prof-1', { profissao: '  Lojista /  Comerciante ' });
+  assert.equal(m.status, 200);
+  assert.deepEqual(m.json.dados.resumo[0], { rotulo: 'Profissão (formulário)', valor: 'Lojista / Comerciante' });
+  assert.ok(textoDoPdf(m.json.arquivoBase64).replace(/\s+/g, ' ').includes('Lojista / Comerciante'), 'no PDF');
+
+  // SDR sem a opção: o que a extensão mandar é ignorado
+  const s = await pedir(E.bia, 'prof-2', { profissao: 'Médico' });
+  assert.equal(s.status, 200);
+  assert.equal(prof(s), undefined);
+  // sem formulário, ou com campo de integração não preenchido: nada
+  assert.equal(prof(await pedir(E.chefe, 'prof-3', null)), undefined);
+  assert.equal(prof(await pedir(E.chefe, 'prof-4', { profissao: '{{data.Qual sua profissão}}' })), undefined);
+
+  // o master liga para a SDR na aba Acessos
+  assert.equal((await api('PATCH', '/api/admin/usuarios/' + bia.id, { admin: true, corpo: { profissaoNoReport: true } })).status, 200);
+  assert.equal(prof(await pedir(E.bia, 'prof-5', { profissao: 'Médico' })).valor, 'Médico');
+  assert.equal((await api('PATCH', '/api/admin/usuarios/' + bia.id, { admin: true, corpo: { profissaoNoReport: false } })).status, 200);
+  assert.equal(prof(await pedir(E.bia, 'prof-6', { profissao: 'Médico' })), undefined);
+});

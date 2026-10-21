@@ -229,6 +229,7 @@ app.patch('/api/admin/usuarios/:id', master, async (req, res) => {
     else if (typeof corpo.coach === 'boolean') ok = await usuarios.definirCoach(req.params.id, corpo.coach);
     else if (typeof corpo.automacao === 'boolean') ok = await usuarios.definirAutomacao(req.params.id, corpo.automacao);
     else if (typeof corpo.etiquetas === 'boolean') ok = await usuarios.definirEtiquetas(req.params.id, corpo.etiquetas);
+    else if (typeof corpo.profissaoNoReport === 'boolean') ok = await usuarios.definirProfissaoNoReport(req.params.id, corpo.profissaoNoReport);
     else if (typeof corpo.corAgenda === 'string') ok = await usuarios.definirCorAgenda(req.params.id, corpo.corAgenda);
     else if (typeof corpo.aba === 'string') ok = await usuarios.definirAba(req.params.id, corpo.aba, corpo.liberada === true);
     else ok = await usuarios.definirPapel(req.params.id, String(corpo.papel || ''));
@@ -1565,9 +1566,23 @@ async function vinculoDoReport(vinculo, nome) {
   return stats.vinculoLimpo({ telefone: (ficha.telefones || [])[0], email: (ficha.emails || [])[0], contatoId: ficha.contatoId, dealId: escolhido && escolhido.id });
 }
 
-async function responderReport(req, res, dados, nome, origem, reportKey, captura, vinculo) {
+/**
+ * A profissão que o lead marcou no formulário do RD (a extensão manda o que o cartão do lead leu), como a
+ * primeira linha do resumo do PDF. Só para quem tem "Profissão no report" ligado (começa só com o master).
+ */
+function comProfissaoDoFormulario(dados, formulario, usuario) {
+  if (!usuario || !usuario.profissaoNoReport || !formulario || typeof formulario !== 'object') return;
+  const profissao = String(formulario.profissao || '').replace(/\s+/g, ' ').trim();
+  if (!profissao || /\{\{/.test(profissao)) return; // "{{data.…}}" é campo de integração não preenchido
+  const rotulo = 'Profissão (formulário)';
+  const resto = (Array.isArray(dados.resumo) ? dados.resumo : []).filter((r) => !r || r.rotulo !== rotulo);
+  dados.resumo = [{ rotulo, valor: profissao.slice(0, 120) }].concat(resto);
+}
+
+async function responderReport(req, res, dados, nome, origem, reportKey, captura, vinculo, formulario) {
   // Quem assina o report é o dono da chave, não uma variável do servidor.
   dados.sdr = req.usuario.nome;
+  comProfissaoDoFormulario(dados, formulario, req.usuario);
   const uso = dados.uso;
   delete dados.uso; // consumo é assunto do admin: não vai junto do report.
   // Report no prompt padrão usou o cache do prompt: a partir daqui a extensão pode mantê-lo quente.
@@ -1692,7 +1707,7 @@ app.post('/api/cache/aquecer', auth, async (req, res) => {
 app.post('/api/report-direto', auth, async (req, res) => {
   let reportKey = null;
   try {
-    const { mensagens, nome, qualidade, captureQuality, vinculo } = req.body || {};
+    const { mensagens, nome, qualidade, captureQuality, vinculo, formulario } = req.body || {};
     const qualidadeFinal = qualidadeValida(qualidade);
     const { historico: normalizadas } = normalizarConversa(Array.isArray(mensagens) ? mensagens : []);
     reportKey = calcularReportKey({ historicoNormalizado: normalizadas, promptVersao: PROMPT_VERSAO, qualidade: qualidadeFinal });
@@ -1700,7 +1715,7 @@ app.post('/api/report-direto', auth, async (req, res) => {
     if (!(await checarDuplicataETravar(req, res, reportKey))) return;
 
     const dados = await dadosDireto({ mensagens, nome, sdr: req.usuario.nome, qualidade: qualidadeFinal });
-    await responderReport(req, res, dados, nome, 'extensao', reportKey, sanitizarCaptura(captureQuality), vinculo);
+    await responderReport(req, res, dados, nome, 'extensao', reportKey, sanitizarCaptura(captureQuality), vinculo, formulario);
   } catch (err) {
     res.status(/Nenhuma mensagem/i.test(err.message) ? 400 : 500).json({ erro: err.message });
   } finally {

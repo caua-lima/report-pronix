@@ -33,6 +33,8 @@ const normalizar = (u) => {
     automacao: typeof u.automacao === 'boolean' ? u.automacao : papel === 'master',
     // etiquetas: no cartão do lead, o investimento do formulário e se já vende. Também começa só com o master.
     etiquetas: typeof u.etiquetas === 'boolean' ? u.etiquetas : papel === 'master',
+    // profissaoNoReport: no PDF do report, a profissão que o lead marcou no formulário do RD. Começa só com o master.
+    profissaoNoReport: typeof u.profissaoNoReport === 'boolean' ? u.profissaoNoReport : papel === 'master',
     // corAgenda: a cor com que as reuniões dos leads desta pessoa são pintadas no Google Agenda ('' = não pinta).
     // Quem nunca escolheu: o master já começa na Banana (a cor do dono da ferramenta); os outros, sem pintar.
     // "Não pintar" escolhido à mão fica guardado como '' e é respeitado.
@@ -158,6 +160,16 @@ async function definirEtiquetas(id, ligadas) {
   return true;
 }
 
+/** Liga/desliga a profissão do formulário do RD no PDF do report. */
+async function definirProfissaoNoReport(id, ligada) {
+  const dados = await ler();
+  const u = dados.usuarios.find((x) => x.id === id);
+  if (!u) return false;
+  u.profissaoNoReport = Boolean(ligada);
+  await db.setJson(CHAVE_DB, dados);
+  return true;
+}
+
 /** Cor do Google Agenda (1 a 11) para as reuniões dos leads desta pessoa; '' desliga. */
 async function definirCorAgenda(id, cor) {
   const c = String(cor || '');
@@ -198,4 +210,4 @@ async function porChave(chave) {
   return (await ler()).usuarios.find((u) => u.chave === chave) || null;
 }
 
-module.exports = { listar, criar, remover, definirPapel, definirFichaCrm, definirCoach, definirAutomacao, definirEtiquetas, definirCorAgenda, definirAba, podeAba, abasDe, ABAS, porChave, ehAdmin, ehMaster, PAPEIS };
+module.exports = { listar, criar, remover, definirPapel, definirFichaCrm, definirCoach, definirAutomacao, definirEtiquetas, definirProfissaoNoReport, definirCorAgenda, definirAba, podeAba, abasDe, ABAS, porChave, ehAdmin, ehMaster, PAPEIS };
