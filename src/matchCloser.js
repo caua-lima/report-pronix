@@ -229,23 +229,32 @@ async function lerMetas(usuarioId, closer) {
   return m && typeof m === 'object' ? m : {};
 }
 
-/** Guarda a meta de um mês: { meta1, meta2, meta3 } em reais, metaReunioes e se o sábado conta como dia útil. */
-async function salvarMeta(usuarioId, closer, { mes, meta1, meta2, meta3, metaReunioes, sabado } = {}) {
+/** Guarda a meta de um mês: { meta1, meta2, meta3 } em reais e a conversão alvo (%). */
+async function salvarMeta(usuarioId, closer, { mes, meta1, meta2, meta3, conversaoAlvo } = {}) {
   if (!/^\d{4}-\d{2}$/.test(String(mes || ''))) throw new Error('Informe o mês da meta (AAAA-MM).');
+  const conversao = valor(conversaoAlvo);
+  if (conversao > 100) throw new Error('A conversão alvo vai de 1 a 100%.');
   const metas = await lerMetas(usuarioId, closer);
-  metas[mes] = { meta1: valor(meta1), meta2: valor(meta2), meta3: valor(meta3), metaReunioes: Math.round(valor(metaReunioes)), sabado: sabado === true };
+  metas[mes] = { meta1: valor(meta1), meta2: valor(meta2), meta3: valor(meta3), conversaoAlvo: conversao };
   await db.setJson(chaveMeta(usuarioId, closer), metas);
   return metas[mes];
 }
 
 const diaDaSemana = (dia) => new Date(dia + 'T12:00:00Z').getUTCDay(); // 0 = domingo
-const ehUtil = (dia, sabado) => { const s = diaDaSemana(dia); return s >= 1 && s <= (sabado ? 6 : 5); };
+/** O último sábado do mês: é dia de trabalho (os outros sábados e os domingos, não). */
+const ehUltimoSabado = (dia) => diaDaSemana(dia) === 6 && mesDe(somaDias(dia, 7)) !== mesDe(dia);
+const ehUtil = (dia) => { const s = diaDaSemana(dia); return (s >= 1 && s <= 5) || ehUltimoSabado(dia); };
+function ultimoSabado(mes) {
+  let d = somaDias(mesDe(somaDias(mes + '-28', 5)) + '-01', -1); // último dia do mês
+  while (diaDaSemana(d) !== 6) d = somaDias(d, -1);
+  return d;
+}
 
-/** Dias úteis do mês: total, os que já passaram (antes de hoje) e os que faltam (hoje incluído). */
-function diasUteis(mes, hoje, sabado) {
+/** Dias úteis do mês (segunda a sexta + o último sábado): total, os que já passaram (antes de hoje) e os que faltam (hoje incluído). */
+function diasUteis(mes, hoje) {
   const r = { total: 0, passados: 0, restantes: 0 };
   for (let d = mes + '-01'; mesDe(d) === mes; d = somaDias(d, 1)) {
-    if (!ehUtil(d, sabado)) continue;
+    if (!ehUtil(d)) continue;
     r.total++;
     if (d < hoje) r.passados++;
     else r.restantes++;
@@ -258,17 +267,19 @@ function diasUteis(mes, hoje, sabado) {
  * isso pede (pela conversão e pelo ticket médio do período) e a projeção no ritmo atual.
  */
 function plano({ mes, hoje, meta = {}, feito, historico }) {
-  const sabado = meta.sabado === true;
-  const dias = diasUteis(mes, hoje, sabado);
+  const dias = diasUteis(mes, hoje);
   const mesPassou = mes < mesDe(hoje);
   const restantes = mesPassou ? 0 : Math.max(dias.restantes, 0);
-  const decorridos = mesPassou ? dias.total : dias.passados + (ehUtil(hoje, sabado) ? 1 : 0);
+  const decorridos = mesPassou ? dias.total : dias.passados + (ehUtil(hoje) ? 1 : 0);
   // Conversão e ticket do período inteiro (mais estável que o mês corrente, que ainda está no começo).
   const reunioesHist = historico.reduce((t, m) => t + m.reunioes, 0);
   const vendasHist = historico.reduce((t, m) => t + m.vendas, 0);
   const fatHist = historico.reduce((t, m) => t + m.faturamento, 0);
-  const conversao = reunioesHist ? vendasHist / reunioesHist : 0;
+  const conversaoHistorica = reunioesHist ? vendasHist / reunioesHist : 0;
   const ticketMedio = vendasHist ? fatHist / vendasHist : 0;
+  // A conversão que vale para o plano: a alvo, se foi definida; senão, a do período.
+  const conversaoAlvo = meta.conversaoAlvo > 0 ? meta.conversaoAlvo / 100 : 0;
+  const conversao = conversaoAlvo || conversaoHistorica;
   const metas = ['meta1', 'meta2', 'meta3'].filter((k) => meta[k] > 0).map((k) => {
     const falta = Math.max(0, meta[k] - feito.faturamento);
     const vendas = ticketMedio ? Math.ceil(falta / ticketMedio) : null;
@@ -282,12 +293,13 @@ function plano({ mes, hoje, meta = {}, feito, historico }) {
     };
   });
   return {
-    mes, sabado, diasUteis: dias.total, diasPassados: decorridos, diasRestantes: restantes,
-    feito, conversao, ticketMedio,
+    mes, ultimoSabado: ultimoSabado(mes), diasUteis: dias.total, diasPassados: decorridos, diasRestantes: restantes,
+    feito, conversao, conversaoAlvo, conversaoHistorica, ticketMedio,
+    conversaoMes: feito.reunioes ? feito.vendas / feito.reunioes : 0,
+    // Com a conversão alvo, quantas vendas as reuniões de até agora já deveriam ter dado.
+    vendasEsperadas: conversaoAlvo ? feito.reunioes * conversaoAlvo : null,
     projecao: decorridos ? (feito.faturamento / decorridos) * dias.total : 0,
     projecaoReunioes: decorridos ? (feito.reunioes / decorridos) * dias.total : 0,
-    metaReunioes: meta.metaReunioes || 0,
-    reunioesPorDiaParaMeta: meta.metaReunioes && restantes ? Math.max(0, meta.metaReunioes - feito.reunioes) / restantes : null,
     metas,
   };
 }
@@ -320,4 +332,4 @@ async function painel({ usuario, closer, desde, atualizar } = {}) {
   };
 }
 
-module.exports = { levantar, painel, plano, diasUteis, salvarMeta, lerMetas, estadoDoCard, dataDaReuniao, porMes, mesmoPeriodo, diaDoValor };
+module.exports = { levantar, painel, plano, diasUteis, ultimoSabado, salvarMeta, lerMetas, estadoDoCard, dataDaReuniao, porMes, mesmoPeriodo, diaDoValor };
