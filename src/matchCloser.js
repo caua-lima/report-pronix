@@ -219,9 +219,26 @@ function porMes(reunioes, inicio, hoje) {
 // ---------------------------------------------------------------- meta e plano do mês
 
 const chaveMeta = (usuarioId, closer) => `meta_match_${usuarioId}_${slug(closer || CLOSER_PADRAO())}`;
+const lerNumero = (v) => {
+  // "392.000", "392,000", "R$ 392.000,00", "1.250.000", "25,5": com os dois sinais, o último é o decimal;
+  // com um só, grupos de 3 dígitos depois dele são milhar ("392,000" = 392 mil), senão é decimal ("25,5").
+  if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
+  let s = String(v == null ? '' : v).replace(/[^\d.,]/g, '');
+  const ponto = s.lastIndexOf('.');
+  const virgula = s.lastIndexOf(',');
+  if (ponto >= 0 && virgula >= 0) {
+    const dec = Math.max(ponto, virgula);
+    s = s.slice(0, dec).replace(/[.,]/g, '') + '.' + s.slice(dec + 1);
+  } else if (ponto >= 0 || virgula >= 0) {
+    const partes = s.split(virgula >= 0 ? ',' : '.');
+    s = partes.slice(1).every((p) => p.length === 3) ? partes.join('') : partes.slice(0, -1).join('') + '.' + partes[partes.length - 1];
+  }
+  const n = Number(s);
+  return Number.isFinite(n) ? n : 0;
+};
 const valor = (v) => {
-  const n = Number(String(v == null ? '' : v).replace(/[^\d.,-]/g, '').replace(/\.(?=\d{3}(\D|$))/g, '').replace(',', '.'));
-  return Number.isFinite(n) && n > 0 ? Math.round(n * 100) / 100 : 0;
+  const n = lerNumero(v);
+  return n > 0 ? Math.round(n * 100) / 100 : 0;
 };
 
 async function lerMetas(usuarioId, closer) {
@@ -332,4 +349,4 @@ async function painel({ usuario, closer, desde, atualizar } = {}) {
   };
 }
 
-module.exports = { levantar, painel, plano, diasUteis, ultimoSabado, salvarMeta, lerMetas, estadoDoCard, dataDaReuniao, porMes, mesmoPeriodo, diaDoValor };
+module.exports = { lerNumero, levantar, painel, plano, diasUteis, ultimoSabado, salvarMeta, lerMetas, estadoDoCard, dataDaReuniao, porMes, mesmoPeriodo, diaDoValor };

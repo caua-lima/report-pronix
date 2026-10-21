@@ -154,3 +154,10 @@ test('rotas: só o master; a meta fica salva por mês e entra no plano; a segund
   assert.ok(consultas.length > lidas, '"Atualizar do RD" relê');
   assert.equal(r.json.cache, false);
 });
+
+test('reais da meta: vírgula ou ponto de milhar valem 392 mil; com os dois, o último é o decimal; conversão aceita vírgula', async () => {
+  const casos = { '392.000': 392000, '392,000': 392000, 'R$ 392.000,00': 392000, '1.250.000': 1250000, '1,250,000': 1250000, '45000': 45000, '25,5': 25.5, '12.5': 12.5, '': 0 };
+  for (const [entrada, esperado] of Object.entries(casos)) assert.equal(match.lerNumero(entrada), esperado, entrada);
+  const s = await match.salvarMeta('u-teste', 'Paulo Henrique', { mes: '2026-10', meta1: '392,000', meta2: '410.000', meta3: '45,000', conversaoAlvo: '25,5' });
+  assert.deepEqual(s, { meta1: 392000, meta2: 410000, meta3: 45000, conversaoAlvo: 25.5 });
+});
