@@ -1529,7 +1529,23 @@
     $('mtAtualizar').addEventListener('click', () => carregarMatch(true));
 
     // "100.000" no campo; o servidor aceita o texto como está.
-    const numeroMt = (s) => Number(String(s || '').replace(/[^\d,]/g, '').replace(',', '.')) || 0;
+    const numeroMt = (v) => {
+      // "392.000", "392,000", "R$ 392.000,00", "1.250.000", "25,5": com os dois sinais, o último é o decimal;
+      // com um só, grupos de 3 dígitos depois dele são milhar ("392,000" = 392 mil), senão é decimal ("25,5").
+      if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
+      let s = String(v == null ? '' : v).replace(/[^\d.,]/g, '');
+      const ponto = s.lastIndexOf('.');
+      const virgula = s.lastIndexOf(',');
+      if (ponto >= 0 && virgula >= 0) {
+        const dec = Math.max(ponto, virgula);
+        s = s.slice(0, dec).replace(/[.,]/g, '') + '.' + s.slice(dec + 1);
+      } else if (ponto >= 0 || virgula >= 0) {
+        const partes = s.split(virgula >= 0 ? ',' : '.');
+        s = partes.slice(1).every((p) => p.length === 3) ? partes.join('') : partes.slice(0, -1).join('') + '.' + partes[partes.length - 1];
+      }
+      const n = Number(s);
+      return Number.isFinite(n) ? n : 0;
+    };
     const reaisMt = (v) => (Number(v) > 0 ? Math.round(Number(v)).toLocaleString('pt-BR') : '');
     /** O que cada meta pede por dia útil e a conversão: muda enquanto digita, antes de salvar. */
     function previaMetaMt() {
@@ -1540,6 +1556,8 @@
         const alvo = numeroMt($('mtMeta' + n).value);
         const dica = $('mtDica' + n);
         if (!alvo) { dica.textContent = ''; return; }
+        // Meta abaixo de R$ 1.000 quase sempre é milhar digitado errado: avisa antes de salvar.
+        if (alvo < 1000) { dica.textContent = `Confere: ${brlMt(alvo)}? Para ${alvo} mil, digite ${(alvo * 1000).toLocaleString('pt-BR')}.`; return; }
         const falta = Math.max(0, alvo - p.feito.faturamento);
         if (!falta) { dica.textContent = 'Batida ✓'; return; }
         const porDia = p.diasRestantes ? falta / p.diasRestantes : falta;

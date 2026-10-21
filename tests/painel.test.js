@@ -2287,6 +2287,15 @@ test('Match com PH: medidor da meta, plano do mês, comparativo, mês a mês e a
   p.$('mtMeta1').value = '150000';
   p.$('mtMeta1').dispatchEvent(new p.w.Event('blur'));
   assert.equal(p.$('mtMeta1').value, '150.000', 'os reais ganham o ponto ao sair do campo');
+  // milhar com vírgula também vale, e meta pequena demais ganha aviso antes de salvar
+  p.$('mtMeta2').value = '392,000';
+  p.$('mtMeta2').dispatchEvent(new p.w.Event('blur'));
+  assert.equal(p.$('mtMeta2').value, '392.000');
+  p.$('mtMeta3').value = '392';
+  p.$('mtMeta3').dispatchEvent(new p.w.Event('input'));
+  assert.match(p.$('mtDica3').textContent, /Confere: R\$\s*392\? Para 392 mil, digite 392\.000/);
+  p.$('mtMeta2').value = '';
+  p.$('mtMeta3').value = '';
   p.$('mtSalvarMeta').click();
   await esperar(() => /Meta salva às/.test(p.$('statusMtMeta').textContent), { motivo: 'meta salva' });
   assert.deepEqual(api.corpos('PUT /api/master/match/meta')[0], { closer: 'Paulo Henrique', desde: '2026-07-01', mes: '2026-10', meta1: '150.000', meta2: '', meta3: '', conversaoAlvo: '20' });
