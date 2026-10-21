@@ -273,6 +273,50 @@
     .mt-num { font-variant-numeric: tabular-nums; white-space: nowrap; }
     .mt-delta { font-size: .76rem; font-weight: 600; margin-left: 6px; }
     .mt-delta.sobe { color: var(--ok); } .mt-delta.desce { color: var(--danger); }
+    /* Atalhos da aba (ficam no topo ao rolar) */
+    .mt-atalhos { position: sticky; top: 0; z-index: 6; display: flex; gap: 6px; flex-wrap: wrap; padding: 10px 0; margin: -4px 0 10px; background: var(--bg); }
+    /* Metas: barra com a marca de onde deveria estar hoje, cor pelo ritmo */
+    .mt-ritmo { display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 999px; font-size: .8rem; font-weight: 600; margin-bottom: 14px; border: 1px solid var(--border); background: var(--card-2); }
+    .mt-ritmo i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+    .mt-ritmo.ok i { background: var(--ok); } .mt-ritmo.atras i { background: var(--danger); } .mt-ritmo.perto i { background: var(--ouro); }
+    .mt-meta { margin-bottom: 16px; }
+    .mt-meta .cab { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-bottom: 7px; }
+    .mt-meta .nome { font-weight: 700; font-size: .92rem; }
+    .mt-meta .num { font-variant-numeric: tabular-nums; color: var(--text-2); font-size: .82rem; white-space: nowrap; }
+    .mt-meta .num b { font-family: var(--f-titulo); font-size: 1.02rem; color: var(--text); margin-left: 8px; }
+    .mt-trilho2 { position: relative; height: 14px; border-radius: 999px; background: var(--card-2); border: 1px solid var(--border); }
+    .mt-trilho2 .fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 999px; background: var(--ouro); }
+    .mt-trilho2 .fill.ok { background: var(--ok); } .mt-trilho2 .fill.atras { background: var(--danger); } .mt-trilho2 .fill.info { background: var(--info); }
+    .mt-trilho2 .marca { position: absolute; top: -5px; bottom: -5px; width: 3px; margin-left: -1.5px; background: var(--text); border-radius: 2px; }
+    .mt-trilho2 .marca.media { background: transparent; border-left: 2px dashed var(--text-2); width: 0; margin-left: -1px; }
+    .mt-meta .pe { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; font-size: .78rem; color: var(--text-2); margin-top: 7px; font-variant-numeric: tabular-nums; }
+    .mt-legenda { display: flex; gap: 14px; flex-wrap: wrap; font-size: .74rem; color: var(--muted); margin-top: -4px; }
+    .mt-legenda span::before { content: ''; display: inline-block; width: 3px; height: 11px; background: var(--text); margin-right: 6px; vertical-align: -1px; border-radius: 2px; }
+    .mt-legenda span.media::before { background: transparent; border-left: 2px dashed var(--text-2); width: 0; }
+    .mt-conv { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border); }
+    /* Análises */
+    .mt-destaques { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 250px), 1fr)); gap: 10px; margin-bottom: 16px; }
+    .mt-destaque { border: 1px solid var(--border); border-left: 4px solid var(--ok); border-radius: var(--r-sm); padding: 12px 14px; background: var(--card-2); }
+    .mt-destaque small { display: block; font-family: var(--f-titulo); text-transform: uppercase; letter-spacing: .08em; font-size: .68rem; color: var(--text-2); margin-bottom: 4px; }
+    .mt-destaque .q { font-family: var(--f-titulo); font-size: 1.05rem; font-weight: 700; }
+    .mt-destaque .q b { color: var(--ok); }
+    .mt-destaque .s { font-size: .8rem; color: var(--text-2); margin-top: 4px; }
+    .mt-cortes { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 620px), 1fr)); gap: 14px; }
+    .mt-corte { border: 1px solid var(--border); border-radius: var(--r-sm); padding: 12px 14px 6px; min-width: 0; }
+    .mt-corte h4 { margin: 0 0 6px; font-family: var(--f-titulo); font-size: .9rem; font-weight: 700; }
+    .mt-corte table { width: 100%; }
+    .mt-corte table { table-layout: fixed; }
+    .mt-corte th, .mt-corte td { padding: 7px 6px; font-size: .82rem; }
+    .mt-corte th { font-size: .66rem; letter-spacing: .05em; }
+    .mt-corte th:first-child, .mt-corte td:first-child { width: 34%; overflow-wrap: anywhere; }
+    .mt-corte td.r { overflow: hidden; text-overflow: ellipsis; }
+    .mt-corte .col-conv { width: 22%; }
+    .mt-corte td.r, .mt-corte th.r { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .mt-corte tr.pouco td { color: var(--muted); }
+    .mt-corte tr.melhor td:first-child { font-weight: 700; }
+    .mt-barrinha { display: inline-block; width: 64px; height: 7px; border-radius: 4px; background: var(--card-2); border: 1px solid var(--border); vertical-align: middle; margin-right: 8px; overflow: hidden; }
+    .mt-barrinha > span { display: block; height: 100%; background: var(--ouro); }
+    .mt-barrinha > span.ok { background: var(--ok); }
     .mt-form { margin-top: 16px; padding: 16px; border: 1px solid var(--border); border-radius: var(--r); background: var(--card-2); }
     .mt-form-t { font-family: var(--f-titulo); font-weight: 700; font-size: .98rem; margin-bottom: 12px; display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; align-items: baseline; }
     .mt-form-t small { font-family: var(--f-texto); font-weight: 500; color: var(--text-2); font-size: .8rem; }
@@ -289,7 +333,9 @@
     .mt-campo small { color: var(--text-2); font-size: .78rem; min-height: 1.1em; }
     .mt-salvar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 14px; }
     /* Plano e comparativo: colunas iguais, rótulo com a mesma altura em todos e o número sempre na mesma linha */
-    #mtPlano { grid-template-columns: repeat(auto-fill, minmax(165px, 1fr)); }
+    #mtPlano { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+    @media (max-width: 1180px) { #mtPlano { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+    @media (max-width: 560px) { #mtPlano { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
     #mtPlano .kpi, #mtComparativo .kpi { display: flex; flex-direction: column; justify-content: flex-start; min-width: 0; }
     #mtPlano .kpi .l, #mtComparativo .kpi .l { min-height: 2.5em; line-height: 1.25; margin-bottom: 8px; display: flex; align-items: flex-end; }
     #mtPlano .kpi .n, #mtPlano .kpi .n.peq, #mtComparativo .kpi .n, #mtComparativo .kpi .n.peq {
@@ -802,12 +848,20 @@
       </div>
 
       <div id="mtConteudo" class="hidden">
-        <div class="card">
+        <nav class="mt-atalhos" aria-label="Partes da aba">
+          <button class="chip" data-mt-ir="mtCardMeta">Meta</button>
+          <button class="chip" data-mt-ir="mtCardComparativo">Mês x mês passado</button>
+          <button class="chip" data-mt-ir="mtCardMeses">Mês a mês</button>
+          <button class="chip" data-mt-ir="mtCardAnalises">Com quem fecha mais</button>
+          <button class="chip" data-mt-ir="mtCardLista">Reunião por reunião</button>
+        </nav>
+        <div class="card" id="mtCardMeta">
           <div class="head"><div class="t"><i data-ic="target"></i>Meta do mês</div><div class="sub" id="mtMesNome"></div></div>
           <div class="mt-topo">
             <div class="mt-medidor" id="mtMedidor"></div>
             <div id="mtBarras"></div>
           </div>
+          <div class="mt-conv" id="mtConversaoVis"></div>
           <div class="kpis" id="mtPlano" style="margin-top:14px"></div>
           <div class="hint" id="mtPlanoNota" style="margin:0 0 12px"></div>
           <div class="mt-form" id="mtMetaForm">
@@ -822,12 +876,12 @@
           </div>
         </div>
 
-        <div class="card">
+        <div class="card" id="mtCardComparativo">
           <div class="head"><div class="t"><i data-ic="clock"></i>Mês atual x mesmo período do mês passado</div><div class="sub" id="mtPeriodoSub"></div></div>
           <div class="kpis" id="mtComparativo" style="margin:0"></div>
         </div>
 
-        <div class="card">
+        <div class="card" id="mtCardMeses">
           <div class="head"><div class="t"><i data-ic="chart"></i>Mês a mês</div><div class="sub">— conversão = vendas do mês ÷ reuniões realizadas do mês</div></div>
           <div style="overflow:auto">
             <table>
@@ -837,7 +891,16 @@
           </div>
         </div>
 
-        <div class="card">
+        <div class="card" id="mtCardAnalises">
+          <div class="head"><div class="t"><i data-ic="users"></i><span id="mtAnalisesTitulo">Com quem o closer fecha mais</span></div><div class="sub" id="mtAnalisesSub"></div></div>
+          <div class="hint" style="margin:0 0 12px">Conversão de um tipo de lead = das reuniões realizadas com ele, quantas viraram venda. Linhas em cinza têm poucas reuniões (menos de <span id="mtMinAmostra">3</span>): olhe com cuidado.</div>
+          <div id="mtDestaques" class="mt-destaques"></div>
+          <div id="mtCortes" class="mt-cortes"></div>
+          <div class="sec-t">Das vendas</div>
+          <div id="mtVendasAnalise" class="mt-cortes"></div>
+        </div>
+
+        <div class="card" id="mtCardLista">
           <details>
             <summary class="sec-t" style="margin:0;cursor:pointer">Reuniões e vendas, uma por uma <span id="mtNReunioes" class="hint"></span></summary>
             <div class="hint" style="margin:8px 0">Confira aqui o que entrou na conta. "Data" é o dia da reunião; de onde ela veio aparece ao lado (campo do card, criação do card ou report).</div>
@@ -1426,11 +1489,13 @@
     let matchDados = null;
 
     /** Medidor em meia-lua (como o do zxp-market): vermelho até 59%, ouro até 89%, verde a partir de 90%. */
-    function medidorMatch(p, valor, alvo) {
+    function medidorMatch(p, valor, alvo, esperado) {
       const v = Math.max(0, Math.min(1, p));
-      const cor = p >= 0.9 ? 'var(--ok)' : p >= 0.6 ? 'var(--ouro)' : 'var(--danger)';
-      const ponta = (f) => { const a = Math.PI * (1 - f); return [100 + 80 * Math.cos(a), 100 - 80 * Math.sin(a)]; };
-      const marcas = [0.6, 0.9].map((f) => { const [x1, y1] = ponta(f); const a = Math.PI * (1 - f); return `<line x1="${x1}" y1="${y1}" x2="${100 + 92 * Math.cos(a)}" y2="${100 - 92 * Math.sin(a)}" stroke="var(--border-forte)" stroke-width="2"/>`; }).join('');
+      // Mesma regra das barras: no ritmo de hoje (verde), até 10% abaixo (ouro) ou atrás (vermelho).
+      const cor = !alvo ? 'var(--border-forte)' : valor >= alvo || valor >= esperado ? 'var(--ok)' : valor >= esperado * 0.9 ? 'var(--ouro)' : 'var(--danger)';
+      const ponta = (f) => { const a = Math.PI * (1 - f); return [100 + 70 * Math.cos(a), 100 - 70 * Math.sin(a)]; };
+      const f = alvo && esperado ? Math.max(0, Math.min(1, esperado / alvo)) : 0;
+      const marcas = f && valor < alvo ? (() => { const [x1, y1] = ponta(f); const a = Math.PI * (1 - f); return `<line x1="${x1}" y1="${y1}" x2="${100 + 94 * Math.cos(a)}" y2="${100 - 94 * Math.sin(a)}" stroke="var(--text)" stroke-width="3" stroke-linecap="round"><title>Hoje deveria estar em ${esc(brlMt(esperado))}</title></line>`; })() : '';
       return `<svg viewBox="0 0 200 112" role="img" aria-label="${esc(pctMt(p))} da meta 1">
           <path d="M20 100 A80 80 0 0 1 180 100" fill="none" stroke="var(--card-2)" stroke-width="16" stroke-linecap="round"/>
           <path d="M20 100 A80 80 0 0 1 180 100" fill="none" stroke="${cor}" stroke-width="16" stroke-linecap="round" pathLength="100" stroke-dasharray="${(v * 100).toFixed(2)} 100"/>
@@ -1440,6 +1505,84 @@
         <div class="v">${esc(brlMt(valor))}</div>
         <div class="s">${alvo ? 'de ' + esc(brlMt(alvo)) + ' (meta 1)' : 'sem meta definida'}</div>`;
     }
+    /** Cor pelo ritmo: no ritmo (verde), até 10% abaixo do esperado de hoje (ouro) ou atrás (vermelho). */
+    const corDoRitmoMt = (feito, esperado, batida) => (batida || feito >= esperado ? 'ok' : feito >= esperado * 0.9 ? '' : 'atras');
+    function ritmoMt(p, m1) {
+      if (m1.batida) return `<div class="mt-ritmo ok"><i></i>Meta 1 batida: ${esc(brlMt(p.feito.faturamento - m1.alvo))} acima</div>`;
+      const dif = p.feito.faturamento - m1.esperadoHoje;
+      const classe = dif >= 0 ? 'ok' : p.feito.faturamento >= m1.esperadoHoje * 0.9 ? 'perto' : 'atras';
+      return `<div class="mt-ritmo ${classe}"><i></i>${dif >= 0 ? `No ritmo da meta 1: ${esc(brlMt(dif))} à frente do esperado para hoje` : `Atrás do ritmo da meta 1: faltam ${esc(brlMt(-dif))} para o esperado de hoje`}</div>`;
+    }
+    function metaVisualMt(n, m, p) {
+      const pctBarra = Math.min(100, (p.feito.faturamento / m.alvo) * 100);
+      const marca = Math.min(100, (m.esperadoHoje / m.alvo) * 100);
+      const cor = corDoRitmoMt(p.feito.faturamento, m.esperadoHoje, m.batida);
+      return `<div class="mt-meta"><div class="cab"><span class="nome">Meta ${n}${m.batida ? ' ✓' : ''}</span><span class="num">${esc(brlMt(p.feito.faturamento))} de ${esc(brlMt(m.alvo))}<b>${esc(pctMt(m.pct))}</b></span></div>
+        <div class="mt-trilho2"><div class="fill ${cor}" style="width:${pctBarra.toFixed(1)}%"></div>${m.batida ? '' : `<div class="marca" style="left:${marca.toFixed(1)}%" title="Hoje deveria estar em ${esc(brlMt(m.esperadoHoje))}"></div>`}</div>
+        <div class="pe"><span>${m.batida ? 'Batida' : `Faltam <b>${esc(brlMt(m.falta))}</b> · ${esc(brlMt(m.porDia))} por dia útil`}</span><span>${m.batida ? '' : `hoje deveria estar em ${esc(brlMt(m.esperadoHoje))}`}</span></div></div>`;
+    }
+    /** Conversão do mês numa régua de 0 a 100%, com a marca do alvo e a média do período tracejada. */
+    const qtdMt = (n, um, varios) => `${n} ${n === 1 ? um : varios}`;
+    function conversaoVisualMt(p, d) {
+      const conv = p.conversaoMes;
+      const alvo = p.conversaoAlvo;
+      const cor = !alvo ? 'info' : conv >= alvo ? 'ok' : conv >= alvo - 0.1 ? '' : 'atras';
+      const esperadas = alvo ? Math.ceil(p.feito.reunioes * alvo - 1e-9) : null;
+      const falta = esperadas != null ? Math.max(0, esperadas - p.feito.vendas) : null;
+      const desde = nomeMesMt(d.desde.slice(0, 7));
+      const resumo = !p.feito.reunioes ? 'Nenhuma reunião realizada no mês ainda.'
+        : alvo ? (falta ? `${qtdMt(p.feito.vendas, "venda", "vendas")} em ${qtdMt(p.feito.reunioes, "reunião", "reuniões")}. Com ${pctMt(alvo, 0)}, seriam ${esperadas}: falta ${falta} ${falta === 1 ? 'venda' : 'vendas'}.` : `${qtdMt(p.feito.vendas, "venda", "vendas")} em ${qtdMt(p.feito.reunioes, "reunião", "reuniões")}: alvo de ${pctMt(alvo, 0)} batido.`)
+          : `${qtdMt(p.feito.vendas, "venda", "vendas")} em ${qtdMt(p.feito.reunioes, "reunião", "reuniões")}. Defina a conversão alvo logo abaixo para acompanhar.`;
+      return `<div class="mt-meta" style="margin:0"><div class="cab"><span class="nome">Conversão do mês${alvo && conv >= alvo && p.feito.reunioes ? ' ✓' : ''}</span><span class="num">${alvo ? 'alvo ' + esc(pctMt(alvo, 0)) : 'sem alvo'}<b>${esc(p.feito.reunioes ? pctMt(conv, 1) : '—')}</b></span></div>
+        <div class="mt-trilho2"><div class="fill ${cor}" style="width:${Math.min(100, conv * 100).toFixed(1)}%"></div>
+          ${alvo ? `<div class="marca" style="left:${Math.min(100, alvo * 100).toFixed(1)}%" title="Alvo: ${esc(pctMt(alvo, 1))}"></div>` : ''}
+          ${p.conversaoHistorica ? `<div class="marca media" style="left:${Math.min(100, p.conversaoHistorica * 100).toFixed(1)}%" title="Média desde ${esc(desde)}: ${esc(pctMt(p.conversaoHistorica, 1))}"></div>` : ''}</div>
+        <div class="pe"><span>${esc(resumo)}</span><span>média desde ${esc(desde)}: ${esc(pctMt(p.conversaoHistorica, 1))}</span></div></div>
+        <div class="mt-legenda" style="margin-top:6px">${alvo ? '<span>alvo</span>' : ''}<span class="media">média desde ${esc(desde)}</span></div>`;
+    }
+
+    // ---------- Análises: com quem o closer fecha mais ----------
+    const barrinhaMt = (v, ok) => `<span class="mt-barrinha"><span class="${ok ? 'ok' : ''}" style="width:${Math.min(100, v * 100).toFixed(0)}%"></span></span>`;
+    function desenharAnalisesMt(d) {
+      const a = d.analises;
+      const primeiro = String(d.closer || 'o closer').split(' ')[0];
+      $('mtAnalisesTitulo').textContent = `Com quem o ${primeiro} fecha mais`;
+      if (!a || !a.total) {
+        $('mtAnalisesSub').textContent = '';
+        $('mtDestaques').innerHTML = '';
+        $('mtCortes').innerHTML = '<div class="hint" style="margin:0">Ainda não há reuniões realizadas no período para analisar.</div>';
+        $('mtVendasAnalise').innerHTML = '';
+        return;
+      }
+      $('mtMinAmostra').textContent = a.minAmostra;
+      $('mtAnalisesSub').textContent = `— ${a.total} reuniões realizadas desde ${nomeMesMt(d.desde.slice(0, 7))}, ${a.vendas} vendas · conversão média ${pctMt(a.media, 1)}`;
+      $('mtDestaques').innerHTML = a.destaques.slice(0, 4).map((x) =>
+        `<div class="mt-destaque"><small>${esc(x.titulo)}</small><div class="q"><b>${esc(x.melhor)}</b> converte ${esc(pctMt(x.conversao, 0))}</div>
+          <div class="s">${x.vendas} de ${x.reunioes} reuniões · ${esc(x.vezesMedia.toLocaleString('pt-BR', { maximumFractionDigits: 1 }))}x a média${x.pior !== x.melhor ? ` · menor: ${esc(x.pior)} (${esc(pctMt(x.conversaoPior, 0))})` : ''}</div></div>`).join('') ||
+        '<div class="hint" style="margin:0">Ainda não dá para apontar um tipo de lead que converte acima da média (falta amostra em cada grupo).</div>';
+      const melhorDe = (c) => {
+        const v = c.grupos.filter((g) => g.reunioes >= a.minAmostra && g.rotulo !== 'Não informado' && g.rotulo !== 'Outros');
+        return v.length > 1 ? v.slice().sort((x, y) => y.conversao - x.conversao)[0].rotulo : '';
+      };
+      $('mtCortes').innerHTML = a.cortes.map((c) => {
+        const melhor = melhorDe(c);
+        return `<div class="mt-corte"><h4>${esc(c.titulo)}</h4><table><thead><tr><th></th><th class="r">Reuniões</th><th class="r">Vendas</th><th class="r col-conv">Conversão</th><th class="r">Faturamento</th></tr></thead><tbody>${
+          c.grupos.map((g) => `<tr class="${g.reunioes < a.minAmostra || g.rotulo === 'Não informado' ? 'pouco' : ''} ${g.rotulo === melhor ? 'melhor' : ''}"${g.reunioes < a.minAmostra ? ' title="Poucas reuniões: olhe com cuidado"' : ''}>
+            <td>${esc(g.rotulo)}${g.rotulo === melhor ? ' <span style="color:var(--ok)">★</span>' : ''}</td><td class="r">${g.reunioes}</td><td class="r">${g.vendas}</td>
+            <td class="r">${barrinhaMt(g.conversao, g.rotulo === melhor)}${esc(pctMt(g.conversao, 0))}</td><td class="r">${esc(brlMt(g.faturamento))}</td></tr>`).join('')
+        }</tbody></table></div>`;
+      }).join('') + (a.cortes.some((c) => c.id === 'profissao' || c.id === 'investimento') ? '' :
+        `<div class="hint" style="margin:0">Profissão e investimento ainda não vieram dos cards nem dos formulários${d.diagnostico.formulariosPendentes ? ` (faltam ${d.diagnostico.formulariosPendentes} formulários: clique em "Atualizar do RD")` : ''}.</div>`);
+      const blocos = [];
+      if (a.porProduto.length) blocos.push(`<div class="mt-corte"><h4>Produto vendido</h4><table><thead><tr><th></th><th class="r">Vendas</th><th class="r">% das vendas</th><th class="r">Faturamento</th><th class="r">Ticket médio</th></tr></thead><tbody>${
+        a.porProduto.map((g) => `<tr${g.rotulo === 'Não informado' ? ' class="pouco"' : ''}><td>${esc(g.rotulo)}</td><td class="r">${g.vendas}</td><td class="r">${barrinhaMt(g.parte)}${esc(pctMt(g.parte, 0))}</td><td class="r">${esc(brlMt(g.faturamento))}</td><td class="r">${esc(brlMt(g.ticketMedio))}</td></tr>`).join('')}</tbody></table></div>`);
+      if (a.tempo) blocos.push(`<div class="mt-corte"><h4>Quanto tempo levou para fechar <span class="hint">· média de ${esc(a.tempo.medioDias.toLocaleString('pt-BR', { maximumFractionDigits: 1 }))} dias</span></h4><table><thead><tr><th></th><th class="r">Vendas</th><th class="r">% das vendas</th></tr></thead><tbody>${
+        a.tempo.faixas.map((f) => `<tr><td>${esc(f.rotulo)}</td><td class="r">${f.vendas}</td><td class="r">${barrinhaMt(f.parte)}${esc(pctMt(f.parte, 0))}</td></tr>`).join('')}</tbody></table></div>`);
+      if (a.motivosPerda.length) blocos.push(`<div class="mt-corte"><h4>Por que não compraram (motivo no RD)</h4><table><thead><tr><th></th><th class="r">Leads</th><th class="r">% das perdas</th></tr></thead><tbody>${
+        a.motivosPerda.map((m) => `<tr><td>${esc(m.rotulo)}</td><td class="r">${m.total}</td><td class="r">${barrinhaMt(m.parte)}${esc(pctMt(m.parte, 0))}</td></tr>`).join('')}</tbody></table></div>`);
+      $('mtVendasAnalise').innerHTML = blocos.join('') || '<div class="hint" style="margin:0">Ainda não há vendas no período.</div>';
+    }
+
     const barraMatch = (rotulo, atual, alvo, classe) => {
       const p = alvo ? Math.min(1, atual / alvo) : 0;
       return `<div class="mt-barra"><div class="lin"><b>${esc(rotulo)}${atual >= alvo && alvo ? ' ✓' : ''}</b><span>${esc(brlMt(atual))} / ${esc(brlMt(alvo))} · ${esc(pctMt(alvo ? atual / alvo : 0))}</span></div>
@@ -1465,24 +1608,21 @@
       const p = d.plano;
       const m1 = p.metas[0];
       $('mtMesNome').textContent = '— ' + nomeMesMt(p.mes, true) + ` · ${p.diasRestantes} de ${p.diasUteis} dias úteis pela frente`;
-      $('mtMedidor').innerHTML = medidorMatch(m1 ? m1.pct : 0, p.feito.faturamento, m1 ? m1.alvo : 0);
+      $('mtMedidor').innerHTML = medidorMatch(m1 ? m1.pct : 0, p.feito.faturamento, m1 ? m1.alvo : 0, m1 ? m1.esperadoHoje : 0);
       $('mtBarras').innerHTML = p.metas.length
-        ? p.metas.map((m, i) => barraMatch('Meta ' + (i + 1), p.feito.faturamento, m.alvo, i ? 'info' : '')).join('') +
-          barraMatch('Meta diária acumulada (onde deveria estar hoje)', p.feito.faturamento, m1.esperadoHoje, '')
-        : '<div class="hint" style="margin:0">Nenhuma meta para este mês ainda. Abra "Definir a meta do mês" logo abaixo.</div>';
+        ? ritmoMt(p, m1) + p.metas.map((m, i) => metaVisualMt(i + 1, m, p)).join('') + '<div class="mt-legenda"><span>onde deveria estar hoje</span></div>'
+        : '<div class="hint" style="margin:0">Nenhuma meta para este mês ainda. Preencha "Definir a meta" logo abaixo.</div>';
+      $('mtConversaoVis').innerHTML = conversaoVisualMt(p, d);
+      desenharAnalisesMt(d);
+      const porDiaUtil = (x) => `${x.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} por dia útil`;
       const k = [
-        kpiMatch('Faturamento no mês', brlMt(p.feito.faturamento)),
-        kpiMatch('Reuniões realizadas', String(p.feito.reunioes), true),
-        kpiMatch('Conversão no mês', p.feito.reunioes ? pctMt(p.conversaoMes, 1) : '—', true, p.conversaoAlvo ? 'alvo ' + pctMt(p.conversaoAlvo, 1) : ''),
-        kpiMatch('Vendas', String(p.feito.vendas), true),
+        kpiMatch('Faturamento no mês', brlMt(p.feito.faturamento), false, `${p.diasPassados} de ${p.diasUteis} dias úteis`),
+        kpiMatch('Reuniões realizadas', String(p.feito.reunioes), true, p.diasPassados ? porDiaUtil(p.feito.reunioes / p.diasPassados) : ''),
+        kpiMatch('Vendas', String(p.feito.vendas), true, p.feito.vendas ? 'ticket ' + brlMt(p.feito.faturamento / p.feito.vendas) : ''),
+        kpiMatch('Vendas que faltam', m1 && !m1.batida && m1.vendas != null ? String(m1.vendas) : m1 && m1.batida ? '0' : '—', true, m1 && !m1.batida && m1.vendas && p.diasRestantes ? porDiaUtil(m1.vendas / p.diasRestantes) : 'para a meta 1'),
+        kpiMatch('Reuniões que faltam', m1 && !m1.batida && m1.reunioes != null ? String(m1.reunioes) : m1 && m1.batida ? '0' : '—', true, m1 && !m1.batida && m1.reunioesPorDia != null ? porDiaUtil(m1.reunioesPorDia) : 'para a meta 1'),
+        kpiMatch('Projeção no ritmo', brlMt(p.projecao), true, m1 ? pctMt(p.projecao / m1.alvo) + ' da meta 1' : ''),
       ];
-      if (m1) {
-        k.push(m1.batida ? kpiMatch('Meta 1', 'Batida ✓', true) : kpiMatch('Falta para a meta 1', brlMt(m1.falta), true));
-        if (!m1.batida) k.push(kpiMatch('Por dia útil', brlMt(m1.porDia), true));
-        if (!m1.batida && m1.vendas != null) k.push(kpiMatch('Vendas que faltam', String(m1.vendas), true));
-        if (!m1.batida && m1.reunioes != null) k.push(kpiMatch('Reuniões que faltam', String(m1.reunioes), true, m1.reunioesPorDia != null ? `${m1.reunioesPorDia.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} por dia útil` : ''));
-      }
-      k.push(kpiMatch('Projeção no ritmo', brlMt(p.projecao), true));
       $('mtPlano').innerHTML = k.join('');
       $('mtPlanoNota').textContent = p.ticketMedio
         ? `Vendas que faltam saem do ticket médio do período (${brlMt(p.ticketMedio)}); reuniões que faltam, da ${p.conversaoAlvo ? 'conversão alvo (' + pctMt(p.conversaoAlvo, 1) + ')' : 'conversão do período (' + pctMt(p.conversaoHistorica, 1) + ')'}. A projeção leva o faturamento de até hoje para o mês inteiro, no mesmo ritmo por dia útil.` +
@@ -1555,6 +1695,22 @@
       }
     }
     $('mtAtualizar').addEventListener('click', () => carregarMatch(true));
+    // Atalhos: rolam até a parte da aba.
+    document.querySelectorAll('[data-mt-ir]').forEach((b) => b.addEventListener('click', () => {
+      const alvo = $(b.dataset.mtIr);
+      if (alvo) alvo.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }));
+    // Closer e "desde" ficam lembrados neste navegador; trocar um deles recarrega a aba.
+    try {
+      const salvo = JSON.parse(localStorage.getItem('mtFiltro') || 'null');
+      if (salvo && salvo.closer) $('mtCloser').value = salvo.closer;
+      if (salvo && /^\d{4}-\d{2}-\d{2}$/.test(salvo.desde || '')) $('mtDesde').value = salvo.desde;
+    } catch (_) { /* sem armazenamento: fica o padrão */ }
+    ['mtCloser', 'mtDesde'].forEach((id) => $(id).addEventListener('change', () => {
+      try { localStorage.setItem('mtFiltro', JSON.stringify({ closer: $('mtCloser').value.trim(), desde: $('mtDesde').value })); } catch (_) { /* tudo bem */ }
+      matchDados = null;
+      carregarMatch(false);
+    }));
 
     // "100.000" no campo; o servidor aceita o texto como está.
     const numeroMt = (v) => {
