@@ -2261,18 +2261,18 @@ test('Match com PH: medidor da meta, plano do mês, comparativo, mês a mês e a
   assert.match(p.$('mtMedidor').textContent, /20%[\s\S]*R\$\s*20\.000[\s\S]*de R\$\s*100\.000 \(meta 1\)/);
   assert.match(p.$('mtBarras').textContent, /Meta 1[\s\S]*Meta diária acumulada/);
   const plan = p.$('mtPlano').textContent;
-  for (const x of ['Falta para a meta 1', '80.000', 'Por dia útil', '8.000', 'Vendas que faltam', 'Reuniões que faltam', '10 (1/dia)', 'Conversão no mês', '25,0%', 'Projeção no ritmo', '32.857']) assert.ok(plan.includes(x), 'faltou no plano: ' + x);
+  for (const x of ['Falta para a meta 1', '80.000', 'Por dia útil', '8.000', 'Vendas que faltam', 'Reuniões que faltam', '10', '1 por dia útil', 'Conversão no mês', '25,0%', 'Projeção no ritmo', '32.857']) assert.ok(plan.includes(x), 'faltou no plano: ' + x);
   assert.match(p.$('mtMesNome').textContent, /outubro de 2026 · 10 de 23 dias úteis pela frente/);
   // o formulário já vem com a meta salva, formatada, e explica os dias úteis
   assert.equal(p.$('mtMeta1').value, '100.000');
   assert.match(p.$('mtFormDias').textContent, /segunda a sexta \+ o último sábado \(31\/10\) · 23 no mês/);
-  assert.match(p.$('mtDica1').textContent, /R\$\s*8\.000\/dia útil · 6 venda\(s\) · 10 reunião\(ões\)/);
+  assert.match(p.$('mtDica1').textContent, /R\$\s*8\.000\/dia · 6 vendas · 10 reuniões/);
   assert.match(p.$('mtDicaConv').textContent, /No mês: 25,0% · desde jul\/26: 60,0%/);
   assert.equal(p.$('mtSabado'), null, 'não tem mais a opção de sábado: o último sábado sempre conta');
   // a prévia muda enquanto digita, antes de salvar
   p.$('mtConversao').value = '20';
   p.$('mtConversao').dispatchEvent(new p.w.Event('input'));
-  assert.match(p.$('mtDica1').textContent, /6 venda\(s\) · 30 reunião\(ões\)/);
+  assert.match(p.$('mtDica1').textContent, /6 vendas · 30 reuniões/);
   assert.match(p.$('mtComparativo').textContent, /Reuniões realizadas4▲ 100%antes: 2/);
   const linhas = [...p.$('mtMeses').querySelectorAll('tr')].map((tr) => [...tr.cells].map((td) => td.textContent.replace(/\s+/g, ' ').trim()).join(' '));
   assert.equal(linhas.length, 5, '4 meses + total');
