@@ -252,6 +252,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         captureQuality: msg.captureQuality,
         // O que o cartão do RD sabia do lead na hora: é o vínculo do report com o card.
         vinculo: msg.vinculo || null,
+        // A profissão do formulário do RD: vai para o PDF de quem tem "Profissão no report" ligado.
+        formulario: msg.formulario || null,
       });
       if (!r.ok) return sendResponse({ ok: false, erro: r.erro });
       // Idempotência: mesma conversa já gerada antes — o content script decide

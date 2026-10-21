@@ -1032,7 +1032,7 @@
         mensagensLead: stats.doLead,
       };
       let resp = await new Promise((resolve) =>
-        chrome.runtime.sendMessage({ action: 'reportFetch', server, mensagens, nome, captureQuality, vinculo: vinculoDoLead() }, resolve)
+        chrome.runtime.sendMessage({ action: 'reportFetch', server, mensagens, nome, captureQuality, vinculo: vinculoDoLead(), formulario: formularioDoLead() }, resolve)
       );
 
       if (!resp || !resp.ok) {
@@ -1060,7 +1060,7 @@
         }
         mostrarBadge({ texto: '<b>Gerando de novo…</b>', loading: true });
         resp = await new Promise((resolve) =>
-          chrome.runtime.sendMessage({ action: 'reportFetch', server, mensagens, nome, captureQuality, forcarNovo: true, vinculo: vinculoDoLead() }, resolve)
+          chrome.runtime.sendMessage({ action: 'reportFetch', server, mensagens, nome, captureQuality, forcarNovo: true, vinculo: vinculoDoLead(), formulario: formularioDoLead() }, resolve)
         );
         if (!resp || !resp.ok) {
           mostrarBadge({ texto: escHtml((resp && resp.erro) || 'Falha ao gerar o report.'), cor: '#ff6f5c' });
@@ -1170,6 +1170,19 @@
       contatoId: String((f && f.contatoId) || ''),
       dealId: String((escolhido && escolhido.id) || ''),
     };
+  }
+  /**
+   * O que o formulário do lead no RD diz e o report pode usar: hoje, a profissão (inteira, sem encurtar).
+   * O servidor só põe no PDF de quem tem "Profissão no report" ligado.
+   */
+  function formularioDoLead() {
+    const est = ficha.ultimoEstado;
+    const f = est && est.ficha && typeof est.ficha === 'object' ? est.ficha : null;
+    if (!f) return null;
+    const campos = ((f.formulario && f.formulario.campos) || []).concat(f.campos || []);
+    const semAcento = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    const c = campos.find((x) => x && /profiss|ocupac/.test(semAcento(x.rotulo)) && String(x.valor || '').trim() && !/\{\{/.test(String(x.valor || '')));
+    return c ? { profissao: String(c.valor).replace(/\s+/g, ' ').trim().slice(0, 120) } : null;
   }
   // Leitura do agendamento e do "lead respondeu" (agenda.js, carregado antes deste arquivo).
   const agendaLib = (typeof globalThis !== 'undefined' && globalThis.__crAgenda) || null;

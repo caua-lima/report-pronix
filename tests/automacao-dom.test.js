@@ -273,12 +273,13 @@ test('report: leva o vínculo com o card do RD que está na tela (id do contato 
       },
     };
   };
-  const comCard = servidorCom({ encontrado: true, ficha: { ...fichaDoRd('Respondeu'), contatoId: 'k77', emails: ['marcos@exemplo.com', 'outro@exemplo.com'] } });
+  const comCard = servidorCom({ encontrado: true, ficha: { ...fichaDoRd('Respondeu'), contatoId: 'k77', emails: ['marcos@exemplo.com', 'outro@exemplo.com'], formulario: { campos: [{ rotulo: 'Qual é a sua profissão?', valor: ' Lojista/Comerciante  de bairro ' }, { rotulo: 'Investimento', valor: 'R$3.000 a R$5.000' }], autor: '', quando: '' } } });
   const p = abrir(comCard);
   await fichaNaTela(p);
   p.iniciar();
   await esperar(() => comCard.pedidos.length === 1, { motivo: 'report pedido' });
   assert.deepEqual(comCard.pedidos[0].vinculo, { telefone: '5571999998888', email: 'marcos@exemplo.com', contatoId: 'k77', dealId: 'd1' });
+  assert.deepEqual(comCard.pedidos[0].formulario, { profissao: 'Lojista/Comerciante de bairro' }, 'a profissão do formulário, inteira');
 
   // o RD não achou o lead: vai só o telefone da conversa, e o servidor tenta o resto
   const semCard = servidorCom({ encontrado: false });
@@ -287,6 +288,7 @@ test('report: leva o vínculo com o card do RD que está na tela (id do contato 
   q.iniciar();
   await esperar(() => semCard.pedidos.length === 1, { motivo: 'report pedido sem ficha' });
   assert.deepEqual(semCard.pedidos[0].vinculo, { telefone: '5571999998888', email: '', contatoId: '', dealId: '' });
+  assert.equal(semCard.pedidos[0].formulario, null, 'sem ficha, sem formulário');
 });
 
 // ---------------------------------------------------------------- lead que só respondeu a primeira pergunta
