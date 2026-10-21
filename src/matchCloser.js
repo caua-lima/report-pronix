@@ -16,6 +16,11 @@
 //  - Reports do usuário com esse closer e um resultado de reunião (venda, não fechou, follow-up) que não
 //    apareçam no RD também entram — o RD é a fonte, o report cobre o card sem o campo SDR.
 // Conversão do mês = vendas do mês ÷ reuniões realizadas do mês (como no dashboard-pessoal).
+//
+// Escopo: "minhas" (o campo SDR do card é você) ou "time" (é você ou um dos SDRs do time — MATCH_SDRS_TIME,
+// por padrão Ágatha Vielmi, Nicoly Beatriz, Reinaldo Junior, Samuel Filipe, Luiza Lemes, Juliana Ferreira e
+// Isamara). O RD é lido UMA vez: cada reunião leva o nome do SDR e se é sua, e o painel recorta. A comparação
+// (você x time, por SDR e por profissão) vem sempre, qualquer que seja o escopo escolhido.
 
 const db = require('./db');
 const crm = require('./crm');
@@ -26,6 +31,9 @@ const analises = require('./matchAnalises');
 
 const DESDE_PADRAO = () => process.env.MATCH_DESDE || '2026-07-01';
 const CLOSER_PADRAO = () => process.env.MATCH_CLOSER || 'Paulo Henrique';
+const TIME_PADRAO = 'Ágatha Vielmi, Nicoly Beatriz, Reinaldo Junior, Samuel Filipe, Luiza Lemes, Juliana Ferreira, Isamara';
+/** Os SDRs do time (nomes como aparecem no campo SDR do card, ou o primeiro nome). */
+const timeDeSdrs = () => String(process.env.MATCH_SDRS_TIME || TIME_PADRAO).split(',').map((x) => x.trim()).filter(Boolean);
 const MAX_PAGINAS = 15;
 const FOLGA_CRIACAO_DIAS = 75; // card criado até isso antes do início ainda pode ter a reunião no período
 const CACHE_SEG = 20 * 60;
@@ -39,6 +47,29 @@ const palavrasBatem = (nome, alvo) => {
   return a.length > 0 && a.every((x) => p.has(x));
 };
 const slug = (s) => norm(s).replace(/ /g, '-') || 'closer';
+
+/** O nome bate com o valor do campo SDR? O nome inteiro, o primeiro nome, ou o valor começando pelo primeiro nome. */
+function nomeBate(valor, nome) {
+  const v = norm(valor);
+  const n = norm(nome);
+  if (!v || !n) return false;
+  const primeiro = n.split(' ')[0];
+  return v === n || v === primeiro || v.split(' ')[0] === primeiro;
+}
+
+/**
+ * De quem é o card: { tipo: 'sem' } (campo SDR vazio), { tipo: 'eu' }, { tipo: 'time', nome } ou { tipo: 'outro', nome }.
+ * Você vem antes do time: um card seu nunca é contado como de outra pessoa.
+ */
+function quemEhOSdr(deal, usuario, time) {
+  const campo = (Array.isArray(deal.deal_custom_fields) ? deal.deal_custom_fields : [])
+    .find((c) => norm(c && c.custom_field && c.custom_field.label) === 'sdr');
+  const bruto = String((campo && campo.value) || '').trim();
+  if (!norm(bruto)) return { tipo: 'sem', nome: '' };
+  if (nomeBate(bruto, usuario.nome)) return { tipo: 'eu', nome: usuario.nome };
+  const doTime = time.find((n) => nomeBate(bruto, n));
+  return doTime ? { tipo: 'time', nome: doTime } : { tipo: 'outro', nome: bruto };
+}
 const mesDe = (dia) => String(dia || '').slice(0, 7);
 const somaDias = (dia, n) => new Date(Date.parse(dia + 'T12:00:00Z') + n * 86400000).toISOString().slice(0, 10);
 
@@ -123,7 +154,8 @@ async function levantar({ usuario, closer, desde, atualizar = false } = {}) {
   if (!crm.configurado()) throw new Error('O RD Station não está configurado no servidor.');
   const nomeCloser = String(closer || CLOSER_PADRAO()).trim();
   const inicio = /^\d{4}-\d{2}-\d{2}$/.test(String(desde || '')) ? desde : DESDE_PADRAO();
-  const chaveCache = `match_${usuario.id}_${slug(nomeCloser)}_${inicio}`;
+  const time = timeDeSdrs();
+  const chaveCache = `match2_${usuario.id}_${slug(nomeCloser)}_${inicio}_${slug(time.join(' '))}`;
   if (!atualizar) {
     const guardado = await db.cacheGet(chaveCache).catch(() => null);
     if (guardado) {
@@ -141,15 +173,15 @@ async function levantar({ usuario, closer, desde, atualizar = false } = {}) {
 
   const diagnostico = {
     closerNoRd: closerRd ? closerRd.nome : '', cardsLidos: cards.length, paginas: diag.paginas, truncado: diag.truncado,
-    deOutroCloser: 0, semSdr: 0, deOutroSdr: 0, noShow: 0, aindaNaoAconteceu: 0, foraDoPeriodo: 0, dataPeloCampo: 0, dataPelaCriacao: 0,
+    deOutroCloser: 0, semSdr: 0, deOutroSdr: 0, doTime: 0, noShow: 0, aindaNaoAconteceu: 0, foraDoPeriodo: 0, dataPeloCampo: 0, dataPelaCriacao: 0,
     etapasSemReuniao: {}, doReport: 0,
   };
   const reunioes = [];
   for (const d of cards) {
     if (!palavrasBatem((d.user && d.user.name) || '', nomeCloser)) { diagnostico.deOutroCloser++; continue; }
-    const doSdr = sdrDoCard(d, usuario);
-    if (doSdr === null) { diagnostico.semSdr++; continue; }
-    if (!doSdr) { diagnostico.deOutroSdr++; continue; }
+    const quem = quemEhOSdr(d, usuario, time);
+    if (quem.tipo === 'sem') { diagnostico.semSdr++; continue; }
+    if (quem.tipo === 'outro') { diagnostico.deOutroSdr++; continue; }
     const estado = estadoDoCard(d);
     if (estado === 'no_show') { diagnostico.noShow++; continue; }
     if (estado === 'antes') {
@@ -166,8 +198,10 @@ async function levantar({ usuario, closer, desde, atualizar = false } = {}) {
     const contaVenda = venda && diaVenda >= inicio && diaVenda <= hoje;
     if (!contaReuniao && !contaVenda) { diagnostico.foraDoPeriodo++; continue; }
     if (contaReuniao) diagnostico[origem === 'campo' ? 'dataPeloCampo' : 'dataPelaCriacao']++;
+    if (quem.tipo === 'time') diagnostico.doTime++;
     reunioes.push({
       id: idDe(d), fonte: 'rd', lead: leadDoCard(d), dataReuniao: dia, origemData: origem, contaReuniao,
+      sdr: quem.nome, minha: quem.tipo === 'eu',
       estado, etapa: (d.deal_stage && d.deal_stage.name) || '', motivo: (d.deal_lost_reason && d.deal_lost_reason.name) || '',
       venda, diaVenda: contaVenda ? diaVenda : '', ticket: contaVenda ? Number(d.amount_total) || 0 : 0,
       // Para as análises: a venda em qualquer data (a conversão de um tipo de lead é das reuniões dele) e o formulário.
@@ -179,8 +213,12 @@ async function levantar({ usuario, closer, desde, atualizar = false } = {}) {
   // Reports do usuário com esse closer e resultado de reunião que o RD não trouxe (card sem o campo SDR, p.ex.).
   const ids = new Set(reunioes.map((r) => r.id));
   const leads = new Set(reunioes.map((r) => norm(r.lead)).filter(Boolean));
-  const meus = (await stats.listar({}).catch(() => [])).filter((r) => r.usuarioId === usuario.id);
-  for (const r of meus) {
+  const todosReports = await stats.listar({}).catch(() => []);
+  const meus = todosReports.filter((r) => r.usuarioId === usuario.id);
+  // Reports do time: de quem tem o nome de um SDR da lista (o seu já está em "meus").
+  const sdrDoReport = (r) => (r.usuarioId === usuario.id ? usuario.nome : time.find((n) => nomeBate(r.usuarioNome || '', n)) || '');
+  const doTime = todosReports.filter((r) => r.usuarioId !== usuario.id && sdrDoReport(r));
+  for (const r of meus.concat(doTime)) {
     if (!RESULTADOS_REUNIAO.has(r.resultado) || !palavrasBatem(r.closerNome || '', nomeCloser)) continue;
     if ((r.rdDealId && ids.has(String(r.rdDealId))) || ids.has(String(r.id).replace(/^rd/, '')) || leads.has(norm(r.lead))) continue;
     const venda = stats.ehVenda(r.resultado);
@@ -192,6 +230,7 @@ async function levantar({ usuario, closer, desde, atualizar = false } = {}) {
     diagnostico.doReport++;
     reunioes.push({
       id: 'r_' + r.id, fonte: 'report', lead: r.lead || r.contato || '', dataReuniao: dia, origemData: r.dataReuniao ? 'report' : 'dia-do-report', contaReuniao,
+      sdr: sdrDoReport(r), minha: r.usuarioId === usuario.id,
       estado: venda ? 'venda' : r.resultado === 'em_followup' ? 'fup' : 'nao_comprou', etapa: '', motivo: '',
       venda, diaVenda: contaVenda ? diaVenda : '', ticket: contaVenda ? Number(r.ticket) || 0 : 0, produto: r.produto || '',
       diaVendaReal: diaVenda, ticketTotal: venda ? Number(r.ticket) || 0 : 0, lead_: {},
@@ -201,7 +240,7 @@ async function levantar({ usuario, closer, desde, atualizar = false } = {}) {
 
   // Perfil e nível de consciência do report desse lead (a correção do master vale mais que a leitura da IA).
   const leitura = new Map();
-  for (const r of meus) {
+  for (const r of meus.concat(doTime)) {
     const v = { perfil: r.perfilReal || r.perfil || '', consciencia: r.conscienciaReal || r.consciencia || '' };
     if (!v.perfil && !v.consciencia) continue;
     if (r.rdDealId) leitura.set('d' + r.rdDealId, v);
@@ -217,7 +256,8 @@ async function levantar({ usuario, closer, desde, atualizar = false } = {}) {
   diagnostico.formulariosLidos = form.lidos;
   diagnostico.formulariosPendentes = form.pendentes;
 
-  const saida = { closer: nomeCloser, sdr: usuario.nome, desde: inicio, ate: hoje, atualizadoEm: new Date().toISOString(), meses: porMes(reunioes, inicio, hoje), reunioes, diagnostico };
+  // `meses` continua sendo o SEU mês a mês (quem chama levantar() sozinho espera isso); `reunioes` traz o time, com `minha`.
+  const saida = { closer: nomeCloser, sdr: usuario.nome, time, desde: inicio, ate: hoje, atualizadoEm: new Date().toISOString(), meses: porMes(reunioes.filter((r) => r.minha), inicio, hoje), reunioes, diagnostico };
   await db.cacheSet(chaveCache, JSON.stringify(saida), CACHE_SEG).catch(() => {});
   return { ...saida, cache: false };
 }
@@ -357,19 +397,63 @@ function mesmoPeriodo(reunioes, hoje) {
   return { atual: conta(mesAtual), anterior: conta(anterior) };
 }
 
-/** Tudo da aba: o levantamento, a meta do mês corrente e o plano. */
-async function painel({ usuario, closer, desde, atualizar } = {}) {
+/** Totais do período: reuniões realizadas, vendas, conversão (vendas ÷ reuniões) e faturamento — a soma dos meses. */
+function totais(meses) {
+  const t2 = meses.reduce((a, m) => ({ reunioes: a.reunioes + m.reunioes, vendas: a.vendas + m.vendas, faturamento: a.faturamento + m.faturamento }), { reunioes: 0, vendas: 0, faturamento: 0 });
+  return { ...t2, conversao: t2.reunioes ? t2.vendas / t2.reunioes : 0, ticketMedio: t2.vendas ? t2.faturamento / t2.vendas : 0 };
+}
+
+/**
+ * Você x time, sempre lado a lado: o total do período, por SDR e por profissão (as duas conversões na mesma linha).
+ */
+function comparar(reunioes, inicio, hoje, usuario) {
+  const minhas = reunioes.filter((r) => r.minha);
+  const porSdr = new Map();
+  for (const r of reunioes) {
+    const nome = r.minha ? usuario.nome : r.sdr || 'Sem nome';
+    if (!porSdr.has(nome)) porSdr.set(nome, []);
+    porSdr.get(nome).push(r);
+  }
+  const sdrs = [...porSdr.entries()].map(([nome, lista2]) => ({ nome, voce: nome === usuario.nome, ...totais(porMes(lista2, inicio, hoje)) }))
+    .filter((x) => x.reunioes || x.vendas)
+    .sort((a, b) => b.reunioes - a.reunioes || b.conversao - a.conversao);
+  // Profissão: a conversão das SUAS reuniões e a do time, no mesmo grupo (vendas de qualquer data, como nas análises).
+  const profMinha = analises.analisar(minhas).cortes.find((c) => c.id === 'profissao');
+  const profTime = analises.analisar(reunioes).cortes.find((c) => c.id === 'profissao');
+  const chave = (g) => norm(g.rotulo);
+  const minhaPor = new Map(((profMinha && profMinha.grupos) || []).map((g) => [chave(g), g]));
+  const profissoes = ((profTime && profTime.grupos) || []).map((g) => {
+    const m = minhaPor.get(chave(g)) || { reunioes: 0, vendas: 0, conversao: 0 };
+    return { rotulo: g.rotulo, time: { reunioes: g.reunioes, vendas: g.vendas, conversao: g.conversao }, minha: { reunioes: m.reunioes, vendas: m.vendas, conversao: m.conversao } };
+  });
+  return { minha: totais(porMes(minhas, inicio, hoje)), time: totais(porMes(reunioes, inicio, hoje)), sdrs, profissoes };
+}
+
+/**
+ * Tudo da aba: o levantamento recortado pelo escopo ("minhas" ou "time"), a comparação, a meta e o plano.
+ * Meta e plano são SEUS (a meta é pessoal): seguem as suas reuniões em qualquer escopo.
+ */
+async function painel({ usuario, closer, desde, atualizar, escopo } = {}) {
   const dados = await levantar({ usuario, closer, desde, atualizar });
+  const doTime = escopo === 'time';
+  const minhas = dados.reunioes.filter((r) => r.minha);
+  const base = doTime ? dados.reunioes : minhas;
+  const meses = porMes(base, dados.desde, dados.ate);
+  const mesesMeus = doTime ? porMes(minhas, dados.desde, dados.ate) : meses;
   const metas = await lerMetas(usuario.id, dados.closer);
   const mesAtual = mesDe(dados.ate);
-  const doMes = dados.meses.find((m) => m.mes === mesAtual) || { reunioes: 0, vendas: 0, faturamento: 0 };
+  const doMes = mesesMeus.find((m) => m.mes === mesAtual) || { reunioes: 0, vendas: 0, faturamento: 0 };
   return {
     ...dados,
+    escopo: doTime ? 'time' : 'minhas',
+    reunioes: base,
+    meses,
     metas,
-    plano: plano({ mes: mesAtual, hoje: dados.ate, meta: metas[mesAtual] || {}, feito: { reunioes: doMes.reunioes, vendas: doMes.vendas, faturamento: doMes.faturamento }, historico: dados.meses }),
-    mesmoPeriodo: mesmoPeriodo(dados.reunioes, dados.ate),
-    analises: analises.analisar(dados.reunioes),
+    plano: plano({ mes: mesAtual, hoje: dados.ate, meta: metas[mesAtual] || {}, feito: { reunioes: doMes.reunioes, vendas: doMes.vendas, faturamento: doMes.faturamento }, historico: mesesMeus }),
+    mesmoPeriodo: mesmoPeriodo(base, dados.ate),
+    analises: analises.analisar(base),
+    comparacao: comparar(dados.reunioes, dados.desde, dados.ate, usuario),
   };
 }
 
-module.exports = { lerNumero, levantar, painel, plano, diasUteis, ultimoSabado, salvarMeta, lerMetas, estadoDoCard, dataDaReuniao, porMes, mesmoPeriodo, diaDoValor };
+module.exports = { quemEhOSdr, timeDeSdrs, comparar, totais, lerNumero, levantar, painel, plano, diasUteis, ultimoSabado, salvarMeta, lerMetas, estadoDoCard, dataDaReuniao, porMes, mesmoPeriodo, diaDoValor };

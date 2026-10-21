@@ -87,7 +87,10 @@ test('reuniões realizadas e vendas do PH com o Cauã de SDR, mês a mês desde 
   assert.deepEqual([meses['2026-10'].reunioes, meses['2026-10'].vendas, meses['2026-10'].faturamento], [1, 1, 20000], 'venda de outubro de card antigo conta no mês da venda');
 
   const d = r.diagnostico;
-  assert.deepEqual([d.noShow, d.aindaNaoAconteceu, d.deOutroSdr, d.semSdr, d.deOutroCloser, d.doReport], [1, 1, 1, 1, 1, 1]);
+  // c7 é da Samuel Filipe, que é do time: entra nas reuniões (marcada como não sua) e não conta como "outro SDR".
+  assert.deepEqual([d.noShow, d.aindaNaoAconteceu, d.deOutroSdr, d.doTime, d.semSdr, d.deOutroCloser, d.doReport], [1, 1, 0, 1, 1, 1, 1]);
+  const c7 = r.reunioes.find((x) => x.id === "c7");
+  assert.deepEqual([c7.sdr, c7.minha], ["Samuel Filipe", false]);
   assert.deepEqual(d.etapasSemReuniao, { 'Reunião agendada': 1 });
   assert.equal(d.dataPeloCampo, 1);
   assert.equal(r.reunioes.filter((x) => x.lead === 'Lead c1').length, 1, 'report do mesmo lead de um card não conta duas vezes');
@@ -212,4 +215,40 @@ test('análises no levantamento: campos do card e, sem eles, a anotação do for
   // O painel traz as análises
   const p = await match.painel({ usuario: { id: E.caua.id, nome: 'Cauã Lima' }, closer: 'Paulo Henrique', desde: '2026-07-01', atualizar: true });
   assert.ok(p.analises && p.analises.total >= 4 && Array.isArray(p.analises.cortes));
+});
+
+test('time x só as minhas: o escopo recorta as reuniões, e a comparação (você x time, por SDR e por profissão) vem sempre', async () => {
+  const u = { id: E.caua.id, nome: 'Cauã Lima' };
+  const minhas = await match.painel({ usuario: u, closer: 'Paulo Henrique', desde: '2026-07-01' });
+  const time = await match.painel({ usuario: u, closer: 'Paulo Henrique', desde: '2026-07-01', escopo: 'time' });
+  assert.equal(minhas.escopo, 'minhas');
+  assert.equal(time.escopo, 'time');
+  assert.ok(!minhas.reunioes.some((x) => x.id === 'c7'), 'só as minhas: a reunião da Samuel fica de fora');
+  assert.ok(time.reunioes.some((x) => x.id === 'c7'), 'time: a reunião da Samuel entra');
+  assert.equal(time.reunioes.length, minhas.reunioes.length + 1);
+  // A comparação é a mesma nos dois escopos.
+  assert.deepEqual(minhas.comparacao, time.comparacao);
+  const c = time.comparacao;
+  assert.equal(c.time.reunioes, c.minha.reunioes + 1);
+  assert.equal(c.minha.vendas, c.time.vendas, 'a reunião da Samuel não virou venda');
+  assert.ok(c.time.conversao < c.minha.conversao);
+  const samuel = c.sdrs.find((x) => x.nome === 'Samuel Filipe');
+  assert.deepEqual([samuel.reunioes, samuel.vendas, samuel.voce], [1, 0, false]);
+  assert.equal(c.sdrs.find((x) => x.voce).nome, 'Cauã Lima');
+  // Meta e plano são seus: iguais nos dois escopos.
+  assert.deepEqual(minhas.plano, time.plano);
+});
+
+test('de quem é o card: você vem antes do time, o primeiro nome basta, e quem não está na lista é "outro"', () => {
+  const card2 = (sdr) => ({ deal_custom_fields: sdr == null ? [] : [{ value: sdr, custom_field: { label: 'SDR' } }] });
+  const eu = { nome: 'Cauã Lima' };
+  const time = ['Ágatha Vielmi', 'Nicoly Beatriz', 'Reinaldo Junior', 'Isamara'];
+  assert.deepEqual(match.quemEhOSdr(card2('Cauã'), eu, time), { tipo: 'eu', nome: 'Cauã Lima' });
+  assert.deepEqual(match.quemEhOSdr(card2('Agatha'), eu, time), { tipo: 'time', nome: 'Ágatha Vielmi' }, 'sem acento também');
+  assert.deepEqual(match.quemEhOSdr(card2('Reinaldo Junior'), eu, time), { tipo: 'time', nome: 'Reinaldo Junior' });
+  assert.deepEqual(match.quemEhOSdr(card2('Isamara'), eu, time), { tipo: 'time', nome: 'Isamara' });
+  assert.deepEqual(match.quemEhOSdr(card2('Fulano'), eu, time), { tipo: 'outro', nome: 'Fulano' });
+  assert.equal(match.quemEhOSdr(card2(null), eu, time).tipo, 'sem');
+  assert.ok(match.timeDeSdrs().includes('Juliana Ferreira'), 'o time padrão tem os sete SDRs');
+  assert.equal(match.timeDeSdrs().length, 7);
 });
