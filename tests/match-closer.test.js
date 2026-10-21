@@ -103,18 +103,22 @@ test('plano do mês: quanto falta para cada meta, por dia útil, quantas vendas 
     { mes: '2026-07', reunioes: 2, vendas: 1, faturamento: 18000 }, { mes: '2026-08', reunioes: 1, vendas: 0, faturamento: 0 },
     { mes: '2026-09', reunioes: 1, vendas: 1, faturamento: 9000 }, { mes: '2026-10', reunioes: 1, vendas: 1, faturamento: 20000 },
   ];
-  const p = match.plano({ mes: '2026-10', hoje: '2026-10-20', meta: { meta1: 100000, meta2: 150000, metaReunioes: 12 }, feito: { reunioes: 1, vendas: 1, faturamento: 20000 }, historico });
-  assert.deepEqual([p.diasUteis, p.diasPassados, p.diasRestantes], [22, 14, 9], 'out/2026: 22 dias úteis; do dia 20 ao 30 faltam 9 (hoje incluído)');
-  assert.equal(p.conversao, 0.6);
+  const p = match.plano({ mes: '2026-10', hoje: '2026-10-20', meta: { meta1: 100000, meta2: 150000 }, feito: { reunioes: 1, vendas: 1, faturamento: 20000 }, historico });
+  assert.deepEqual([p.diasUteis, p.diasPassados, p.diasRestantes, p.ultimoSabado], [23, 14, 10, '2026-10-31'], 'out/2026: 22 dias de semana + o último sábado (31); do dia 20 ao 31 faltam 10 (hoje incluído)');
+  assert.deepEqual([p.conversao, p.conversaoHistorica, p.conversaoAlvo, p.conversaoMes], [0.6, 0.6, 0, 1]);
   assert.equal(Math.round(p.ticketMedio), 15667);
   const [m1, m2] = p.metas;
-  assert.deepEqual([m1.falta, Math.round(m1.porDia), m1.vendas, m1.reunioes], [80000, 8889, 6, 10]);
-  assert.equal(Math.round(m1.esperadoHoje), 63636, 'meta diária acumulada: onde deveria estar hoje');
+  assert.deepEqual([m1.falta, m1.porDia, m1.vendas, m1.reunioes], [80000, 8000, 6, 10]);
+  assert.equal(Math.round(m1.esperadoHoje), 60870, 'meta diária acumulada: onde deveria estar hoje');
   assert.equal(m2.falta, 130000);
-  assert.equal(Math.round(p.projecao), 31429);
-  assert.equal(p.reunioesPorDiaParaMeta, 11 / 9);
-  // com o sábado contando, mais dias úteis
-  assert.equal(match.plano({ mes: '2026-10', hoje: '2026-10-20', meta: { meta1: 1, sabado: true }, feito: { reunioes: 0, vendas: 0, faturamento: 0 }, historico }).diasUteis, 27);
+  assert.equal(Math.round(p.projecao), 32857);
+  // com a conversão alvo, as reuniões que faltam saem dela (e não da conversão do período)
+  const comAlvo = match.plano({ mes: '2026-10', hoje: '2026-10-20', meta: { meta1: 100000, conversaoAlvo: 25 }, feito: { reunioes: 4, vendas: 1, faturamento: 20000 }, historico });
+  assert.deepEqual([comAlvo.conversao, comAlvo.conversaoAlvo, comAlvo.metas[0].reunioes, comAlvo.vendasEsperadas], [0.25, 0.25, 24, 1]);
+  // só o último sábado conta: nov/2026 tem 21 dias de semana + o sábado 28
+  assert.equal(match.ultimoSabado('2026-11'), '2026-11-28');
+  assert.deepEqual(match.diasUteis('2026-11', '2026-11-27'), { total: 22, passados: 19, restantes: 3 }, 'faltam a sexta 27, o sábado 28 e a segunda 30');
+  assert.deepEqual(match.diasUteis('2026-11', '2026-11-21'), { total: 22, passados: 15, restantes: 7 }, 'o sábado 21 não conta');
   // mês que já passou: nada a fazer por dia
   assert.equal(match.plano({ mes: '2026-09', hoje: '2026-10-20', meta: { meta1: 50000 }, feito: { reunioes: 1, vendas: 1, faturamento: 9000 }, historico }).diasRestantes, 0);
 });
@@ -130,15 +134,22 @@ test('rotas: só o master; a meta fica salva por mês e entra no plano; a segund
 
   const mes = r.json.ate.slice(0, 7);
   assert.equal((await api('PUT', '/api/master/match/meta', E.caua.chave, { mes: 'outubro', meta1: 1 })).status, 400);
-  const s = await api('PUT', '/api/master/match/meta', E.caua.chave, { mes, meta1: '100.000', meta2: 150000, metaReunioes: '20', sabado: true });
+  assert.equal((await api('PUT', '/api/master/match/meta', E.caua.chave, { mes, meta1: 1, conversaoAlvo: '150' })).status, 400);
+  const s = await api('PUT', '/api/master/match/meta', E.caua.chave, { mes, desde: '2026-07-01', meta1: '100.000', meta2: 150000, conversaoAlvo: '25' });
   assert.equal(s.status, 200);
-  assert.deepEqual(s.json.meta, { meta1: 100000, meta2: 150000, meta3: 0, metaReunioes: 20, sabado: true });
+  assert.deepEqual(s.json.meta, { meta1: 100000, meta2: 150000, meta3: 0, conversaoAlvo: 25 });
+  assert.deepEqual([s.json.plano.metas[0].alvo, s.json.plano.conversaoAlvo], [100000, 0.25], 'a resposta já traz o painel com a meta nova');
+  // alterar a meta salva troca de verdade
+  const s2 = await api('PUT', '/api/master/match/meta', E.caua.chave, { mes, desde: '2026-07-01', meta1: '120.000', meta2: '', conversaoAlvo: '30' });
+  assert.deepEqual(s2.json.meta, { meta1: 120000, meta2: 0, meta3: 0, conversaoAlvo: 30 });
+  assert.deepEqual(s2.json.plano.metas.map((m) => m.alvo), [120000]);
+  await api('PUT', '/api/master/match/meta', E.caua.chave, { mes, meta1: '100.000', meta2: 150000, conversaoAlvo: '25' });
 
   r = await api('GET', '/api/master/match?desde=2026-07-01', E.caua.chave);
   assert.equal(consultas.length, lidas, 'abrir de novo não relê o RD');
   assert.equal(r.json.cache, true);
   assert.equal(r.json.plano.metas[0].alvo, 100000);
-  assert.equal(r.json.plano.sabado, true);
+  assert.equal(r.json.plano.conversaoAlvo, 0.25);
   r = await api('GET', '/api/master/match?desde=2026-07-01&atualizar=1', E.caua.chave);
   assert.ok(consultas.length > lidas, '"Atualizar do RD" relê');
   assert.equal(r.json.cache, false);
