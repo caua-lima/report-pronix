@@ -243,6 +243,17 @@ as reuniões realizadas e as vendas em que você foi o SDR — mês a mês, com 
   estar hoje). O plano diz quanto falta, quanto por dia útil, quantas vendas (pelo ticket médio do
   período) e quantas reuniões isso pede (pela conversão alvo; sem ela, pela do período) e a projeção.
 - **Dias úteis.** Segunda a sexta **e o último sábado de cada mês** (os outros sábados não contam).
+- **Visual.** Cada meta tem a marca de onde deveria estar hoje e a cor do ritmo (verde no ritmo, ouro até 10%
+  abaixo, vermelho atrás), com quanto falta e por dia útil; o medidor segue a mesma regra. A conversão do mês
+  tem a própria régua, com a marca do alvo, a média do período tracejada e quantas vendas faltam para o alvo.
+  Atalhos no topo levam a cada parte da aba; closer e "desde" ficam lembrados no navegador.
+- **Com quem o closer fecha mais** (`src/matchAnalises.js`). Conversão (vendas ÷ reuniões realizadas daquele
+  tipo de lead), vendas e faturamento por: profissão, quanto disse que pode investir (até R$ 3 mil, R$ 3 a
+  5 mil, mais de R$ 5 mil), faturamento, se já vende, o que busca, perfil e nível de consciência do report,
+  dia da semana e origem do card; e, das vendas, o produto, quanto tempo levou para fechar e os motivos de
+  quem não comprou. Os destaques apontam o tipo que mais converte contra a média (só com 3+ reuniões).
+  Os campos vêm do card; sem eles, da anotação do formulário no RD, lida uma vez por card (até 60 por
+  atualização) e guardada por 60 dias.
 - **Conferir.** A lista de reuniões e vendas, uma por uma, diz de onde veio cada data; o diagnóstico
   conta o que ficou de fora (sem o campo SDR, outro SDR, no-show, ainda agendada). A leitura do RD fica
   guardada 20 min; **Atualizar do RD** lê de novo.
