@@ -288,7 +288,25 @@
     .mt-entrada input + i { padding-left: 4px; }
     .mt-campo small { color: var(--text-2); font-size: .78rem; min-height: 1.1em; }
     .mt-salvar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 14px; }
-    .mt-fat { display: inline-block; height: 6px; border-radius: 3px; background: var(--ouro); vertical-align: middle; margin-left: 8px; }
+    /* Plano e comparativo: colunas iguais, rótulo com a mesma altura em todos e o número sempre na mesma linha */
+    #mtPlano { grid-template-columns: repeat(auto-fill, minmax(165px, 1fr)); }
+    #mtPlano .kpi, #mtComparativo .kpi { display: flex; flex-direction: column; justify-content: flex-start; min-width: 0; }
+    #mtPlano .kpi .l, #mtComparativo .kpi .l { min-height: 2.5em; line-height: 1.25; margin-bottom: 8px; display: flex; align-items: flex-end; }
+    #mtPlano .kpi .n, #mtPlano .kpi .n.peq, #mtComparativo .kpi .n, #mtComparativo .kpi .n.peq {
+      font-size: 1.3rem; font-weight: 700; color: var(--text); line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    #mtPlano .kpi:first-child .n { color: var(--ouro-tinta); }
+    #mtPlano .kpi .kpi-sub, #mtComparativo .kpi .hint { font-size: .78rem; color: var(--text-2); margin: 4px 0 0; min-height: 1.2em; }
+    .mt-fat { display: inline-block; height: 6px; border-radius: 3px; background: var(--ouro); vertical-align: middle; }
+    th.mt-dir, td.mt-dir { text-align: right; }
+    .mt-celula { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
+    .mt-celula .v { display: inline-block; text-align: right; font-variant-numeric: tabular-nums; }
+    .mt-celula .d { display: inline-block; width: 4.6em; text-align: left; }
+    .mt-celula .d .mt-delta { margin-left: 0; }
+    .mt-trilho-fat { display: inline-block; width: 80px; height: 6px; border-radius: 3px; background: var(--card-2); overflow: hidden; vertical-align: middle; }
+    .mt-trilho-fat .mt-fat { display: block; height: 100%; }
+    #mtComparativo { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    @media (max-width: 640px) { #mtComparativo { grid-template-columns: 1fr; } }
     .sec-t { font-family: var(--f-titulo); font-size: .98rem; font-weight: 700; margin: 22px 0 8px; color: var(--text); }
     .duas { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 0 24px; }
 
@@ -793,7 +811,7 @@
           <div class="kpis" id="mtPlano" style="margin-top:14px"></div>
           <div class="hint" id="mtPlanoNota" style="margin:0 0 12px"></div>
           <div class="mt-form" id="mtMetaForm">
-            <div class="mt-form-t">Definir a meta de <span id="mtFormMes"></span><small id="mtFormDias"></small></div>
+            <div class="mt-form-t"><span>Definir a meta de <span id="mtFormMes"></span></span><small id="mtFormDias"></small></div>
             <div class="mt-campos">
               <label class="mt-campo principal"><span>Meta 1 · faturamento</span><div class="mt-entrada"><i>R$</i><input id="mtMeta1" inputmode="numeric" placeholder="100.000" autocomplete="off" /></div><small id="mtDica1"></small></label>
               <label class="mt-campo"><span>Meta 2 · opcional</span><div class="mt-entrada"><i>R$</i><input id="mtMeta2" inputmode="numeric" placeholder="—" autocomplete="off" /></div><small id="mtDica2"></small></label>
@@ -813,7 +831,7 @@
           <div class="head"><div class="t"><i data-ic="chart"></i>Mês a mês</div><div class="sub">— conversão = vendas do mês ÷ reuniões realizadas do mês</div></div>
           <div style="overflow:auto">
             <table>
-              <thead><tr><th>Mês</th><th>Reuniões realizadas</th><th>Vendas</th><th>Conversão</th><th>Faturamento</th><th>Ticket médio</th></tr></thead>
+              <thead><tr><th>Mês</th><th>Reuniões realizadas</th><th class="mt-dir">Vendas</th><th class="mt-dir">Conversão</th><th>Faturamento</th><th class="mt-dir">Ticket médio</th></tr></thead>
               <tbody id="mtMeses"></tbody>
             </table>
           </div>
@@ -1427,12 +1445,19 @@
       return `<div class="mt-barra"><div class="lin"><b>${esc(rotulo)}${atual >= alvo && alvo ? ' ✓' : ''}</b><span>${esc(brlMt(atual))} / ${esc(brlMt(alvo))} · ${esc(pctMt(alvo ? atual / alvo : 0))}</span></div>
         <div class="mt-trilho"><div class="${atual >= alvo && alvo ? 'ok' : classe || ''}" style="width:${(p * 100).toFixed(1)}%"></div></div></div>`;
     };
-    const kpiMatch = (rotulo, valor, peq) => `<div class="kpi"><div class="l">${esc(rotulo)}</div><div class="n${peq ? ' peq' : ''}">${esc(valor)}</div></div>`;
+    // Número principal numa linha só; o complemento (alvo, por dia) fica numa linha menor embaixo, igual em todos.
+    const kpiMatch = (rotulo, valor, peq, sub) => `<div class="kpi"><div class="l">${esc(rotulo)}</div><div class="n${peq ? ' peq' : ''}">${esc(valor)}</div><div class="kpi-sub">${sub ? esc(sub) : ''}</div></div>`;
     const deltaMatch = (atual, antes) => {
       if (!antes) return '';
       const d = (atual - antes) / antes;
       return `<span class="mt-delta ${d >= 0 ? 'sobe' : 'desce'}">${d >= 0 ? '▲' : '▼'} ${esc(pctMt(Math.abs(d)))}</span>`;
     };
+
+    /** Valor com largura fixa à direita; barra (se houver) e variação em espaços fixos — tudo alinhado coluna a coluna. */
+    const celulaMt = (valor, largura, delta, barra) =>
+      `<span class="mt-celula"><span class="v" style="min-width:${largura}">${esc(valor)}</span>` +
+      (barra !== undefined ? `<span class="mt-trilho-fat">${barra != null ? `<span class="mt-fat" style="width:${Math.round(Math.max(0, Math.min(1, barra)) * 100)}%"></span>` : ''}</span>` : '') +
+      (delta !== undefined ? `<span class="d">${delta.trim() ? delta : ''}</span>` : '') + '</span>';
 
     function desenharMatch(d) {
       matchDados = d;
@@ -1448,14 +1473,14 @@
       const k = [
         kpiMatch('Faturamento no mês', brlMt(p.feito.faturamento)),
         kpiMatch('Reuniões realizadas', String(p.feito.reunioes), true),
-        kpiMatch('Conversão no mês', (p.feito.reunioes ? pctMt(p.conversaoMes, 1) : '—') + (p.conversaoAlvo ? ' / alvo ' + pctMt(p.conversaoAlvo, 1) : ''), true),
+        kpiMatch('Conversão no mês', p.feito.reunioes ? pctMt(p.conversaoMes, 1) : '—', true, p.conversaoAlvo ? 'alvo ' + pctMt(p.conversaoAlvo, 1) : ''),
         kpiMatch('Vendas', String(p.feito.vendas), true),
       ];
       if (m1) {
         k.push(m1.batida ? kpiMatch('Meta 1', 'Batida ✓', true) : kpiMatch('Falta para a meta 1', brlMt(m1.falta), true));
         if (!m1.batida) k.push(kpiMatch('Por dia útil', brlMt(m1.porDia), true));
         if (!m1.batida && m1.vendas != null) k.push(kpiMatch('Vendas que faltam', String(m1.vendas), true));
-        if (!m1.batida && m1.reunioes != null) k.push(kpiMatch('Reuniões que faltam', m1.reunioes + (m1.reunioesPorDia != null ? ` (${m1.reunioesPorDia.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}/dia)` : ''), true));
+        if (!m1.batida && m1.reunioes != null) k.push(kpiMatch('Reuniões que faltam', String(m1.reunioes), true, m1.reunioesPorDia != null ? `${m1.reunioesPorDia.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} por dia útil` : ''));
       }
       k.push(kpiMatch('Projeção no ritmo', brlMt(p.projecao), true));
       $('mtPlano').innerHTML = k.join('');
@@ -1485,14 +1510,17 @@
       $('mtMeses').innerHTML = d.meses.map((m, i) => {
         const ant = d.meses[i - 1];
         return `<tr><td><b>${esc(nomeMesMt(m.mes))}</b>${m.mes === p.mes ? ' <span class="hint">(atual)</span>' : ''}</td>
-          <td class="mt-num">${m.reunioes}${ant ? deltaMatch(m.reunioes, ant.reunioes) : ''}</td>
-          <td class="mt-num">${m.vendas}</td>
-          <td class="mt-num">${m.reunioes ? esc(pctMt(m.conversao, 1)) : '—'}</td>
-          <td class="mt-num">${esc(brlMt(m.faturamento))}<span class="mt-fat" style="width:${Math.round((m.faturamento / maxFat) * 80)}px"></span>${ant ? deltaMatch(m.faturamento, ant.faturamento) : ''}</td>
-          <td class="mt-num">${m.vendas ? esc(brlMt(m.ticketMedio)) : '—'}</td></tr>`;
-      }).join('') + `<tr><td><b>Total</b></td><td class="mt-num"><b>${tot.reunioes}</b></td><td class="mt-num"><b>${tot.vendas}</b></td>
-          <td class="mt-num"><b>${tot.reunioes ? esc(pctMt(tot.vendas / tot.reunioes, 1)) : '—'}</b></td><td class="mt-num"><b>${esc(brlMt(tot.faturamento))}</b></td>
-          <td class="mt-num"><b>${tot.vendas ? esc(brlMt(tot.faturamento / tot.vendas)) : '—'}</b></td></tr>`;
+          <td class="mt-num">${celulaMt(String(m.reunioes), '2.2em', ant ? deltaMatch(m.reunioes, ant.reunioes) : '')}</td>
+          <td class="mt-num mt-dir">${celulaMt(String(m.vendas), '2.2em')}</td>
+          <td class="mt-num mt-dir">${celulaMt(m.reunioes ? pctMt(m.conversao, 1) : '—', '3.6em')}</td>
+          <td class="mt-num">${celulaMt(brlMt(m.faturamento), '7.4em', ant ? deltaMatch(m.faturamento, ant.faturamento) : '', m.faturamento / maxFat)}</td>
+          <td class="mt-num mt-dir">${celulaMt(m.vendas ? brlMt(m.ticketMedio) : '—', '6.2em')}</td></tr>`;
+      }).join('') + `<tr><td><b>Total</b></td>
+          <td class="mt-num"><b>${celulaMt(String(tot.reunioes), '2.2em', ' ')}</b></td>
+          <td class="mt-num mt-dir"><b>${celulaMt(String(tot.vendas), '2.2em')}</b></td>
+          <td class="mt-num mt-dir"><b>${celulaMt(tot.reunioes ? pctMt(tot.vendas / tot.reunioes, 1) : '—', '3.6em')}</b></td>
+          <td class="mt-num"><b>${celulaMt(brlMt(tot.faturamento), '7.4em', ' ', null)}</b></td>
+          <td class="mt-num mt-dir"><b>${celulaMt(tot.vendas ? brlMt(tot.faturamento / tot.vendas) : '—', '6.2em')}</b></td></tr>`;
 
       $('mtNReunioes').textContent = `(${d.reunioes.length})`;
       $('mtLista').innerHTML = d.reunioes.map((r) => `<tr><td class="mt-num">${esc(diaMt(r.dataReuniao))}${r.contaReuniao ? '' : ' <span class="hint">(antes do período)</span>'}</td><td>${esc(r.lead || '—')}</td>
@@ -1563,7 +1591,7 @@
         const porDia = p.diasRestantes ? falta / p.diasRestantes : falta;
         const vendas = p.ticketMedio ? Math.ceil(falta / p.ticketMedio) : 0;
         const reunioes = vendas && conv ? Math.ceil(vendas / conv) : 0;
-        dica.textContent = `${brlMt(porDia)}/dia útil` + (vendas ? ` · ${vendas} venda(s)` : '') + (reunioes ? ` · ${reunioes} reunião(ões)` : '');
+        dica.textContent = `${brlMt(porDia)}/dia` + (vendas ? ` · ${vendas} ${vendas === 1 ? 'venda' : 'vendas'}` : '') + (reunioes ? ` · ${reunioes} ${reunioes === 1 ? 'reunião' : 'reuniões'}` : '');
       });
       $('mtDicaConv').textContent = `No mês: ${p.feito.reunioes ? pctMt(p.conversaoMes, 1) : '—'} · desde ${nomeMesMt(matchDados.desde.slice(0, 7))}: ${pctMt(p.conversaoHistorica, 1)}`;
     }
