@@ -2246,6 +2246,17 @@ test('Match com PH: medidor da meta, plano do mês, comparativo, mês a mês e a
     metas: meta1 ? { '2026-10': { meta1, meta2: 0, meta3: 0, conversaoAlvo: 0 } } : {},
     plano: plano(meta1),
     mesmoPeriodo: { atual: { mes: '2026-10', ate: '2026-10-20', reunioes: 4, vendas: 1, faturamento: 20000 }, anterior: { mes: '2026-09', ate: '2026-09-20', reunioes: 2, vendas: 1, faturamento: 9000 } },
+    analises: {
+      total: 9, vendas: 4, media: 4 / 9, minAmostra: 3,
+      cortes: [{ id: 'profissao', titulo: 'Profissão (formulário do lead)', informadas: 8, grupos: [
+        { rotulo: 'Empresário', reunioes: 4, vendas: 3, faturamento: 60000, conversao: 0.75, ticketMedio: 20000 },
+        { rotulo: 'Lojista <b>x</b>', reunioes: 4, vendas: 1, faturamento: 20000, conversao: 0.25, ticketMedio: 20000 },
+      ] }],
+      destaques: [{ corte: 'profissao', titulo: 'Profissão', melhor: 'Empresário', conversao: 0.75, vendas: 3, reunioes: 4, pior: 'Lojista', conversaoPior: 0.25, vezesMedia: 1.6875 }],
+      porProduto: [{ rotulo: 'Pronix Performance', vendas: 4, faturamento: 80000, ticketMedio: 20000, parte: 1 }],
+      tempo: { medioDias: 2, faixas: [{ rotulo: 'Na própria reunião', vendas: 3, parte: 0.75 }, { rotulo: 'Em até 7 dias', vendas: 1, parte: 0.25 }] },
+      motivosPerda: [{ rotulo: 'Sem dinheiro', total: 2, parte: 2 / 3 }],
+    },
   });
   const api = apiMaster()
     .quando('GET /api/master/google', () => ({ corpo: { configurado: false, conectado: false, agendas: [] } }))
@@ -2259,9 +2270,24 @@ test('Match com PH: medidor da meta, plano do mês, comparativo, mês a mês e a
   assert.deepEqual([q.get('closer'), q.get('desde'), q.get('atualizar')], ['Paulo Henrique', '2026-07-01', null]);
 
   assert.match(p.$('mtMedidor').textContent, /20%[\s\S]*R\$\s*20\.000[\s\S]*de R\$\s*100\.000 \(meta 1\)/);
-  assert.match(p.$('mtBarras').textContent, /Meta 1[\s\S]*Meta diária acumulada/);
+  // Metas: o ritmo, quanto falta e por dia útil, e a marca de onde deveria estar hoje (60.870 de 100.000 = 60,9%)
+  const barras = p.$('mtBarras').textContent.replace(/\s+/g, ' ');
+  assert.match(barras, /Atrás do ritmo da meta 1: faltam R\$ 40\.870 para o esperado de hoje/);
+  assert.match(barras, /Meta 1 ?R\$ 20\.000 de R\$ 100\.000 ?20% ?Faltam R\$ 80\.000 · R\$ 8\.000 por dia útil ?hoje deveria estar em R\$ 60\.870/);
+  assert.equal(p.$('mtBarras').querySelector('.marca').style.left, '60.9%');
+  assert.ok(p.$('mtBarras').querySelector('.fill').classList.contains('atras'), 'atrás do ritmo: vermelho');
+  // Conversão: régua com o alvo, a média do período e quantas vendas faltam para o alvo
+  assert.match(p.$('mtConversaoVis').textContent.replace(/\s+/g, ' '), /Conversão do mês ?sem alvo ?25,0% ?1 venda em 4 reuniões\. Defina a conversão alvo[\s\S]*média desde jul\/26: 60,0%/);
   const plan = p.$('mtPlano').textContent;
-  for (const x of ['Falta para a meta 1', '80.000', 'Por dia útil', '8.000', 'Vendas que faltam', 'Reuniões que faltam', '10', '1 por dia útil', 'Conversão no mês', '25,0%', 'Projeção no ritmo', '32.857']) assert.ok(plan.includes(x), 'faltou no plano: ' + x);
+  for (const x of ['Faturamento no mês', '14 de 23 dias úteis', 'Reuniões realizadas', 'Vendas', 'Vendas que faltam', '6', 'Reuniões que faltam', '10', '1 por dia útil', 'Projeção no ritmo', '32.857', '33% da meta 1']) assert.ok(plan.includes(x), 'faltou no plano: ' + x);
+  assert.equal(p.$('mtPlano').querySelectorAll('.kpi').length, 6, 'seis quadros, sem repetir o que as barras mostram');
+  // Análises: destaques e um quadro por corte
+  assert.equal(p.$('mtAnalisesTitulo').textContent, 'Com quem o Paulo fecha mais');
+  assert.match(p.$('mtDestaques').textContent, /Profissão[\s\S]*Empresário converte 75%[\s\S]*3 de 4 reuniões · 1,7x a média · menor: Lojista \(25%\)/);
+  const tabelaProf = [...p.$('mtCortes').querySelectorAll('.mt-corte')[0].querySelectorAll('tbody tr')].map((tr) => [...tr.cells].map((c) => c.textContent.replace(/\s+/g, ' ').trim()).join(' | '));
+  assert.deepEqual(tabelaProf, ['Empresário ★ | 4 | 3 | 75% | R$ 60.000', 'Lojista <b>x</b> | 4 | 1 | 25% | R$ 20.000']);
+  assert.equal(p.$('mtCortes').querySelector('b'), null, 'rótulo com HTML não vira elemento');
+  assert.match(p.$('mtVendasAnalise').textContent, /Quanto tempo levou para fechar[\s\S]*média de 2 dias[\s\S]*Por que não compraram[\s\S]*Sem dinheiro/);
   assert.match(p.$('mtMesNome').textContent, /outubro de 2026 · 10 de 23 dias úteis pela frente/);
   // o formulário já vem com a meta salva, formatada, e explica os dias úteis
   assert.equal(p.$('mtMeta1').value, '100.000');
@@ -2311,6 +2337,14 @@ test('Match com PH: medidor da meta, plano do mês, comparativo, mês a mês e a
   p.$('mtAtualizar').click();
   await esperar(() => api.pedidos.some((x) => x.chave === 'GET /api/master/match' && x.query.get('atualizar') === '1'), { motivo: 'atualizar do RD' });
   await esperar(() => !p.$('mtAtualizar').disabled && /Lido do RD/.test(p.$('statusMt').textContent), { motivo: 'leitura nova na tela' });
+
+  // Trocar o "desde" recarrega a aba com o novo período e fica lembrado neste navegador
+  p.$('mtDesde').value = '2026-08-01';
+  p.$('mtDesde').dispatchEvent(new p.w.Event('change'));
+  await esperar(() => api.pedidos.some((x) => x.chave === 'GET /api/master/match' && x.query.get('desde') === '2026-08-01'), { motivo: 'novo período' });
+  assert.deepEqual(JSON.parse(p.w.localStorage.getItem('mtFiltro')), { closer: 'Paulo Henrique', desde: '2026-08-01' });
+  await esperar(() => !p.$('mtAtualizar').disabled && /Lido do RD/.test(p.$('statusMt').textContent), { motivo: 'período novo na tela' });
+  assert.equal(p.document.querySelectorAll('[data-mt-ir]').length, 5, 'atalhos para as partes da aba');
   p.fechar();
 });
 
