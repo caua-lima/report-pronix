@@ -1934,6 +1934,7 @@
           ['coach', 'data-coach', 'Coach', 'Popup do coach da conversa'],
           ['automacao', 'data-automacao', 'Automação RD', 'Move o card para Respondeu, etiqueta Qualificado, reunião da agenda e closer do handoff'],
           ['etiquetas', 'data-etiquetas', 'Etiquetas', 'Investimento do formulário e se já vende'],
+          ['profissaoNoReport', 'data-profissao-report', 'Profissão no report', 'No PDF do report, a profissão que o lead marcou no formulário do RD'],
         ];
         const travado = podeMexerEmUsuarios() ? '' : 'disabled';
         const caixa = (attrs, marcado, rotulo, dica) =>
@@ -2005,10 +2006,11 @@
       const linha = ev.target.closest('tr.perm-de');
       if (!linha) return;
       const id = linha.dataset.permDe;
-      const marcadas = (sel) => linha.querySelectorAll(sel + ':checked').length;
+      // ':checked' em CADA seletor da lista (no fim da string só valeria para o último).
+      const marcadas = (sel) => linha.querySelectorAll(sel.split(',').map((x) => x.trim() + ':checked').join(',')).length;
       const resumo = $('lista').querySelector('[data-resumo-perm="' + id + '"]');
       const temAbas = linha.querySelector('[data-aba-de]');
-      if (resumo) resumo.textContent = `${marcadas('[data-ficha-crm],[data-coach],[data-automacao],[data-etiquetas]')} no WhatsApp · ${temAbas ? marcadas('[data-aba-de]') + ' aba(s)' : 'todas as abas'}`;
+      if (resumo) resumo.textContent = `${marcadas('[data-ficha-crm],[data-coach],[data-automacao],[data-etiquetas],[data-profissao-report]')} no WhatsApp · ${temAbas ? marcadas('[data-aba-de]') + ' aba(s)' : 'todas as abas'}`;
     });
     $('lista').addEventListener('change', async (ev) => {
       const cor = ev.target.closest('[data-cor-agenda]');
@@ -2035,6 +2037,20 @@
           setStatus('statusCriar', e.message, { erro: true });
         } finally {
           ab.disabled = false;
+        }
+        return;
+      }
+      const pr = ev.target.closest('[data-profissao-report]');
+      if (pr) {
+        pr.disabled = true;
+        try {
+          await api('PATCH', '/api/admin/usuarios/' + pr.dataset.profissaoReport, { profissaoNoReport: pr.checked });
+          toast(pr.checked ? 'Profissão no report ligada.' : 'Profissão no report desligada.');
+        } catch (e) {
+          pr.checked = !pr.checked;
+          setStatus('statusCriar', e.message, { erro: true });
+        } finally {
+          pr.disabled = false;
         }
         return;
       }

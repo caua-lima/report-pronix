@@ -1917,6 +1917,16 @@ test('Acessos: a tabela fica limpa; clicar no nome abre as permissões da pessoa
   assert.deepEqual(api.corpos('PATCH /api/admin/usuarios/u2'), [{ coach: true }]);
   assert.equal(p.document.querySelector('[data-resumo-perm="u2"]').textContent, '3 no WhatsApp · 1 aba(s)');
 
+  // Profissão no report: a caixa manda o PATCH próprio e entra na conta
+  assert.match(painel.textContent, /Profissão no report/);
+  const prof = painel.querySelector('[data-profissao-report="u2"]');
+  assert.equal(prof.checked, false);
+  prof.checked = true;
+  prof.dispatchEvent(new p.w.Event('change', { bubbles: true }));
+  await esperar(() => api.contar('PATCH /api/admin/usuarios/u2') === 2, { motivo: 'PATCH da profissão' });
+  assert.deepEqual(api.corpos('PATCH /api/admin/usuarios/u2')[1], { profissaoNoReport: true });
+  assert.equal(p.document.querySelector('[data-resumo-perm="u2"]').textContent, '4 no WhatsApp · 1 aba(s)');
+
   nome.click();
   assert.ok(painel.classList.contains('hidden'), 'clicar de novo recolhe');
   await dormir(60);
