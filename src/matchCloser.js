@@ -22,6 +22,7 @@ const crm = require('./crm');
 const stats = require('./stats');
 const { produtoPeloNome } = require('./vendasRd');
 const { sdrDoCard, leadDoCard } = require('./vendasDoRd');
+const analises = require('./matchAnalises');
 
 const DESDE_PADRAO = () => process.env.MATCH_DESDE || '2026-07-01';
 const CLOSER_PADRAO = () => process.env.MATCH_CLOSER || 'Paulo Henrique';
@@ -169,6 +170,8 @@ async function levantar({ usuario, closer, desde, atualizar = false } = {}) {
       id: idDe(d), fonte: 'rd', lead: leadDoCard(d), dataReuniao: dia, origemData: origem, contaReuniao,
       estado, etapa: (d.deal_stage && d.deal_stage.name) || '', motivo: (d.deal_lost_reason && d.deal_lost_reason.name) || '',
       venda, diaVenda: contaVenda ? diaVenda : '', ticket: contaVenda ? Number(d.amount_total) || 0 : 0,
+      // Para as análises: a venda em qualquer data (a conversão de um tipo de lead é das reuniões dele) e o formulário.
+      diaVendaReal: diaVenda, ticketTotal: venda ? Number(d.amount_total) || 0 : 0, lead_: analises.doCard(d),
       produto: venda ? produtoPeloNome((d.deal_products || []).map((p) => (p && (p.name || (p.product && p.product.name))) || '')) : '',
     });
   }
@@ -191,9 +194,28 @@ async function levantar({ usuario, closer, desde, atualizar = false } = {}) {
       id: 'r_' + r.id, fonte: 'report', lead: r.lead || r.contato || '', dataReuniao: dia, origemData: r.dataReuniao ? 'report' : 'dia-do-report', contaReuniao,
       estado: venda ? 'venda' : r.resultado === 'em_followup' ? 'fup' : 'nao_comprou', etapa: '', motivo: '',
       venda, diaVenda: contaVenda ? diaVenda : '', ticket: contaVenda ? Number(r.ticket) || 0 : 0, produto: r.produto || '',
+      diaVendaReal: diaVenda, ticketTotal: venda ? Number(r.ticket) || 0 : 0, lead_: {},
     });
   }
   reunioes.sort((a, b) => String(b.dataReuniao || b.diaVenda).localeCompare(String(a.dataReuniao || a.diaVenda)));
+
+  // Perfil e nível de consciência do report desse lead (a correção do master vale mais que a leitura da IA).
+  const leitura = new Map();
+  for (const r of meus) {
+    const v = { perfil: r.perfilReal || r.perfil || '', consciencia: r.conscienciaReal || r.consciencia || '' };
+    if (!v.perfil && !v.consciencia) continue;
+    if (r.rdDealId) leitura.set('d' + r.rdDealId, v);
+    if (norm(r.lead)) leitura.set('n' + norm(r.lead), v);
+  }
+  for (const x of reunioes) {
+    const v = leitura.get('d' + String(x.id).replace(/^r_/, '')) || leitura.get('n' + norm(x.lead));
+    x.perfil = (v && v.perfil) || '';
+    x.consciencia = (v && v.consciencia) || '';
+  }
+  // Profissão e investimento que não estão nos campos do card: da anotação do formulário (uma vez por card).
+  const form = await analises.completarPeloFormulario(reunioes).catch(() => ({ lidos: 0, pendentes: 0 }));
+  diagnostico.formulariosLidos = form.lidos;
+  diagnostico.formulariosPendentes = form.pendentes;
 
   const saida = { closer: nomeCloser, sdr: usuario.nome, desde: inicio, ate: hoje, atualizadoEm: new Date().toISOString(), meses: porMes(reunioes, inicio, hoje), reunioes, diagnostico };
   await db.cacheSet(chaveCache, JSON.stringify(saida), CACHE_SEG).catch(() => {});
@@ -346,6 +368,7 @@ async function painel({ usuario, closer, desde, atualizar } = {}) {
     metas,
     plano: plano({ mes: mesAtual, hoje: dados.ate, meta: metas[mesAtual] || {}, feito: { reunioes: doMes.reunioes, vendas: doMes.vendas, faturamento: doMes.faturamento }, historico: dados.meses }),
     mesmoPeriodo: mesmoPeriodo(dados.reunioes, dados.ate),
+    analises: analises.analisar(dados.reunioes),
   };
 }
 

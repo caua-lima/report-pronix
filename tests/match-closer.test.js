@@ -45,6 +45,7 @@ const consultas = [];
 crm.configurado = () => true;
 crm.usuariosRd = async () => [{ id: 'u-ph', nome: 'Paulo Henrique Pagoti' }, { id: 'u-vi', nome: 'Vitor Augusto' }];
 crm.rd = async (caminho, params = {}) => {
+  if (caminho === '/activities') return { activities: [] }; // sem anotação de formulário
   if (caminho !== '/deals') throw new Error('chamada ao RD não prevista no teste: ' + caminho);
   consultas.push(params);
   return { deals: JSON.parse(JSON.stringify(CARDS)), has_more: false };
@@ -160,4 +161,55 @@ test('reais da meta: vírgula ou ponto de milhar valem 392 mil; com os dois, o �
   for (const [entrada, esperado] of Object.entries(casos)) assert.equal(match.lerNumero(entrada), esperado, entrada);
   const s = await match.salvarMeta('u-teste', 'Paulo Henrique', { mes: '2026-10', meta1: '392,000', meta2: '410.000', meta3: '45,000', conversaoAlvo: '25,5' });
   assert.deepEqual(s, { meta1: 392000, meta2: 410000, meta3: 45000, conversaoAlvo: 25.5 });
+});
+
+test('análises: conversão por profissão e por faixa de investimento (3 a 5 mil x mais de 5 mil), perfil do report, tempo até fechar e motivos', async () => {
+  const analises = require('../src/matchAnalises');
+  const r = (id, campos, estado, extra = {}) => ({ id, fonte: 'rd', contaReuniao: true, estado, dataReuniao: '2026-10-05', diaVendaReal: estado === 'venda' ? '2026-10-05' : '', ticketTotal: estado === 'venda' ? 20000 : 0, lead_: campos, perfil: '', consciencia: '', motivo: '', ...extra });
+  const emp = { profissao: 'Empresário', investimento: '+ de R$5.000' };
+  const loj = { profissao: 'Lojista/Comerciante', investimento: 'R$3.000 a R$5.000' };
+  const lista = [
+    r('a1', emp, 'venda', { perfil: 'dominante' }), r('a2', emp, 'venda', { diaVendaReal: '2026-10-12' }), r('a3', emp, 'venda'), r('a4', emp, 'nao_comprou', { motivo: 'Sem dinheiro' }),
+    r('b1', loj, 'venda'), r('b2', loj, 'nao_comprou', { motivo: 'Sem dinheiro' }), r('b3', loj, 'nao_comprou', { motivo: 'Vai pensar' }), r('b4', loj, 'fup'),
+    r('c1', {}, 'fup'), r('fora', emp, 'venda', { contaReuniao: false }),
+  ];
+  const a = analises.analisar(lista);
+  assert.deepEqual([a.total, a.vendas, a.media], [9, 4, 4 / 9], 'só as reuniões do período');
+  const prof = a.cortes.find((c) => c.id === 'profissao').grupos;
+  assert.deepEqual(prof.map((g) => [g.rotulo, g.reunioes, g.vendas, g.conversao]), [['Empresário', 4, 3, 0.75], ['Lojista/Comerciante', 4, 1, 0.25], ['Não informado', 1, 0, 0]]);
+  const inv = a.cortes.find((c) => c.id === 'investimento').grupos;
+  assert.deepEqual(inv.map((g) => [g.rotulo, g.conversao]), [['R$ 3 a 5 mil', 0.25], ['Mais de R$ 5 mil', 0.75], ['Não informado', 0]], 'na ordem das faixas');
+  assert.equal(inv[1].faturamento, 60000);
+  assert.equal(a.destaques[0].melhor, 'Empresário', 'o destaque é o tipo de lead que mais fecha, contra a média');
+  assert.ok(Math.abs(a.destaques[0].vezesMedia - 0.75 / (4 / 9)) < 1e-9);
+  assert.deepEqual(a.cortes.find((c) => c.id === 'perfil').grupos[0], { rotulo: 'Dominante', reunioes: 1, vendas: 1, faturamento: 20000, conversao: 1, ticketMedio: 20000 });
+  assert.deepEqual(a.tempo.faixas.map((f) => f.vendas), [3, 1, 0, 0], '3 na própria reunião, 1 em até 7 dias');
+  assert.deepEqual(a.motivosPerda[0], { rotulo: 'Sem dinheiro', total: 2, parte: 2 / 3 });
+});
+
+test('análises no levantamento: campos do card e, sem eles, a anotação do formulário (lida uma vez e guardada)', async () => {
+  const analises = require('../src/matchAnalises');
+  assert.deepEqual(analises.doCard({ deal_custom_fields: [{ value: 'Cauã', custom_field: { label: 'SDR' } }, { value: 'Empresário', custom_field: { label: 'Profissão' } }, { value: '{{data.investimento}}', custom_field: { label: 'Investimento' } }], deal_source: { name: 'Instagram' } }),
+    { profissao: 'Empresário', fonte: 'Instagram' }, 'o SDR e o campo de integração vazio não entram');
+  let leituras = 0;
+  const rdAntes = crm.rd;
+  crm.rd = async (caminho, params) => {
+    if (caminho === '/activities') { leituras++; return { activities: [{ text: 'Profissão: Médico\nInvestimento: + de R$5.000\nVende online?: Já vendo e quero aumentar' }] }; }
+    return rdAntes(caminho, params);
+  };
+  try {
+    const reunioes = [{ id: 'z1', fonte: 'rd', contaReuniao: true, lead_: {} }, { id: 'z2', fonte: 'rd', contaReuniao: true, lead_: { profissao: 'Empresário' } }];
+    const f = await analises.completarPeloFormulario(reunioes);
+    assert.deepEqual([f.lidos, leituras], [1, 1], 'só o card sem os campos vai ao RD');
+    assert.deepEqual(reunioes[0].lead_, { profissao: 'Médico', investimento: '+ de R$5.000', vende: 'Já vendo e quero aumentar' });
+    const de_novo = [{ id: 'z1', fonte: 'rd', contaReuniao: true, lead_: {} }];
+    await analises.completarPeloFormulario(de_novo);
+    assert.equal(leituras, 1, 'a segunda vez vem do que foi guardado');
+    assert.equal(de_novo[0].lead_.profissao, 'Médico');
+  } finally {
+    crm.rd = rdAntes;
+  }
+  // O painel traz as análises
+  const p = await match.painel({ usuario: { id: E.caua.id, nome: 'Cauã Lima' }, closer: 'Paulo Henrique', desde: '2026-07-01', atualizar: true });
+  assert.ok(p.analises && p.analises.total >= 4 && Array.isArray(p.analises.cortes));
 });
