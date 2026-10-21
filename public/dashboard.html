@@ -340,6 +340,17 @@
     .mt-barrinha { display: inline-block; width: 64px; height: 7px; border-radius: 4px; background: var(--card-2); border: 1px solid var(--border); vertical-align: middle; margin-right: 8px; overflow: hidden; }
     .mt-barrinha > span { display: block; height: 100%; background: var(--ouro); }
     .mt-barrinha > span.ok { background: var(--ok); }
+    /* Celular: as tabelas de corte cabem sem cortar número (sem a barrinha, cabeçalho quebra em duas linhas). */
+    @media (max-width: 560px) {
+      .mt-corte { padding: 10px 10px 4px; }
+      .mt-corte th, .mt-corte td { padding: 6px 4px; font-size: .78rem; }
+      .mt-corte th, .mt-corte th.r { font-size: .6rem; letter-spacing: 0; white-space: normal; overflow-wrap: anywhere; }
+      .mt-corte th:first-child, .mt-corte td:first-child { width: 30%; }
+      .mt-corte .col-conv { width: auto; }
+      .mt-barrinha { display: none; }
+      /* O faturamento não cabe inteiro no celular: some a coluna (no computador ela continua). */
+      .mt-corte table.com-fat th:nth-child(5), .mt-corte table.com-fat td:nth-child(5) { display: none; }
+    }
     .mt-form { margin-top: 16px; padding: 16px; border: 1px solid var(--border); border-radius: var(--r); background: var(--card-2); }
     .mt-form-t { font-family: var(--f-titulo); font-weight: 700; font-size: .98rem; margin-bottom: 12px; display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; align-items: baseline; }
     .mt-form-t small { font-family: var(--f-texto); font-weight: 500; color: var(--text-2); font-size: .8rem; }
@@ -884,7 +895,7 @@
           <div class="head"><div class="t"><i data-ic="users"></i>Conversão: você x time</div><div class="sub" id="mtTimeSub"></div></div>
           <div class="mt-vs" id="mtVs"></div>
           <div class="mt-cortes">
-            <div class="mt-corte"><h4>Por SDR</h4><table><thead><tr><th></th><th class="r">Reuniões</th><th class="r">Vendas</th><th class="r col-conv">Conversão</th><th class="r">Faturamento</th></tr></thead><tbody id="mtPorSdr"></tbody></table></div>
+            <div class="mt-corte"><h4>Por SDR</h4><table class="com-fat"><thead><tr><th></th><th class="r">Reuniões</th><th class="r">Vendas</th><th class="r col-conv">Conversão</th><th class="r">Faturamento</th></tr></thead><tbody id="mtPorSdr"></tbody></table></div>
             <div class="mt-corte"><h4>Por profissão (formulário) — você x time</h4><table><thead><tr><th></th><th class="r">Você</th><th class="r">Time</th></tr></thead><tbody id="mtPorProfissao"></tbody></table></div>
           </div>
         </div>
@@ -1602,7 +1613,7 @@
       };
       $('mtCortes').innerHTML = a.cortes.map((c) => {
         const melhor = melhorDe(c);
-        return `<div class="mt-corte"><h4>${esc(c.titulo)}</h4><table><thead><tr><th></th><th class="r">Reuniões</th><th class="r">Vendas</th><th class="r col-conv">Conversão</th><th class="r">Faturamento</th></tr></thead><tbody>${
+        return `<div class="mt-corte"><h4>${esc(c.titulo)}</h4><table class="com-fat"><thead><tr><th></th><th class="r">Reuniões</th><th class="r">Vendas</th><th class="r col-conv">Conversão</th><th class="r">Faturamento</th></tr></thead><tbody>${
           c.grupos.map((g) => `<tr class="${g.reunioes < a.minAmostra || g.rotulo === 'Não informado' ? 'pouco' : ''} ${g.rotulo === melhor ? 'melhor' : ''}"${g.reunioes < a.minAmostra ? ' title="Poucas reuniões: olhe com cuidado"' : ''}>
             <td>${esc(g.rotulo)}${g.rotulo === melhor ? ' <span style="color:var(--ok)">★</span>' : ''}</td><td class="r">${g.reunioes}</td><td class="r">${g.vendas}</td>
             <td class="r">${barrinhaMt(g.conversao, g.rotulo === melhor)}${esc(pctMt(g.conversao, 0))}</td><td class="r">${esc(brlMt(g.faturamento))}</td></tr>`).join('')
