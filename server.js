@@ -537,6 +537,7 @@ const soMasterComChave = (req, res, next) => (usuarios.ehMaster(req.usuario) ? n
 app.get('/api/master/match', auth, soMasterComChave, async (req, res) => {
   try {
     const { closer, desde, atualizar } = req.query || {};
+    res.set('Cache-Control', 'no-store'); // meta acabou de mudar: nada de resposta velha guardada
     res.json({ ok: true, ...(await matchCloser.painel({ usuario: req.usuario, closer, desde, atualizar: atualizar === '1' })) });
   } catch (err) {
     res.status(502).json({ erro: err.message });
@@ -544,10 +545,13 @@ app.get('/api/master/match', auth, soMasterComChave, async (req, res) => {
 });
 app.put('/api/master/match/meta', auth, soMasterComChave, async (req, res) => {
   try {
-    const { closer, ...meta } = req.body || {};
-    res.json({ ok: true, meta: await matchCloser.salvarMeta(req.usuario.id, closer, meta) });
+    const { closer, desde, ...meta } = req.body || {};
+    const salva = await matchCloser.salvarMeta(req.usuario.id, closer, meta);
+    // Devolve o painel já com a meta nova: a tela redesenha com a resposta, sem depender de outra leitura.
+    res.set('Cache-Control', 'no-store');
+    res.json({ ok: true, meta: salva, ...(await matchCloser.painel({ usuario: req.usuario, closer, desde })) });
   } catch (err) {
-    res.status(/Informe/.test(err.message) ? 400 : 500).json({ erro: err.message });
+    res.status(/Informe|conversão alvo/.test(err.message) ? 400 : 500).json({ erro: err.message });
   }
 });
 
