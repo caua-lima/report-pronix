@@ -295,6 +295,29 @@
     .mt-legenda span.media::before { background: transparent; border-left: 2px dashed var(--text-2); width: 0; }
     .mt-conv { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border); }
     /* Análises */
+    /* Filtro "de quem": botões próprios (a classe .chip tem um ouvinte global de período em outra aba). */
+    .mt-seg { display: inline-flex; border: 1px solid var(--border-forte); border-radius: var(--r-sm); overflow: hidden; }
+    .mt-seg button { border: 0; background: transparent; color: var(--text-2); padding: 9px 14px; font: inherit; font-size: .82rem; font-weight: 600; cursor: pointer; white-space: nowrap; }
+    .mt-seg button + button { border-left: 1px solid var(--border-forte); }
+    .mt-seg button[aria-pressed="true"] { background: var(--marca); color: var(--text); font-weight: 700; }
+    .mt-seg button:focus-visible { outline: 2px solid var(--ouro); outline-offset: -2px; }
+    /* Você x time: os dois números lado a lado, a mesma régua. */
+    .mt-vs { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+    .mt-vs .lado { border: 1px solid var(--border); border-radius: var(--r-sm); padding: 14px 16px; background: var(--card-2); min-width: 0; }
+    .mt-vs .lado.voce { border-left: 4px solid var(--ouro); }
+    .mt-vs .lado.time { border-left: 4px solid var(--info); }
+    .mt-vs small { display: block; font-family: var(--f-titulo); text-transform: uppercase; letter-spacing: .08em; font-size: .68rem; color: var(--text-2); margin-bottom: 6px; }
+    .mt-vs .n { font-family: var(--f-titulo); font-size: 2.2rem; font-weight: 700; line-height: 1.05; font-variant-numeric: tabular-nums; }
+    .mt-vs .s { color: var(--text-2); font-size: .82rem; margin-top: 4px; font-variant-numeric: tabular-nums; }
+    .mt-vs .trilho { height: 8px; border-radius: 999px; background: var(--card); box-shadow: inset 0 0 0 1px var(--border); margin-top: 10px; overflow: hidden; }
+    .mt-vs .trilho i { display: block; height: 100%; border-radius: 999px; }
+    .mt-vs .voce .trilho i { background: var(--ouro); }
+    .mt-vs .time .trilho i { background: var(--info); }
+    .mt-vs-nota { grid-column: 1 / -1; font-size: .85rem; color: var(--text-2); }
+    .mt-vs-nota b.mais { color: var(--ok); } .mt-vs-nota b.menos { color: var(--danger); }
+    .mt-corte tr.voce td { font-weight: 700; }
+    .mt-corte td .sub2 { display: block; font-size: .72rem; color: var(--muted); font-weight: 400; }
+    @media (max-width: 560px) { .mt-vs { grid-template-columns: 1fr; } }
     .mt-destaques { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 250px), 1fr)); gap: 10px; margin-bottom: 16px; }
     .mt-destaque { border: 1px solid var(--border); border-left: 4px solid var(--ok); border-radius: var(--r-sm); padding: 12px 14px; background: var(--card-2); }
     .mt-destaque small { display: block; font-family: var(--f-titulo); text-transform: uppercase; letter-spacing: .08em; font-size: .68rem; color: var(--text-2); margin-bottom: 4px; }
@@ -838,10 +861,11 @@
     <!-- ================= ABA: CLOSERS (só o master) ================= -->
     <section id="aba-match" class="hidden">
       <div class="card">
-        <div class="head"><div class="t"><i data-ic="chart"></i>Match com o closer</div><div class="sub">— as reuniões realizadas e as vendas em que você foi o SDR, lidas do RD</div></div>
+        <div class="head"><div class="t"><i data-ic="chart"></i>Match com o closer</div><div class="sub" id="mtSubAba">— as reuniões realizadas e as vendas em que você foi o SDR, lidas do RD</div></div>
         <div class="row">
           <div style="min-width:200px;flex:1"><label for="mtCloser">Closer</label><input id="mtCloser" value="Paulo Henrique" /></div>
           <div style="min-width:150px"><label for="mtDesde">Desde</label><input id="mtDesde" type="date" value="2026-07-01" /></div>
+          <div><label id="mtEscopoRotulo">De quem</label><div class="mt-seg" role="group" aria-labelledby="mtEscopoRotulo"><button type="button" id="mtEscopoMinhas" aria-pressed="true">Só as minhas</button><button type="button" id="mtEscopoTime" aria-pressed="false">Time todo</button></div></div>
           <button id="mtAtualizar" class="btn sec"><i data-ic="refresh"></i>Atualizar do RD</button>
         </div>
         <div id="statusMt" class="status"></div>
@@ -849,12 +873,22 @@
 
       <div id="mtConteudo" class="hidden">
         <nav class="mt-atalhos" aria-label="Partes da aba">
+          <button class="chip" data-mt-ir="mtCardTime">Você x time</button>
           <button class="chip" data-mt-ir="mtCardMeta">Meta</button>
           <button class="chip" data-mt-ir="mtCardComparativo">Mês x mês passado</button>
           <button class="chip" data-mt-ir="mtCardMeses">Mês a mês</button>
           <button class="chip" data-mt-ir="mtCardAnalises">Com quem fecha mais</button>
           <button class="chip" data-mt-ir="mtCardLista">Reunião por reunião</button>
         </nav>
+        <div class="card" id="mtCardTime">
+          <div class="head"><div class="t"><i data-ic="users"></i>Conversão: você x time</div><div class="sub" id="mtTimeSub"></div></div>
+          <div class="mt-vs" id="mtVs"></div>
+          <div class="mt-cortes">
+            <div class="mt-corte"><h4>Por SDR</h4><table><thead><tr><th></th><th class="r">Reuniões</th><th class="r">Vendas</th><th class="r col-conv">Conversão</th><th class="r">Faturamento</th></tr></thead><tbody id="mtPorSdr"></tbody></table></div>
+            <div class="mt-corte"><h4>Por profissão (formulário) — você x time</h4><table><thead><tr><th></th><th class="r">Você</th><th class="r">Time</th></tr></thead><tbody id="mtPorProfissao"></tbody></table></div>
+          </div>
+        </div>
+
         <div class="card" id="mtCardMeta">
           <div class="head"><div class="t"><i data-ic="target"></i>Meta do mês</div><div class="sub" id="mtMesNome"></div></div>
           <div class="mt-topo">
@@ -882,7 +916,7 @@
         </div>
 
         <div class="card" id="mtCardMeses">
-          <div class="head"><div class="t"><i data-ic="chart"></i>Mês a mês</div><div class="sub">— conversão = vendas do mês ÷ reuniões realizadas do mês</div></div>
+          <div class="head"><div class="t"><i data-ic="chart"></i>Mês a mês <span id="mtMesesEscopo" class="hint"></span></div><div class="sub">— conversão = vendas do mês ÷ reuniões realizadas do mês</div></div>
           <div style="overflow:auto">
             <table>
               <thead><tr><th>Mês</th><th>Reuniões realizadas</th><th class="mt-dir">Vendas</th><th class="mt-dir">Conversão</th><th>Faturamento</th><th class="mt-dir">Ticket médio</th></tr></thead>
@@ -1487,6 +1521,8 @@
     const SITUACAO_MT = { venda: 'Vendeu', fup: 'Em follow-up', nao_comprou: 'Não comprou' };
     const ORIGEM_MT = { campo: 'campo do card', criacao: 'criação do card', venda: 'dia da venda', report: 'report', 'dia-do-report': 'dia do report' };
     let matchDados = null;
+    /** "minhas" ou "time" — o recorte da aba. A comparação "você x time" aparece nos dois. */
+    let escopoMt = 'minhas';
 
     /** Medidor em meia-lua (como o do zxp-market): vermelho até 59%, ouro até 89%, verde a partir de 90%. */
     function medidorMatch(p, valor, alvo, esperado) {
@@ -1555,7 +1591,7 @@
         return;
       }
       $('mtMinAmostra').textContent = a.minAmostra;
-      $('mtAnalisesSub').textContent = `— ${a.total} reuniões realizadas desde ${nomeMesMt(d.desde.slice(0, 7))}, ${a.vendas} vendas · conversão média ${pctMt(a.media, 1)}`;
+      $('mtAnalisesSub').textContent = `— ${d.escopo === 'time' ? 'time todo' : 'só as suas'}: ${a.total} reuniões realizadas desde ${nomeMesMt(d.desde.slice(0, 7))}, ${a.vendas} vendas · conversão média ${pctMt(a.media, 1)}`;
       $('mtDestaques').innerHTML = a.destaques.slice(0, 4).map((x) =>
         `<div class="mt-destaque"><small>${esc(x.titulo)}</small><div class="q"><b>${esc(x.melhor)}</b> converte ${esc(pctMt(x.conversao, 0))}</div>
           <div class="s">${x.vendas} de ${x.reunioes} reuniões · ${esc(x.vezesMedia.toLocaleString('pt-BR', { maximumFractionDigits: 1 }))}x a média${x.pior !== x.melhor ? ` · menor: ${esc(x.pior)} (${esc(pctMt(x.conversaoPior, 0))})` : ''}</div></div>`).join('') ||
@@ -1602,8 +1638,38 @@
       (barra !== undefined ? `<span class="mt-trilho-fat">${barra != null ? `<span class="mt-fat" style="width:${Math.round(Math.max(0, Math.min(1, barra)) * 100)}%"></span>` : ''}</span>` : '') +
       (delta !== undefined ? `<span class="d">${delta.trim() ? delta : ''}</span>` : '') + '</span>';
 
+    /** Você x time: as duas conversões lado a lado, por SDR e por profissão. Vem do servidor em qualquer escopo. */
+    function desenharTimeMt(d) {
+      const c = d.comparacao;
+      if (!c) { $('mtCardTime').classList.add('hidden'); return; }
+      $('mtCardTime').classList.remove('hidden');
+      $('mtTimeSub').textContent = `— desde ${nomeMesMt(d.desde.slice(0, 7))}, com ${d.closer}: as suas reuniões e as do time (${(d.time || []).join(', ')})`;
+      const lado = (cls, titulo, x) => `<div class="lado ${cls}"><small>${esc(titulo)}</small><div class="n">${x.reunioes ? esc(pctMt(x.conversao, 1)) : '—'}</div>
+        <div class="s">${x.vendas} ${x.vendas === 1 ? 'venda' : 'vendas'} de ${x.reunioes} ${x.reunioes === 1 ? 'reunião' : 'reuniões'} · ${esc(brlMt(x.faturamento))}</div>
+        <div class="trilho" aria-hidden="true"><i style="width:${Math.round(Math.min(1, x.conversao) * 100)}%"></i></div></div>`;
+      const dif = (c.minha.conversao - c.time.conversao) * 100;
+      const nota = c.minha.reunioes && c.time.reunioes
+        ? `<div class="mt-vs-nota">A sua conversão está <b class="${dif >= 0 ? 'mais' : 'menos'}">${dif >= 0 ? '+' : ''}${dif.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} p.p.</b> ${dif >= 0 ? 'acima' : 'abaixo'} da do time.</div>`
+        : '';
+      $('mtVs').innerHTML = lado('voce', 'Só com você', c.minha) + lado('time', 'Time todo (você + SDRs)', c.time) + nota;
+      $('mtPorSdr').innerHTML = c.sdrs.map((x) => `<tr class="${x.voce ? 'voce' : ''} ${x.reunioes < 3 ? 'pouco' : ''}"><td>${esc(x.nome)}${x.voce ? ' <span class="hint">(você)</span>' : ''}</td><td class="r">${x.reunioes}</td><td class="r">${x.vendas}</td>
+        <td class="r">${barrinhaMt(x.conversao, x.voce)}${x.reunioes ? esc(pctMt(x.conversao, 0)) : '—'}</td><td class="r">${esc(brlMt(x.faturamento))}</td></tr>`).join('') ||
+        '<tr><td colspan="5" class="hint">Sem reuniões no período.</td></tr>';
+      const conv = (x) => (x.reunioes ? `${esc(pctMt(x.conversao, 0))}<span class="sub2">${x.vendas} de ${x.reunioes}</span>` : '<span class="hint">—</span>');
+      $('mtPorProfissao').innerHTML = c.profissoes.slice(0, 12).map((g) => {
+        const melhor = g.minha.reunioes >= 3 && g.time.reunioes >= 3 && g.minha.conversao > g.time.conversao;
+        return `<tr class="${g.rotulo === 'Não informado' ? 'pouco' : ''}"><td>${esc(g.rotulo)}${melhor ? ' <span style="color:var(--ok)" title="Você converte mais que o time aqui">▲</span>' : ''}</td><td class="r">${conv(g.minha)}</td><td class="r">${conv(g.time)}</td></tr>`;
+      }).join('') || '<tr><td colspan="3" class="hint">A profissão ainda não veio dos cards nem dos formulários (clique em "Atualizar do RD").</td></tr>';
+    }
+
     function desenharMatch(d) {
       matchDados = d;
+      desenharTimeMt(d);
+      const doTime = d.escopo === 'time';
+      $('mtSubAba').textContent = doTime
+        ? '— as reuniões realizadas e as vendas do time todo (você e os SDRs da lista), lidas do RD'
+        : '— as reuniões realizadas e as vendas em que você foi o SDR, lidas do RD';
+      $('mtMesesEscopo').textContent = doTime ? '· time todo' : '· só as suas';
       $('mtConteudo').classList.remove('hidden');
       const p = d.plano;
       const m1 = p.metas[0];
@@ -1663,7 +1729,7 @@
           <td class="mt-num mt-dir"><b>${celulaMt(tot.vendas ? brlMt(tot.faturamento / tot.vendas) : '—', '6.2em')}</b></td></tr>`;
 
       $('mtNReunioes').textContent = `(${d.reunioes.length})`;
-      $('mtLista').innerHTML = d.reunioes.map((r) => `<tr><td class="mt-num">${esc(diaMt(r.dataReuniao))}${r.contaReuniao ? '' : ' <span class="hint">(antes do período)</span>'}</td><td>${esc(r.lead || '—')}</td>
+      $('mtLista').innerHTML = d.reunioes.map((r) => `<tr><td class="mt-num">${esc(diaMt(r.dataReuniao))}${r.contaReuniao ? '' : ' <span class="hint">(antes do período)</span>'}</td><td>${esc(r.lead || '—')}${d.escopo === 'time' ? ` <span class="hint">· SDR ${esc(r.minha ? 'você' : r.sdr || '?')}</span>` : ''}</td>
         <td>${esc(SITUACAO_MT[r.estado] || r.estado)}${r.etapa ? ` <span class="hint">· ${esc(r.etapa)}</span>` : ''}</td>
         <td class="mt-num">${r.diaVenda ? esc(diaMt(r.diaVenda)) : ''}</td><td class="mt-num">${r.diaVenda ? esc(brlMt(r.ticket)) : ''}</td>
         <td><span class="hint">${r.fonte === 'rd' ? 'RD' : 'report'} · ${esc(ORIGEM_MT[r.origemData] || r.origemData || '')}</span></td></tr>`).join('');
@@ -1672,7 +1738,7 @@
       const etapas = Object.entries(g.etapasSemReuniao || {}).map(([e, n]) => `${esc(e)} (${n})`).join(', ');
       $('mtDiag').innerHTML = [
         `Closer no RD: <b>${esc(g.closerNoRd || 'não achei pelo nome — li os cards sem filtrar o responsável')}</b> · ${g.cardsLidos} card(s) lido(s) em ${g.paginas} consulta(s)${g.truncado ? ' · <b style="color:var(--danger)">parei no limite de páginas: pode faltar card antigo</b>' : ''}.`,
-        `Ficaram de fora: ${g.semSdr} sem o campo SDR preenchido, ${g.deOutroSdr} de outro SDR, ${g.deOutroCloser} de outro closer, ${g.noShow} no-show, ${g.aindaNaoAconteceu} com a reunião ainda por acontecer${etapas ? ' (' + etapas + ')' : ''} e ${g.foraDoPeriodo} fora do período.`,
+        `${g.doTime || 0} reunião(ões) de outros SDRs do time (entram em "Time todo"). Ficaram de fora: ${g.semSdr} sem o campo SDR preenchido, ${g.deOutroSdr} de SDR fora do time, ${g.deOutroCloser} de outro closer, ${g.noShow} no-show, ${g.aindaNaoAconteceu} com a reunião ainda por acontecer${etapas ? ' (' + etapas + ')' : ''} e ${g.foraDoPeriodo} fora do período.`,
         `Data da reunião: ${g.dataPeloCampo} pelo campo de data do card, ${g.dataPelaCriacao} pela criação do card. ${g.doReport} reunião(ões) vieram só dos reports (o RD não trouxe).`,
       ].map((x) => '<div style="margin-bottom:6px">' + x + '</div>').join('');
     }
@@ -1682,7 +1748,7 @@
       setStatus('statusMt', atualizar ? 'Lendo os cards do closer no RD… (pode levar até um minuto)' : 'Carregando…', { loading: true });
       $('mtAtualizar').disabled = true;
       try {
-        const q = new URLSearchParams({ closer: $('mtCloser').value.trim(), desde: $('mtDesde').value });
+        const q = new URLSearchParams({ closer: $('mtCloser').value.trim(), desde: $('mtDesde').value, escopo: escopoMt });
         if (atualizar) q.set('atualizar', '1');
         const d = await api('GET', '/api/master/match?' + q.toString());
         desenharMatch(d);
@@ -1705,9 +1771,27 @@
       const salvo = JSON.parse(localStorage.getItem('mtFiltro') || 'null');
       if (salvo && salvo.closer) $('mtCloser').value = salvo.closer;
       if (salvo && /^\d{4}-\d{2}-\d{2}$/.test(salvo.desde || '')) $('mtDesde').value = salvo.desde;
+      if (salvo && salvo.escopo === 'time') escopoMt = 'time';
     } catch (_) { /* sem armazenamento: fica o padrão */ }
+    const lembrarFiltroMt = () => {
+      try { localStorage.setItem('mtFiltro', JSON.stringify({ closer: $('mtCloser').value.trim(), desde: $('mtDesde').value, escopo: escopoMt })); } catch (_) { /* tudo bem */ }
+    };
     ['mtCloser', 'mtDesde'].forEach((id) => $(id).addEventListener('change', () => {
-      try { localStorage.setItem('mtFiltro', JSON.stringify({ closer: $('mtCloser').value.trim(), desde: $('mtDesde').value })); } catch (_) { /* tudo bem */ }
+      lembrarFiltroMt();
+      matchDados = null;
+      carregarMatch(false);
+    }));
+    // "Só as minhas" x "Time todo": o servidor já leu o time; trocar só recorta (o RD não é lido de novo).
+    const marcarEscopoMt = () => {
+      $('mtEscopoMinhas').setAttribute('aria-pressed', String(escopoMt === 'minhas'));
+      $('mtEscopoTime').setAttribute('aria-pressed', String(escopoMt === 'time'));
+    };
+    marcarEscopoMt();
+    [['mtEscopoMinhas', 'minhas'], ['mtEscopoTime', 'time']].forEach(([id, valor]) => $(id).addEventListener('click', () => {
+      if (escopoMt === valor) return;
+      escopoMt = valor;
+      marcarEscopoMt();
+      lembrarFiltroMt();
       matchDados = null;
       carregarMatch(false);
     }));
@@ -1762,7 +1846,7 @@
       setStatus('statusMtMeta', 'Salvando…', { loading: true });
       try {
         const d = await api('PUT', '/api/master/match/meta', {
-          closer: matchDados.closer, desde: matchDados.desde, mes: matchDados.plano.mes,
+          closer: matchDados.closer, desde: matchDados.desde, escopo: escopoMt, mes: matchDados.plano.mes,
           meta1: $('mtMeta1').value, meta2: $('mtMeta2').value, meta3: $('mtMeta3').value, conversaoAlvo: $('mtConversao').value,
         });
         desenharMatch(d); // a resposta já vem com a meta nova e o plano refeito

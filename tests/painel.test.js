@@ -2230,8 +2230,8 @@ test('Match com PH: medidor da meta, plano do mês, comparativo, mês a mês e a
     metas: meta1 ? [{ nome: 'meta1', alvo: meta1, falta: meta1 - 20000, pct: 20000 / meta1, batida: false, porDia: (meta1 - 20000) / 10, vendas: 6, reunioes: 10, reunioesPorDia: 1, esperadoHoje: 60870 }] : [],
   });
   let meta1 = 100000;
-  const dados = () => ({
-    ok: true, closer: 'Paulo Henrique', sdr: 'Cauã Lima', desde: '2026-07-01', ate: '2026-10-20', atualizadoEm: '2026-10-20T15:00:00.000Z', cache: false,
+  const dados = (escopo = 'minhas') => ({
+    ok: true, escopo, time: ['Reinaldo Junior', 'Luiza Lemes'], closer: 'Paulo Henrique', sdr: 'Cauã Lima', desde: '2026-07-01', ate: '2026-10-20', atualizadoEm: '2026-10-20T15:00:00.000Z', cache: false,
     meses: [
       { mes: '2026-07', reunioes: 2, vendas: 1, faturamento: 18000, conversao: 0.5, ticketMedio: 18000 },
       { mes: '2026-08', reunioes: 1, vendas: 0, faturamento: 0, conversao: 0, ticketMedio: 0 },
@@ -2240,9 +2240,22 @@ test('Match com PH: medidor da meta, plano do mês, comparativo, mês a mês e a
     ],
     reunioes: [
       { id: 'c1', fonte: 'rd', lead: 'Lead <b>Um</b>', dataReuniao: '2026-10-14', origemData: 'criacao', contaReuniao: true, estado: 'venda', etapa: 'Vendido', venda: true, diaVenda: '2026-10-15', ticket: 20000 },
-      { id: 'r_x', fonte: 'report', lead: 'Lead Dois', dataReuniao: '2026-09-10', origemData: 'report', contaReuniao: true, estado: 'fup', etapa: '', venda: false, diaVenda: '', ticket: 0 },
+      { id: 'r_x', fonte: 'report', lead: 'Lead Dois', dataReuniao: '2026-09-10', origemData: 'report', contaReuniao: true, estado: 'fup', etapa: '', venda: false, diaVenda: '', ticket: 0, sdr: 'Cauã Lima', minha: true },
+      ...(escopo === 'time' ? [{ id: 'c9', fonte: 'rd', lead: 'Lead Três', dataReuniao: '2026-10-02', origemData: 'campo', contaReuniao: true, estado: 'fup', etapa: '', venda: false, diaVenda: '', ticket: 0, sdr: 'Luiza Lemes', minha: false }] : []),
     ],
-    diagnostico: { closerNoRd: 'Paulo Henrique Pagoti', cardsLidos: 120, paginas: 3, truncado: false, deOutroCloser: 0, semSdr: 7, deOutroSdr: 30, noShow: 2, aindaNaoAconteceu: 3, foraDoPeriodo: 40, dataPeloCampo: 0, dataPelaCriacao: 8, etapasSemReuniao: { 'Reunião agendada': 3 }, doReport: 1 },
+    comparacao: {
+      minha: { reunioes: 8, vendas: 3, conversao: 0.375, faturamento: 47000, ticketMedio: 15666.67 },
+      time: { reunioes: 20, vendas: 5, conversao: 0.25, faturamento: 80000, ticketMedio: 16000 },
+      sdrs: [
+        { nome: 'Cauã Lima', voce: true, reunioes: 8, vendas: 3, conversao: 0.375, faturamento: 47000, ticketMedio: 15666.67 },
+        { nome: 'Luiza <b>L</b>', voce: false, reunioes: 12, vendas: 2, conversao: 1 / 6, faturamento: 33000, ticketMedio: 16500 },
+      ],
+      profissoes: [
+        { rotulo: 'Empresário', minha: { reunioes: 4, vendas: 3, conversao: 0.75 }, time: { reunioes: 9, vendas: 4, conversao: 4 / 9 } },
+        { rotulo: 'Médico', minha: { reunioes: 0, vendas: 0, conversao: 0 }, time: { reunioes: 3, vendas: 0, conversao: 0 } },
+      ],
+    },
+    diagnostico: { closerNoRd: 'Paulo Henrique Pagoti', cardsLidos: 120, paginas: 3, truncado: false, deOutroCloser: 0, semSdr: 7, deOutroSdr: 30, doTime: 12, noShow: 2, aindaNaoAconteceu: 3, foraDoPeriodo: 40, dataPeloCampo: 0, dataPelaCriacao: 8, etapasSemReuniao: { 'Reunião agendada': 3 }, doReport: 1 },
     metas: meta1 ? { '2026-10': { meta1, meta2: 0, meta3: 0, conversaoAlvo: 0 } } : {},
     plano: plano(meta1),
     mesmoPeriodo: { atual: { mes: '2026-10', ate: '2026-10-20', reunioes: 4, vendas: 1, faturamento: 20000 }, anterior: { mes: '2026-09', ate: '2026-09-20', reunioes: 2, vendas: 1, faturamento: 9000 } },
@@ -2260,14 +2273,27 @@ test('Match com PH: medidor da meta, plano do mês, comparativo, mês a mês e a
   });
   const api = apiMaster()
     .quando('GET /api/master/google', () => ({ corpo: { configurado: false, conectado: false, agendas: [] } }))
-    .quando('GET /api/master/match', () => ({ corpo: dados() }))
-    .quando('PUT /api/master/match/meta', ({ corpo }) => { meta1 = Number(String(corpo.meta1).replace(/\./g, '')); return { corpo: { ok: true, meta: {}, ...dados() } }; });
+    .quando('GET /api/master/match', ({ query }) => ({ corpo: dados(query.get('escopo') || 'minhas') }))
+    .quando('PUT /api/master/match/meta', ({ corpo }) => { meta1 = Number(String(corpo.meta1).replace(/\./g, '')); return { corpo: { ok: true, meta: {}, ...dados(corpo.escopo) } }; });
   const p = abrirPainel(api, { hash: '#match' });
   await esperar(() => visivel(p.$('mtConteudo')), { motivo: 'aba do match carregada' });
   assert.ok(visivel(p.document.querySelector('.tab[data-aba="match"]')), 'item no menu');
   assert.equal(p.$('tituloPagina').textContent, 'Match com PH');
   const q = api.pedidos.find((x) => x.chave === 'GET /api/master/match').query;
-  assert.deepEqual([q.get('closer'), q.get('desde'), q.get('atualizar')], ['Paulo Henrique', '2026-07-01', null]);
+  assert.deepEqual([q.get('closer'), q.get('desde'), q.get('atualizar'), q.get('escopo')], ['Paulo Henrique', '2026-07-01', null, 'minhas']);
+  assert.equal(p.$('mtEscopoMinhas').getAttribute('aria-pressed'), 'true', 'começa em "Só as minhas"');
+
+  // Você x time: as duas conversões lado a lado, por SDR e por profissão
+  const vs = p.$('mtVs').textContent.replace(/\s+/g, ' ');
+  assert.match(vs, /Só com você ?37,5% ?3 vendas de 8 reuniões/);
+  assert.match(vs, /Time todo \(você \+ SDRs\) ?25,0% ?5 vendas de 20 reuniões/);
+  assert.match(vs, /A sua conversão está \+12,5 p\.p\. acima da do time/);
+  assert.match(p.$('mtTimeSub').textContent, /Reinaldo Junior, Luiza Lemes/);
+  const porSdr = [...p.$('mtPorSdr').querySelectorAll('tr')].map((tr) => [...tr.cells].map((c) => c.textContent.replace(/\s+/g, ' ').trim()).join(' | '));
+  assert.deepEqual(porSdr, ['Cauã Lima (você) | 8 | 3 | 38% | R$ 47.000', 'Luiza <b>L</b> | 12 | 2 | 17% | R$ 33.000']);
+  assert.equal(p.$('mtPorSdr').querySelector('b'), null, 'nome com HTML não vira elemento');
+  const porProf = [...p.$('mtPorProfissao').querySelectorAll('tr')].map((tr) => [...tr.cells].map((c) => c.textContent.replace(/\s+/g, ' ').trim()).join(' | '));
+  assert.deepEqual(porProf, ['Empresário ▲ | 75%3 de 4 | 44%4 de 9', 'Médico | — | 0%0 de 3']);
 
   assert.match(p.$('mtMedidor').textContent, /20%[\s\S]*R\$\s*20\.000[\s\S]*de R\$\s*100\.000 \(meta 1\)/);
   // Metas: o ritmo, quanto falta e por dia útil, e a marca de onde deveria estar hoje (60.870 de 100.000 = 60,9%)
@@ -2307,7 +2333,8 @@ test('Match com PH: medidor da meta, plano do mês, comparativo, mês a mês e a
   assert.match(linhas[4], /^Total 8 3 37,5% R\$\s*47\.000/);
   assert.equal(p.$('mtLista').querySelector('b'), null, 'nome de lead com HTML não vira elemento');
   assert.match(p.$('mtLista').textContent.replace(/\s+/g, ' '), /14\/10Lead <b>Um<\/b> Vendeu · Vendido 15\/10R\$ 20\.000 RD · criação do card/);
-  assert.match(p.$('mtDiag').textContent, /7 sem o campo SDR preenchido, 30 de outro SDR[\s\S]*Reunião agendada \(3\)/);
+  assert.match(p.$('mtDiag').textContent, /12 reunião\(ões\) de outros SDRs do time[\s\S]*7 sem o campo SDR preenchido, 30 de SDR fora do time[\s\S]*Reunião agendada \(3\)/);
+  assert.doesNotMatch(p.$('mtLista').textContent, /· SDR/, 'só as minhas: a lista não repete o SDR');
 
   // Salvar a meta manda o mês e os valores e redesenha
   p.$('mtMeta1').value = '150000';
@@ -2324,7 +2351,7 @@ test('Match com PH: medidor da meta, plano do mês, comparativo, mês a mês e a
   p.$('mtMeta3').value = '';
   p.$('mtSalvarMeta').click();
   await esperar(() => /Meta salva às/.test(p.$('statusMtMeta').textContent), { motivo: 'meta salva' });
-  assert.deepEqual(api.corpos('PUT /api/master/match/meta')[0], { closer: 'Paulo Henrique', desde: '2026-07-01', mes: '2026-10', meta1: '150.000', meta2: '', meta3: '', conversaoAlvo: '20' });
+  assert.deepEqual(api.corpos('PUT /api/master/match/meta')[0], { closer: 'Paulo Henrique', desde: '2026-07-01', escopo: 'minhas', mes: '2026-10', meta1: '150.000', meta2: '', meta3: '', conversaoAlvo: '20' });
   assert.match(p.$('mtMedidor').textContent, /de R\$\s*150\.000/, 'redesenha com a resposta do salvar');
   assert.equal(api.contar('GET /api/master/match'), 1, 'sem depender de outra leitura');
   // alterar de novo também vale
@@ -2342,9 +2369,22 @@ test('Match com PH: medidor da meta, plano do mês, comparativo, mês a mês e a
   p.$('mtDesde').value = '2026-08-01';
   p.$('mtDesde').dispatchEvent(new p.w.Event('change'));
   await esperar(() => api.pedidos.some((x) => x.chave === 'GET /api/master/match' && x.query.get('desde') === '2026-08-01'), { motivo: 'novo período' });
-  assert.deepEqual(JSON.parse(p.w.localStorage.getItem('mtFiltro')), { closer: 'Paulo Henrique', desde: '2026-08-01' });
+  assert.deepEqual(JSON.parse(p.w.localStorage.getItem('mtFiltro')), { closer: 'Paulo Henrique', desde: '2026-08-01', escopo: 'minhas' });
   await esperar(() => !p.$('mtAtualizar').disabled && /Lido do RD/.test(p.$('statusMt').textContent), { motivo: 'período novo na tela' });
-  assert.equal(p.document.querySelectorAll('[data-mt-ir]').length, 5, 'atalhos para as partes da aba');
+  assert.equal(p.document.querySelectorAll('[data-mt-ir]').length, 6, 'atalhos para as partes da aba');
+
+  // "Time todo": pede o recorte do time, a lista diz de quem é cada reunião, e fica lembrado
+  p.$('mtEscopoTime').click();
+  await esperar(() => api.pedidos.some((x) => x.chave === 'GET /api/master/match' && x.query.get('escopo') === 'time'), { motivo: 'escopo do time' });
+  await esperar(() => /SDR Luiza Lemes/.test(p.$('mtLista').textContent), { motivo: 'lista do time' });
+  assert.equal(p.$('mtEscopoTime').getAttribute('aria-pressed'), 'true');
+  assert.equal(p.$('mtEscopoMinhas').getAttribute('aria-pressed'), 'false');
+  assert.match(p.$('mtLista').textContent, /SDR você/);
+  assert.match(p.$('mtMesesEscopo').textContent, /time todo/);
+  assert.match(p.$('mtSubAba').textContent, /do time todo/);
+  assert.equal(JSON.parse(p.w.localStorage.getItem('mtFiltro')).escopo, 'time');
+  await dormir(60);
+  assert.deepEqual(p.erros, []);
   p.fechar();
 });
 
