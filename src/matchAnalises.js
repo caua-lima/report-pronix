@@ -209,7 +209,9 @@ function analisar(todas) {
     if (melhor.conversao <= media) continue;
     destaques.push({ corte: c.id, titulo: c.titulo, melhor: melhor.rotulo, conversao: melhor.conversao, vendas: melhor.vendas, reunioes: melhor.reunioes, pior: pior.rotulo, conversaoPior: pior.conversao, vezesMedia: media ? melhor.conversao / media : 0 });
   }
-  destaques.sort((a, b) => b.vezesMedia - a.vezesMedia);
+  // Profissão e investimento primeiro (é o que se olha antes), depois o que mais passa da média.
+  const prioridade = (d) => ['profissao', 'investimento'].indexOf(d.corte) + 1 || 9;
+  destaques.sort((a, b) => prioridade(a) - prioridade(b) || b.vezesMedia - a.vezesMedia);
 
   return { total: reunioes.length, vendas: vendas.length, media, minAmostra: MIN_AMOSTRA, cortes, porProduto, tempo, motivosPerda, destaques };
 }
