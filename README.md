@@ -236,10 +236,13 @@ as reuniões realizadas e as vendas em que você foi o SDR — mês a mês, com 
 - **Mês a mês.** Reuniões realizadas, vendas, conversão (vendas ÷ reuniões do mês), faturamento e ticket
   médio, com a variação sobre o mês anterior; e o mês atual contra o mesmo período do mês passado (do
   dia 1 até hoje), como no dashboard-pessoal.
-- **Meta.** Meta 1, 2 e 3 em reais e meta de reuniões, por mês. Medidor (até 59% vermelho, até 89%
-  ouro, 90%+ verde) e barras como no zxp-market, inclusive a meta diária acumulada (onde deveria estar
-  hoje). O plano diz quanto falta, quanto por dia útil (seg–sex; o sábado entra se marcar), quantas
-  vendas e reuniões isso pede (pelo ticket médio e pela conversão do período todo) e a projeção no ritmo.
+- **Meta.** Meta 1, 2 e 3 em reais e a **conversão alvo** (%), por mês, num formulário sempre à vista
+  que mostra, enquanto você digita, quanto cada meta pede por dia útil e quantas vendas e reuniões.
+  Salvar devolve o painel já refeito (a tela redesenha com a resposta). Medidor (até 59% vermelho, até
+  89% ouro, 90%+ verde) e barras como no zxp-market, inclusive a meta diária acumulada (onde deveria
+  estar hoje). O plano diz quanto falta, quanto por dia útil, quantas vendas (pelo ticket médio do
+  período) e quantas reuniões isso pede (pela conversão alvo; sem ela, pela do período) e a projeção.
+- **Dias úteis.** Segunda a sexta **e o último sábado de cada mês** (os outros sábados não contam).
 - **Conferir.** A lista de reuniões e vendas, uma por uma, diz de onde veio cada data; o diagnóstico
   conta o que ficou de fora (sem o campo SDR, outro SDR, no-show, ainda agendada). A leitura do RD fica
   guardada 20 min; **Atualizar do RD** lê de novo.
