@@ -906,22 +906,23 @@ test('Acessos: o master liga/desliga o popup do lead por pessoa; o gestor não t
   q.fechar();
 });
 
-test('Acessos: o master liga/desliga o Coach por pessoa; o gestor não tem a aba', async () => {
+test('Acessos: o master liga/desliga a Automação do RD por pessoa; o gestor não tem a aba', async () => {
   const usuarios = [
-    { id: 'u1', nome: 'Cauã', papel: 'master', chave: 'pnx_Master1234567890abcdefgh', criadoEm: '2026-09-01T10:00:00Z', fichaCrm: true, coach: true },
-    { id: 'u2', nome: 'Bia', papel: 'sdr', chave: 'pnx_SdrSdr1234567890abcdefgh', criadoEm: '2026-09-01T10:00:00Z', fichaCrm: true, coach: false },
+    { id: 'u1', nome: 'Cauã', papel: 'master', chave: 'pnx_Master1234567890abcdefgh', criadoEm: '2026-09-01T10:00:00Z', fichaCrm: true, automacao: true },
+    { id: 'u2', nome: 'Bia', papel: 'sdr', chave: 'pnx_SdrSdr1234567890abcdefgh', criadoEm: '2026-09-01T10:00:00Z', fichaCrm: true, automacao: false },
   ];
   const api = apiBase({ papel: 'master', usuarios }).quando('PATCH /api/admin/usuarios/u2', () => ({ corpo: { ok: true } }));
   const p = abrirPainel(api, { hash: '#acessos' });
   await esperar(() => p.$('lista').textContent.includes('Bia'), { motivo: 'lista' });
-  const caixa = (id) => p.document.querySelector('[data-coach="' + id + '"]');
+  const caixa = (id) => p.document.querySelector('[data-automacao="' + id + '"]');
   assert.equal(caixa('u1').checked, true);
   assert.equal(caixa('u2').checked, false);
   caixa('u2').checked = true;
   caixa('u2').dispatchEvent(new p.w.Event('change', { bubbles: true }));
   await esperar(() => api.contar('PATCH /api/admin/usuarios/u2') === 1, { motivo: 'PATCH' });
-  assert.deepEqual(api.corpos('PATCH /api/admin/usuarios/u2'), [{ coach: true }]);
-  await esperar(() => /Coach ligado/.test(p.$('toast').textContent), { motivo: 'aviso' });
+  assert.deepEqual(api.corpos('PATCH /api/admin/usuarios/u2'), [{ automacao: true }]);
+  await esperar(() => /Automação do RD ligada/.test(p.$('toast').textContent), { motivo: 'aviso' });
+  assert.equal(p.document.querySelector('[data-coach]'), null, 'o Coach saiu do painel');
   await dormir(60);
   p.fechar();
 
@@ -1668,8 +1669,8 @@ test('Closers: um numerozinho mostra quantos estão cadastrados (na aba e no tí
 
 test('Acessos: o master liga/desliga a Automação do RD por pessoa (mover para Respondeu, etiqueta e agendamento)', async () => {
   const usuarios = [
-    { id: 'u1', nome: 'Cauã', papel: 'master', chave: 'pnx_Master1234567890abcdefgh', criadoEm: '2026-09-01T10:00:00Z', fichaCrm: true, coach: true, automacao: true },
-    { id: 'u2', nome: 'Bia', papel: 'sdr', chave: 'pnx_SdrSdr1234567890abcdefgh', criadoEm: '2026-09-01T10:00:00Z', fichaCrm: true, coach: false, automacao: false },
+    { id: 'u1', nome: 'Cauã', papel: 'master', chave: 'pnx_Master1234567890abcdefgh', criadoEm: '2026-09-01T10:00:00Z', fichaCrm: true, automacao: true },
+    { id: 'u2', nome: 'Bia', papel: 'sdr', chave: 'pnx_SdrSdr1234567890abcdefgh', criadoEm: '2026-09-01T10:00:00Z', fichaCrm: true, automacao: false },
   ];
   const api = apiBase({ papel: 'master', usuarios }).quando('PATCH /api/admin/usuarios/u2', () => ({ corpo: { ok: true } }));
   const p = abrirPainel(api, { hash: '#acessos' });
@@ -1690,8 +1691,8 @@ test('Acessos: o master liga/desliga a Automação do RD por pessoa (mover para 
 
 test('Acessos: o master liga/desliga as Etiquetas do formulário por pessoa', async () => {
   const usuarios = [
-    { id: 'u1', nome: 'Cauã', papel: 'master', chave: 'pnx_Master1234567890abcdefgh', criadoEm: '2026-09-01T10:00:00Z', fichaCrm: true, coach: true, automacao: true, etiquetas: true },
-    { id: 'u2', nome: 'Bia', papel: 'sdr', chave: 'pnx_SdrSdr1234567890abcdefgh', criadoEm: '2026-09-01T10:00:00Z', fichaCrm: true, coach: false, automacao: false, etiquetas: false },
+    { id: 'u1', nome: 'Cauã', papel: 'master', chave: 'pnx_Master1234567890abcdefgh', criadoEm: '2026-09-01T10:00:00Z', fichaCrm: true, automacao: true, etiquetas: true },
+    { id: 'u2', nome: 'Bia', papel: 'sdr', chave: 'pnx_SdrSdr1234567890abcdefgh', criadoEm: '2026-09-01T10:00:00Z', fichaCrm: true, automacao: false, etiquetas: false },
   ];
   const api = apiBase({ papel: 'master', usuarios }).quando('PATCH /api/admin/usuarios/u2', () => ({ corpo: { ok: true } }));
   const p = abrirPainel(api, { hash: '#acessos' });
@@ -1841,10 +1842,10 @@ test('Resultados: certinho verde na venda finalizada, selo "Vendido no RD" esper
   p.fechar();
 });
 
-test('Acessos: as permissões de quem está logado já vêm abertas, para escolher o que usar (Coach, Popup do lead...)', async () => {
+test('Acessos: as permissões de quem está logado já vêm abertas, para escolher o que usar (Popup do lead, Automação...)', async () => {
   const usuarios = [
-    { id: '1', nome: 'Cauã Lima', papel: 'master', chave: 'pnx_MasterMaster1234567890ab', criadoEm: '2026-10-12T10:00:00Z', fichaCrm: true, coach: true, automacao: true, etiquetas: true, corAgenda: '5', abas: {} },
-    { id: 'u2', nome: 'Samuel', papel: 'sdr', chave: 'pnx_SdrSdr1234567890abcdefgh', criadoEm: '2026-09-01T10:00:00Z', fichaCrm: true, coach: false, automacao: false, etiquetas: false, abas: {} },
+    { id: '1', nome: 'Cauã Lima', papel: 'master', chave: 'pnx_MasterMaster1234567890ab', criadoEm: '2026-10-12T10:00:00Z', fichaCrm: true, automacao: true, etiquetas: true, corAgenda: '5', abas: {} },
+    { id: 'u2', nome: 'Samuel', papel: 'sdr', chave: 'pnx_SdrSdr1234567890abcdefgh', criadoEm: '2026-09-01T10:00:00Z', fichaCrm: true, automacao: false, etiquetas: false, abas: {} },
   ];
   const api = apiBase({ papel: 'master', nome: 'Cauã Lima', usuarios }).quando('PATCH /api/admin/usuarios/1', () => ({ corpo: { ok: true } }));
   const p = abrirPainel(api, { hash: '#acessos' });
@@ -1854,15 +1855,15 @@ test('Acessos: as permissões de quem está logado já vêm abertas, para escolh
   assert.ok(p.document.querySelector('tr[data-perm-de="u2"]').classList.contains('hidden'), 'as dos outros continuam recolhidas');
   assert.match(p.document.querySelector('[data-abrir-perm="1"]').textContent, /Cauã Lima \(você\)/);
   assert.ok([...p.document.querySelectorAll('#aba-acessos .head .sub')].some((x) => /clique no nome/.test(x.textContent)), 'a tela diz onde clicar');
-  // os quatro itens do WhatsApp estão ali, marcados, e a cor já está na Banana
-  assert.deepEqual(['data-ficha-crm', 'data-coach', 'data-automacao', 'data-etiquetas'].map((a) => meu.querySelector(`[${a}="1"]`).checked), [true, true, true, true]);
+  // os itens do WhatsApp estão ali, marcados, e a cor já está na Banana
+  assert.deepEqual(['data-ficha-crm', 'data-automacao', 'data-etiquetas'].map((a) => meu.querySelector(`[${a}="1"]`).checked), [true, true, true]);
   assert.equal(meu.querySelector('[data-cor-agenda="1"]').value, '5');
-  // desligar o coach para mim mesmo
-  const coach = meu.querySelector('[data-coach="1"]');
-  coach.checked = false;
-  coach.dispatchEvent(new p.w.Event('change', { bubbles: true }));
+  // desligar as etiquetas para mim mesmo
+  const et = meu.querySelector('[data-etiquetas="1"]');
+  et.checked = false;
+  et.dispatchEvent(new p.w.Event('change', { bubbles: true }));
   await esperar(() => api.contar('PATCH /api/admin/usuarios/1') === 1, { motivo: 'PATCH' });
-  assert.deepEqual(api.corpos('PATCH /api/admin/usuarios/1'), [{ coach: false }]);
+  assert.deepEqual(api.corpos('PATCH /api/admin/usuarios/1'), [{ etiquetas: false }]);
   // fechei as minhas: não reabrem sozinhas quando a lista recarrega
   p.document.querySelector('[data-abrir-perm="1"]').click();
   assert.ok(p.document.querySelector('tr[data-perm-de="1"]').classList.contains('hidden'));
@@ -1894,7 +1895,7 @@ test('Acessos: sistema vazio (entrando pela senha do servidor) — o primeiro ac
 test('Acessos: a tabela fica limpa; clicar no nome abre as permissões da pessoa (WhatsApp e abas) e o resumo acompanha', async () => {
   const semAbas = { numeros: false, resultados: false, closers: false, arquivos: false, base: false, extensao: false, equipe: false };
   const usuarios = [
-    { id: 'u2', nome: 'Samuel', papel: 'sdr', chave: 'pnx_SdrSdr1234567890abcdefgh', criadoEm: '2026-09-01T10:00:00Z', fichaCrm: true, coach: false, automacao: true, etiquetas: false, abas: { ...semAbas, resultados: true } },
+    { id: 'u2', nome: 'Samuel', papel: 'sdr', chave: 'pnx_SdrSdr1234567890abcdefgh', criadoEm: '2026-09-01T10:00:00Z', fichaCrm: true, automacao: true, etiquetas: false, abas: { ...semAbas, resultados: true } },
   ];
   const api = apiBase({ papel: 'master', usuarios }).quando('PATCH /api/admin/usuarios/u2', () => ({ corpo: { ok: true } }));
   const p = abrirPainel(api, { hash: '#acessos' });
@@ -1908,13 +1909,14 @@ test('Acessos: a tabela fica limpa; clicar no nome abre as permissões da pessoa
   nome.click();
   assert.ok(!painel.classList.contains('hidden'));
   assert.equal(nome.getAttribute('aria-expanded'), 'true');
-  assert.match(painel.textContent, /No WhatsApp \(extensão\)[\s\S]*Popup do lead[\s\S]*Coach[\s\S]*Automação RD[\s\S]*Etiquetas[\s\S]*Abas do painel[\s\S]*Resultados da reunião/);
+  assert.match(painel.textContent, /No WhatsApp \(extensão\)[\s\S]*Popup do lead[\s\S]*Automação RD[\s\S]*Etiquetas[\s\S]*Abas do painel[\s\S]*Resultados da reunião/);
 
-  const coach = painel.querySelector('[data-coach="u2"]');
-  coach.checked = true;
-  coach.dispatchEvent(new p.w.Event('change', { bubbles: true }));
+  assert.equal(painel.querySelector('[data-coach]'), null, 'o Coach saiu');
+  const et = painel.querySelector('[data-etiquetas="u2"]');
+  et.checked = true;
+  et.dispatchEvent(new p.w.Event('change', { bubbles: true }));
   await esperar(() => api.contar('PATCH /api/admin/usuarios/u2') === 1, { motivo: 'PATCH' });
-  assert.deepEqual(api.corpos('PATCH /api/admin/usuarios/u2'), [{ coach: true }]);
+  assert.deepEqual(api.corpos('PATCH /api/admin/usuarios/u2'), [{ etiquetas: true }]);
   assert.equal(p.document.querySelector('[data-resumo-perm="u2"]').textContent, '3 no WhatsApp · 1 aba(s)');
 
   // Profissão no report: a caixa manda o PATCH próprio e entra na conta

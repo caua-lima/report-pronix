@@ -1028,11 +1028,11 @@
             <button id="criar" class="btn">Criar acesso</button>
           </div>
           <div id="statusCriar" class="status"></div>
-          <div class="hint">Cada acesso vira uma <b>chave</b>. Copie e mande para o SDR — ele cola no popup da extensão e já está usando. Na lista abaixo você marca, pessoa por pessoa, o que aparece no WhatsApp (popup do lead, coach, automação, etiquetas) e quais <b>abas do painel</b> ela abre. O tipo de acesso só define o ponto de partida: Usuário começa sem nenhuma aba de gestão, Gestor com as de gestão, Master com todas.</div>
+          <div class="hint">Cada acesso vira uma <b>chave</b>. Copie e mande para o SDR — ele cola no popup da extensão e já está usando. Na lista abaixo você marca, pessoa por pessoa, o que aparece no WhatsApp (popup do lead, automação, etiquetas) e quais <b>abas do painel</b> ela abre. O tipo de acesso só define o ponto de partida: Usuário começa sem nenhuma aba de gestão, Gestor com as de gestão, Master com todas.</div>
         </div>
 
         <div class="card">
-          <div class="head"><div class="t"><i data-ic="users"></i>Equipe</div><div class="sub">— clique no nome para escolher o que a pessoa usa: Popup do lead, Coach, Automação RD, Etiquetas, cor da agenda e abas. O seu já vem aberto.</div></div>
+          <div class="head"><div class="t"><i data-ic="users"></i>Equipe</div><div class="sub">— clique no nome para escolher o que a pessoa usa: Popup do lead, Automação RD, Etiquetas, cor da agenda e abas. O seu já vem aberto.</div></div>
           <table>
             <thead><tr><th>Nome</th><th>Chave</th><th>Permissões</th><th>Criado</th><th></th></tr></thead>
             <tbody id="lista"></tbody>
@@ -1236,7 +1236,7 @@
         </div>
 
         <div class="card">
-          <label for="bQualificacao"><i data-ic="filter"></i> Régua de qualificação <span style="font-weight:400;color:var(--muted)">— SPIN e BANT na pré-venda (é por ela que a IA avalia a prospecção e que o coach sugere perguntas)</span></label>
+          <label for="bQualificacao"><i data-ic="filter"></i> Régua de qualificação <span style="font-weight:400;color:var(--muted)">— SPIN e BANT na pré-venda (é por ela que a IA avalia a prospecção)</span></label>
           <textarea id="bQualificacao" style="min-height:150px"></textarea>
         </div>
 
@@ -1934,7 +1934,7 @@
         if (!usuarios.length && !$('papel').dataset.sugerido) {
           $('papel').value = 'master';
           $('papel').dataset.sugerido = '1';
-          setStatus('statusCriar', 'Este é o primeiro acesso: crie o seu como Master. É o Master que liga Coach, Automação RD e Etiquetas.', {});
+          setStatus('statusCriar', 'Este é o primeiro acesso: crie o seu como Master. É o Master que liga Automação RD e Etiquetas.', {});
         }
         // As permissões de quem está logado já vêm abertas (uma vez): é ali que se escolhe o que usar.
         if (meuId && !abertosAcessos.proprio && usuarios.some((u) => u.id === meuId)) {
@@ -1944,7 +1944,6 @@
         const CORES_AGENDA = [['1', 'Lavanda'], ['2', 'Sálvia'], ['3', 'Uva'], ['4', 'Flamingo'], ['5', 'Banana (amarelo)'], ['6', 'Tangerina'], ['7', 'Pavão'], ['8', 'Grafite'], ['9', 'Mirtilo'], ['10', 'Manjericão'], ['11', 'Tomate']];
         const NO_WHATSAPP = [
           ['fichaCrm', 'data-ficha-crm', 'Popup do lead', 'Ficha do RD e resumo rápido ao abrir a conversa'],
-          ['coach', 'data-coach', 'Coach', 'Popup do coach da conversa'],
           ['automacao', 'data-automacao', 'Automação RD', 'Move o card para Respondeu, etiqueta Qualificado, reunião da agenda e closer do handoff'],
           ['etiquetas', 'data-etiquetas', 'Etiquetas', 'Investimento do formulário e se já vende'],
           ['profissaoNoReport', 'data-profissao-report', 'Profissão no report', 'No PDF do report, a profissão que o lead marcou no formulário do RD'],
@@ -2023,7 +2022,7 @@
       const marcadas = (sel) => linha.querySelectorAll(sel.split(',').map((x) => x.trim() + ':checked').join(',')).length;
       const resumo = $('lista').querySelector('[data-resumo-perm="' + id + '"]');
       const temAbas = linha.querySelector('[data-aba-de]');
-      if (resumo) resumo.textContent = `${marcadas('[data-ficha-crm],[data-coach],[data-automacao],[data-etiquetas],[data-profissao-report]')} no WhatsApp · ${temAbas ? marcadas('[data-aba-de]') + ' aba(s)' : 'todas as abas'}`;
+      if (resumo) resumo.textContent = `${marcadas('[data-ficha-crm],[data-automacao],[data-etiquetas],[data-profissao-report]')} no WhatsApp · ${temAbas ? marcadas('[data-aba-de]') + ' aba(s)' : 'todas as abas'}`;
     });
     $('lista').addEventListener('change', async (ev) => {
       const cor = ev.target.closest('[data-cor-agenda]');
@@ -2092,20 +2091,6 @@
           setStatus('statusCriar', e.message, { erro: true });
         } finally {
           au.disabled = false;
-        }
-        return;
-      }
-      const co = ev.target.closest('[data-coach]');
-      if (co) {
-        co.disabled = true;
-        try {
-          await api('PATCH', '/api/admin/usuarios/' + co.dataset.coach, { coach: co.checked });
-          toast(co.checked ? 'Coach ligado.' : 'Coach desligado.');
-        } catch (e) {
-          co.checked = !co.checked;
-          setStatus('statusCriar', e.message, { erro: true });
-        } finally {
-          co.disabled = false;
         }
         return;
       }
