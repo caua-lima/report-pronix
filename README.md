@@ -267,8 +267,9 @@ borda direita da tela, o **painel lateral do CRM**. Liga e desliga no popup da e
 
 ### Painel lateral do CRM
 
-Como a barra lateral que o RD Station tinha: um painel fixo à direita do WhatsApp Web (o WhatsApp encolhe para
-caber; nada fica por cima da conversa) com o lead da conversa aberta:
+É o **painel lateral do próprio Chrome** (`chrome.sidePanel`), como o da extensão do RD Station: abre pelo botão
+**▤** no cartão do lead ou por **Abrir painel lateral do CRM** no popup da extensão, e mostra o lead da conversa
+aberta no WhatsApp Web:
 
 - nome, telefones e e-mails, e o botão **Abrir o card no Pronix CRM ↗**, que vai direto para a negociação;
 - a reunião agendada, quando a agenda do Google já tem;
@@ -276,9 +277,9 @@ caber; nada fica por cima da conversa) com o lead da conversa aberta:
   responsável e valor. Clicou, abre aquele card no CRM numa aba nova;
 - **O que respondeu** (formulário e campos do card) e as **últimas anotações**.
 
-**»** recolhe o painel numa aba fina na borda (a escolha fica guardada); clicar na aba abre de novo. Lead não
-achado: o painel tem a mesma busca do cartão. Só link do próprio CRM vira link, e nada do CRM vira HTML
-(`extension/painel.js`). Sem a ficha do CRM liberada, o painel não aparece.
+Fecha pelo **×** do próprio Chrome. Lead não achado: o painel tem a mesma busca do cartão, que roda na aba do
+WhatsApp. Só link do próprio CRM vira link, e nada do CRM vira HTML (`extension/sidepanel.html`, `sidepanel.js`
+e `painel.js`; o cartão publica o estado pelo service worker em `chrome.storage.session`). Sem a ficha do CRM liberada, o painel não aparece.
 
 **Mais rápido.** A extensão percebe a troca de conversa em até 0,4 s (antes 1,5 s), espera 0,25 s antes de
 buscar (antes 0,7 s) e guarda na aba a última ficha de cada conversa por 10 minutos: voltar a uma conversa
@@ -979,7 +980,7 @@ src/
 
 extension/                    Extensão MV3
   content.js                  WhatsApp: leitura da conversa, áudios e cartão do lead
-  painel.js                   Painel lateral do CRM: lead e negociações, cada uma com link para o card
+  sidepanel.html · painel.js  Painel lateral do Chrome: lead e negociações, cada uma com link para o card
   agenda.js                   Leitura de agendamento e de "lead respondeu" (sem rede)
   content-instagram.js        Instagram Direct: leitura da conversa e dos áudios
   inject.js                   Gancho de áudio no contexto da página
