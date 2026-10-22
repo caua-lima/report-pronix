@@ -254,10 +254,12 @@
   // um que ainda falta. tentadosNestaPassada evita reclicar o mesmo áudio enquanto
   // ele fica na tela durante a rolagem; zera a cada passada de repescagem.
   async function capturarAudiosVisiveis(root, audioBytes, tentadosNestaPassada, iteracoes) {
-    const audios = acharMensagens(root).filter((el) => ehAudio(el));
-    for (const el of audios) {
-      const idEl = el.matches('[data-id]') ? el : el.closest('[data-id]') || el.querySelector('[data-id]');
-      const chave = idEl ? idEl.getAttribute('data-id') : null;
+    const todas = acharMensagens(root);
+    const chaves = chavesDasMensagens(todas);
+    for (let i = 0; i < todas.length; i++) {
+      const el = todas[i];
+      if (!ehAudio(el)) continue;
+      const chave = chaves[i];
       if (!chave || audioBytes.has(chave) || tentadosNestaPassada.has(chave)) continue;
       tentadosNestaPassada.add(chave);
       try {
@@ -320,6 +322,46 @@
     );
     _estrategiaMsg = 3;
     return els;
+  }
+
+  // Chave única de cada mensagem — a MESMA na captura do áudio, na montagem da conversa e na leitura rápida.
+  // 1º o data-id da própria mensagem (nela ou dentro dela). O de um bloco ACIMA só vale se esse bloco tiver
+  // uma mensagem só: senão todas as mensagens dele ganhavam a mesma chave e os áudios seguintes eram pulados
+  // como "já capturados" (era o "10 áudios, 1 transcrito").
+  function idDaMensagem(el) {
+    if (el.matches && el.matches('[data-id]')) return el.getAttribute('data-id') || '';
+    const dentro = el.querySelector && el.querySelector('[data-id]');
+    if (dentro) return dentro.getAttribute('data-id') || '';
+    const acima = el.closest && el.closest('[data-id]');
+    if (acima && acharMensagens(acima).length <= 1) return acima.getAttribute('data-id') || '';
+    return '';
+  }
+  // Sem data-id: quem mandou + o carimbo do WhatsApp + o que a bolha mostra de curto (no áudio, a duração e a
+  // hora). Antes a chave do áudio era só "remetente + [áudio]": todos os áudios do lead viravam um só.
+  function assinaturaDaBolha(el) {
+    const copy = el.querySelector && el.querySelector('.copyable-text');
+    const carimbo = (copy && copy.getAttribute('data-pre-plain-text')) || '';
+    const curtos = [];
+    if (el.querySelectorAll) {
+      el.querySelectorAll('span, div').forEach((n) => {
+        if (n.children.length) return;
+        const t = (n.textContent || '').trim();
+        if (ehDuracaoOuHora(t)) curtos.push(t);
+      });
+    }
+    return (ehDeMim(el) ? 'eu' : 'eles') + '|' + carimbo + '|' + curtos.join(',');
+  }
+  /** Chaves das mensagens, na ordem da tela. Sem data-id e iguais em tudo, ganham #2, #3… pela ordem. */
+  function chavesDasMensagens(els) {
+    const repetidas = new Map();
+    return els.map((el) => {
+      const id = idDaMensagem(el);
+      if (id) return id;
+      const base = 'sem-id|' + (ehAudio(el) ? 'audio' : 'texto|' + extrairTexto(el).slice(0, 80)) + '|' + assinaturaDaBolha(el);
+      const n = (repetidas.get(base) || 0) + 1;
+      repetidas.set(base, n);
+      return n > 1 ? base + '#' + n : base;
+    });
   }
 
   // Encontra o elemento que realmente rola a lista de mensagens.
@@ -629,14 +671,12 @@
 
     const capturar = () => {
       garantirMesmaConversa();
-      acharMensagens(root).forEach((el) => {
+      const els = acharMensagens(root);
+      const chaves = chavesDasMensagens(els); // a mesma chave da captura do áudio
+      els.forEach((el, i) => {
         const reg = extrairMensagem(el);
         if (!reg) return;
-        const idEl = el.matches('[data-id]') ? el : el.closest('[data-id]') || el.querySelector('[data-id]');
-        // Sem data-id, a chave inclui o remetente: "ok" meu e "ok" do lead no mesmo minuto são mensagens diferentes.
-        const chave = idEl
-          ? idEl.getAttribute('data-id')
-          : reg.from + '|' + (reg.timestamp || '') + '|' + reg.content.slice(0, 80);
+        const chave = chaves[i];
         if (!mapa.has(chave)) mapa.set(chave, { ...reg, _ord: seq++ });
       });
     };
@@ -1894,12 +1934,13 @@
   /** Mensagens que já estão na tela, sem rolar a conversa nem tocar áudio. */
   function mensagensVisiveis(els) {
     const out = [];
-    for (const el of els) {
+    const chaves = chavesDasMensagens(els);
+    for (let i = 0; i < els.length; i++) {
+      const el = els[i];
       try {
         if (ehAudio(el)) {
           // Áudio que uma leitura completa já transcreveu nesta aba entra com o texto; senão, como [áudio].
-          const idEl = el.matches('[data-id]') ? el : el.closest('[data-id]') || el.querySelector('[data-id]');
-          const lido = idEl ? audiosLidos.get(idEl.getAttribute('data-id')) : '';
+          const lido = audiosLidos.get(chaves[i]) || '';
           out.push({ from: ehDeMim(el) ? 'eu' : 'eles', type: 'audio', content: lido || '[áudio]', timestamp: null });
           continue;
         }
