@@ -319,7 +319,7 @@ async function montarFicha(contato, extras = [], preferido = '') {
   const idNeg = escolhido ? idDe(escolhido) : null;
   const deal = escolhido || null;
   const [atividades, users, rotulosContato] = await Promise.all([
-    idNeg ? rd('/activities', { deal_id: idNeg, limit: 50 }) : null,
+    idNeg ? atividadesDoCard(idNeg) : null,
     usuarios(),
     camposDoContato(),
   ]);
@@ -381,6 +381,7 @@ async function montarFicha(contato, extras = [], preferido = '') {
   const id = deal && (deal.id || deal._id);
   return {
     contatoId: idDe(contato),
+    crmNome: ehPronix() ? 'Pronix CRM' : 'RD Station', // o cartão diz de qual CRM veio
     nome: consertarAcentos(contato.name || ''),
     telefones: (contato.phones || []).map((p) => p.phone).filter(Boolean).slice(0, 3),
     emails: (contato.emails || []).map((e) => e.email).filter(Boolean).slice(0, 2),
@@ -862,6 +863,19 @@ async function detalhesDe(itens, { concorrencia = 8, porSegundo = 8, prazoMs = 0
   return saida;
 }
 
+/**
+ * As atividades (anotações, formulário) de UMA negociação. No PronixCRM, GET /activities ignora o deal_id e devolve
+ * as de TODAS as negociações — o cartão mostrava o formulário de outro lead. Lá o certo é /deals/:id/activities;
+ * e, por garantia, só fica a atividade que diz ser desta negociação.
+ */
+async function atividadesDoCard(dealId, limit = 50) {
+  const rd = module.exports.rd;
+  if (!ehPronix()) return rd('/activities', { deal_id: dealId, limit });
+  const r = await rd(`/deals/${encodeURIComponent(dealId)}/activities`, { limit });
+  const lista = (r && r.activities) || [];
+  return { activities: lista.filter((a) => !a.deal_id || String(a.deal_id) === String(dealId)) };
+}
+
 /** Os funis dos closers (nome com "closer"): é onde fica o card depois da reunião. */
 async function funisDosClosers() {
   return (await funis()).filter((f) => /closer/i.test(f.nome));
@@ -886,6 +900,7 @@ module.exports = {
   listarNegociacoes,
   detalhesDe,
   funisDosClosers,
+  atividadesDoCard,
   mudarEtapa,
   perderCard,
   funis,

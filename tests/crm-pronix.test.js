@@ -61,7 +61,9 @@ global.fetch = async (url, opts = {}) => {
     estado = { ...estado, win: false, versao: estado.versao + 1, ...(corpo.deal_stage_id ? { deal_stage: { id: corpo.deal_stage_id, name: 'Desqualificado' } } : {}) };
     return ok({ ok: ['d1'], falhas: [] });
   }
-  if (p === '/activities') return ok({ activities: [{ text: 'Profissão: Empresário\nInvestimento: + de R$5.000', date: '2026-10-01T12:00:00.000Z' }] });
+  // /activities do PronixCRM ignora o deal_id: devolve as de TODAS as negociações (aqui, o formulário de outro lead)
+  if (p === '/activities') return ok({ activities: [{ deal_id: 'outro', text: 'Faturamento: Acima de R$200 mil\nERP: Bling\nDificuldades: estoque', date: '2026-09-01T12:00:00.000Z' }] });
+  if (p === '/deals/d1/activities') return ok({ activities: [{ deal_id: 'd1', text: 'Profissão: Empresário\nInvestimento: + de R$5.000', date: '2026-10-01T12:00:00.000Z' }] });
   if (p === '/users') return ok({ users: [{ id: 'u-caua', name: 'Cauã Lima' }] });
   if (p === '/custom_fields') return ok({ custom_fields: [{ id: 'cc1', label: 'Estado' }] });
   if (p === '/deal_pipelines') return ok([FUNIL]);
@@ -87,6 +89,9 @@ test('ficha do lead pelo telefone: as negociações vêm de /deals?contact_id e 
   assert.equal(r.ficha.negociacao.url, 'https://crm.pronixhub.com.br/#/deals/d1');
   assert.deepEqual(r.ficha.negociacoes.map((c) => [c.id, c.escolhida]), [['d1', true], ['d0', false]]);
   assert.ok(r.ficha.formulario.campos.some((c) => c.rotulo === 'Profissão' && c.valor === 'Empresário'));
+  assert.ok(!r.ficha.formulario.campos.some((c) => c.rotulo === 'Faturamento'), 'o formulário de outro lead não entra (era o "Fat. R$ 200k+" errado)');
+  assert.ok(pedidos.some((x) => x.caminho === '/deals/d1/activities') && !pedidos.some((x) => x.caminho === '/activities'), 'atividades pela rota da negociação');
+  assert.equal(r.ficha.crmNome, 'Pronix CRM');
   assert.ok(r.ficha.campos.some((c) => c.rotulo === 'Estado' && c.valor === 'Bahia'), 'campos do contato vêm do detalhe { contact }');
   assert.ok(pedidos.some((x) => x.caminho === '/deals' && x.query.contact_id === 'c1'));
 });
