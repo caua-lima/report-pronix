@@ -1764,7 +1764,9 @@
         const d = await api('GET', '/api/master/match?' + q.toString());
         desenharMatch(d);
         const quando = new Date(d.atualizadoEm).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
-        setStatus('statusMt', `Lido do RD em ${quando}${d.cache ? ' (guardado por 20 min; "Atualizar do RD" lê de novo)' : ''}.`, { ok: true });
+        const faltam = (d.diagnostico && d.diagnostico.pendentesDoCrm) || 0;
+        if (faltam) setStatus('statusMt', `Ainda faltam ${faltam} negociações para ler do CRM (ele aceita 600 consultas por minuto). Os números já aparecem, mas incompletos: clique em "Atualizar do RD" de novo em 1 minuto — o que já foi lido fica guardado.`, { erro: true });
+        else setStatus('statusMt', `Lido do RD em ${quando}${d.cache ? ' (guardado por 20 min; "Atualizar do RD" lê de novo)' : ''}.`, { ok: true });
       } catch (e) {
         setStatus('statusMt', e.message, { erro: true });
       } finally {

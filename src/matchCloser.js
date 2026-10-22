@@ -129,14 +129,21 @@ async function buscarCardsPronix({ usuario, time, nomeCloser, desde, hoje }) {
   const diag = { paginas: 0, truncado: false };
   const nomes = [usuario.nome].concat((time || []).filter((n) => !nomeBate(n, usuario.nome)));
   const ids = [];
+  // Só os funis dos closers: é onde o card fica depois da reunião (listar todos os funis do SDR passa de 8 mil cards).
+  const funis = await crm.funisDosClosers();
   for (const nome of nomes) {
     const u = await crm.usuarioDoCrm(nome);
     if (!u) continue;
-    const deals = await crm.listarNegociacoes({ sdr_id: String(u.id), updated_at_period: 'true', start_date: crm.instanteDoDia(desde), end_date: crm.instanteDoDia(hoje, true) });
-    diag.paginas += Math.max(1, Math.ceil(deals.length / 200));
-    deals.filter((d) => palavrasBatem((d.user && d.user.name) || '', nomeCloser)).forEach((d) => ids.push(d));
+    for (const funil of funis.length ? funis : [null]) {
+      const deals = await crm.listarNegociacoes({ sdr_id: String(u.id), ...(funil ? { deal_pipeline_id: funil.id } : {}), updated_at_period: 'true', start_date: crm.instanteDoDia(desde), end_date: crm.instanteDoDia(hoje, true) });
+      diag.paginas += Math.max(1, Math.ceil(deals.length / 200));
+      deals.filter((d) => palavrasBatem((d.user && d.user.name) || '', nomeCloser)).forEach((d) => ids.push(d)); // as suas primeiro: são lidas antes
+    }
   }
-  return { cards: await crm.detalhesDe(ids), diag };
+  // O CRM aceita 600 consultas por minuto e a Vercel corta em 60 s: lê o que cabe em ~38 s; o resto fica para a próxima.
+  const cards = await crm.detalhesDe(ids, { prazoMs: Number(process.env.MATCH_PRAZO_MS) || 38000 });
+  diag.pendentes = cards.pendentes || 0;
+  return { cards, diag };
 }
 
 async function buscarCards({ closerRd, desde, hoje, usuario, time, nomeCloser }) {
@@ -198,7 +205,7 @@ async function levantar({ usuario, closer, desde, atualizar = false } = {}) {
   const { cards, diag } = await buscarCards({ closerRd, desde: inicio, hoje, usuario, time, nomeCloser });
 
   const diagnostico = {
-    closerNoRd: closerRd ? closerRd.nome : '', cardsLidos: cards.length, paginas: diag.paginas, truncado: diag.truncado,
+    closerNoRd: closerRd ? closerRd.nome : '', cardsLidos: cards.length, paginas: diag.paginas, truncado: diag.truncado, pendentesDoCrm: diag.pendentes || 0,
     deOutroCloser: 0, semSdr: 0, deOutroSdr: 0, doTime: 0, noShow: 0, aindaNaoAconteceu: 0, foraDoPeriodo: 0, dataPeloCampo: 0, dataPeloHistorico: 0, dataPelaCriacao: 0,
     etapasSemReuniao: {}, doReport: 0,
   };
@@ -284,7 +291,8 @@ async function levantar({ usuario, closer, desde, atualizar = false } = {}) {
 
   // `meses` continua sendo o SEU mês a mês (quem chama levantar() sozinho espera isso); `reunioes` traz o time, com `minha`.
   const saida = { closer: nomeCloser, sdr: usuario.nome, time, desde: inicio, ate: hoje, atualizadoEm: new Date().toISOString(), meses: porMes(reunioes.filter((r) => r.minha), inicio, hoje), reunioes, diagnostico };
-  await db.cacheSet(chaveCache, JSON.stringify(saida), CACHE_SEG).catch(() => {});
+  // Leitura incompleta (faltou ler parte do CRM) não fica guardada: a próxima abertura continua de onde parou.
+  if (!diagnostico.pendentesDoCrm) await db.cacheSet(chaveCache, JSON.stringify(saida), CACHE_SEG).catch(() => {});
   return { ...saida, cache: false };
 }
 

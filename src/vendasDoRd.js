@@ -66,9 +66,15 @@ async function trazer({ usuario, desde, closer }) {
   const vendasPronix = async () => {
     const eu = await crm.usuarioDoCrm(usuario.nome);
     if (!eu) throw new Error(`Não achei no CRM um usuário com o seu nome ("${usuario.nome}").`);
-    const lista = await crm.listarNegociacoes({ sdr_id: String(eu.id), updated_at_period: 'true', start_date: crm.instanteDoDia(desde), end_date: crm.instanteDoDia(hoje, true) });
+    const lista = [];
+    const funis = await crm.funisDosClosers();
+    for (const funil of funis.length ? funis : [null]) {
+      lista.push(...await crm.listarNegociacoes({ sdr_id: String(eu.id), ...(funil ? { deal_pipeline_id: funil.id } : {}), updated_at_period: 'true', start_date: crm.instanteDoDia(desde), end_date: crm.instanteDoDia(hoje, true) }));
+    }
     const ganhas = lista.filter((d) => d.win === true && palavrasBatem((d.user && d.user.name) || '', nomeCloser));
-    return { deals: await crm.detalhesDe(ganhas), has_more: false };
+    const deals = await crm.detalhesDe(ganhas, { prazoMs: 38000 });
+    if (deals.pendentes) saida.truncado = true;
+    return { deals, has_more: false };
   };
   for (let pagina = 1; pagina <= MAX_PAGINAS; pagina++) {
     const r = crm.ehPronix() ? await vendasPronix() : await crm.rd('/deals', {
