@@ -9,12 +9,27 @@
 
 const db = require('./db');
 
-const BASE = 'https://crm.rdstation.com/api/v1';
+// Dois CRMs com a mesma API: o RD Station e o PronixCRM (crm.pronixhub.com.br), que copia a API v1 do RD.
+// O token decide qual: "pcrm_…" é do PronixCRM. CRM_API_URL força a base; CRM_API_TOKEN tem prioridade
+// sobre RDSTATION_CRM_TOKEN. Diferenças do PronixCRM tratadas aqui: o token vai no cabeçalho (Bearer), toda
+// escrita leva a "versao" lida, mudar de etapa é POST /deals/:id/stage, perder é POST /deals/:id/lost, a lista
+// de contatos não traz as negociações (vêm de /deals?contact_id=) e o detalhe do contato vem em { contact }.
+const BASE_RD = 'https://crm.rdstation.com/api/v1';
+const BASE_PRONIX = 'https://crm.pronixhub.com.br/api/v1';
 const CHAVE_CARDS = 'crm_cards'; // { chave do lead: id do card que o SDR escolheu }
 const TZ = process.env.TZ_RELATORIO || 'America/Sao_Paulo';
 
-const token = () => String(process.env.RDSTATION_CRM_TOKEN || '').trim();
+const token = () => String(process.env.CRM_API_TOKEN || process.env.RDSTATION_CRM_TOKEN || '').trim();
 const configurado = () => Boolean(token());
+const base = () => String(process.env.CRM_API_URL || (token().startsWith('pcrm_') ? BASE_PRONIX : BASE_RD)).trim().replace(/\/+$/, '');
+/** O servidor está falando com o PronixCRM (e não com o RD Station)? */
+const ehPronix = () => !/crm\.rdstation\.com/i.test(base());
+/** Endereço da negociação na tela do CRM, para abrir direto. */
+function linkDoCard(id) {
+  const s = /^[A-Za-z0-9_-]{1,40}$/.test(String(id || '')) ? String(id) : '';
+  if (!s) return '';
+  return ehPronix() ? `${base().replace(/\/api\/v\d+$/, '')}/#/deals/${s}` : `https://crm.rdstation.com/app/deals/${s}`;
+}
 
 /** Cache das fichas (padrão 5 min): trocar de conversa e voltar não consulta o RD de novo. */
 function ttlFicha() {
@@ -30,16 +45,19 @@ function ttlFicha() {
  * na limpeza do funil pedida pelo master, desqualificar com perda (src/limpezaRd.js).
  */
 async function rd(caminho, params = {}, { metodo = 'GET', corpo } = {}) {
-  const q = new URLSearchParams({ token: token() });
+  const pronix = ehPronix();
+  const q = new URLSearchParams(pronix ? {} : { token: token() });
   Object.entries(params).forEach(([k, v]) => {
     if (v !== undefined && v !== null && v !== '') q.set(k, String(v));
   });
   const escrita = metodo !== 'GET';
   let r;
   try {
-    r = await fetch(`${BASE}${caminho}?${q}`, {
+    const cab = { Accept: 'application/json', ...(escrita ? { 'Content-Type': 'application/json' } : {}), ...(pronix ? { Authorization: `Bearer ${token()}` } : {}) };
+    const qs = q.toString();
+    r = await fetch(`${base()}${caminho}${qs ? '?' + qs : ''}`, {
       method: metodo,
-      headers: escrita ? { Accept: 'application/json', 'Content-Type': 'application/json' } : { Accept: 'application/json' },
+      headers: cab,
       ...(escrita ? { body: JSON.stringify(corpo || {}) } : {}),
       signal: AbortSignal.timeout(Number(process.env.CRM_TIMEOUT_MS) || 8000),
     });
@@ -48,6 +66,14 @@ async function rd(caminho, params = {}, { metodo = 'GET', corpo } = {}) {
       throw new Error('O RD Station CRM demorou para responder. Tente de novo.');
     }
     throw new Error('Não consegui falar com o RD Station CRM.');
+  }
+  if (pronix && !r.ok && r.status !== 404) {
+    // O PronixCRM diz o motivo: { codigo, mensagem }. A mensagem é para gente; vai como está.
+    const e = await r.json().catch(() => null);
+    const msg = (e && e.mensagem) || `o CRM respondeu ${r.status}`;
+    if (r.status === 401) throw new Error('O CRM recusou o token (confira CRM_API_TOKEN / RDSTATION_CRM_TOKEN na Vercel).');
+    if (r.status === 429) throw new Error('O CRM limitou as consultas. Tente de novo em 1 minuto.');
+    throw new Error(`O CRM não aceitou: ${msg}`);
   }
   if (r.status === 401 || r.status === 403) {
     // Na escrita o RD só aceita quem é responsável pelo card (ou do mesmo time do dono do token).
@@ -226,8 +252,47 @@ function escolherCard(detalhes, preferido) {
 
 const MAX_CARDS = 8; // quantas negociações do lead olhar (cada uma é uma chamada ao RD)
 
+/**
+ * PronixCRM: a lista de contatos não traz as negociações de cada um (o RD traz) nem os campos personalizados
+ * do contato. Busca as duas coisas, para a ficha sair igual à do RD. As negociações vêm da mais nova para a
+ * mais antiga; aqui ficam da mais antiga para a mais nova, como no RD (a ficha olha as do fim).
+ */
+/**
+ * PronixCRM: a busca em /contacts acha pelo telefone ou e-mail, mas a lista volta com phones e emails vazios.
+ * Lê o detalhe de cada contato achado (uma vez por consulta) para a conferência do telefone e do e-mail valer.
+ * No RD a lista já vem completa: devolve como está.
+ */
+async function comDetalhe(contatos, detalhados) {
+  if (!ehPronix()) return contatos;
+  return Promise.all(contatos.slice(0, 10).map(async (c) => {
+    const id = idDe(c);
+    if (!id) return c;
+    if (!detalhados.has(id)) {
+      detalhados.set(id, rd(`/contacts/${encodeURIComponent(id)}`).then((r) => (r && (r.contact || r)) || null).catch(() => null));
+    }
+    const d = await detalhados.get(id);
+    return d ? { ...c, phones: d.phones || c.phones || [], emails: d.emails || c.emails || [], contact_custom_fields: d.contact_custom_fields || c.contact_custom_fields } : c;
+  }));
+}
+
+async function completarContatos(contatos) {
+  await Promise.all(contatos.map(async (c) => {
+    if (!Array.isArray(c.deals)) {
+      const r = await rd('/deals', { contact_id: idDe(c), limit: 50 }).catch(() => null);
+      c.deals = ((r && r.deals) || []).slice().reverse();
+    }
+  }));
+  const principal = contatos[0];
+  if (principal && !Array.isArray(principal.contact_custom_fields)) {
+    const r = await rd(`/contacts/${encodeURIComponent(idDe(principal))}`).catch(() => null);
+    const d = r && (r.contact || r);
+    if (d && Array.isArray(d.contact_custom_fields)) principal.contact_custom_fields = d.contact_custom_fields;
+  }
+}
+
 async function montarFicha(contato, extras = [], preferido = '') {
   const todosContatos = [contato].concat(extras);
+  if (ehPronix()) await completarContatos(todosContatos);
   // Negociações de todos os contatos duplicados, sem repetir.
   const vistos = new Set();
   const dealsBrutos = [];
@@ -320,7 +385,7 @@ async function montarFicha(contato, extras = [], preferido = '') {
           fonte: (deal.deal_source && deal.deal_source.name) || '',
           campanha: (deal.campaign && deal.campaign.name) || '',
           criadaEm: quandoBR(deal.created_at),
-          url: id && /^[A-Za-z0-9_-]+$/.test(String(id)) ? `https://crm.rdstation.com/app/deals/${id}` : '',
+          url: linkDoCard(id),
         }
       : null,
     totalNegociacoes: dealsBrutos.length,
@@ -442,6 +507,7 @@ async function consultarLead(busca = {}, opcoes = {}) {
   const dealPedido = /^[A-Za-z0-9_-]{1,40}$/.test(String(busca.dealId || '')) ? String(busca.dealId) : '';
   const email = EMAIL_OK.test(String(busca.email || '').trim()) ? String(busca.email).trim().toLowerCase().slice(0, 120) : '';
   const diag = { tentativas: [] };
+  const detalhados = new Map(); // PronixCRM: detalhe de cada contato achado, lido uma vez nesta consulta
 
   const chaveBase = chaveDaBusca({ telefone, nome, contatoId, email });
   if (!chaveBase) return { configurado: true, encontrado: false };
@@ -478,7 +544,7 @@ async function consultarLead(busca = {}, opcoes = {}) {
       const iguais = [];
       for (const variante of variantesTelefone(telefone)) {
         const r = await rd('/contacts', { phone: variante, limit: 10 });
-        const achados = (r && r.contacts) || [];
+        const achados = await comDetalhe((r && r.contacts) || [], detalhados);
         const certos = achados.filter((c) => contatoTemTelefone(c, telefone));
         diag.tentativas.push({ variante, resultados: achados.length, bateu: certos.length > 0 });
         certos.forEach((c) => {
@@ -495,7 +561,7 @@ async function consultarLead(busca = {}, opcoes = {}) {
     if (!contato && email) {
       for (const params of [{ email, limit: 10 }, { q: email, limit: 10 }]) {
         const r = await rd('/contacts', params);
-        const achados = (r && r.contacts) || [];
+        const achados = await comDetalhe((r && r.contacts) || [], detalhados);
         const certos = achados.filter((c) => emailsDoContato(c).includes(email));
         diag.tentativas.push({ email: params.email ? 'filtro' : 'busca', resultados: achados.length, bateu: certos.length > 0 });
         if (!certos.length) continue;
@@ -551,7 +617,7 @@ async function consultarLead(busca = {}, opcoes = {}) {
 async function produtosDoCard(dealId) {
   if (!configurado() || !/^[A-Za-z0-9_-]{1,40}$/.test(String(dealId || ''))) return [];
   try {
-    const r = await rd(`/deals/${encodeURIComponent(dealId)}/deal_products`);
+    const r = await rd(`/deals/${encodeURIComponent(dealId)}/${ehPronix() ? 'products' : 'deal_products'}`);
     const lista = Array.isArray(r) ? r : (r && (r.deal_products || r.products)) || [];
     return lista.map((p) => consertarAcentos(String((p && (p.name || (p.product && p.product.name))) || '')).trim()).filter(Boolean).slice(0, 5);
   } catch (_) {
@@ -574,7 +640,7 @@ const ehEtapaQualificado = (etapa) => Boolean(etapa) && normalizarNome(etapa) ==
 
 /** Funis do RD com as etapas na ordem do funil: [{ id, nome, etapas: [{ id, nome, ordem }] }]. Cache de 1h. */
 async function funis() {
-  const guardado = await db.cacheGet('crm:funis');
+  const guardado = await db.cacheGet('crm:funis2');
   if (guardado) {
     try {
       return JSON.parse(guardado);
@@ -587,7 +653,7 @@ async function funis() {
     r = await rd('/deal_pipelines', { limit: 200 });
   } catch (e) {
     // RD fora do ar ou plano sem acesso aos funis: não repete a consulta a cada conversa aberta.
-    await db.cacheSet('crm:funis', '[]', 120);
+    await db.cacheSet('crm:funis2', '[]', 120);
     throw e;
   }
   const lista = Array.isArray(r) ? r : (r && (r.deal_pipelines || r.pipelines)) || [];
@@ -599,13 +665,13 @@ async function funis() {
       etapas = (det && det.deal_stages) || [];
     }
     const ordenadas = etapas
-      .map((e, i) => ({ id: idDe(e), nome: consertarAcentos(e.name || ''), o: Number.isFinite(Number(e.order)) ? Number(e.order) : i, i }))
+      .map((e, i) => ({ id: idDe(e), nome: consertarAcentos(e.name || ''), o: Number.isFinite(Number(e.order)) ? Number(e.order) : i, i, perdido: e.eh_perdido === true, ganho: e.eh_ganho === true }))
       .sort((a, b) => a.o - b.o || a.i - b.i)
-      .map((e, ordem) => ({ id: e.id, nome: e.nome, ordem }));
+      .map((e, ordem) => ({ id: e.id, nome: e.nome, ordem, perdido: e.perdido, ganho: e.ganho }));
     saida.push({ id: idDe(p), nome: consertarAcentos(p.name || ''), etapas: ordenadas });
   }
   // Lista vazia fica pouco tempo no cache: pode ter sido uma falha passageira do RD.
-  await db.cacheSet('crm:funis', JSON.stringify(saida), saida.some((f) => f.etapas.length) ? 3600 : 120);
+  await db.cacheSet('crm:funis2', JSON.stringify(saida), saida.some((f) => f.etapas.length) ? 3600 : 120);
   return saida;
 }
 
@@ -663,7 +729,7 @@ async function moverParaRespondeu(busca = {}, { usuarioNome = '' } = {}) {
   if (!alvo) return { movido: false, motivo: 'sem-etapa' };
   if (onde.etapa.ordem >= alvo.ordem) return { movido: false, motivo: 'ja-adiante', etapa: onde.etapa.nome };
 
-  const resp = await rd(`/deals/${encodeURIComponent(card.id)}`, {}, { metodo: 'PUT', corpo: { deal_stage_id: alvo.id } });
+  const resp = await mudarEtapa(deal, alvo.id);
   if (!resp) throw new Error('O RD Station não achou o card para mudar de etapa.');
   const nova = idDe(resp.deal_stage);
   if (nova && nova !== alvo.id) throw new Error('O RD Station respondeu, mas o card não mudou de etapa.');
@@ -674,6 +740,37 @@ async function moverParaRespondeu(busca = {}, { usuarioNome = '' } = {}) {
     .push('crm_movimentos', { quando: new Date().toISOString(), card: card.id, de: onde.etapa.nome, para: alvo.nome, por: usuarioNome }, 500)
     .catch(() => {});
   return { movido: true, de: onde.etapa.nome, para: alvo.nome };
+}
+
+/**
+ * Muda o card de etapa. PronixCRM: POST /deals/:id/stage com a versão lida (sem ela, 409); RD: PUT com a etapa.
+ * @param {object} deal o card lido agora (precisa do id e, no PronixCRM, da versao)
+ */
+async function mudarEtapa(deal, etapaId) {
+  const rd = module.exports.rd; // a exportada: é a que os testes simulam
+  const id = encodeURIComponent(idDe(deal));
+  if (ehPronix()) return rd(`/deals/${id}/stage`, {}, { metodo: 'POST', corpo: { deal_stage_id: etapaId, versao: deal.versao } });
+  return rd(`/deals/${id}`, {}, { metodo: 'PUT', corpo: { deal_stage_id: etapaId } });
+}
+
+/**
+ * Marca o card como perdido, com o motivo. PronixCRM: POST /deals/:id/lost — a etapa vai junto só se for uma
+ * etapa de perda do funil (senão o CRM recusa); o SDR é coluna própria lá, e não se grava. RD: PUT com win false,
+ * a etapa e os campos (com o SDR). Devolve o que o CRM respondeu; erro se ele recusou.
+ */
+async function perderCard(deal, { motivoId, etapaId, camposRd, nota } = {}) {
+  const rd = module.exports.rd; // a exportada: é a que os testes simulam
+  const id = encodeURIComponent(idDe(deal));
+  if (ehPronix()) {
+    const dePerda = etapaId ? (await funis()).some((f) => f.etapas.some((e) => e.id === etapaId && e.perdido)) : false;
+    const r = await rd(`/deals/${id}/lost`, {}, {
+      metodo: 'POST',
+      corpo: { versao: deal.versao, deal_lost_reason_id: motivoId, ...(nota ? { deal_lost_note: nota } : {}), ...(dePerda ? { deal_stage_id: etapaId } : {}) },
+    });
+    if (r && Array.isArray(r.falhas) && r.falhas.length) throw new Error(`O CRM não marcou a perda: ${r.falhas.map((f) => f.mensagem || f.erro || f.codigo || '').join('; ')}`);
+    return r || {};
+  }
+  return rd(`/deals/${id}`, {}, { metodo: 'PUT', corpo: { ...(etapaId ? { deal_stage_id: etapaId } : {}), deal: { win: false, deal_lost_reason_id: motivoId, deal_custom_fields: camposRd || [] } } });
 }
 
 /** Depois de escrever num card: a ficha do lead em cache está velha, a próxima consulta busca de novo. */
@@ -688,6 +785,10 @@ async function esquecerLead(busca = {}) {
 module.exports = {
   // Para a limpeza do funil (src/limpezaRd.js): a chamada crua ao RD, os funis, os usuários e a chave geral de escrita.
   rd,
+  ehPronix,
+  linkDoCard,
+  mudarEtapa,
+  perderCard,
   funis,
   usuariosRd: usuarios,
   moverLigado,
