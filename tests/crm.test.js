@@ -218,7 +218,7 @@ test('um único resultado pelo nome já vira a ficha', async () => {
 test('telefone que não está no RD: encontrado false (e tenta pelo nome se veio nome)', async () => {
   chamadasRd.length = 0;
   const r = await post('/api/crm/lead', { telefone: '5511900001111', nome: 'Desconhecido' }, { chave: E.sdr });
-  assert.deepEqual(r.json, { configurado: true, encontrado: false, coach: false });
+  assert.deepEqual(r.json, { configurado: true, encontrado: false });
   assert.ok(chamadasRd.some((c) => c.includes('q=Desconhecido')));
 });
 
@@ -240,7 +240,7 @@ test('sem RDSTATION_CRM_TOKEN: configurado false (a extensão não mostra nada)'
   delete process.env.RDSTATION_CRM_TOKEN;
   const r = await post('/api/crm/lead', { telefone: '5571999998888' }, { chave: E.sdr });
   process.env.RDSTATION_CRM_TOKEN = TOKEN;
-  assert.deepEqual(r.json, { configurado: false, coach: false });
+  assert.deepEqual(r.json, { configurado: false });
 });
 
 test('teste do admin: sem cache e com o passo a passo de quais formatos de telefone foram tentados', async () => {
@@ -346,7 +346,7 @@ test('popup do lead: ligado por padrão; o master desliga e religa; quem não é
   assert.equal((await patch(E.sdr, { fichaCrm: false })).status, 403);
   assert.equal((await patch(E.admin, { fichaCrm: false })).status, 200);
   chamadasRd.length = 0;
-  assert.deepEqual((await post('/api/crm/lead', { telefone: '5571999998888' }, { chave: E.sdr2 })).json, { configurado: false, coach: false });
+  assert.deepEqual((await post('/api/crm/lead', { telefone: '5571999998888' }, { chave: E.sdr2 })).json, { configurado: false });
   assert.equal(chamadasRd.length, 0, 'desligado: o RD nem é consultado');
   assert.equal((await post('/api/crm/lead', { telefone: '5571999998888' }, { chave: E.sdr })).json.encontrado, true, 'os outros continuam');
   assert.equal((await patch(E.admin, { fichaCrm: true })).status, 200);

@@ -554,10 +554,11 @@ test('base antiga (4 campos) passa para a recomendada uma vez, guardando os text
 
 test('/api/eu diz o que o master liberou para a chave (a extensão mostra no popup)', async () => {
   const m = await api('GET', '/api/eu', { chave: E.master });
-  assert.equal(m.json.coach, true);
+  assert.equal(m.json.automacao, true);
+  assert.equal(m.json.coach, undefined, 'o Coach saiu');
   assert.equal(m.json.fichaCrm, true);
   const s = await api('GET', '/api/eu', { chave: E.ana });
-  assert.equal(s.json.coach, false);
+  assert.equal(s.json.automacao, false);
 });
 
 // ---------------------------------------------------------------- por enquanto, só os leads do master
@@ -643,7 +644,7 @@ test('no-show não vai para o líder: sai do .zip do dia e aparece desmarcado na
 });
 
 // ---------------------------------------------------------------- "cauteloso" não é o perfil padrão
-test('perfil: report e coach recebem o mesmo critério — o padrão da conversa, não a primeira frase —, e "cauteloso" e "analítico" exigem prova', () => {
+test('perfil: o report recebe o critério — o padrão da conversa, não a primeira frase —, e "cauteloso" e "analítico" exigem prova', () => {
   const regra = perfilMod.comoDecidirPerfil();
   const ordem = ['"cetico"', '"analitico"', '"dominante"', '"entusiasta"', '"relacional"', '"cauteloso"'].map((x) => regra.indexOf(x));
   assert.ok(ordem.every((p, i) => p > -1 && (i === 0 || p > ordem[i - 1])), 'a ordem de desempate, com o cauteloso por último');
@@ -657,7 +658,6 @@ test('perfil: report e coach recebem o mesmo critério — o padrão da conversa
   const { SYSTEM_PROMPT, PROMPT_VERSAO } = require('../src/report');
   assert.match(PROMPT_VERSAO, /^v\d+$/);
   assert.ok(SYSTEM_PROMPT.includes(regra), 'o report usa o critério');
-  assert.ok(require('../src/coach').SYSTEM_BASE.includes(regra), 'o coach usa o mesmo');
 });
 
 // ---------------------------------------------------------------- onde cada closer vai melhor, e por quê

@@ -31,7 +31,6 @@ const { gerarResumoRapido } = require('./src/resumoRapido');
 const perguntasDaConversa = require('./src/perguntasDaConversa');
 const aquecimento = require('./src/aquecimento');
 const matchCloser = require('./src/matchCloser');
-const coachIa = require('./src/coach');
 const inteligencia = require('./src/inteligencia');
 const afinidadeIa = require('./src/afinidade');
 const casosDoCloser = require('./src/casos');
@@ -191,7 +190,7 @@ app.get('/api/eu', auth, async (req, res) => {
   res.json({
     ok: true, nome: req.usuario.nome, id: req.usuario.id, papel: req.usuario.papel,
     // O que o master liberou para esta chave (a extensão mostra no popup).
-    coach: Boolean(req.usuario.coach), fichaCrm: Boolean(req.usuario.fichaCrm), automacao: Boolean(req.usuario.automacao),
+    fichaCrm: Boolean(req.usuario.fichaCrm), automacao: Boolean(req.usuario.automacao),
     abas: usuarios.abasDe(req.usuario), // abas do painel liberadas para esta chave
     etiquetas: Boolean(req.usuario.etiquetas),
     analises,
@@ -226,7 +225,6 @@ app.patch('/api/admin/usuarios/:id', master, async (req, res) => {
     const corpo = req.body || {};
     let ok;
     if (typeof corpo.fichaCrm === 'boolean') ok = await usuarios.definirFichaCrm(req.params.id, corpo.fichaCrm);
-    else if (typeof corpo.coach === 'boolean') ok = await usuarios.definirCoach(req.params.id, corpo.coach);
     else if (typeof corpo.automacao === 'boolean') ok = await usuarios.definirAutomacao(req.params.id, corpo.automacao);
     else if (typeof corpo.etiquetas === 'boolean') ok = await usuarios.definirEtiquetas(req.params.id, corpo.etiquetas);
     else if (typeof corpo.profissaoNoReport === 'boolean') ok = await usuarios.definirProfissaoNoReport(req.params.id, corpo.profissaoNoReport);
@@ -1090,36 +1088,42 @@ async function enviarZip(res, nomeZip, arquivos) {
 app.post('/api/crm/lead', auth, async (req, res) => {
   try {
     // O master escolhe quem vê a ficha (aba Acessos). Desligado: a extensão não mostra nada e o RD nem é consultado.
-    if (!req.usuario.fichaCrm) return res.json({ configurado: false, coach: Boolean(req.usuario.coach) });
+    if (!req.usuario.fichaCrm) return res.json({ configurado: false });
     const { telefone, nome, contatoId, dealId, lembrar, conversa } = req.body || {};
     const r = await crm.consultarLead({ telefone, nome, contatoId, dealId, lembrar: lembrar === true });
-    // "coach" avisa a extensão se este usuário vê o botão Coach da conversa.
-    const extra = { coach: Boolean(req.usuario.coach) };
-    if (req.usuario.automacao) Object.assign(extra, await automacaoDoLead(r, conversaDoPedido(conversa, { telefone, nome }), req.usuario));
+    const extra = {};
+    const conversaPed = conversaDoPedido(conversa, { telefone, nome });
+    const comAgenda = Boolean(req.usuario.automacao && r.encontrado && r.ficha);
+    // A automação (etiqueta, agendamento) e a reunião no Google Agenda não dependem uma da outra: vão juntas.
+    const [auto, reuniao] = await Promise.all([
+      req.usuario.automacao ? automacaoDoLead(r, conversaPed, req.usuario) : null,
+      comAgenda
+        ? agendaGoogle.reuniaoDoLead({ emails: r.ficha.emails, nome: r.ficha.nome }).catch((err) => {
+          console.error('Falha ao consultar o Google Agenda:', err.message);
+          return null;
+        })
+        : null,
+    ]);
+    if (auto) Object.assign(extra, auto);
     if (req.usuario.etiquetas) extra.etiquetas = true; // etiquetas do formulário (investimento, já vende) no cartão
     // Reunião do lead no Google Agenda (dia, hora e closer). Falha do Google nunca derruba a ficha.
-    if (req.usuario.automacao && r.encontrado && r.ficha) {
-      const reuniao = await agendaGoogle.reuniaoDoLead({ emails: r.ficha.emails, nome: r.ficha.nome }).catch((err) => {
-        console.error('Falha ao consultar o Google Agenda:', err.message);
-        return null;
-      });
-      if (reuniao) {
-        // Para a extensão vai só o que o cartão mostra.
-        extra.reuniao = { quando: reuniao.quando, closer: reuniao.closer, titulo: reuniao.titulo };
-        // Lead que este pré-vendedor está atendendo: a reunião ganha a cor dele na agenda (se ainda não tiver cor).
-        if (req.usuario.corAgenda) {
-          await agendaGoogle.pintarReuniao(reuniao, req.usuario.corAgenda).catch((err) => console.error('Falha ao pintar a reunião na agenda:', err.message));
-        }
-      }
-      // O RD (reunião realizada, card com o closer) ou a agenda dizem quem é o closer: os handoffs
-      // deste lead que ainda estão sem closer são preenchidos sozinhos.
-      await closerAuto
-        .preencher({ usuario: req.usuario, conversa: conversaDoPedido(conversa, { telefone, nome }), ficha: r.ficha, reuniao })
-        .catch((err) => console.error('Falha ao preencher o closer do report:', err.message));
-      // Card marcado como vendido no RD: os reports deste lead ganham o aviso "vendido no RD".
-      await vendasRd
-        .anotarPelaFicha({ usuario: req.usuario, conversa: conversaDoPedido(conversa, { telefone, nome }), ficha: r.ficha })
-        .catch((err) => console.error('Falha ao anotar a venda do RD:', err.message));
+    if (comAgenda) {
+      // Para a extensão vai só o que o cartão mostra.
+      if (reuniao) extra.reuniao = { quando: reuniao.quando, closer: reuniao.closer, titulo: reuniao.titulo };
+      // Juntos (nenhum depende do outro): a reunião ganha a cor deste pré-vendedor na agenda (se ainda não tiver
+      // cor); os handoffs deste lead sem closer ganham o closer que o CRM ou a agenda dizem; e, se o card foi
+      // vendido, os reports deste lead ganham o aviso de venda.
+      await Promise.all([
+        reuniao && req.usuario.corAgenda
+          ? agendaGoogle.pintarReuniao(reuniao, req.usuario.corAgenda).catch((err) => console.error('Falha ao pintar a reunião na agenda:', err.message))
+          : null,
+        closerAuto
+          .preencher({ usuario: req.usuario, conversa: conversaPed, ficha: r.ficha, reuniao })
+          .catch((err) => console.error('Falha ao preencher o closer do report:', err.message)),
+        vendasRd
+          .anotarPelaFicha({ usuario: req.usuario, conversa: conversaPed, ficha: r.ficha })
+          .catch((err) => console.error('Falha ao anotar a venda do RD:', err.message)),
+      ]);
     }
     res.json({ ...r, ...extra });
   } catch (err) {
@@ -1231,32 +1235,6 @@ app.post('/api/lead/marca', auth, async (req, res) => {
     res.json({ ok: true, marca: leads.publica(marca) });
   } catch (err) {
     res.status(500).json({ erro: err.message });
-  }
-});
-
-/**
- * Coach da conversa (botão no cartão): perfil do lead, como abordar, objeções com resposta e perguntas de
- * aprofundamento, no Groq gratuito. Só para quem o master ligou (padrão: só o master).
- */
-app.post('/api/coach', auth, async (req, res) => {
-  try {
-    if (!req.usuario.coach) return res.status(403).json({ erro: 'Coach não liberado para este usuário.' });
-    const { mensagens, nome } = req.body || {};
-    res.json(await coachIa.gerarCoach({ mensagens, nome }));
-  } catch (err) {
-    res.status(/Nenhuma mensagem/.test(err.message) ? 400 : 502).json({ erro: err.message });
-  }
-});
-
-/** "Funcionou" / "não ajudou" numa sugestão do coach: é assim que ele aprende. */
-app.post('/api/coach/feedback', auth, async (req, res) => {
-  try {
-    if (!req.usuario.coach) return res.status(403).json({ erro: 'Coach não liberado para este usuário.' });
-    const { tipo, texto, contexto, util } = req.body || {};
-    await coachIa.registrarFeedback({ tipo, texto, contexto, util: util !== false, usuarioNome: req.usuario.nome });
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(400).json({ erro: err.message });
   }
 });
 

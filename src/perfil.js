@@ -1,6 +1,6 @@
 'use strict';
 
-// Perfil comportamental do lead — a mesma régua no report, no coach e na inteligência (qual closer
+// Perfil comportamental do lead — a mesma régua no report e na inteligência (qual closer
 // se dá bem com qual tipo de lead). É leitura de COMO o lead responde (texto e áudio transcrito),
 // nunca um rótulo de valor: todo perfil vem com "como conduzir".
 
@@ -46,7 +46,7 @@ const PERFIS = [
 const semAcento = (s) =>
   String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
 
-// Nomes que o modelo (ou uma versão antiga do coach) pode devolver para o mesmo perfil.
+// Nomes que o modelo (ou uma versão antiga) pode devolver para o mesmo perfil.
 const APELIDOS = {
   emocional: 'relacional', expressivo: 'relacional', afetivo: 'relacional',
   apressado: 'dominante', direto: 'dominante', pragmatico: 'dominante',
@@ -78,13 +78,13 @@ function normalizarPerfil(p) {
   return saida;
 }
 
-/** Texto da régua para entrar num prompt (report e coach usam a mesma). */
+/** Texto da régua para entrar num prompt (o report usa). */
 function reguaParaPrompt() {
   return PERFIS.map((p) => `- "${p.chave}" (${p.rotulo}): ${p.sinais}. Como conduzir: ${p.conduzir}.`).join('\n');
 }
 
 /**
- * Como escolher entre os perfis (report e coach usam o mesmo texto). Existe porque, sem um critério, a IA
+ * Como escolher entre os perfis (o report usa este texto). Existe porque, sem um critério, a IA
  * cai em "cauteloso" para quase todo lead educado — e aí o perfil não serve para escolher closer.
  */
 function comoDecidirPerfil() {

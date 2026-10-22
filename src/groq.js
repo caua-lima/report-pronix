@@ -129,7 +129,7 @@ const MODELOS_CHAT = ['openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'llama-3.3-70
  */
 async function chatGroq({ system, user, modelo, maxTokens = 900, json = true, prazoMs }) {
   const key = process.env.GROQ_API_KEY;
-  if (!key) throw new Error('GROQ_API_KEY não configurada — é ela que mantém o coach sem custo.');
+  if (!key) throw new Error('GROQ_API_KEY não configurada — é ela que mantém a IA gratuita sem custo.');
   const modelos = filaDeModelos(modelo, MODELOS_CHAT);
   const porTentativa = Number(process.env.GROQ_TIMEOUT_MS) || 50000;
   const fim = Number(prazoMs) > 0 ? Date.now() + Number(prazoMs) : 0;

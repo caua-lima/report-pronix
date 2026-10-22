@@ -2,7 +2,7 @@
 
 // Base de conhecimento da PRONIX (playbook): a empresa, a oferta, o perfil de cliente, o roteiro,
 // a régua de qualificação (SPIN/BANT) e as objeções. O master edita pelo dashboard e o conteúdo
-// entra em todo report e no coach — sem deploy e sem tocar na extensão.
+// entra em todo report — sem deploy e sem tocar na extensão.
 //
 // Campo que ninguém escreveu ainda vem com o texto recomendado de src/baseInicial.js.
 
@@ -124,16 +124,4 @@ async function paraPrompt() {
   );
 }
 
-/** Playbook para o coach (IA gratuita): os mesmos campos, com a instrução de uso dele. */
-async function paraCoach() {
-  const b = await ler();
-  const partes = CAMPOS.filter((c) => b[c]).map((c) => `${TITULOS[c]}:\n${b[c]}`);
-  if (!partes.length) return '';
-  return (
-    'PLAYBOOK DA EMPRESA — use para sugerir perguntas e respostas coerentes com a casa. ' +
-    'Não cite preço nem prometa resultado ao lead: quem apresenta valores é o closer.\n\n' +
-    partes.join('\n\n')
-  );
-}
-
-module.exports = { ler, salvar, usarRecomendada, restaurarAnterior, paraPrompt, paraCoach, CAMPOS, LIMITE_CAMPO, PADRAO };
+module.exports = { ler, salvar, usarRecomendada, restaurarAnterior, paraPrompt, CAMPOS, LIMITE_CAMPO, PADRAO };

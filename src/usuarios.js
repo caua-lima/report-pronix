@@ -16,8 +16,6 @@ const PAPEIS = ['sdr', 'gestor', 'master'];
 const papelValido = (p) => (p === 'admin' ? 'gestor' : PAPEIS.includes(p) ? p : 'sdr');
 // fichaCrm: a ficha do lead (RD) e o resumo rápido aparecem para esta pessoa? Ligado por padrão;
 // o master desliga para quem não prospecta (ex.: gestor).
-// coach: o botão "Coach da conversa" (IA gratuita que sugere abordagem, objeções e perguntas). Por padrão só
-// o master vê; ele liga para quem quiser na aba Acessos (e a escolha dele é respeitada).
 // automacao: no cartão do lead, mover o card para "Respondeu" no RD quando o lead responde e mostrar a
 // etiqueta "Qualificado" e o dia/horário agendado. Mexe no RD, então também começa só com o master.
 const COR_OK = /^([1-9]|1[01])$/;
@@ -29,7 +27,6 @@ const normalizar = (u) => {
     ...u,
     papel,
     fichaCrm: typeof u.fichaCrm === 'boolean' ? u.fichaCrm : true,
-    coach: typeof u.coach === 'boolean' ? u.coach : papel === 'master',
     automacao: typeof u.automacao === 'boolean' ? u.automacao : papel === 'master',
     // etiquetas: no cartão do lead, o investimento do formulário e se já vende. Também começa só com o master.
     etiquetas: typeof u.etiquetas === 'boolean' ? u.etiquetas : papel === 'master',
@@ -130,16 +127,6 @@ async function definirFichaCrm(id, ligada) {
   return true;
 }
 
-/** Liga/desliga o coach da conversa para um usuário. */
-async function definirCoach(id, ligado) {
-  const dados = await ler();
-  const u = dados.usuarios.find((x) => x.id === id);
-  if (!u) return false;
-  u.coach = Boolean(ligado);
-  await db.setJson(CHAVE_DB, dados);
-  return true;
-}
-
 /** Liga/desliga a automação do cartão (mover para "Respondeu" no RD, etiqueta Qualificado e agendamento). */
 async function definirAutomacao(id, ligada) {
   const dados = await ler();
@@ -210,4 +197,4 @@ async function porChave(chave) {
   return (await ler()).usuarios.find((u) => u.chave === chave) || null;
 }
 
-module.exports = { listar, criar, remover, definirPapel, definirFichaCrm, definirCoach, definirAutomacao, definirEtiquetas, definirProfissaoNoReport, definirCorAgenda, definirAba, podeAba, abasDe, ABAS, porChave, ehAdmin, ehMaster, PAPEIS };
+module.exports = { listar, criar, remover, definirPapel, definirFichaCrm, definirAutomacao, definirEtiquetas, definirProfissaoNoReport, definirCorAgenda, definirAba, podeAba, abasDe, ABAS, porChave, ehAdmin, ehMaster, PAPEIS };

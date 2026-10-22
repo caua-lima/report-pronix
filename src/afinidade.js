@@ -6,7 +6,7 @@
 //   2. o HISTÓRICO dele: reuniões e vendas por perfil de lead, do que o master marcou em Resultados;
 //   3. o LEAD: o que o report levantou e a conversa da prospecção.
 //
-// Roda no Groq (plano gratuito: custo zero), como o coach. O documento em PDF é montado aqui no
+// Roda no Groq (plano gratuito: custo zero), como o resumo e as perguntas. O documento em PDF é montado aqui no
 // servidor, também sem custo.
 
 const crypto = require('crypto');
