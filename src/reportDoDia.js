@@ -82,6 +82,14 @@ async function perdasNoRd(usuario, dia) {
   const eu = rdUsers.find((u) => norm(u.nome) === norm(usuario.nome)) ||
     (rdUsers.filter((u) => norm(u.nome).split(' ')[0] === primeiro).length === 1 ? rdUsers.find((u) => norm(u.nome).split(' ')[0] === primeiro) : null);
   if (!eu) throw new Error('Não achei o seu usuário no RD.');
+  if (crm.ehPronix()) {
+    // PronixCRM: as suas negociações (como SDR) que mudaram hoje; das perdidas, o detalhe diz quando fechou e o motivo.
+    const lista = await crm.listarNegociacoes({ sdr_id: String(eu.id), updated_at_period: 'true', start_date: crm.instanteDoDia(dia), end_date: crm.instanteDoDia(dia, true) });
+    const detalhes = await crm.detalhesDe(lista.filter((d) => d.win === false));
+    return detalhes
+      .filter((d) => d.win === false && d.closed_at && emDiaLocal(d.closed_at) === dia && (idDe(d.user) === String(eu.id) || (d.sdr && idDe(d.sdr) === String(eu.id))))
+      .map((d) => ({ id: idDe(d), motivo: crm.consertarAcentos((d.deal_lost_reason && d.deal_lost_reason.name) || '') }));
+  }
   const achadas = [];
   for (let pagina = 1; pagina <= MAX_PAGINAS_RD; pagina++) {
     const r = await crm.rd('/deals', {

@@ -1530,7 +1530,7 @@
     const nomeMesMt = (m, longo) => (longo ? MESES_LONGOS_MT : MESES_CURTOS_MT)[Number(m.slice(5, 7)) - 1] + (longo ? ' de ' : '/') + (longo ? m.slice(0, 4) : m.slice(2, 4));
     const diaMt = (d) => (d ? d.slice(8, 10) + '/' + d.slice(5, 7) : '');
     const SITUACAO_MT = { venda: 'Vendeu', fup: 'Em follow-up', nao_comprou: 'Não comprou' };
-    const ORIGEM_MT = { campo: 'campo do card', criacao: 'criação do card', venda: 'dia da venda', report: 'report', 'dia-do-report': 'dia do report' };
+    const ORIGEM_MT = { campo: 'campo do card', historico: 'histórico de etapas', criacao: 'criação do card', venda: 'dia da venda', report: 'report', 'dia-do-report': 'dia do report' };
     let matchDados = null;
     /** "minhas" ou "time" — o recorte da aba. A comparação "você x time" aparece nos dois. */
     let escopoMt = 'minhas';
@@ -1750,7 +1750,7 @@
       $('mtDiag').innerHTML = [
         `Closer no RD: <b>${esc(g.closerNoRd || 'não achei pelo nome — li os cards sem filtrar o responsável')}</b> · ${g.cardsLidos} card(s) lido(s) em ${g.paginas} consulta(s)${g.truncado ? ' · <b style="color:var(--danger)">parei no limite de páginas: pode faltar card antigo</b>' : ''}.`,
         `${g.doTime || 0} reunião(ões) de outros SDRs do time (entram em "Time todo"). Ficaram de fora: ${g.semSdr} sem o campo SDR preenchido, ${g.deOutroSdr} de SDR fora do time, ${g.deOutroCloser} de outro closer, ${g.noShow} no-show, ${g.aindaNaoAconteceu} com a reunião ainda por acontecer${etapas ? ' (' + etapas + ')' : ''} e ${g.foraDoPeriodo} fora do período.`,
-        `Data da reunião: ${g.dataPeloCampo} pelo campo de data do card, ${g.dataPelaCriacao} pela criação do card. ${g.doReport} reunião(ões) vieram só dos reports (o RD não trouxe).`,
+        `Data da reunião: ${g.dataPeloCampo} pelo campo de data do card, ${g.dataPeloHistorico || 0} pelo histórico de etapas (quando entrou em Reunião Realizada), ${g.dataPelaCriacao} pela criação do card. ${g.doReport} reunião(ões) vieram só dos reports (o RD não trouxe).`,
       ].map((x) => '<div style="margin-bottom:6px">' + x + '</div>').join('');
     }
 

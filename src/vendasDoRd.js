@@ -61,8 +61,17 @@ async function trazer({ usuario, desde, closer }) {
 
   const saida = { vistos: 0, criados: 0, completados: 0, jaEstavam: 0, semSdr: 0, deOutroSdr: 0, paginas: 0, truncado: false };
   const meus = (await stats.listar({})).filter((r) => r.usuarioId === usuario.id);
+  // PronixCRM: a lista ignora win, user_id e closed_at_period — vêm as suas negociações (sdr_id) que mudaram no
+  // período, e só as ganhas do closer têm o detalhe lido (é ele que traz closed_at, valor, produtos e o SDR).
+  const vendasPronix = async () => {
+    const eu = await crm.usuarioDoCrm(usuario.nome);
+    if (!eu) throw new Error(`Não achei no CRM um usuário com o seu nome ("${usuario.nome}").`);
+    const lista = await crm.listarNegociacoes({ sdr_id: String(eu.id), updated_at_period: 'true', start_date: crm.instanteDoDia(desde), end_date: crm.instanteDoDia(hoje, true) });
+    const ganhas = lista.filter((d) => d.win === true && palavrasBatem((d.user && d.user.name) || '', nomeCloser));
+    return { deals: await crm.detalhesDe(ganhas), has_more: false };
+  };
   for (let pagina = 1; pagina <= MAX_PAGINAS; pagina++) {
-    const r = await crm.rd('/deals', {
+    const r = crm.ehPronix() ? await vendasPronix() : await crm.rd('/deals', {
       win: 'true', closed_at: 'true', closed_at_period: 'true', start_date: desde, end_date: hoje, limit: 200, page: pagina,
       ...(closerRd ? { user_id: String(closerRd.id) } : {}),
     });
@@ -114,7 +123,7 @@ async function trazer({ usuario, desde, closer }) {
       meus.push(novo);
       saida.criados++;
     }
-    if (!(r && r.has_more) && deals.length < 200) break;
+    if (crm.ehPronix() || (!(r && r.has_more) && deals.length < 200)) break;
     if (pagina === MAX_PAGINAS) saida.truncado = true;
   }
   return saida;

@@ -97,6 +97,12 @@ function dataDaReuniao(deal) {
     const dia = diaDoValor(c.value);
     if (dia) return { dia, origem: 'campo' };
   }
+  // PronixCRM: o histórico de etapas diz quando o card ENTROU na etapa de reunião realizada (a primeira vez).
+  const passagens = (Array.isArray(deal.deal_stage_histories) ? deal.deal_stage_histories : [])
+    .filter((h) => h && h.start_date && /^reuniao realizada/.test(norm(h.deal_stage_name)))
+    .map((h) => stats.emDiaLocal(h.start_date))
+    .sort();
+  if (passagens.length) return { dia: passagens[0], origem: 'historico' };
   return deal.created_at ? { dia: stats.emDiaLocal(deal.created_at), origem: 'criacao' } : { dia: '', origem: '' };
 }
 
@@ -114,7 +120,27 @@ function estadoDoCard(deal) {
   return 'antes';
 }
 
-async function buscarCards({ closerRd, desde, hoje }) {
+/**
+ * PronixCRM: as negociações em que você (ou alguém do time) é o SDR e que mudaram desde o início do período —
+ * toda reunião realizada ou venda depois dele mexeu no card — só as do closer, com o detalhe (campos, datas,
+ * motivo, produtos). A lista do PronixCRM ignora user_id e win: o closer e o desfecho são conferidos aqui.
+ */
+async function buscarCardsPronix({ usuario, time, nomeCloser, desde, hoje }) {
+  const diag = { paginas: 0, truncado: false };
+  const nomes = [usuario.nome].concat((time || []).filter((n) => !nomeBate(n, usuario.nome)));
+  const ids = [];
+  for (const nome of nomes) {
+    const u = await crm.usuarioDoCrm(nome);
+    if (!u) continue;
+    const deals = await crm.listarNegociacoes({ sdr_id: String(u.id), updated_at_period: 'true', start_date: crm.instanteDoDia(desde), end_date: crm.instanteDoDia(hoje, true) });
+    diag.paginas += Math.max(1, Math.ceil(deals.length / 200));
+    deals.filter((d) => palavrasBatem((d.user && d.user.name) || '', nomeCloser)).forEach((d) => ids.push(d));
+  }
+  return { cards: await crm.detalhesDe(ids), diag };
+}
+
+async function buscarCards({ closerRd, desde, hoje, usuario, time, nomeCloser }) {
+  if (crm.ehPronix()) return buscarCardsPronix({ usuario, time, nomeCloser, desde, hoje });
   const porId = new Map();
   const diag = { paginas: 0, truncado: false };
   const corte = somaDias(desde, -FOLGA_CRIACAO_DIAS);
@@ -169,11 +195,11 @@ async function levantar({ usuario, closer, desde, atualizar = false } = {}) {
   const hoje = stats.emDiaLocal(new Date().toISOString());
   const rdUsers = await crm.usuariosRd().catch(() => []);
   const closerRd = rdUsers.find((u) => palavrasBatem(u.nome, nomeCloser)) || null;
-  const { cards, diag } = await buscarCards({ closerRd, desde: inicio, hoje });
+  const { cards, diag } = await buscarCards({ closerRd, desde: inicio, hoje, usuario, time, nomeCloser });
 
   const diagnostico = {
     closerNoRd: closerRd ? closerRd.nome : '', cardsLidos: cards.length, paginas: diag.paginas, truncado: diag.truncado,
-    deOutroCloser: 0, semSdr: 0, deOutroSdr: 0, doTime: 0, noShow: 0, aindaNaoAconteceu: 0, foraDoPeriodo: 0, dataPeloCampo: 0, dataPelaCriacao: 0,
+    deOutroCloser: 0, semSdr: 0, deOutroSdr: 0, doTime: 0, noShow: 0, aindaNaoAconteceu: 0, foraDoPeriodo: 0, dataPeloCampo: 0, dataPeloHistorico: 0, dataPelaCriacao: 0,
     etapasSemReuniao: {}, doReport: 0,
   };
   const reunioes = [];
@@ -197,7 +223,7 @@ async function levantar({ usuario, closer, desde, atualizar = false } = {}) {
     const contaReuniao = dia >= inicio && dia <= hoje;
     const contaVenda = venda && diaVenda >= inicio && diaVenda <= hoje;
     if (!contaReuniao && !contaVenda) { diagnostico.foraDoPeriodo++; continue; }
-    if (contaReuniao) diagnostico[origem === 'campo' ? 'dataPeloCampo' : 'dataPelaCriacao']++;
+    if (contaReuniao) diagnostico[origem === 'campo' ? 'dataPeloCampo' : origem === 'historico' ? 'dataPeloHistorico' : 'dataPelaCriacao']++;
     if (quem.tipo === 'time') diagnostico.doTime++;
     reunioes.push({
       id: idDe(d), fonte: 'rd', lead: leadDoCard(d), dataReuniao: dia, origemData: origem, contaReuniao,

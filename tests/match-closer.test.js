@@ -252,3 +252,15 @@ test('de quem é o card: você vem antes do time, o primeiro nome basta, e quem 
   assert.ok(match.timeDeSdrs().includes('Juliana Ferreira'), 'o time padrão tem os sete SDRs');
   assert.equal(match.timeDeSdrs().length, 7);
 });
+
+test('data da reunião: campo do card; senão, a 1ª entrada em "Reunião Realizada" no histórico de etapas; senão, a criação', () => {
+  const historico = [
+    { deal_stage_name: 'Contato iniciado', start_date: '2026-09-01T12:00:00.000Z' },
+    { deal_stage_name: 'Reunião Realizada', start_date: '2026-09-10T18:00:00.000Z' },
+    { deal_stage_name: 'Fluxo de FUP', start_date: '2026-09-12T12:00:00.000Z' },
+    { deal_stage_name: 'Reunião Realizada', start_date: '2026-09-20T18:00:00.000Z' },
+  ];
+  assert.deepEqual(match.dataDaReuniao({ created_at: '2026-08-01T12:00:00.000Z', deal_stage_histories: historico }), { dia: '2026-09-10', origem: 'historico' });
+  assert.deepEqual(match.dataDaReuniao({ created_at: '2026-08-01T12:00:00.000Z', deal_stage_histories: historico, deal_custom_fields: [{ value: '15/09/2026', custom_field: { label: 'Data da reunião' } }] }), { dia: '2026-09-15', origem: 'campo' });
+  assert.deepEqual(match.dataDaReuniao({ created_at: '2026-08-01T12:00:00.000Z' }), { dia: '2026-08-01', origem: 'criacao' });
+});
