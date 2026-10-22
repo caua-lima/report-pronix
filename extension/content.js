@@ -178,9 +178,7 @@
     // a partir deste clique, senão daria pra atribuir o áudio de OUTRA mensagem.
     const t0 = Date.now() - 250;
     // 1) Se houver botão de baixar (áudio não carregado ainda), clica primeiro.
-    const btnBaixar = el.querySelector(
-      '[data-icon="audio-download"], [data-icon="down"], [data-icon*="download" i], span[data-icon="audio-download"]'
-    );
+    const btnBaixar = botaoDeBaixar(el);
     if (btnBaixar) {
       const alvo = btnBaixar.closest('button,[role="button"]') || btnBaixar;
       try {
@@ -192,13 +190,7 @@
     }
 
     // 2) Clica no play (ajuda a materializar o blob se for criado no play).
-    const btn =
-      el.querySelector('[data-icon*="play" i]')?.closest('button,[role="button"]') ||
-      el.querySelector(
-        'button[aria-label*="play" i], button[aria-label*="reproduzir" i], [role="button"][aria-label*="reproduzir" i]'
-      ) ||
-      el.querySelector('[data-icon*="play" i]') ||
-      el.querySelector('button,[role="button"]');
+    const btn = botaoDePlay(el);
     const antes = blobsAudio.length;
     if (btn) {
       try {
@@ -309,16 +301,17 @@
     // Fallback 1: linhas com data-id de mensagem (true_/false_ = enviada/recebida).
     els = [...root.querySelectorAll('[data-id]')].filter((el) => {
       const id = el.getAttribute('data-id') || '';
-      return /^(true|false)_/.test(id) && el.querySelector('.copyable-text, .selectable-text, [data-icon], audio');
+      return /^(true|false)_/.test(id) && (el.querySelector('.copyable-text, .selectable-text, [data-icon], audio') || ehAudio(el));
     });
     if (els.length) { _estrategiaMsg = 2; return els; }
     // Fallback 2: role="row" com texto OU com mídia/áudio (para não perder áudios).
-    els = [...root.querySelectorAll('div[role="row"]')].filter((el) =>
-      el.querySelector(
-        '.selectable-text, .copyable-text, [data-icon*="ptt" i], [data-icon*="mic" i], ' +
-          '[data-icon*="audio" i], [data-icon*="play" i], [data-icon*="pause" i], ' +
-          'input[type="range"], audio'
-      )
+    els = [...root.querySelectorAll('div[role="row"]')].filter(
+      (el) =>
+        el.querySelector(
+          '.selectable-text, .copyable-text, [data-icon*="ptt" i], [data-icon*="mic" i], ' +
+            '[data-icon*="audio" i], [data-icon*="play" i], [data-icon*="pause" i], ' +
+            'input[type="range"], [role="slider"], audio'
+        ) || ehAudio(el)
     );
     _estrategiaMsg = 3;
     return els;
@@ -440,7 +433,8 @@
     try {
       const alvo =
         row.querySelector &&
-        row.querySelector('.selectable-text, .copyable-text, audio, input[type="range"], [data-icon*="audio" i], [data-icon*="ptt" i], img');
+        (row.querySelector('.selectable-text, .copyable-text, audio, input[type="range"], [data-icon*="audio" i], [data-icon*="ptt" i], img') ||
+          row.querySelector('[role="slider"], button, [role="button"], svg'));
       const painel = document.querySelector('#main');
       if (!alvo || !painel) return '';
       const a = alvo.getBoundingClientRect();
@@ -471,23 +465,106 @@
     }
   }
 
-  function ehAudio(el) {
-    if (el.querySelector('audio')) return true;
-    // Barra de progresso (seek) é um sinal forte de mensagem de voz/áudio.
-    if (el.querySelector('input[type="range"]')) return true;
-    if (
-      el.querySelector(
-        '[data-icon*="audio" i], [data-icon*="ptt" i], [data-icon*="mic" i], [data-icon*="voice" i]'
-      )
-    ) {
-      return true;
+  // O WhatsApp troca a marcação dos áudios de tempos em tempos: o nome do ícone já veio em data-icon, e nas
+  // versões novas pode vir só no <title> do SVG, num data-testid ou no rótulo do botão — ou em nada.
+  const SINAL_AUDIO = /ptt|voz|voice|áudio|audio|waveform|\bmic\b|microfone/i;
+  const SINAL_PLAY = /play|reproduzir|tocar|ouvir/i;
+  /** Nomes e rótulos dos controles e ícones da bolha (nunca o texto da mensagem). */
+  function rotuloDoControle(n) {
+    if ((n.tagName || '').toLowerCase() === 'title') return n.textContent || '';
+    const partes = [];
+    for (const a of ['data-icon', 'data-testid', 'aria-label', 'title']) {
+      const v = n.getAttribute && n.getAttribute(a);
+      if (v) partes.push(v);
     }
-    for (const r of el.querySelectorAll('[aria-label]')) {
-      if (/voz|voice|áudio|audio|ptt|mensagem de voz|voice message/i.test(r.getAttribute('aria-label') || '')) {
-        return true;
+    if (n.querySelectorAll) n.querySelectorAll('svg title').forEach((t) => partes.push(t.textContent || ''));
+    return partes.join(' ');
+  }
+  function sinaisDosControles(el) {
+    const partes = [];
+    el.querySelectorAll('button, [role="button"], [role="slider"], [data-icon], [data-testid], svg title').forEach((n) => {
+      partes.push(rotuloDoControle(n));
+    });
+    return partes.join(' | ');
+  }
+  /** Folhas com "0:11" / "14:29": no áudio vêm a duração E a hora; na mensagem de texto, só a hora. */
+  function folhasDeTempo(el) {
+    const tempos = [];
+    el.querySelectorAll('span, div').forEach((n) => {
+      if (n.children.length) return;
+      const t = (n.textContent || '').trim();
+      if (ehDuracaoOuHora(t)) tempos.push(t);
+    });
+    return tempos;
+  }
+  /** Foto/vídeo tem miniatura grande; o áudio só tem a foto pequena de quem gravou. */
+  function temImagemGrande(el) {
+    for (const img of el.querySelectorAll('img, canvas')) {
+      try {
+        if (img.getBoundingClientRect().width > 120) return true;
+      } catch (_) {
+        /* segue */
       }
     }
     return false;
+  }
+  function ehAudio(el) {
+    if (!el || !el.querySelector) return false;
+    if (el.querySelector('audio')) return true;
+    // Barra de progresso (seek) é um sinal forte de mensagem de voz/áudio.
+    if (el.querySelector('input[type="range"], [role="slider"]')) return true;
+    const controles = sinaisDosControles(el);
+    if (SINAL_AUDIO.test(controles)) return true;
+    const temTexto = !!extrairTexto(el);
+    if (!temTexto) {
+      for (const r of el.querySelectorAll('[aria-label]')) {
+        if (SINAL_AUDIO.test(r.getAttribute('aria-label') || '')) return true;
+      }
+    }
+    // Sem nome de ícone nenhum: botão de tocar + duração além da hora, sem texto, sem vídeo e sem foto grande.
+    if (temTexto || el.querySelector('video')) return false;
+    if (!el.querySelector('button, [role="button"]') || folhasDeTempo(el).length < 2) return false;
+    return (SINAL_PLAY.test(controles) || !!el.querySelector('svg')) && !temImagemGrande(el);
+  }
+
+  /** O botão de tocar do áudio — nunca o menu, a reação ou o encaminhar que também moram na bolha. */
+  function botaoDePlay(el) {
+    const icone = el.querySelector('[data-icon*="play" i], [data-testid*="play" i]');
+    if (icone) return icone.closest('button,[role="button"]') || icone;
+    const botoes = [...el.querySelectorAll('button, [role="button"]')];
+    return (
+      botoes.find((b) => SINAL_PLAY.test(rotuloDoControle(b))) ||
+      botoes.find(
+        (b) =>
+          !/menu|op[çc][õo]es|mais|reag|react|emoji|encaminh|forward|baixar|download|velocidade|speed|transcri/i.test(rotuloDoControle(b)) &&
+          !b.querySelector('img')
+      ) ||
+      botoes[0] ||
+      null
+    );
+  }
+  function botaoDeBaixar(el) {
+    const icone = el.querySelector('[data-icon="audio-download"], [data-icon="down"], [data-icon*="download" i], [data-testid*="download" i]');
+    if (icone) return icone;
+    return [...el.querySelectorAll('button, [role="button"]')].find((b) => /baixar|download/i.test(rotuloDoControle(b))) || null;
+  }
+
+  /** Diagnóstico quando nenhum áudio é reconhecido: só a estrutura das bolhas sem texto (nada do conteúdo). */
+  function diagnosticoDeAudio(root) {
+    const linhas = [...root.querySelectorAll('div[role="row"]')].filter((r) => !extrairTexto(r));
+    return {
+      linhasSemTexto: linhas.length,
+      exemplos: linhas.slice(-8).map((r) => ({
+        botoes: r.querySelectorAll('button, [role="button"]').length,
+        svgs: r.querySelectorAll('svg').length,
+        imgs: r.querySelectorAll('img').length,
+        slider: !!r.querySelector('input[type="range"], [role="slider"]'),
+        audio: !!r.querySelector('audio'),
+        tempos: folhasDeTempo(r).length,
+        controles: sinaisDosControles(r).slice(0, 160),
+        reconhecido: ehAudio(r),
+      })),
+    };
   }
 
   function ehDuracaoOuHora(t) {
@@ -790,6 +867,7 @@
       doLead: mensagens.filter((m) => m.from !== 'eu').length,
     };
     logA(`remetentes: ${stats.doVendedor} do vendedor, ${stats.doLead} do lead (estratégia de leitura ${_estrategiaMsg})`);
+    if (!stats.audios) logA('nenhum áudio reconhecido; bolhas sem texto na tela:', JSON.stringify(diagnosticoDeAudio(root)));
 
     console.log(
       `[Report PRONIX] ${stats.total} mensagens lidas — ` +

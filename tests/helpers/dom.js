@@ -232,7 +232,7 @@ function montarInstagram(pagina, mensagens, { visiveis = 6, contato = 'Contato T
  */
 // audiosSemId: o áudio não tem data-id próprio e um bloco ACIMA de todas as mensagens tem (visto ao vivo: só um
 // áudio era transcrito porque todos ganhavam a chave do bloco). A bolha mostra a duração e a hora.
-function montarWhatsApp(pagina, mensagens, { contato = 'Contato Teste', jid = '5511999990000@c.us', idsSimples = false, semSinais = false, posicao = true, audiosSemId = false } = {}) {
+function montarWhatsApp(pagina, mensagens, { contato = 'Contato Teste', jid = '5511999990000@c.us', idsSimples = false, semSinais = false, posicao = true, audiosSemId = false, audioNovo = '' } = {}) {
   const w = pagina.w;
   const d = w.document;
   d.body.innerHTML = `<div id="main"><header><span dir="auto" title="${contato}">${contato}</span></header><div id="rolagem" style="overflow-y:auto"></div></div>`;
@@ -254,6 +254,18 @@ function montarWhatsApp(pagina, mensagens, { contato = 'Contato Teste', jid = '5
         const url = `blob:wa-${i}`;
         // semBytes = o WhatsApp não entregou o arquivo (mídia expirada): o fetch do blob falha.
         if (!m.semBytes) pagina.blobs.set(url, audioFake(m.indiceAudio != null ? m.indiceAudio : i));
+        if (semSinais && audioNovo) {
+          // WhatsApp novo: sem data-icon e sem <audio> até o play. 'aria' = o botão diz "Reproduzir mensagem de voz";
+          // 'estrutura' = nada nomeado, só o botão com SVG, a duração e a hora (e um menu antes, que não pode ser clicado).
+          const rotulo = audioNovo === 'aria' ? ' aria-label="Reproduzir mensagem de voz"' : '';
+          const menu = audioNovo === 'estrutura' ? '<span role="button" aria-label="Menu de contexto"></span>' : '';
+          return (
+            `<div role="row" data-row-i="${i}" data-lado="${m.from === 'eu' ? 'd' : 'e'}"><div data-id="A5${String(i).padStart(12, '0')}">${menu}` +
+            `<div><button data-play-url="${url}"${rotulo}><svg viewBox="0 0 34 34"><path d="M8 5v24l20-12z"></path></svg></button>` +
+            `<div><div></div><div></div></div><span>${m.dur || '0:' + String(10 + i).padStart(2, '0')}</span></div>` +
+            `<div><img alt="" src="data:,"><span>${m.horaBolha || '14:' + String(i).padStart(2, '0')}</span></div></div></div>`
+          );
+        }
         if (semSinais) {
           return `<div role="row" data-row-i="${i}" data-lado="${m.from === 'eu' ? 'd' : 'e'}"><div data-id="A5${String(i).padStart(12, '0')}"><span data-icon="audio-play"></span><audio src="${url}"></audio></div></div>`;
         }
@@ -277,6 +289,16 @@ function montarWhatsApp(pagina, mensagens, { contato = 'Contato Teste', jid = '5
     .join('');
   rolagem.innerHTML = html;
   if (audiosSemId) rolagem.setAttribute('data-id', 'bloco-da-conversa');
+  // play no WhatsApp novo: só então o <audio> com o arquivo aparece na bolha.
+  rolagem.querySelectorAll('[data-play-url]').forEach((b) =>
+    b.addEventListener('click', () => {
+      const bolha = b.closest('[data-id]');
+      if (bolha.querySelector('audio')) return;
+      const a = d.createElement('audio');
+      a.src = b.dataset.playUrl;
+      bolha.appendChild(a);
+    })
+  );
   [...rolagem.querySelectorAll(semSinais ? '[data-row-i]' : '.message-in, .message-out')].forEach((el, i) => {
     const t = el.querySelector('.selectable-text');
     if (t) t.textContent = mensagens[i].texto;
@@ -290,7 +312,8 @@ function montarWhatsApp(pagina, mensagens, { contato = 'Contato Teste', jid = '5
       const row = this.closest && this.closest('[data-lado]');
       if (!row) return vazio;
       const left = row.dataset.lado === 'd' ? 480 : 20;
-      return { top: 0, left, right: left + 300, bottom: 30, width: 300, height: 30 };
+      const largura = this.tagName === 'IMG' ? 40 : 300; // a foto de quem gravou o áudio é pequena
+      return { top: 0, left, right: left + largura, bottom: 30, width: largura, height: 30 };
     };
   }
   w.Element.prototype.scrollIntoView = function () {};

@@ -589,3 +589,32 @@ test('WhatsApp: 10 áudios do lead sem data-id próprio viram 10 transcrições 
   assert.deepEqual([envio.mensagens[0].content, envio.mensagens[11].content], ['Me conta como está a sua operação', 'Perfeito, entendi tudo']);
   pagina.fechar();
 });
+
+
+// ---------------------------------------------------------------- áudio no WhatsApp novo (sem data-icon)
+const CONVERSA_AUDIO_NOVO = [
+  { from: 'eu', texto: 'Oi, tudo bem?', hora: '14:20, 22/10/2026' },
+  { from: 'eles', tipo: 'audio' },
+  { from: 'eles', tipo: 'audio' },
+  { from: 'eu', texto: 'Entendo perfeito', hora: '14:49, 22/10/2026' },
+  { from: 'eles', tipo: 'audio' },
+  { from: 'eu', tipo: 'audio' },
+  { from: 'eles', texto: 'Sim', hora: '15:00, 22/10/2026' },
+];
+
+for (const modo of ['aria', 'estrutura']) {
+  test(`WhatsApp novo: bolha de voz sem data-icon e sem <audio> até o play é lida e transcrita (${modo})`, async () => {
+    const { envio, pagina } = await rodarWhatsApp(CONVERSA_AUDIO_NOVO, { opcoes: { semSinais: true, audioNovo: modo } });
+    assert.deepEqual(
+      envio.mensagens.map((m) => [m.from, m.type]),
+      [['eu', 'texto'], ['eles', 'audio'], ['eles', 'audio'], ['eu', 'texto'], ['eles', 'audio'], ['eu', 'audio'], ['eles', 'texto']]
+    );
+    assert.deepEqual(
+      envio.mensagens.filter((m) => m.type === 'audio').map((m) => m.content),
+      ['transcrição do áudio 1', 'transcrição do áudio 2', 'transcrição do áudio 4', 'transcrição do áudio 5']
+    );
+    assert.equal(envio.captureQuality.audios, 4);
+    assert.equal(envio.captureQuality.audiosTranscritos, 4);
+    pagina.fechar();
+  });
+}
