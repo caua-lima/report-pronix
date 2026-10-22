@@ -22,7 +22,6 @@ function mostrarInfoExt(eu) {
   }
   const partes = [];
   if (versao) partes.push('Extensão v' + versao);
-  if (eu && typeof eu.coach === 'boolean') partes.push('Coach: ' + (eu.coach ? 'liberado' : 'não liberado'));
   if (eu && eu.automacao === true) partes.push('Automação do RD: ligada');
   if (eu && eu.fichaCrm === false) partes.push('Ficha do lead: desligada pelo master');
   el.textContent = partes.join(' · ');
@@ -128,7 +127,7 @@ async function abaAtiva() {
 // Qual site está aberto: cada um tem seu content script e sua leitura de DOM.
 // "arquivos" = o que injetar se a página ainda não tiver o script, na mesma ordem do manifest.
 const PLATAFORMAS = [
-  { regex: /^https:\/\/web\.whatsapp\.com\//, arquivos: ['agenda.js', 'afinidade.js', 'content.js'], nome: 'WhatsApp Web' },
+  { regex: /^https:\/\/web\.whatsapp\.com\//, arquivos: ['agenda.js', 'afinidade.js', 'painel.js', 'content.js'], nome: 'WhatsApp Web' },
   { regex: /^https:\/\/www\.instagram\.com\/direct\//, arquivos: ['afinidade.js', 'content-instagram.js'], nome: 'Instagram Direct' },
 ];
 const plataformaDaAba = (url) => PLATAFORMAS.find((p) => p.regex.test(url || ''));
