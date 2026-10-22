@@ -101,7 +101,7 @@ async function completarPeloFormulario(reunioes) {
   let pendentes = 0;
   const fila = [];
   for (const r of faltam) {
-    const guardado = await db.cacheGet('form_deal_' + r.id).catch(() => null);
+    const guardado = await db.cacheGet('form_deal2_' + r.id).catch(() => null);
     if (guardado) {
       try { Object.assign(r.lead_, JSON.parse(guardado)); continue; } catch (_) { /* relê */ }
     }
@@ -109,13 +109,13 @@ async function completarPeloFormulario(reunioes) {
     else pendentes++;
   }
   const ler = async (r) => {
-    const a = await crm.rd('/activities', { deal_id: r.id, limit: 50 }).catch(() => null);
+    const a = await crm.atividadesDoCard(r.id).catch(() => null); // no PronixCRM, /activities?deal_id traria as de todos
     const notas = ((a && a.activities) || []).map((x) => crm.limparTexto(x.text)).filter(Boolean);
     const nota = notas.find((t) => crm.extrairCampos(t).length >= 2);
     const campos = nota ? camposDoLead(crm.extrairCampos(nota)) : {};
     Object.assign(r.lead_, campos);
     lidos++;
-    if (a) await db.cacheSet('form_deal_' + r.id, JSON.stringify(campos), FORM_TTL).catch(() => {});
+    if (a) await db.cacheSet('form_deal2_' + r.id, JSON.stringify(campos), FORM_TTL).catch(() => {});
   };
   for (let i = 0; i < fila.length; i += 6) await Promise.all(fila.slice(i, i + 6).map(ler));
   return { lidos, pendentes };
