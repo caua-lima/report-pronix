@@ -768,7 +768,9 @@ Tudo tem padrão seguro no código; o `.env.example` traz a lista comentada.
 | `ADMIN_PASSWORD` | sempre | Acesso reserva do painel; cria o primeiro master. |
 | `GROQ_API_KEY` | produção | Áudio, print, coach e insights. Local sem ela: `faster-whisper`. |
 | `KV_REST_API_URL` · `KV_REST_API_TOKEN` | produção | Banco (Vercel KV / Upstash; também aceita `UPSTASH_REDIS_REST_URL` e `UPSTASH_REDIS_REST_TOKEN`). Vazias: `data/*.json`. |
-| `RDSTATION_CRM_TOKEN` | ficha do lead | Token do RD Station CRM. Vazio: ficha desligada. |
+| `CRM_API_TOKEN` | ficha do lead | Token do CRM. Um token `pcrm_…` liga o **PronixCRM** (crm.pronixhub.com.br); outro valor, o RD Station. Tem prioridade sobre `RDSTATION_CRM_TOKEN`. |
+| `RDSTATION_CRM_TOKEN` | ficha do lead | Token do RD Station CRM (ou `pcrm_…`, do PronixCRM). Vazio, junto com `CRM_API_TOKEN`: ficha desligada. |
+| `CRM_API_URL` | ficha do lead | Força a base da API do CRM (padrão: pelo token). |
 
 ### Modelos
 
@@ -1015,3 +1017,22 @@ scripts/transcribe.py         faster-whisper local (só sem GROQ_API_KEY)
   o que falta conferir.
 - [`docs/auditoria-pronix.md`](docs/auditoria-pronix.md) — status de cada achado da auditoria.
 - [`docs/plano-implementacao.md`](docs/plano-implementacao.md) — o que falta, em etapas.
+
+---
+
+## CRM: RD Station ou PronixCRM
+
+O PronixCRM (`crm.pronixhub.com.br/api/v1`) é uma cópia da API v1 do RD, e o mesmo código (`src/crm.js`) fala
+com os dois: o token `pcrm_…` decide. O que muda no PronixCRM, e já é tratado:
+
+- o token vai no cabeçalho `Authorization: Bearer` (nunca na URL);
+- a lista de contatos vem sem as negociações, os telefones e os e-mails: a ficha busca `/deals?contact_id` e o
+  detalhe do contato (os e-mails são o que acha a reunião no Google Agenda, para pintar);
+- mover para "Respondeu" é `POST /deals/:id/stage` com a `versao` lida; perder/desqualificar é
+  `POST /deals/:id/lost` (a etapa "Desqualificado" vai junto quando é etapa de perda do funil);
+- o SDR é uma coluna do CRM, gravada por ele: o campo "SDR" não é mais escrito;
+- reabrir uma negociação perdida não existe na API: o "desfazer" da limpeza manda fazer pela tela do CRM;
+- a lista de `/deals` ignora `win`, `user_id` e `closed_at_period`: quem lista (Match, vendas do closer,
+  report do dia) usa `sdr_id`, o funil dos closers e a janela `updated_at_period`, e confere o resto aqui;
+- o detalhe de cada negociação é lido no ritmo do limite (600 consultas por minuto por token), com prazo por
+  rodada e guardado por id + `updated_at` (só a que mudou é relida). O token age em nome de quem o gerou.
