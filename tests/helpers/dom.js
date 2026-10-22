@@ -230,7 +230,9 @@ function montarInstagram(pagina, mensagens, { visiveis = 6, contato = 'Contato T
  * nome (não "Você") no data-pre-plain-text. Só a posição da bolha diz quem mandou.
  * posicao: false = o navegador não informa a posição (larguras zeradas).
  */
-function montarWhatsApp(pagina, mensagens, { contato = 'Contato Teste', jid = '5511999990000@c.us', idsSimples = false, semSinais = false, posicao = true } = {}) {
+// audiosSemId: o áudio não tem data-id próprio e um bloco ACIMA de todas as mensagens tem (visto ao vivo: só um
+// áudio era transcrito porque todos ganhavam a chave do bloco). A bolha mostra a duração e a hora.
+function montarWhatsApp(pagina, mensagens, { contato = 'Contato Teste', jid = '5511999990000@c.us', idsSimples = false, semSinais = false, posicao = true, audiosSemId = false } = {}) {
   const w = pagina.w;
   const d = w.document;
   d.body.innerHTML = `<div id="main"><header><span dir="auto" title="${contato}">${contato}</span></header><div id="rolagem" style="overflow-y:auto"></div></div>`;
@@ -255,6 +257,9 @@ function montarWhatsApp(pagina, mensagens, { contato = 'Contato Teste', jid = '5
         if (semSinais) {
           return `<div role="row" data-row-i="${i}" data-lado="${m.from === 'eu' ? 'd' : 'e'}"><div data-id="A5${String(i).padStart(12, '0')}"><span data-icon="audio-play"></span><audio src="${url}"></audio></div></div>`;
         }
+        if (audiosSemId) {
+          return `<div class="message-${dir}"><div><span data-icon="audio-play"></span><audio src="${url}"></audio><span>${m.dur || '0:' + String(10 + i).padStart(2, '0')}</span><span>${m.horaBolha || '10:' + String(i).padStart(2, '0')}</span></div></div>`;
+        }
         return `<div class="message-${dir}" data-id="${dataId}"><div><span data-icon="audio-play"></span><audio src="${url}"></audio></div></div>`;
       }
       const hora = m.hora || '10:00, 01/09/2026';
@@ -271,6 +276,7 @@ function montarWhatsApp(pagina, mensagens, { contato = 'Contato Teste', jid = '5
     })
     .join('');
   rolagem.innerHTML = html;
+  if (audiosSemId) rolagem.setAttribute('data-id', 'bloco-da-conversa');
   [...rolagem.querySelectorAll(semSinais ? '[data-row-i]' : '.message-in, .message-out')].forEach((el, i) => {
     const t = el.querySelector('.selectable-text');
     if (t) t.textContent = mensagens[i].texto;

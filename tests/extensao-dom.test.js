@@ -573,3 +573,19 @@ test('Instagram: o aviso final também oferece o closer', async () => {
   assert.equal(servidor.escolhas[0].closerId, 'c1');
   pagina.fechar();
 });
+
+test('WhatsApp: 10 áudios do lead sem data-id próprio viram 10 transcrições (não 1) — a chave é de cada mensagem', async () => {
+  const conversa = [{ from: 'eu', texto: 'Me conta como está a sua operação' }];
+  for (let i = 0; i < 10; i++) conversa.push({ from: 'eles', tipo: 'audio' });
+  conversa.push({ from: 'eu', texto: 'Perfeito, entendi tudo' });
+  // dois áudios iguais em tudo (mesma duração e mesma hora): continuam sendo dois
+  conversa.push({ from: 'eles', tipo: 'audio', dur: '0:30', horaBolha: '11:00' }, { from: 'eles', tipo: 'audio', dur: '0:30', horaBolha: '11:00' });
+  const servidor = servidorFalso();
+  const { envio, pagina } = await rodarWhatsApp(conversa, { servidor, opcoes: { audiosSemId: true } });
+  const audios = envio.mensagens.filter((m) => m.type === 'audio');
+  assert.equal(audios.length, 12, 'cada áudio é uma mensagem');
+  assert.deepEqual(audios.map((m) => m.content), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13].map((i) => `transcrição do áudio ${i}`), 'cada um com o SEU arquivo, na ordem');
+  assert.equal(servidor.chamadas.transcricoes, 12);
+  assert.deepEqual([envio.mensagens[0].content, envio.mensagens[11].content], ['Me conta como está a sua operação', 'Perfeito, entendi tudo']);
+  pagina.fechar();
+});
