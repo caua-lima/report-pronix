@@ -44,9 +44,14 @@ function crmFalso(responder, opcoes = {}) {
   const consultas = [];
   const resumosPedidos = [];
   const acoes = [];
+  const paineis = [];
   const aoEnviar = async (original) => {
     const msg = JSON.parse(JSON.stringify(original));
     acoes.push(msg.action);
+    if (msg.action === 'painelEstado') {
+      paineis.push(msg.estado);
+      return { ok: true };
+    }
     if (msg.action === 'crmLead') {
       consultas.push({ telefone: msg.telefone || '', nome: msg.nome || '', contatoId: msg.contatoId || '', ...(msg.dealId ? { dealId: msg.dealId, lembrar: msg.lembrar === true } : {}) });
       return responder(msg);
@@ -66,7 +71,7 @@ function crmFalso(responder, opcoes = {}) {
     }
     return { ok: true };
   };
-  return { aoEnviar, consultas, resumosPedidos, acoes, opcoes };
+  return { aoEnviar, consultas, resumosPedidos, acoes, paineis, opcoes };
 }
 
 const CONVERSA = [
@@ -498,45 +503,86 @@ const FICHA_PAINEL = {
     { id: 'd0', nome: 'PRXC | Marcos (antigo)', etapa: 'Desqualificado', funil: 'Funil MQL', responsavel: 'Cauã Lima', aberta: false, ganha: false, perdida: true, motivoPerda: 'Nunca Respondeu (SDR)', valor: 0, escolhida: false, url: 'javascript:alert(1)' },
   ],
 };
-const painel = (p) => p.document.getElementById('pronix-painel-lateral');
+const { JSDOM } = require('jsdom');
+const fsPainel = require('fs');
+const pathPainel = require('path');
 
-test('painel lateral: o lead da conversa, cada negociação é um link para o card no CRM, e o WhatsApp abre espaço', async () => {
+/** Abre o sidepanel.html de verdade (painel.js + sidepanel.js) com o estado que o service worker guardou. */
+function abrirPainelDoChrome(painelLead) {
+  const raiz = pathPainel.join(__dirname, '..', 'extension');
+  const html = fsPainel.readFileSync(pathPainel.join(raiz, 'sidepanel.html'), 'utf8').replace(/<script[^>]*><\/script>/g, '');
+  const dom = new JSDOM(html, { runScripts: 'outside-only', url: 'chrome-extension://teste/sidepanel.html' });
+  const w = dom.window;
+  const enviadas = [];
+  const ouvintes = [];
+  w.chrome = {
+    runtime: { lastError: null },
+    storage: {
+      local: { get: (p, cb) => cb({ ...p }), set: () => {} },
+      session: { get: (_k, cb) => cb({ painelLead }) },
+      onChanged: { addListener: (fn) => ouvintes.push(fn) },
+    },
+    tabs: { sendMessage: (tabId, msg, cb) => { enviadas.push({ tabId, msg }); if (cb) cb(); } },
+  };
+  for (const a of ['painel.js', 'sidepanel.js']) w.eval(fsPainel.readFileSync(pathPainel.join(raiz, a), 'utf8'));
+  return { w, document: w.document, enviadas, mudar: (v) => ouvintes.forEach((fn) => fn({ painelLead: { newValue: v } }, 'session')), fechar: () => w.close() };
+}
+const painelDe = (p) => p.document.getElementById('pronix-painel-lateral');
+
+test('painel lateral do Chrome: o cartão publica o lead; o painel mostra as negociações, cada uma com link para o card no CRM', async () => {
   const srv = crmFalso(() => ({ ok: true, configurado: true, encontrado: true, ficha: FICHA_PAINEL }));
   const p = abrir(srv);
-  await esperar(() => painel(p) && /Marcos Pereira/.test(painel(p).textContent), { motivo: 'painel com o lead' });
-  const t = painel(p).textContent;
+  await esperar(() => srv.paineis.some((e) => e && e.tipo === 'ok'), { motivo: 'estado publicado para o painel' });
+  const estado = srv.paineis.filter((e) => e && e.tipo === 'ok').pop();
+  assert.equal(estado.ficha.nome, 'Marcos Pereira');
+  // o botão ▤ do cartão pede ao service worker para abrir o painel do Chrome
+  p.document.querySelector('[data-abrir-painel]').click();
+  await esperar(() => srv.acoes.includes('abrirPainel'), { motivo: 'pedido para abrir o painel' });
+  p.fechar();
+
+  const sp = abrirPainelDoChrome({ estado, tabId: 7 });
+  const t = painelDe(sp).textContent;
   for (const x of ['PRONIX CRM', 'Marcos Pereira', 'marcos@exemplo.com', 'Negociações (2)', 'Funil MQL › Respondeu', 'Em andamento', 'Perdida', 'Motivo: Nunca Respondeu (SDR)', 'O que respondeu', 'Profissão', 'Lojista/Comerciante', 'Últimas anotações', 'Liguei, não atendeu']) {
     assert.ok(t.includes(x), 'faltou no painel: ' + x);
   }
-  const d1 = painel(p).querySelector('[data-pnx-deal="d1"]');
+  const d1 = painelDe(sp).querySelector('[data-pnx-deal="d1"]');
   assert.equal(d1.tagName, 'A');
   assert.equal(d1.getAttribute('href'), 'https://crm.pronixhub.com.br/#/deals/d1');
   assert.equal(d1.getAttribute('target'), '_blank');
-  assert.equal(painel(p).querySelector('[data-pnx-abrir]').getAttribute('href'), 'https://crm.pronixhub.com.br/#/deals/d1', 'botão principal abre o card escolhido');
+  assert.equal(painelDe(sp).querySelector('[data-pnx-abrir]').getAttribute('href'), 'https://crm.pronixhub.com.br/#/deals/d1');
   // link que não é do CRM nunca vira link; texto do CRM nunca vira HTML
-  assert.equal(painel(p).querySelector('[data-pnx-deal="d0"]').tagName, 'DIV');
-  assert.equal(painel(p).querySelector('b'), null);
-  assert.equal(painel(p).querySelector('img'), null);
-  // o WhatsApp fica mais estreito para o painel caber
-  assert.match(p.document.getElementById('pronix-painel-encaixe').textContent, /#app\{[^}]*right:320px/);
+  assert.equal(painelDe(sp).querySelector('[data-pnx-deal="d0"]').tagName, 'DIV');
+  assert.equal(painelDe(sp).querySelector('b'), null);
+  // dentro do painel do Chrome: ocupa a página, sem "»" nem encaixe no WhatsApp
+  assert.equal(painelDe(sp).style.position, '');
+  assert.ok(![...painelDe(sp).querySelectorAll('button')].some((b) => b.textContent === '»'));
+  assert.equal(sp.document.getElementById('pronix-painel-encaixe'), null);
+  // lead não achado: a busca do painel volta para a aba do WhatsApp
+  sp.mudar({ estado: { tipo: 'nao-encontrado', busca: { telefone: '71999998888' } }, tabId: 7 });
+  painelDe(sp).querySelector('input').value = 'Marcos';
+  [...painelDe(sp).querySelectorAll('button')].find((b) => b.textContent === 'Buscar').click();
+  assert.deepEqual(JSON.parse(JSON.stringify(sp.enviadas)), [{ tabId: 7, msg: { action: 'painelConsultar', busca: { nome: 'Marcos' } } }]);
+  // sem conversa aberta
+  sp.mudar(null);
+  assert.match(painelDe(sp).textContent, /Abra uma conversa/);
+  sp.fechar();
+});
 
-  // recolher: vira uma aba e o WhatsApp volta à largura toda; a escolha fica guardada
-  [...painel(p).querySelectorAll('button')].find((b) => b.textContent === '»').click();
-  assert.equal(painel(p), null);
-  assert.equal(p.document.getElementById('pronix-painel-encaixe'), null);
-  assert.equal(p.storage.painelLateralAberto, false);
-  p.document.getElementById('pronix-painel-aba').click();
-  assert.ok(painel(p), 'a aba abre o painel de novo');
+test('painel lateral do Chrome: a busca feita no painel chega ao cartão do WhatsApp', async () => {
+  const srv = crmFalso((msg) => (msg.nome === 'Marcos' ? { ok: true, configurado: true, encontrado: true, ficha: FICHA_MARCOS } : { ok: true, configurado: true, encontrado: false }));
+  const p = abrir(srv, { contato: 'Fulano Sem Cadastro' });
+  await esperar(() => /Não achei este lead/.test(textoCartao(p)), { motivo: 'lead não achado' });
+  p.mensagem({ action: 'painelConsultar', busca: { nome: 'Marcos' } });
+  await esperar(() => /Investimento/.test(textoCartao(p)), { motivo: 'ficha achada pela busca do painel' });
   p.fechar();
 });
 
-test('painel lateral: não aparece para quem não tem a ficha do CRM', async () => {
+test('painel lateral do Chrome: nada é publicado para quem não tem a ficha do CRM', async () => {
   const srv = crmFalso(() => ({ ok: true, configurado: false }));
   const p = abrir(srv);
   await esperar(() => srv.consultas.length >= 1, { motivo: 'consulta feita' });
   await new Promise((r) => setTimeout(r, 60));
-  assert.equal(painel(p), null);
-  assert.equal(p.document.getElementById('pronix-painel-encaixe'), null);
+  assert.ok(!srv.paineis.some((e) => e && e.tipo), 'nenhum lead foi para o painel');
   p.fechar();
 });
 

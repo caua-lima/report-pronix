@@ -1304,14 +1304,34 @@
   }
   // Leitura do agendamento e do "lead respondeu" (agenda.js, carregado antes deste arquivo).
   const agendaLib = (typeof globalThis !== 'undefined' && globalThis.__crAgenda) || null;
-  // Painel lateral do CRM (painel.js, carregado antes deste arquivo): mostra o mesmo estado do cartão do lead.
-  const painelLateral = (typeof globalThis !== 'undefined' && globalThis.__pnxPainel) || null;
-  /** O painel aparece só para quem tem a ficha do CRM (o servidor diz em "configurado"). */
+  // Painel lateral do Chrome (sidepanel.html): recebe o mesmo estado do cartão do lead, via service worker.
+  const PAINEL_SEM_CONVERSA = { tipo: 'sem-conversa' };
+  let painelEnviado; // o último estado mandado (o cartão se redesenha muito com o MESMO estado)
+  function publicarPainel(estado) {
+    if (estado === painelEnviado) return;
+    painelEnviado = estado;
+    try {
+      chrome.runtime.sendMessage({ action: 'painelEstado', estado: estado || null }, () => void chrome.runtime.lastError);
+    } catch (_) {
+      /* extensão recarregada: este script ficou órfão */
+    }
+  }
+  /** O painel mostra o lead só para quem tem a ficha do CRM (o servidor diz em "configurado"). */
   function atualizarPainel(estadoDoCartao) {
-    if (!painelLateral) return;
-    if (!ficha.ligada || ficha.crmLigado === false || !estadoDoCartao || estadoDoCartao.tipo === 'sem-crm') return painelLateral.remover();
+    if (!ficha.ligada || ficha.crmLigado === false || !estadoDoCartao || estadoDoCartao.tipo === 'sem-crm') return publicarPainel(null);
     if (ficha.crmLigado !== true && estadoDoCartao.tipo === 'carregando') return; // ainda não se sabe se este usuário tem CRM
-    painelLateral.atualizar(estadoDoCartao, { consultar: (busca) => consultarFicha({ ...(busca || {}) }) });
+    publicarPainel(estadoDoCartao);
+  }
+  function abrirPainelDoChrome() {
+    try {
+      chrome.runtime.sendMessage({ action: 'abrirPainel' }, (r) => {
+        if (chrome.runtime.lastError || !r || !r.ok) {
+          mostrarBadge({ texto: '<b>Painel lateral:</b> clique no ícone da extensão e em "Abrir painel lateral do CRM".' });
+        }
+      });
+    } catch (_) {
+      /* órfão */
+    }
   }
   const auto = { assinatura: '', tentados: new Set() };
   // Resumo rápido por conversa (só na memória desta aba): some ao recarregar o WhatsApp.
@@ -2154,7 +2174,10 @@
     );
     alca.title = 'Arraste para mudar de lugar (duplo clique volta ao lugar padrão)';
     tornarArrastavel(el, alca, { dono: ficha, chave: 'fichaPos', posicionar: posicionarFicha });
-    el.appendChild(elem('div', 'display:flex;align-items:center;gap:6px', alca, btnMin, btnX));
+    const btnPainel = botaoFicha('▤', abrirPainelDoChrome);
+    btnPainel.title = 'Abrir o painel lateral do CRM (barra do Chrome)';
+    btnPainel.setAttribute('data-abrir-painel', '1');
+    el.appendChild(elem('div', 'display:flex;align-items:center;gap:6px', alca, btnPainel, btnMin, btnX));
     // As etiquetas ficam à vista mesmo com o cartão minimizado.
     const etiquetas = blocoEtiquetas(estado);
     if (etiquetas) el.appendChild(etiquetas);
@@ -2262,7 +2285,7 @@
       // Extensão atualizada/recarregada: este script ficou órfão. Para de vigiar em silêncio.
       clearInterval(ficha.vigia);
       esconderFicha();
-      if (painelLateral) painelLateral.remover();
+      publicarPainel(null);
       return;
     }
     if (seq !== ficha.seq) return; // resposta de uma conversa que o SDR já deixou
@@ -2285,7 +2308,7 @@
     const extras = ficha.automacao ? { marca: r.marca || null, podeResponder: r.podeResponder === true, reuniao: r.reuniao || null } : {};
     // Sem ficha do CRM para este usuário (CRM desligado no servidor ou popup do lead desligado): sem cartão.
     ficha.crmLigado = r.configurado === true;
-    if (!r.configurado) painelLateral && painelLateral.remover();
+    if (!r.configurado) publicarPainel(null);
     if (!r.configurado) return esconderFicha();
     if (r.encontrado && r.ficha) return renderFicha({ tipo: 'ok', ficha: r.ficha, busca, ...extras });
     if (r.candidatos && r.candidatos.length) return renderFicha({ tipo: 'candidatos', candidatos: r.candidatos, busca, ...extras });
@@ -2309,7 +2332,7 @@
       ficha.chave = null;
       ficha.conversa = null;
       esconderFicha();
-      if (painelLateral && ficha.crmLigado === true) painelLateral.atualizar({ tipo: 'sem-conversa' });
+      if (ficha.crmLigado === true) publicarPainel(PAINEL_SEM_CONVERSA);
       return;
     }
     let telefone = telefoneDaConversa();
@@ -2377,6 +2400,12 @@
       // Dispara em background e responde na hora para o popup poder fechar.
       gerarReportEmBackground(msg.server, { afinidade: msg.afinidade });
       sendResponse({ ok: true, iniciado: true });
+      return false;
+    }
+    if (msg && msg.action === 'painelConsultar') {
+      // Busca ou "Tentar de novo" feitos no painel lateral do Chrome.
+      consultarFicha({ ...(msg.busca || {}) });
+      sendResponse({ ok: true });
       return false;
     }
     if (msg && msg.action === 'ping') {

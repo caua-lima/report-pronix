@@ -127,7 +127,7 @@ async function abaAtiva() {
 // Qual site está aberto: cada um tem seu content script e sua leitura de DOM.
 // "arquivos" = o que injetar se a página ainda não tiver o script, na mesma ordem do manifest.
 const PLATAFORMAS = [
-  { regex: /^https:\/\/web\.whatsapp\.com\//, arquivos: ['agenda.js', 'afinidade.js', 'painel.js', 'content.js'], nome: 'WhatsApp Web' },
+  { regex: /^https:\/\/web\.whatsapp\.com\//, arquivos: ['agenda.js', 'afinidade.js', 'content.js'], nome: 'WhatsApp Web' },
   { regex: /^https:\/\/www\.instagram\.com\/direct\//, arquivos: ['afinidade.js', 'content-instagram.js'], nome: 'Instagram Direct' },
 ];
 const plataformaDaAba = (url) => PLATAFORMAS.find((p) => p.regex.test(url || ''));
@@ -408,6 +408,21 @@ $('testar').addEventListener('click', () => {
   chrome.storage.local.set({ server: getServer(), chave: getChave() }, testarConexao);
 });
 $('gerar').addEventListener('click', () => gerar());
+// Painel lateral do Chrome: a janela é lida ao abrir o popup, para o open() sair direto do clique (o Chrome exige).
+let janelaDoPopup = null;
+try {
+  chrome.windows.getCurrent((w) => { janelaDoPopup = w ? w.id : null; });
+} catch (_) {
+  /* sem a API */
+}
+$('painelLateral').addEventListener('click', () => {
+  try {
+    if (!chrome.sidePanel || janelaDoPopup == null) throw new Error();
+    chrome.sidePanel.open({ windowId: janelaDoPopup }).then(() => window.close(), () => {});
+  } catch (_) {
+    $('painelLateral').textContent = 'Atualize o Chrome para usar o painel lateral';
+  }
+});
 $('zipDia').addEventListener('click', baixarZipDoDia);
 
 // Ficha do RD Station no WhatsApp: ligada por padrão; o content script escuta a mudança na hora.

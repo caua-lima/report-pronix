@@ -11,6 +11,8 @@
   const ABA_ID = 'pronix-painel-aba';
   const CSS_ID = 'pronix-painel-encaixe';
   const LARGURA = 320;
+  // Dentro do painel lateral do Chrome (sidepanel.html): a página inteira é o painel.
+  const PAGINA = typeof document !== 'undefined' && document.documentElement.hasAttribute('data-pnx-pagina');
   const OURO = '#ffc233';
   const FONTE_TITULO = 'Bahnschrift,DIN Alternate,Roboto Condensed,Arial Narrow,sans-serif';
 
@@ -36,6 +38,7 @@
 
   /** Abre (ou devolve) o espaço do painel: o WhatsApp inteiro (#app) fica mais estreito, como fazia o do RD. */
   function encaixar(sim) {
+    if (PAGINA) return;
     let st = document.getElementById(CSS_ID);
     if (!sim) {
       if (st) st.remove();
@@ -183,7 +186,7 @@
     const d = estado.ultimo;
     let painel = document.getElementById(ID);
     let aba = document.getElementById(ABA_ID);
-    if (!estado.aberto) {
+    if (!estado.aberto && !PAGINA) {
       if (painel) painel.remove();
       encaixar(false);
       if (!aba) {
@@ -200,7 +203,8 @@
     encaixar(true);
     if (!painel) {
       painel = el('aside', [
-        'position:fixed', 'top:0', 'right:0', 'bottom:0', `width:${LARGURA}px`, 'z-index:2147483645', 'box-sizing:border-box',
+        ...(PAGINA ? ['min-height:100vh'] : ['position:fixed', 'top:0', 'right:0', 'bottom:0', `width:${LARGURA}px`, 'z-index:2147483645']),
+        'box-sizing:border-box',
         'background:#1a191c', 'color:#f3efe6', 'border-left:1px solid #3a373f', 'overflow:auto', 'padding:14px 14px 24px',
         'font:13px/1.45 Segoe UI Variable Text,Segoe UI,system-ui,-apple-system,Roboto,sans-serif',
       ].join(';'));
@@ -216,7 +220,7 @@
     recolher.addEventListener('click', () => { estado.aberto = false; guardarAberto(); desenhar(); });
     const crmNome = (d && d.ficha && d.ficha.crmNome) || 'CRM';
     painel.appendChild(el('div', 'display:flex;align-items:center;justify-content:space-between;gap:8px;border-bottom:3px solid ' + OURO + ';padding-bottom:9px',
-      el('div', `font:700 12px ${FONTE_TITULO};letter-spacing:.14em;color:${OURO}`, crmNome.toUpperCase()), recolher));
+      el('div', `font:700 12px ${FONTE_TITULO};letter-spacing:.14em;color:${OURO}`, crmNome.toUpperCase()), PAGINA ? null : recolher));
     corpoDoEstado(d).forEach((p) => painel.appendChild(p));
     painel.scrollTop = rolagem;
   }
@@ -240,5 +244,5 @@
     encaixar(false);
   }
 
-  raiz.__pnxPainel = { atualizar, remover, LARGURA, ID, ABA_ID };
+  raiz.__pnxPainel = { atualizar, remover, LARGURA, ID, ABA_ID, PAGINA };
 })(typeof globalThis !== 'undefined' ? globalThis : window);

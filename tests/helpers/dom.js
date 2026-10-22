@@ -111,6 +111,8 @@ function abrirPagina({ arquivo, url, aoEnviar, blobs = new Map(), intervaloRapid
     blobs,
     /** Dispara o clique em "Gerar Report" do popup (extra: o que mais o popup manda, como o closer da análise). */
     iniciar: (server = 'https://servidor.teste', extra = {}) => ouvintes.forEach((fn) => fn({ action: 'start', server, ...extra }, {}, () => {})),
+    /** Mensagem vinda de fora da aba (ex.: o painel lateral do Chrome). */
+    mensagem: (msg) => ouvintes.forEach((fn) => fn(msg, {}, () => {})),
     badge: () => {
       const el = w.document.getElementById('closer-report-badge');
       return el ? el.textContent : '';

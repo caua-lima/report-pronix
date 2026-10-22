@@ -54,6 +54,30 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   // Só aceita pedidos da própria extensão (os content scripts).
   if (sender && sender.id && chrome.runtime.id && sender.id !== chrome.runtime.id) return;
 
+  // Painel lateral do Chrome: o cartão do WhatsApp publica o estado do lead; o painel lê daqui.
+  if (msg && msg.action === 'painelEstado') {
+    const tabId = sender && sender.tab ? sender.tab.id : null;
+    try {
+      chrome.storage.session.set({ painelLead: { estado: msg.estado || null, tabId, em: Date.now() } });
+    } catch (_) {
+      /* sem storage.session */
+    }
+    sendResponse({ ok: true });
+    return false;
+  }
+  // Botão do cartão: abre o painel lateral do Chrome nesta janela.
+  if (msg && msg.action === 'abrirPainel') {
+    try {
+      chrome.sidePanel
+        .open({ windowId: sender.tab.windowId })
+        .then(() => sendResponse({ ok: true }), (e) => sendResponse({ ok: false, erro: String((e && e.message) || e) }));
+    } catch (e) {
+      sendResponse({ ok: false, erro: String((e && e.message) || e) });
+      return false;
+    }
+    return true;
+  }
+
   if (msg && msg.action === 'transcreverAudio') {
     (async () => {
       // O servidor descobre o formato real pelos bytes; o nome é só um palpite.

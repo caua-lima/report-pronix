@@ -266,9 +266,9 @@ test('popup: sem closer com inteligência, nenhum botão a mais (e a lista guard
 test('manifest: o bloco da afinidade é carregado antes dos dois content scripts, e o popup injeta a mesma lista', () => {
   const manifest = JSON.parse(ler('extension/manifest.json'));
   const grupos = manifest.content_scripts.filter((c) => c.world !== 'MAIN').map((c) => c.js);
-  assert.deepEqual(grupos, [['agenda.js', 'afinidade.js', 'painel.js', 'content.js'], ['afinidade.js', 'content-instagram.js']]);
+  assert.deepEqual(grupos, [['agenda.js', 'afinidade.js', 'content.js'], ['afinidade.js', 'content-instagram.js']]);
   const popup = ler('extension/popup.js');
-  assert.match(popup, /arquivos: \['agenda\.js', 'afinidade\.js', 'painel\.js', 'content\.js'\]/);
+  assert.match(popup, /arquivos: \['agenda\.js', 'afinidade\.js', 'content\.js'\]/);
   assert.match(popup, /arquivos: \['afinidade\.js', 'content-instagram\.js'\]/);
   assert.ok(fs.existsSync(path.join(RAIZ, 'extension', 'afinidade.js')));
 });
