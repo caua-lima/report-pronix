@@ -115,3 +115,32 @@ test('o CRM recusou: a mensagem dele chega a quem usa', async () => {
   estado = DEAL({ versao: 9 });
   await assert.rejects(crm.mudarEtapa({ id: 'd1', versao: 3 }, 'e-respondeu'), /O CRM não aceitou: A versão enviada não é a atual/);
 });
+
+test('listas no PronixCRM: percorre pelo cursor e guarda o detalhe por id + updated_at (só relê o que mudou)', async () => {
+  const antes = global.fetch;
+  const leituras = [];
+  global.fetch = async (url) => {
+    const u = new URL(String(url));
+    const p = u.pathname.replace('/api/v1', '');
+    const ok = (j) => ({ ok: true, status: 200, json: async () => j, text: async () => JSON.stringify(j) });
+    if (p === '/deals') {
+      const cursor = u.searchParams.get('cursor');
+      const pagina = (n, desde) => Array.from({ length: n }, (_, i) => ({ id: 'x' + (desde + i), updated_at: '2026-10-20T10:00:00.000Z' }));
+      return ok(cursor ? { deals: pagina(5, 200), proximo_cursor: null } : { deals: pagina(200, 0), proximo_cursor: 'c2' });
+    }
+    leituras.push(p);
+    return ok({ id: p.split('/').pop(), versao: 1 });
+  };
+  try {
+    const lista = await crm.listarNegociacoes({ sdr_id: 'u1' });
+    assert.equal(lista.length, 205, 'as duas páginas');
+    const primeira = await crm.detalhesDe(lista.slice(0, 3));
+    assert.deepEqual([primeira.length, leituras.length], [3, 3]);
+    await crm.detalhesDe(lista.slice(0, 3));
+    assert.equal(leituras.length, 3, 'a 2ª vez vem do guardado');
+    await crm.detalhesDe([{ id: 'x0', updated_at: '2026-10-21T09:00:00.000Z' }]);
+    assert.equal(leituras.length, 4, 'mudou (updated_at novo): relê');
+  } finally {
+    global.fetch = antes;
+  }
+});

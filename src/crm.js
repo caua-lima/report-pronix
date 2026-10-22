@@ -282,11 +282,19 @@ async function completarContatos(contatos) {
       c.deals = ((r && r.deals) || []).slice().reverse();
     }
   }));
+  // O contato principal precisa dos e-mails (a reunião no Google Agenda é achada por eles), dos telefones e
+  // dos campos: achado por nome ou por id, ele chega sem nada disso.
   const principal = contatos[0];
-  if (principal && !Array.isArray(principal.contact_custom_fields)) {
+  const semDados = (c) => !Array.isArray(c.contact_custom_fields) || !(c.emails || []).length || !(c.phones || []).length;
+  if (principal && semDados(principal) && !principal._detalhado) {
     const r = await rd(`/contacts/${encodeURIComponent(idDe(principal))}`).catch(() => null);
     const d = r && (r.contact || r);
-    if (d && Array.isArray(d.contact_custom_fields)) principal.contact_custom_fields = d.contact_custom_fields;
+    if (d) {
+      if (Array.isArray(d.contact_custom_fields)) principal.contact_custom_fields = d.contact_custom_fields;
+      if ((d.emails || []).length) principal.emails = d.emails;
+      if ((d.phones || []).length) principal.phones = d.phones;
+      principal._detalhado = true;
+    }
   }
 }
 
@@ -773,6 +781,70 @@ async function perderCard(deal, { motivoId, etapaId, camposRd, nota } = {}) {
   return rd(`/deals/${id}`, {}, { metodo: 'PUT', corpo: { ...(etapaId ? { deal_stage_id: etapaId } : {}), deal: { win: false, deal_lost_reason_id: motivoId, deal_custom_fields: camposRd || [] } } });
 }
 
+// ---------------------------------------------------------------- listas no PronixCRM
+// Na lista de /deals o PronixCRM respeita deal_pipeline_id, deal_stage_id, sdr_id, contact_id e a janela de
+// datas (created_at_period / updated_at_period), mas IGNORA win, user_id e closed_at_period — e a lista não traz
+// closed_at, os campos personalizados nem o motivo da perda. Quem precisa disso lista pelo que ele respeita,
+// confere o resto aqui e lê o detalhe das que interessam.
+
+/** Dia AAAA-MM-DD como instante no fuso do Brasil (o PronixCRM pede data com fuso). */
+const instanteDoDia = (dia, fimDoDia = false) => `${dia}T${fimDoDia ? '23:59:59' : '00:00:00'}-03:00`;
+
+/** O usuário do CRM pelo nome: o nome inteiro; senão o primeiro nome, se só um tiver; senão todas as palavras. */
+async function usuarioDoCrm(nome) {
+  const lista = await module.exports.usuariosRd().catch(() => []);
+  const n = normalizarNome(nome);
+  if (!n) return null;
+  const primeiro = n.split(' ')[0];
+  const exato = lista.find((u) => normalizarNome(u.nome) === n);
+  if (exato) return exato;
+  const mesmoPrimeiro = lista.filter((u) => normalizarNome(u.nome).split(' ')[0] === primeiro);
+  if (mesmoPrimeiro.length === 1) return mesmoPrimeiro[0];
+  return lista.find((u) => { const p = new Set(normalizarNome(u.nome).split(' ')); return n.split(' ').every((x) => p.has(x)); }) || null;
+}
+
+/** Todas as negociações de um filtro, pelo cursor (até maxPaginas de 200). Formato da lista, sem o detalhe. */
+async function listarNegociacoes(filtros = {}, { maxPaginas = 40 } = {}) {
+  const todas = [];
+  let cursor = '';
+  for (let i = 0; i < maxPaginas; i++) {
+    const r = await module.exports.rd('/deals', { ...filtros, limit: 200, ...(cursor ? { cursor } : {}) });
+    const pagina = (r && r.deals) || [];
+    todas.push(...pagina);
+    cursor = (r && r.proximo_cursor) || '';
+    if (!cursor || pagina.length < 200) break;
+  }
+  return todas;
+}
+
+/**
+ * O detalhe de várias negociações (com closed_at, campos, motivo, produtos, contatos e histórico de etapas),
+ * 8 de cada vez. Recebe ids ou as negociações da lista: com updated_at, o detalhe fica guardado por id + updated_at
+ * (2 dias) — abrir o Match de novo só relê o que mudou, e o limite do CRM (600 por minuto) não estoura.
+ */
+async function detalhesDe(itens, { concorrencia = 8 } = {}) {
+  const vistos = new Set();
+  const lista = (itens || [])
+    .map((x) => (typeof x === 'object' && x ? { id: idDe(x), versao: String(x.updated_at || '') } : { id: String(x || ''), versao: '' }))
+    .filter((x) => /^[A-Za-z0-9_-]{1,40}$/.test(x.id) && !vistos.has(x.id) && vistos.add(x.id));
+  const chave = (x) => `crm:det:${x.id}:${x.versao}`;
+  const ler = async (x) => {
+    if (x.versao) {
+      const g = await db.cacheGet(chave(x)).catch(() => null);
+      if (g) { try { return JSON.parse(g); } catch (_) { /* relê */ } }
+    }
+    const d = await module.exports.rd(`/deals/${encodeURIComponent(x.id)}`).catch(() => null);
+    if (d && x.versao) await db.cacheSet(chave(x), JSON.stringify(d), 2 * 24 * 3600).catch(() => {});
+    return d;
+  };
+  const saida = [];
+  for (let i = 0; i < lista.length; i += concorrencia) {
+    const lote = await Promise.all(lista.slice(i, i + concorrencia).map(ler));
+    saida.push(...lote.filter(Boolean));
+  }
+  return saida;
+}
+
 /** Depois de escrever num card: a ficha do lead em cache está velha, a próxima consulta busca de novo. */
 async function esquecerLead(busca = {}) {
   const idOk = (v) => (/^[A-Za-z0-9_-]{1,40}$/.test(String(v || '')) ? String(v) : '');
@@ -787,6 +859,10 @@ module.exports = {
   rd,
   ehPronix,
   linkDoCard,
+  instanteDoDia,
+  usuarioDoCrm,
+  listarNegociacoes,
+  detalhesDe,
   mudarEtapa,
   perderCard,
   funis,
