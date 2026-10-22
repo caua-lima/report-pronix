@@ -2394,7 +2394,7 @@
       'flex:1;min-width:0;user-select:none;display:flex;align-items:center;gap:6px',
       pegador(),
       elem('div', 'flex:1;min-width:0',
-        elem('div', 'font-size:10.5px;color:#ffc233;font-weight:600;letter-spacing:.14em;font-family:Bahnschrift,DIN Alternate,Roboto Condensed,Arial Narrow,sans-serif', semCrm ? 'PRONIX' : 'RD STATION'),
+        elem('div', 'font-size:10.5px;color:#ffc233;font-weight:600;letter-spacing:.14em;font-family:Bahnschrift,DIN Alternate,Roboto Condensed,Arial Narrow,sans-serif', semCrm ? 'PRONIX' : String((estado.ficha && estado.ficha.crmNome) || 'RD Station').toUpperCase()),
         elem('div', 'font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis', titulo))
     );
     alca.title = 'Arraste para mudar de lugar (duplo clique volta ao lugar padrão)';
@@ -2482,8 +2482,8 @@
       corpo.appendChild(elem('div', 'font-size:11px;color:#a39e93;margin-top:8px', `Este lead tem ${f.negociacoes.length} cards no RD — mostrando o que parece ser o certo. Trocou? Escolha aqui (fica lembrado):`));
       corpo.appendChild(sel);
     }
-    if (n && /^https:\/\/crm\.rdstation\.com\//.test(n.url || '')) {
-      const a = elem('a', 'display:inline-block;margin-top:8px;color:#ffc233;font-weight:600;text-decoration:none', 'Abrir no RD Station ↗');
+    if (n && /^https:\/\/(crm\.rdstation\.com|crm\.pronixhub\.com\.br)\//.test(n.url || '')) {
+      const a = elem('a', 'display:inline-block;margin-top:8px;color:#ffc233;font-weight:600;text-decoration:none', `Abrir no ${(estado.ficha && estado.ficha.crmNome) || 'RD Station'} ↗`);
       a.href = n.url;
       a.target = '_blank';
       a.rel = 'noopener noreferrer';
