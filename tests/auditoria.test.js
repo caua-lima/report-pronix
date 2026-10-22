@@ -298,8 +298,8 @@ test('automação: "lead respondeu" vai para a rota de mover o card, só com a i
 test('manifest e popup carregam o leitor de agendamento ANTES do content.js do WhatsApp', () => {
   const m = JSON.parse(ler('extension/manifest.json'));
   const grupo = m.content_scripts.find((c) => (c.js || []).includes('content.js'));
-  assert.deepEqual(grupo.js, ['agenda.js', 'afinidade.js', 'content.js']);
-  assert.match(ler('extension/popup.js'), /arquivos: \['agenda\.js', 'afinidade\.js', 'content\.js'\]/, 'a injeção pelo popup segue a mesma ordem');
+  assert.deepEqual(grupo.js, ['agenda.js', 'afinidade.js', 'painel.js', 'content.js']);
+  assert.match(ler('extension/popup.js'), /arquivos: \['agenda\.js', 'afinidade\.js', 'painel\.js', 'content\.js'\]/, 'a injeção pelo popup segue a mesma ordem');
   // o leitor de agendamento não fala com a rede nem com o servidor
   const agenda = ler('extension/agenda.js');
   assert.ok(!/fetch\(|chrome\.|XMLHttpRequest|sendMessage/.test(agenda));

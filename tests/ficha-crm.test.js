@@ -40,33 +40,18 @@ const RESUMO_FALSO = {
   ultimaMensagem: '21/09 10:05',
 };
 
-const COACH_FALSO = {
-  perfil: { tipo: 'analítico', evidencia: 'Pediu números e prova de resultado.' },
-  comoAbordar: 'Seja objetivo e traga dados antes de falar de preço.',
-  objecoes: [{ objecao: 'Achou o investimento alto', resposta: 'Posso te mostrar quanto os clientes recuperam nos primeiros meses?' }],
-  perguntas: ['Quanto você fatura hoje por mês?', 'Quem mais participa da decisão?'],
-};
-
 function crmFalso(responder, opcoes = {}) {
   const consultas = [];
   const resumosPedidos = [];
-  const coachPedidos = [];
-  const feedbacks = [];
+  const acoes = [];
   const aoEnviar = async (original) => {
     const msg = JSON.parse(JSON.stringify(original));
+    acoes.push(msg.action);
     if (msg.action === 'crmLead') {
       consultas.push({ telefone: msg.telefone || '', nome: msg.nome || '', contatoId: msg.contatoId || '', ...(msg.dealId ? { dealId: msg.dealId, lembrar: msg.lembrar === true } : {}) });
       return responder(msg);
     }
     if (msg.action === 'reportFetch') return { ok: true, dados: {}, arquivo: 'r.pdf', arquivoBase64: 'AAAA', mensagensRecebidas: msg.mensagens };
-    if (msg.action === 'coach') {
-      coachPedidos.push(msg);
-      return opcoes.coach ? opcoes.coach(msg) : { ok: true, coach: COACH_FALSO, cache: false };
-    }
-    if (msg.action === 'coachFeedback') {
-      feedbacks.push(msg);
-      return { ok: true };
-    }
     if (msg.action === 'conversaMapa') {
       (opcoes.mapasPedidos || (opcoes.mapasPedidos = [])).push(msg);
       return opcoes.mapa ? opcoes.mapa(msg) : { ok: true, qualificadoFinanceiramente: 'parcial', mapa: MAPA_FALSO };
@@ -81,7 +66,7 @@ function crmFalso(responder, opcoes = {}) {
     }
     return { ok: true };
   };
-  return { aoEnviar, consultas, resumosPedidos, coachPedidos, feedbacks, opcoes };
+  return { aoEnviar, consultas, resumosPedidos, acoes, opcoes };
 }
 
 const CONVERSA = [
@@ -429,33 +414,6 @@ test('lead com vários cards: o cartão mostra o seletor e trocar manda o card e
   p.fechar();
 });
 
-// ---------------------------------------------------------------- o coach saiu do cartão
-// (virou um popup próprio que acompanha a conversa: tests/coach-popup.test.js)
-test('coach liberado: o cartão da ficha continua só com a ficha e o resumo; CRM desligado mostra o cartão do resumo', async () => {
-  const srv = crmFalso(() => ({ ok: true, configurado: true, encontrado: true, ficha: FICHA_MARCOS, coach: true }));
-  const p = abrir(srv);
-  await esperar(() => /Investimento/.test(textoCartao(p)), { motivo: 'ficha' });
-  assert.ok(botao(p, 'Resumo rápido da conversa'));
-  assert.ok(![...cartao(p).querySelectorAll('button')].some((b) => /coach/i.test(b.textContent)));
-  p.fechar();
-
-  const semCrm = crmFalso(() => ({ ok: true, configurado: false, coach: true }));
-  const q = abrir(semCrm);
-  await esperar(() => !!botao(q, 'Resumo rápido da conversa'), { motivo: 'cartão sem RD' });
-  const t = textoCartao(q);
-  assert.ok(t.includes('PRONIX') && !t.includes('RD STATION'));
-  assert.ok(!t.includes('Não achei este lead'), 'sem busca de RD neste cartão');
-  q.fechar();
-
-  // sem o coach liberado, CRM desligado continua sem cartão nenhum
-  const sem = crmFalso(() => ({ ok: true, configurado: false, coach: false }));
-  const r = abrir(sem);
-  await esperar(() => sem.consultas.length === 1, { motivo: 'consulta' });
-  await dormir(60);
-  assert.equal(cartao(r), null);
-  r.fechar();
-});
-
 // ---------------------------------------------------------------- mapa da conversa e perguntas
 const resumoPronto = async (srv) => {
   const p = abrir(srv);
@@ -528,3 +486,85 @@ test('mapa e perguntas: erro do servidor aparece e dá para tentar de novo; sem 
   p.fechar();
 });
 
+
+// ---------------------------------------------------------------- painel lateral do CRM
+const FICHA_PAINEL = {
+  ...FICHA_MARCOS,
+  crmNome: 'Pronix CRM',
+  emails: ['marcos@exemplo.com'],
+  negociacao: { ...FICHA_MARCOS.negociacao, url: 'https://crm.pronixhub.com.br/#/deals/d1' },
+  negociacoes: [
+    { id: 'd1', nome: 'PRXC | Marcos <b>Pereira</b>', etapa: 'Respondeu', funil: 'Funil MQL', responsavel: 'Cauã Lima', aberta: true, ganha: false, perdida: false, valor: 0, escolhida: true, url: 'https://crm.pronixhub.com.br/#/deals/d1' },
+    { id: 'd0', nome: 'PRXC | Marcos (antigo)', etapa: 'Desqualificado', funil: 'Funil MQL', responsavel: 'Cauã Lima', aberta: false, ganha: false, perdida: true, motivoPerda: 'Nunca Respondeu (SDR)', valor: 0, escolhida: false, url: 'javascript:alert(1)' },
+  ],
+};
+const painel = (p) => p.document.getElementById('pronix-painel-lateral');
+
+test('painel lateral: o lead da conversa, cada negociação é um link para o card no CRM, e o WhatsApp abre espaço', async () => {
+  const srv = crmFalso(() => ({ ok: true, configurado: true, encontrado: true, ficha: FICHA_PAINEL }));
+  const p = abrir(srv);
+  await esperar(() => painel(p) && /Marcos Pereira/.test(painel(p).textContent), { motivo: 'painel com o lead' });
+  const t = painel(p).textContent;
+  for (const x of ['PRONIX CRM', 'Marcos Pereira', 'marcos@exemplo.com', 'Negociações (2)', 'Funil MQL › Respondeu', 'Em andamento', 'Perdida', 'Motivo: Nunca Respondeu (SDR)', 'O que respondeu', 'Profissão', 'Lojista/Comerciante', 'Últimas anotações', 'Liguei, não atendeu']) {
+    assert.ok(t.includes(x), 'faltou no painel: ' + x);
+  }
+  const d1 = painel(p).querySelector('[data-pnx-deal="d1"]');
+  assert.equal(d1.tagName, 'A');
+  assert.equal(d1.getAttribute('href'), 'https://crm.pronixhub.com.br/#/deals/d1');
+  assert.equal(d1.getAttribute('target'), '_blank');
+  assert.equal(painel(p).querySelector('[data-pnx-abrir]').getAttribute('href'), 'https://crm.pronixhub.com.br/#/deals/d1', 'botão principal abre o card escolhido');
+  // link que não é do CRM nunca vira link; texto do CRM nunca vira HTML
+  assert.equal(painel(p).querySelector('[data-pnx-deal="d0"]').tagName, 'DIV');
+  assert.equal(painel(p).querySelector('b'), null);
+  assert.equal(painel(p).querySelector('img'), null);
+  // o WhatsApp fica mais estreito para o painel caber
+  assert.match(p.document.getElementById('pronix-painel-encaixe').textContent, /#app\{[^}]*right:320px/);
+
+  // recolher: vira uma aba e o WhatsApp volta à largura toda; a escolha fica guardada
+  [...painel(p).querySelectorAll('button')].find((b) => b.textContent === '»').click();
+  assert.equal(painel(p), null);
+  assert.equal(p.document.getElementById('pronix-painel-encaixe'), null);
+  assert.equal(p.storage.painelLateralAberto, false);
+  p.document.getElementById('pronix-painel-aba').click();
+  assert.ok(painel(p), 'a aba abre o painel de novo');
+  p.fechar();
+});
+
+test('painel lateral: não aparece para quem não tem a ficha do CRM', async () => {
+  const srv = crmFalso(() => ({ ok: true, configurado: false }));
+  const p = abrir(srv);
+  await esperar(() => srv.consultas.length >= 1, { motivo: 'consulta feita' });
+  await new Promise((r) => setTimeout(r, 60));
+  assert.equal(painel(p), null);
+  assert.equal(p.document.getElementById('pronix-painel-encaixe'), null);
+  p.fechar();
+});
+
+test('ficha guardada nesta aba: voltar a uma conversa mostra o lead na hora, antes da resposta nova', async () => {
+  let atrasar = false;
+  const srv = crmFalso(async (msg) => {
+    if (atrasar) await new Promise((r) => setTimeout(r, 600));
+    return msg.nome === 'Outra Pessoa' ? { ok: true, configurado: true, encontrado: false } : { ok: true, configurado: true, encontrado: true, ficha: FICHA_MARCOS };
+  });
+  const p = abrir(srv);
+  await esperar(() => /Investimento/.test(textoCartao(p)), { motivo: 'ficha da 1ª conversa' });
+  trocarConversa(p, 'Outra Pessoa');
+  await esperar(() => /Não achei este lead/.test(textoCartao(p)), { motivo: 'outra conversa' });
+  atrasar = true;
+  const t0 = Date.now();
+  trocarConversa(p, '+55 71 99999-8888');
+  await esperar(() => /Investimento/.test(textoCartao(p)), { motivo: 'volta com a ficha guardada' });
+  assert.ok(Date.now() - t0 < 600, 'apareceu antes da resposta nova (que demora 600 ms)');
+  await esperar(() => srv.consultas.length === 3, { motivo: 'a busca nova também foi feita' });
+  p.fechar();
+});
+
+test('sem coach: a extensão nunca pede dica nem feedback do coach ao servidor', async () => {
+  const srv = crmFalso(() => ({ ok: true, configurado: true, encontrado: true, ficha: FICHA_MARCOS }));
+  const p = abrir(srv);
+  await esperar(() => /Investimento/.test(textoCartao(p)), { motivo: 'ficha na tela' });
+  await new Promise((r) => setTimeout(r, 80));
+  assert.deepEqual(srv.acoes.filter((a) => /coach|permiss/i.test(a)), []);
+  assert.doesNotMatch(textoCartao(p), /coach|como abordar/i);
+  p.fechar();
+});

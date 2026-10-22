@@ -214,7 +214,7 @@ async function abrirPopup(storageInicial, eu) {
 }
 
 test('popup: um botão por closer com inteligência; clicar manda gerar o report com a análise daquele closer', async () => {
-  const eu = { ok: true, nome: 'Cauã Lima', coach: true, analises: [PH, { id: 'c2', apelido: 'Vi<b>x</b>', nome: 'Vitor' }] };
+  const eu = { ok: true, nome: 'Cauã Lima', analises: [PH, { id: 'c2', apelido: 'Vi<b>x</b>', nome: 'Vitor' }] };
   const p = await abrirPopup({ chave: 'pnx_caua', server: 'https://report-pronix.vercel.app' }, eu);
   await esperar(() => p.botoes().length === 2, { motivo: 'botões de análise' });
   assert.deepEqual(p.botoes().map((b) => b.textContent), ['Analisar Match com PH', 'Analisar Match com Vi<b>x</b>']);
@@ -266,9 +266,9 @@ test('popup: sem closer com inteligência, nenhum botão a mais (e a lista guard
 test('manifest: o bloco da afinidade é carregado antes dos dois content scripts, e o popup injeta a mesma lista', () => {
   const manifest = JSON.parse(ler('extension/manifest.json'));
   const grupos = manifest.content_scripts.filter((c) => c.world !== 'MAIN').map((c) => c.js);
-  assert.deepEqual(grupos, [['agenda.js', 'afinidade.js', 'content.js'], ['afinidade.js', 'content-instagram.js']]);
+  assert.deepEqual(grupos, [['agenda.js', 'afinidade.js', 'painel.js', 'content.js'], ['afinidade.js', 'content-instagram.js']]);
   const popup = ler('extension/popup.js');
-  assert.match(popup, /arquivos: \['agenda\.js', 'afinidade\.js', 'content\.js'\]/);
+  assert.match(popup, /arquivos: \['agenda\.js', 'afinidade\.js', 'painel\.js', 'content\.js'\]/);
   assert.match(popup, /arquivos: \['afinidade\.js', 'content-instagram\.js'\]/);
   assert.ok(fs.existsSync(path.join(RAIZ, 'extension', 'afinidade.js')));
 });

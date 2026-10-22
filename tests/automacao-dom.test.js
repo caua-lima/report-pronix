@@ -22,7 +22,7 @@ function servidorFalso({ automacao = true, podeResponder = true, marca = SEM_MAR
     const msg = JSON.parse(JSON.stringify(original));
     if (msg.action === 'crmLead') {
       pedidos.ficha.push(msg);
-      return { ok: true, configurado: true, encontrado: true, ficha: fichaDoRd(etapa), coach: false, ...(automacao ? { automacao: true, podeResponder, marca: { ...atual } } : {}) };
+      return { ok: true, configurado: true, encontrado: true, ficha: fichaDoRd(etapa), ...(automacao ? { automacao: true, podeResponder, marca: { ...atual } } : {}) };
     }
     if (msg.action === 'crmRespondeu') {
       pedidos.respondeu.push(msg);
@@ -267,7 +267,7 @@ test('report: leva o vínculo com o card do RD que está na tela (id do contato 
       pedidos,
       aoEnviar: async (original) => {
         const msg = JSON.parse(JSON.stringify(original));
-        if (msg.action === 'crmLead') return { ok: true, configurado: true, coach: false, ...resposta };
+        if (msg.action === 'crmLead') return { ok: true, configurado: true, ...resposta };
         if (msg.action === 'reportFetch') { pedidos.push(msg); return { ok: true, dados: {}, arquivo: 'r.pdf', arquivoBase64: 'AAAA' }; }
         return { ok: true };
       },
@@ -313,7 +313,7 @@ test('etiquetas do formulário: investimento ("R$ 3 a 5k", "R$ 5k+") e se já ve
       if (msg.action !== 'crmLead') return { ok: true };
       const ficha = { ...fichaDoRd('Respondeu'), formulario: { campos, autor: '', quando: '' } };
       return {
-        ok: true, configurado: true, encontrado: true, ficha, coach: false,
+        ok: true, configurado: true, encontrado: true, ficha,
         ...(etiquetas ? { etiquetas: true } : {}), ...(automacao ? { automacao: true, podeResponder: false, marca: SEM_MARCA } : {}),
       };
     },
@@ -358,7 +358,7 @@ test('etiquetas do formulário: investimento ("R$ 3 a 5k", "R$ 5k+") e se já ve
 test('card perdido no RD: o cartão mostra DESQUALIFICADO (ou PERDIDO) com o motivo, mesmo sem as outras etiquetas ligadas', async () => {
   const comCards = (cards, extra = {}) => ({
     aoEnviar: async (msg) => (msg.action === 'crmLead'
-      ? { ok: true, configurado: true, encontrado: true, coach: false, ficha: { ...fichaDoRd(cards.find((c) => c.escolhida).etapa), negociacoes: cards, totalNegociacoes: cards.length }, ...extra }
+      ? { ok: true, configurado: true, encontrado: true, ficha: { ...fichaDoRd(cards.find((c) => c.escolhida).etapa), negociacoes: cards, totalNegociacoes: cards.length }, ...extra }
       : { ok: true }),
   });
   const card = (campos) => ({ id: 'd1', nome: 'Marcos Pereira', etapa: 'Desqualificados', funil: 'Funil SDR', responsavel: 'Cauã Lima', criadaEm: '28/09/2026', aberta: false, perdida: true, motivoPerda: 'Nunca respondeu', notaPerda: '', escolhida: true, ...campos });
@@ -401,7 +401,7 @@ test('card perdido no RD: o cartão mostra DESQUALIFICADO (ou PERDIDO) com o mot
 test('reunião do Google Agenda: o cartão mostra dia, hora e closer, e ela vale mais que o agendamento lido na conversa', async () => {
   const comReuniao = (reuniao, marca = SEM_MARCA) => ({
     aoEnviar: async (msg) => (msg.action === 'crmLead'
-      ? { ok: true, configurado: true, encontrado: true, ficha: fichaDoRd('Qualificado'), coach: false, automacao: true, podeResponder: false, marca, reuniao }
+      ? { ok: true, configurado: true, encontrado: true, ficha: fichaDoRd('Qualificado'), automacao: true, podeResponder: false, marca, reuniao }
       : { ok: true }),
   });
   const dia = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'][new Date(2031, 2, 15).getDay()];
@@ -534,7 +534,7 @@ test('etiquetas do funil de Análise: MOMENTO vira "Já vende", FATURAMENTO vira
   const comCampos = (campos) => ({
     aoEnviar: async (msg) => {
       if (msg.action !== 'crmLead') return { ok: true };
-      return { ok: true, configurado: true, encontrado: true, ficha: { ...fichaDoRd('Sem contato'), formulario: { campos, autor: 'Gustavo Dias', quando: '' } }, coach: false, etiquetas: true };
+      return { ok: true, configurado: true, encontrado: true, ficha: { ...fichaDoRd('Sem contato'), formulario: { campos, autor: 'Gustavo Dias', quando: '' } }, etiquetas: true };
     },
   });
   const chips = (p) => [...p.document.getElementById('cr-etiquetas').querySelectorAll('span')].map((x) => x.textContent);

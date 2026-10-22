@@ -81,14 +81,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   // Ficha do lead no RD Station CRM (o token do CRM fica no servidor; aqui só vai telefone/nome).
   // Resumo rápido da conversa (botão do cartão): cenário, onde parou, última pergunta, próximo passo.
-  // O que o master liberou para esta chave (hoje: o Coach).
-  if (msg && msg.action === 'permissoes') {
-    (async () => {
-      const r = await chamar('/api/eu', null, { metodo: 'GET', timeoutMs: 20000 });
-      sendResponse(r.ok ? { ok: true, coach: Boolean(r.data.coach), papel: r.data.papel || '' } : { ok: false, erro: r.erro });
-    })();
-    return true;
-  }
 
   // O lead respondeu: o servidor avança o card para "Respondeu" no RD (só se ainda estiver antes dessa etapa).
   if (msg && msg.action === 'crmRespondeu') {
@@ -162,23 +154,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       if (!id) return sendResponse({ ok: false, erro: 'Report sem identificação.' });
       const r = await chamar('/api/reports/' + id + '/closer', { closerId: String(msg.closerId || '').slice(0, 40) }, { timeoutMs: 20000 });
       sendResponse(r.ok ? { ok: true, closerNome: r.data.closerNome || '' } : { ok: false, erro: r.erro });
-    })();
-    return true;
-  }
-
-  // Coach da conversa (Groq gratuito) e a marcação "funcionou" que o faz aprender.
-  if (msg && msg.action === 'coach') {
-    (async () => {
-      const r = await chamar('/api/coach', { mensagens: msg.mensagens, nome: msg.nome }, { timeoutMs: 65000 });
-      if (!r.ok) return sendResponse({ ok: false, erro: r.erro });
-      sendResponse({ ok: true, coach: r.data.coach, cache: r.data.cache });
-    })();
-    return true;
-  }
-  if (msg && msg.action === 'coachFeedback') {
-    (async () => {
-      const r = await chamar('/api/coach/feedback', { tipo: msg.tipo, texto: msg.texto, contexto: msg.contexto, util: msg.util }, { timeoutMs: 20000 });
-      sendResponse(r.ok ? { ok: true } : { ok: false, erro: r.erro });
     })();
     return true;
   }

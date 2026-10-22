@@ -4,7 +4,7 @@
 (function () {
   'use strict';
 
-  // As duas extensões (Report PRONIX e PRONIX Closer Report) desenham o MESMO cartão e o mesmo coach. Com as duas
+  // As duas extensões (Report PRONIX e PRONIX Closer Report) desenham o MESMO cartão. Com as duas
   // instaladas, o cartão pulava de lugar e desligar um sumia com o outro. O Report PRONIX avisa na página que é
   // ele quem desenha; o Closer Report, vendo o aviso, fica quieto.
   try {
@@ -760,7 +760,7 @@
             // quem enviou já veio do DOM (aria-label "Você:"), não sobrescreve.
             reg.content = resp.texto.trim();
             if (audiosLidos.size > 3000) audiosLidos.clear();
-            audiosLidos.set(chave, reg.content); // as dicas do coach usam sem transcrever de novo
+            audiosLidos.set(chave, reg.content); // a leitura rápida da tela usa sem transcrever de novo
           } else if (resp && resp.erro) {
             logA('transcrição falhou:', resp.erro);
           }
@@ -1179,7 +1179,7 @@
   function telefoneDoPainelDoContato() {
     const achados = new Map(); // 8 últimos dígitos -> número completo
     for (const s of document.querySelectorAll('span[dir="auto"], span.selectable-text, span[title], div[title]')) {
-      if (s.closest('#pane-side, #main, #' + FICHA_ID + ', #cr-coach, #closer-report-badge, [contenteditable="true"]')) continue;
+      if (s.closest('#pane-side, #main, #' + FICHA_ID + ', #closer-report-badge, [contenteditable="true"]')) continue;
       const t = (s.getAttribute('title') || s.textContent || '').trim();
       if (!/^\+\d{1,3}[\d\s().-]{8,20}$/.test(t)) continue;
       const d = t.replace(/\D/g, '');
@@ -1189,7 +1189,7 @@
     return achados.size === 1 ? [...achados.values()][0] : '';
   }
   const ficha = {
-    ligada: true, minimizada: false, chave: null, fechadaPara: null, seq: 0, timer: null, vigia: null, ultimoEstado: null, coach: false,
+    ligada: true, minimizada: false, chave: null, fechadaPara: null, seq: 0, timer: null, vigia: null, ultimoEstado: null,
     pos: null, // { left, top } quando o usuário arrastou o cartão; null = lugar padrão
     automacao: false, // o master ligou a automação para esta chave (mover para "Respondeu", etiqueta e agendamento)
     etiquetas: false, // o master ligou as etiquetas do formulário (investimento e se já vende)
@@ -1226,11 +1226,18 @@
   }
   // Leitura do agendamento e do "lead respondeu" (agenda.js, carregado antes deste arquivo).
   const agendaLib = (typeof globalThis !== 'undefined' && globalThis.__crAgenda) || null;
+  // Painel lateral do CRM (painel.js, carregado antes deste arquivo): mostra o mesmo estado do cartão do lead.
+  const painelLateral = (typeof globalThis !== 'undefined' && globalThis.__pnxPainel) || null;
+  /** O painel aparece só para quem tem a ficha do CRM (o servidor diz em "configurado"). */
+  function atualizarPainel(estadoDoCartao) {
+    if (!painelLateral) return;
+    if (!ficha.ligada || ficha.crmLigado === false || !estadoDoCartao || estadoDoCartao.tipo === 'sem-crm') return painelLateral.remover();
+    if (ficha.crmLigado !== true && estadoDoCartao.tipo === 'carregando') return; // ainda não se sabe se este usuário tem CRM
+    painelLateral.atualizar(estadoDoCartao, { consultar: (busca) => consultarFicha({ ...(busca || {}) }) });
+  }
   const auto = { assinatura: '', tentados: new Set() };
   // Resumo rápido por conversa (só na memória desta aba): some ao recarregar o WhatsApp.
   const resumos = new Map();
-  const coaches = new Map(); // coach da conversa, por conversa (só na memória desta aba)
-  const marcados = new Set(); // sugestões já marcadas "funcionou"/"não ajudou" nesta aba
   const audiosLidos = new Map(); // data-id da mensagem -> transcrição feita numa leitura completa (só nesta aba)
 
   /** Telefone da conversa aberta: o cabeçalho (contato não salvo mostra o número) ou o id do chat no data-id. */
@@ -1371,174 +1378,12 @@
     }
   }
 
-  // ---------------------------------------------------------------------------
-  // Coach da conversa: um popup próprio, separado do cartão da ficha. Só trabalha quando o usuário
-  // clica: "Pedir dica" lê as mensagens que já estão na tela (sem rolar a conversa nem tocar áudio);
-  // "Ler conversa inteira" faz a leitura completa, com os áudios transcritos — e as transcrições ficam
-  // lembradas nesta aba para as próximas dicas. Só para quem o master liberou o Coach.
-  // ---------------------------------------------------------------------------
-  const COACH_ID = 'cr-coach';
-  const coachUi = { minimizado: false, detalhes: false, pos: null, fechadoPara: null, emCurso: false };
-
-  const mensagensNaTela = () => acharMensagens(document.querySelector('#main') || document);
-  /** Até onde a conversa foi lida: a última mensagem na tela. Chegou mensagem nova, muda. */
-  const assinaturaDaTela = (els) => {
-    const ultimo = els.length ? els[els.length - 1] : null;
-    return [ficha.chave, ultimo ? ultimo.getAttribute('data-id') || (ultimo.textContent || '').length : ''].join('|');
-  };
-  const audiosDoLeadSemLer = (mensagens) =>
-    mensagens.filter((m) => m.from !== 'eu' && m.type === 'audio' && String(m.content || '').startsWith('[áudio')).length;
-
-  /** "Pedir dica": lê o que já está na tela (leitura leve: não rola a conversa nem toca áudio). */
-  function pedirDica() {
-    const chave = ficha.chave;
-    if (!chave || coachUi.emCurso) return;
-    const anterior = coaches.get(chave);
-    const tinha = anterior && anterior.tipo === 'ok' ? anterior : null;
-    const falhou = (erro) => coaches.set(chave, tinha ? { ...tinha, atualizando: false, erro } : { tipo: 'erro', erro });
-    if (jobEmAndamento) {
-      falhou('Espere o report ou o resumo terminarem.');
-      return renderCoach();
-    }
-    const els = mensagensNaTela();
-    const assinatura = assinaturaDaTela(els);
-    const mensagens = mensagensVisiveis(els).filter((m) => m.content);
-    if (!mensagens.length) {
-      falhou('Ainda não há mensagens nesta conversa para analisar.');
-      return renderCoach();
-    }
-    const nome = nomeDoContato();
-    coachUi.emCurso = true;
-    coaches.set(chave, tinha ? { ...tinha, atualizando: true, erro: '' } : { tipo: 'carregando' });
-    renderCoach();
-    const fim = (r) => {
-      coachUi.emCurso = false;
-      if (r && r.ok && r.coach) {
-        coaches.set(chave, { tipo: 'ok', dados: r.coach, contexto: nome || '', assinatura, quando: Date.now(), audiosSemLer: audiosDoLeadSemLer(mensagens) });
-      } else {
-        falhou((r && r.erro) || 'Não consegui gerar a dica.');
-      }
-      if (ficha.chave === chave) renderCoach();
-    };
-    try {
-      chrome.runtime.sendMessage(
-        {
-          action: 'coach',
-          mensagens: mensagens.map(({ from, type, content, timestamp }) => ({ from, type: type === 'audio' ? 'audio' : 'texto', content, timestamp })),
-          nome,
-        },
-        (r) => fim(chrome.runtime.lastError ? null : r)
-      );
-    } catch (_) {
-      fim({ ok: false, erro: 'A extensão foi atualizada: recarregue a página (F5).' });
-    }
-  }
-
-  /** "Ler conversa inteira": rola a conversa e transcreve os áudios (no mudo), como no report. */
-  async function lerConversaInteira() {
-    const chave = ficha.chave;
-    if (!chave || coachUi.emCurso) return;
-    const anterior = coaches.get(chave);
-    const tinha = anterior && anterior.tipo === 'ok' ? anterior : null;
-    const falhou = (erro) => coaches.set(chave, tinha ? { ...tinha, atualizando: false, erro } : { tipo: 'erro', erro });
-    if (jobEmAndamento) {
-      falhou('Espere o report ou o resumo terminarem.');
-      return renderCoach();
-    }
-    coachUi.emCurso = true;
-    jobEmAndamento = true;
-    capturaAtiva = true;
-    try {
-      coaches.set(chave, { tipo: 'lendo' });
-      renderCoach();
-      const badgeAntes = !!document.getElementById(BADGE_ID);
-      try {
-        const conversa = ficha.conversa;
-        const { mensagens, nome } = await coletarConversa('ficha', true);
-        anotarAgendamento(mensagens, conversa);
-        const r = await new Promise((res) => chrome.runtime.sendMessage({ action: 'coach', mensagens, nome }, res));
-        if (!r || !r.ok) throw new Error((r && r.erro) || 'Não consegui gerar a dica.');
-        coaches.set(chave, {
-          tipo: 'ok', dados: r.coach, contexto: nome || '', assinatura: assinaturaDaTela(mensagensNaTela()), quando: Date.now(),
-          audiosSemLer: audiosDoLeadSemLer(mensagens),
-        });
-      } finally {
-        // A leitura usa o aviso do report para o andamento ("Transcrevendo áudios…"): tira ao terminar.
-        const b = document.getElementById(BADGE_ID);
-        if (b && !badgeAntes) b.remove();
-      }
-    } catch (e) {
-      falhou(e.message || 'Não consegui gerar a dica.');
-    } finally {
-      jobEmAndamento = false;
-      capturaAtiva = false;
-      restaurarAudios();
-      coachUi.emCurso = false;
-      if (ficha.chave === chave) renderCoach();
-    }
-  }
-
-  /**
-   * A cada tique do vigia: mantém o popup na tela e no lugar, e avisa quando chegaram mensagens depois
-   * da dica. Não pede nada sozinho — a dica só é pedida no clique.
-   */
-  function vigiarCoach() {
-    if (!ficha.coach || !ficha.chave) return;
-    if (!document.getElementById(COACH_ID)) return renderCoach();
-    posicionarCoach();
-    const r = coaches.get(ficha.chave);
-    if (!r || r.tipo !== 'ok' || r.desatualizada || coachUi.emCurso || jobEmAndamento) return;
-    const els = mensagensNaTela();
-    if (els.length && r.assinatura !== assinaturaDaTela(els)) {
-      r.desatualizada = true;
-      renderCoach();
-    }
-  }
-
-  function enviarFeedbackCoach(tipo, textoSugestao, contexto, util, botaoEl) {
-    const id = tipo + '|' + textoSugestao;
-    if (marcados.has(id)) return;
-    marcados.add(id);
-    if (botaoEl) {
-      botaoEl.disabled = true;
-      botaoEl.textContent = util ? 'Anotado, vou lembrar' : 'Anotado';
-    }
-    try {
-      chrome.runtime.sendMessage({ action: 'coachFeedback', tipo, texto: textoSugestao, contexto, util }, () => {});
-    } catch (_) {
-      /* extensão recarregada: sem aprendizado desta vez */
-    }
-  }
-
-  function posicionarCoach() {
-    const el = document.getElementById(COACH_ID);
-    if (!el) return;
-    if (coachUi.pos) {
-      // Onde o usuário deixou, sem sair da janela.
-      const dentro = (v, max) => Math.max(4, Math.min(Number(v) || 0, Math.max(4, max)));
-      el.style.left = dentro(coachUi.pos.left, window.innerWidth - 120) + 'px';
-      el.style.top = dentro(coachUi.pos.top, window.innerHeight - 60) + 'px';
-      return;
-    }
-    // Padrão: na borda esquerda da conversa — o lado oposto ao da ficha do RD.
-    const main = document.querySelector('#main');
-    const r = main && main.getBoundingClientRect();
-    if (!r || r.width < 320) {
-      el.style.left = '16px';
-      el.style.top = '70px';
-      return;
-    }
-    el.style.left = Math.max(8, Math.round(r.left + 16)) + 'px';
-    el.style.top = Math.max(8, Math.round(r.top + 70)) + 'px';
-    el.style.width = Math.min(300, Math.round(r.width - 40)) + 'px';
-  }
-
   /** Os pontinhos no canto do topo: avisam que o popup pode ser arrastado. */
   const pegador = () => elem('span', 'flex:none;color:#a39e93;font-size:14px;line-height:1;letter-spacing:-1px', '⠿');
 
   /**
    * Arrastar pelo topo muda o popup de lugar (fica guardado); duplo clique devolve ao lugar padrão.
-   * `dono` é quem guarda a posição (ficha ou coachUi), `chave` o nome no storage e `posicionar` reaplica na tela.
+   * `dono` é quem guarda a posição (a ficha), `chave` o nome no storage e `posicionar` reaplica na tela.
    */
   function tornarArrastavel(el, alca, { dono, chave, posicionar }) {
     alca.style.cursor = 'move';
@@ -1572,175 +1417,6 @@
       guardar();
       posicionar();
     });
-  }
-
-  function renderCoach() {
-    let el = document.getElementById(COACH_ID);
-    if (!ficha.ligada || !ficha.coach || !ficha.chave || coachUi.fechadoPara === ficha.chave || !document.querySelector('#main')) {
-      if (el) el.remove();
-      return;
-    }
-    if (!el) {
-      el = document.createElement('div');
-      el.id = COACH_ID;
-      // Fora do #main, como a ficha: a leitura da conversa nunca confunde o popup com mensagem.
-      el.style.cssText = [
-        'position:fixed', 'top:70px', 'left:16px', 'z-index:2147483645', 'width:300px',
-        'max-height:calc(100vh - 150px)', 'overflow:auto', 'background:#1a191c', 'color:#f3efe6',
-        'border:1px solid #3a373f', 'border-top:3px solid #3ddc84', 'border-radius:12px', 'padding:11px 13px 12px',
-        'font:13px/1.4 Segoe UI Variable Text,Segoe UI,system-ui,-apple-system,Roboto,sans-serif', 'box-shadow:0 14px 34px rgba(0,0,0,.5)',
-      ].join(';');
-      document.body.appendChild(el);
-    }
-    el.textContent = '';
-    posicionarCoach();
-
-    const r = coaches.get(ficha.chave);
-    const d = (r && r.tipo === 'ok' && r.dados) || null;
-    const hora = d ? new Date(r.quando || Date.now()).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
-
-    // Topo: título (é por ele que se arrasta), minimizar e fechar.
-    const btnMin = botaoFicha(coachUi.minimizado ? '+' : '–', () => {
-      coachUi.minimizado = !coachUi.minimizado;
-      try {
-        chrome.storage.local.set({ coachMinimizado: coachUi.minimizado });
-      } catch (_) {
-        /* ok */
-      }
-      renderCoach();
-    });
-    btnMin.title = coachUi.minimizado ? 'Abrir o coach' : 'Minimizar';
-    const btnX = botaoFicha('×', () => {
-      coachUi.fechadoPara = ficha.chave; // só nesta conversa; volta na próxima
-      renderCoach();
-    });
-    btnX.title = 'Fechar nesta conversa';
-    const alca = elem(
-      'div',
-      'flex:1;min-width:0;user-select:none;display:flex;align-items:center;gap:6px',
-      pegador(),
-      elem(
-        'div',
-        'flex:1;min-width:0',
-        elem('div', 'font-size:10.5px;color:#3ddc84;font-weight:600;letter-spacing:.14em;font-family:Bahnschrift,DIN Alternate,Roboto Condensed,Arial Narrow,sans-serif', 'COACH'),
-        elem('div', 'font-size:11px;color:#a39e93', d ? 'dica de ' + hora : 'dica quando você pedir')
-      )
-    );
-    alca.title = 'Arraste para mudar de lugar (duplo clique volta ao lugar padrão)';
-    tornarArrastavel(el, alca, { dono: coachUi, chave: 'coachPos', posicionar: posicionarCoach });
-    el.appendChild(elem('div', 'display:flex;align-items:center;gap:6px', alca, btnMin, btnX));
-
-    const agora = d ? d.agora || d.comoAbordar : '';
-    const caixaAgora = () =>
-      elem(
-        'div',
-        'margin-top:8px;background:#121113;border:1px solid #3a373f;border-top:2px solid #3ddc84;border-radius:8px;padding:7px 9px',
-        elem('div', 'font-size:10.5px;color:#3ddc84;font-weight:600;letter-spacing:.14em;font-family:Bahnschrift,DIN Alternate,Roboto Condensed,Arial Narrow,sans-serif', 'AGORA'),
-        elem('div', '', agora)
-      );
-    if (coachUi.minimizado) {
-      if (agora) el.appendChild(caixaAgora()); // minimizado: só a dica do momento
-      return;
-    }
-
-    const corpo = elem('div', 'margin-top:2px');
-    el.appendChild(corpo);
-    const nota = (t, cor) => elem('div', `margin-top:8px;font-size:12px;color:${cor || '#a39e93'}`, t);
-    const controles = (rotuloPedir) => {
-      const linha = elem('div', 'display:flex;flex-wrap:wrap;gap:6px;margin-top:8px');
-      const mini = (b) => {
-        b.style.cssText += ';padding:4px 8px;font-size:11.5px';
-        return b;
-      };
-      const pedir = mini(botaoFicha(rotuloPedir, pedirDica, true));
-      pedir.title = 'Lê as mensagens que estão na tela (não rola a conversa nem toca áudio).';
-      linha.appendChild(pedir);
-      const inteira = mini(botaoFicha('Ler conversa inteira', lerConversaInteira));
-      inteira.title = 'Rola a conversa e transcreve os áudios (no mudo). Não troque de conversa enquanto lê.';
-      linha.appendChild(inteira);
-      return linha;
-    };
-
-    if (!r) {
-      corpo.appendChild(nota('Peça a dica de como seguir nesta conversa: perfil do lead, o que fazer agora e a próxima mensagem.'));
-      corpo.appendChild(controles('Pedir dica'));
-      return;
-    }
-    if (r.tipo === 'carregando') return void corpo.appendChild(nota('Lendo as últimas mensagens…'));
-    if (r.tipo === 'lendo') return void corpo.appendChild(nota('Lendo a conversa inteira e os áudios… não troque de conversa.'));
-    if (r.tipo === 'erro') {
-      corpo.appendChild(nota(r.erro, '#ff6f5c'));
-      corpo.appendChild(controles('Tentar de novo'));
-      return;
-    }
-
-    // Dica pronta: o que fazer agora e a mensagem para mandar; a análise completa fica recolhida.
-    const util = (tipo, textoSug, contexto) => {
-      const b = botaoFicha(marcados.has(tipo + '|' + textoSug) ? 'Anotado' : 'Funcionou', () => enviarFeedbackCoach(tipo, textoSug, contexto, true, b));
-      b.style.cssText += ';margin-top:4px;padding:3px 7px;font-size:11px';
-      if (marcados.has(tipo + '|' + textoSug)) b.disabled = true;
-      return b;
-    };
-    const rotulo = (t) => elem('div', 'font-size:10.5px;color:#a39e93;text-transform:uppercase;letter-spacing:.1em;font-family:Bahnschrift,DIN Alternate,Roboto Condensed,Arial Narrow,sans-serif;margin-top:8px', t);
-    const perfil = d.perfil && d.perfil.tipo;
-    if (agora) corpo.appendChild(caixaAgora());
-    if (d.proximaMensagem) {
-      corpo.appendChild(rotulo('Próxima mensagem'));
-      corpo.appendChild(elem('div', 'white-space:pre-wrap;background:#121113;border:1px solid #3a373f;border-radius:7px;padding:6px 8px;margin-top:2px', d.proximaMensagem));
-      const copiar = botaoFicha('Copiar', async () => {
-        try {
-          await navigator.clipboard.writeText(d.proximaMensagem);
-          copiar.textContent = 'Copiado';
-        } catch (_) {
-          copiar.textContent = 'Selecione e copie';
-        }
-      });
-      copiar.style.cssText += ';margin:4px 6px 0 0;padding:3px 7px;font-size:11px';
-      corpo.appendChild(copiar);
-      corpo.appendChild(util('mensagem', d.proximaMensagem, perfil));
-    }
-    if (perfil) {
-      corpo.appendChild(elem('div', 'margin-top:8px', elem('span', 'color:#a39e93', 'Perfil do lead: '), elem('span', 'color:#ffc233;font-weight:700;text-transform:capitalize', perfil)));
-    }
-
-    const det = document.createElement('details');
-    det.style.cssText = 'margin-top:8px;padding-top:6px;border-top:1px solid #3a373f';
-    det.open = coachUi.detalhes;
-    det.addEventListener('toggle', () => {
-      coachUi.detalhes = det.open;
-    });
-    det.appendChild(elem('summary', 'cursor:pointer;color:#a39e93;font-size:12px', 'Análise completa'));
-    if (d.perfil && d.perfil.evidencia) det.appendChild(elem('div', 'font-size:12px;color:#d5d0c5;margin-top:6px', d.perfil.evidencia));
-    if (d.comoAbordar) {
-      det.appendChild(rotulo('Como abordar'));
-      det.appendChild(elem('div', '', d.comoAbordar));
-      det.appendChild(util('abordagem', d.comoAbordar, perfil));
-    }
-    if ((d.faltaLevantar || []).length) {
-      det.appendChild(rotulo('Ainda falta levantar'));
-      d.faltaLevantar.forEach((f) => det.appendChild(elem('div', 'margin-top:2px', '• ' + f)));
-    }
-    (d.objecoes || []).forEach((o) => {
-      det.appendChild(rotulo('Objeção: ' + o.objecao));
-      det.appendChild(elem('div', 'white-space:pre-wrap', o.resposta));
-      det.appendChild(util('objecao', o.resposta, o.objecao));
-    });
-    if ((d.perguntas || []).length) {
-      det.appendChild(rotulo('Perguntas para aprofundar'));
-      d.perguntas.forEach((p) => {
-        det.appendChild(elem('div', 'margin-top:4px', '• ' + p));
-        det.appendChild(util('pergunta', p, perfil));
-      });
-    }
-    corpo.appendChild(det);
-
-    if (r.erro) corpo.appendChild(nota(r.erro, '#ff6f5c'));
-    else if (r.atualizando) corpo.appendChild(nota('Atualizando a dica…'));
-    else if (r.desatualizada) corpo.appendChild(nota('Chegaram mensagens depois desta dica. Clique em Atualizar para ver a nova.', '#f2a93b'));
-    if (r.audiosSemLer) {
-      corpo.appendChild(nota(`${r.audiosSemLer} áudio(s) do lead ainda sem leitura: "Ler conversa inteira" transcreve.`, '#f2a93b'));
-    }
-    corpo.appendChild(controles('Atualizar'));
   }
 
   // ---------------------------------------------------------------------------
@@ -2353,6 +2029,7 @@
   }
 
   function renderFicha(estado) {
+    atualizarPainel(estado); // o painel lateral acompanha o cartão, mesmo com o cartão fechado nesta conversa
     if (!ficha.ligada || (ficha.fechadaPara && ficha.fechadaPara === ficha.chave)) return;
     ficha.ultimoEstado = estado;
     let el = document.getElementById(FICHA_ID);
@@ -2491,9 +2168,15 @@
     }
   }
 
+  // Fichas que esta aba já buscou (10 min): voltar a uma conversa mostra o lead na hora; a busca nova só atualiza.
+  const fichasRecentes = new Map();
+  const chaveDaBusca = (b) => JSON.stringify([b.telefone || '', b.nome || '', b.contatoId || '', b.dealId || '']);
   async function consultarFicha(busca) {
     const seq = ++ficha.seq;
-    renderFicha({ tipo: 'carregando', busca });
+    const guardada = fichasRecentes.get(chaveDaBusca(busca));
+    const mostrada = guardada && Date.now() - guardada.em < 10 * 60 * 1000 ? guardada.json : '';
+    if (mostrada) mostrarResposta(JSON.parse(mostrada), busca);
+    else renderFicha({ tipo: 'carregando', busca });
     let r;
     try {
       r = await new Promise((res) => chrome.runtime.sendMessage({ action: 'crmLead', ...busca, ...(ficha.conversa ? { conversa: ficha.conversa } : {}) }, res));
@@ -2501,19 +2184,31 @@
       // Extensão atualizada/recarregada: este script ficou órfão. Para de vigiar em silêncio.
       clearInterval(ficha.vigia);
       esconderFicha();
+      if (painelLateral) painelLateral.remover();
       return;
     }
     if (seq !== ficha.seq) return; // resposta de uma conversa que o SDR já deixou
-    if (r && typeof r.coach === 'boolean') ficha.coach = r.coach; // o servidor diz se este usuário vê o Coach
-    renderCoach();
+    const json = r && r.ok ? JSON.stringify(r) : '';
+    if (json) {
+      fichasRecentes.set(chaveDaBusca(busca), { json, em: Date.now() });
+      if (fichasRecentes.size > 200) fichasRecentes.delete(fichasRecentes.keys().next().value);
+    }
+    // Veio igual ao que já está na tela: o cartão fica como está (e o que o SDR estava fazendo nele também).
+    if (mostrada && json === mostrada) return;
+    mostrarResposta(r, busca);
+  }
+
+  /** Desenha o cartão (e o painel lateral) com a resposta do servidor — a nova ou a guardada desta aba. */
+  function mostrarResposta(r, busca) {
     if (!r || !r.ok) return renderFicha({ tipo: 'erro', erro: (r && r.erro) || 'Não consegui consultar o RD Station.', busca });
     // Automação (mover para "Respondeu", etiqueta e agendamento): o servidor diz se o master ligou para esta chave.
     ficha.automacao = r.automacao === true;
     ficha.etiquetas = r.etiquetas === true; // etiquetas do formulário: permissão própria
     const extras = ficha.automacao ? { marca: r.marca || null, podeResponder: r.podeResponder === true, reuniao: r.reuniao || null } : {};
-    // Sem ficha do RD para este usuário (CRM desligado no servidor ou popup do lead desligado):
-    // quem tem o Coach continua vendo o cartão, só com o resumo e o coach.
-    if (!r.configurado) return ficha.coach ? renderFicha({ tipo: 'sem-crm', busca, ...extras }) : esconderFicha();
+    // Sem ficha do CRM para este usuário (CRM desligado no servidor ou popup do lead desligado): sem cartão.
+    ficha.crmLigado = r.configurado === true;
+    if (!r.configurado) painelLateral && painelLateral.remover();
+    if (!r.configurado) return esconderFicha();
     if (r.encontrado && r.ficha) return renderFicha({ tipo: 'ok', ficha: r.ficha, busca, ...extras });
     if (r.candidatos && r.candidatos.length) return renderFicha({ tipo: 'candidatos', candidatos: r.candidatos, busca, ...extras });
     renderFicha({ tipo: 'nao-encontrado', busca, ...extras });
@@ -2536,7 +2231,7 @@
       ficha.chave = null;
       ficha.conversa = null;
       esconderFicha();
-      renderCoach();
+      if (painelLateral && ficha.crmLigado === true) painelLateral.atualizar({ tipo: 'sem-conversa' });
       return;
     }
     let telefone = telefoneDaConversa();
@@ -2559,46 +2254,31 @@
     const chave = telefone || nome;
     if (!chave) return;
     if (chave === ficha.chave) {
+      // A cada volta do vigia (0,4 s): a automação (Respondeu, etiqueta) é leve — só trabalha quando a tela mudou.
       automatizar();
-      vigiarCoach();
       return;
     }
     ficha.chave = chave;
     ficha.conversa = { telefone, nome };
     ficha.ultimoEstado = null; // o que estava na tela era da conversa anterior
     ficha.fechadaPara = null;
-    coachUi.fechadoPara = null;
-    renderCoach();
     clearTimeout(ficha.timer);
-    ficha.timer = setTimeout(() => consultarFicha({ telefone, nome: telefone && nome.replace(/\D/g, '') === telefone ? '' : nome }), 700);
+    ficha.timer = setTimeout(() => consultarFicha({ telefone, nome: telefone && nome.replace(/\D/g, '') === telefone ? '' : nome }), 250);
   }
 
   try {
-    chrome.storage.local.get({ fichaCrm: true, fichaCrmMinimizada: false, fichaPos: null, coachMinimizado: false, coachPos: null }, (c) => {
+    chrome.storage.local.get({ fichaCrm: true, fichaCrmMinimizada: false, fichaPos: null }, (c) => {
       const lugar = (p) => (p && Number.isFinite(p.left) && Number.isFinite(p.top) ? { left: p.left, top: p.top } : null);
       ficha.ligada = c.fichaCrm !== false;
       ficha.minimizada = !!c.fichaCrmMinimizada;
       ficha.pos = lugar(c.fichaPos);
-      coachUi.minimizado = !!c.coachMinimizado;
-      coachUi.pos = lugar(c.coachPos);
-      // O Coach não depende da ficha do RD: a permissão vem da chave (e o cartão se redesenha se já estiver na tela).
-      try {
-        chrome.runtime.sendMessage({ action: 'permissoes' }, (r) => {
-          if (chrome.runtime.lastError || !r || !r.ok || typeof r.coach !== 'boolean') return;
-          const antes = ficha.coach;
-          ficha.coach = Boolean(r.coach);
-          if (ficha.coach !== antes) renderCoach();
-        });
-      } catch (_) {
-        /* sem a permissão o cartão segue como a ficha disser */
-      }
       ficha.vigia = setInterval(() => {
         try {
           verificarConversa();
         } catch (_) {
           /* uma falha de leitura do DOM não pode derrubar o vigia */
         }
-      }, 1500);
+      }, 400); // a troca de conversa aparece em menos de meio segundo
     });
     if (chrome.storage.onChanged) {
       chrome.storage.onChanged.addListener((mud) => {
@@ -2606,7 +2286,6 @@
         ficha.ligada = mud.fichaCrm.newValue !== false;
         if (!ficha.ligada) {
           esconderFicha();
-          renderCoach();
         }
         ficha.chave = null; // ao religar, busca de novo a conversa aberta
       });
