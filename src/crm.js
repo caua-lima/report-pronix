@@ -550,7 +550,8 @@ async function consultarLead(busca = {}, opcoes = {}) {
       // Lead que se inscreveu mais de uma vez costuma ter mais de um contato com o mesmo telefone
       // (às vezes escrito de outro jeito): junta todos, para as negociações de todos entrarem na escolha.
       const iguais = [];
-      for (const variante of variantesTelefone(telefone)) {
+      // O PronixCRM já acha o telefone com ou sem o 55 e com ou sem o nono dígito: uma consulta basta.
+      for (const variante of (ehPronix() ? variantesTelefone(telefone).slice(0, 1) : variantesTelefone(telefone))) {
         const r = await rd('/contacts', { phone: variante, limit: 10 });
         const achados = await comDetalhe((r && r.contacts) || [], detalhados);
         const certos = achados.filter((c) => contatoTemTelefone(c, telefone));
@@ -820,29 +821,50 @@ async function listarNegociacoes(filtros = {}, { maxPaginas = 40 } = {}) {
 /**
  * O detalhe de várias negociações (com closed_at, campos, motivo, produtos, contatos e histórico de etapas),
  * 8 de cada vez. Recebe ids ou as negociações da lista: com updated_at, o detalhe fica guardado por id + updated_at
- * (2 dias) — abrir o Match de novo só relê o que mudou, e o limite do CRM (600 por minuto) não estoura.
+ * (20 dias) — abrir o Match de novo só relê o que mudou, e o limite do CRM (600 por minuto) não estoura.
  */
-async function detalhesDe(itens, { concorrencia = 8 } = {}) {
+async function detalhesDe(itens, { concorrencia = 8, porSegundo = 8, prazoMs = 0 } = {}) {
   const vistos = new Set();
   const lista = (itens || [])
     .map((x) => (typeof x === 'object' && x ? { id: idDe(x), versao: String(x.updated_at || '') } : { id: String(x || ''), versao: '' }))
     .filter((x) => /^[A-Za-z0-9_-]{1,40}$/.test(x.id) && !vistos.has(x.id) && vistos.add(x.id));
   const chave = (x) => `crm:det:${x.id}:${x.versao}`;
+  // Ritmo: no máximo porSegundo leituras novas por segundo (o CRM aceita 600 por minuto, e a extensão de todo
+  // mundo usa o mesmo token). Com prazoMs, para quando o tempo acaba (a Vercel corta em 60 s) e diz quantas
+  // faltaram — o que já foi lido fica guardado, e a próxima rodada continua dali.
+  const t0 = Date.now();
+  let lidasDaRede = 0;
+  let parar = false;
   const ler = async (x) => {
     if (x.versao) {
       const g = await db.cacheGet(chave(x)).catch(() => null);
       if (g) { try { return JSON.parse(g); } catch (_) { /* relê */ } }
     }
-    const d = await module.exports.rd(`/deals/${encodeURIComponent(x.id)}`).catch(() => null);
-    if (d && x.versao) await db.cacheSet(chave(x), JSON.stringify(d), 2 * 24 * 3600).catch(() => {});
+    if (parar) return null;
+    lidasDaRede++;
+    const d = await module.exports.rd(`/deals/${encodeURIComponent(x.id)}`).catch((e) => {
+      if (/limitou as consultas/.test(e.message)) parar = true; // 429: para e deixa o resto para a próxima
+      return null;
+    });
+    if (d && x.versao) await db.cacheSet(chave(x), JSON.stringify(d), 20 * 24 * 3600).catch(() => {}); // a chave muda quando a negociação muda
     return d;
   };
   const saida = [];
-  for (let i = 0; i < lista.length; i += concorrencia) {
+  let i = 0;
+  for (; i < lista.length && !parar; i += concorrencia) {
+    if (prazoMs && Date.now() - t0 > prazoMs) break;
     const lote = await Promise.all(lista.slice(i, i + concorrencia).map(ler));
     saida.push(...lote.filter(Boolean));
+    const adiantado = lidasDaRede / porSegundo * 1000 - (Date.now() - t0);
+    if (adiantado > 0) await new Promise((r) => setTimeout(r, adiantado));
   }
+  saida.pendentes = Math.max(0, lista.length - saida.length);
   return saida;
+}
+
+/** Os funis dos closers (nome com "closer"): é onde fica o card depois da reunião. */
+async function funisDosClosers() {
+  return (await funis()).filter((f) => /closer/i.test(f.nome));
 }
 
 /** Depois de escrever num card: a ficha do lead em cache está velha, a próxima consulta busca de novo. */
@@ -863,6 +885,7 @@ module.exports = {
   usuarioDoCrm,
   listarNegociacoes,
   detalhesDe,
+  funisDosClosers,
   mudarEtapa,
   perderCard,
   funis,
