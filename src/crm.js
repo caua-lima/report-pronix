@@ -268,10 +268,15 @@ async function comDetalhe(contatos, detalhados) {
     const id = idDe(c);
     if (!id) return c;
     if (!detalhados.has(id)) {
-      detalhados.set(id, rd(`/contacts/${encodeURIComponent(id)}`).then((r) => (r && (r.contact || r)) || null).catch(() => null));
+      // O detalhe e as negociações do contato vão juntos (uma ida ao CRM a menos na fila da ficha).
+      detalhados.set(id, Promise.all([
+        rd(`/contacts/${encodeURIComponent(id)}`).then((r) => (r && (r.contact || r)) || null).catch(() => null),
+        rd('/deals', { contact_id: id, limit: 50 }).then((r) => (r && r.deals) || null).catch(() => null),
+      ]));
     }
-    const d = await detalhados.get(id);
-    return d ? { ...c, phones: d.phones || c.phones || [], emails: d.emails || c.emails || [], contact_custom_fields: d.contact_custom_fields || c.contact_custom_fields } : c;
+    const [d, deals] = await detalhados.get(id);
+    const base = deals ? { ...c, deals: deals.slice().reverse() } : c; // do mais antigo para o mais novo, como no RD
+    return d ? { ...base, phones: d.phones || c.phones || [], emails: d.emails || c.emails || [], contact_custom_fields: d.contact_custom_fields || c.contact_custom_fields, _detalhado: true } : base;
   }));
 }
 
@@ -312,6 +317,15 @@ async function montarFicha(contato, extras = [], preferido = '') {
     }
   }));
   const candidatos = dealsBrutos.slice(-MAX_CARDS);
+  // PronixCRM: a lista já diz qual card é o provável (aberto, mexido por último): as anotações dele, os usuários e
+  // os campos começam a vir JUNTO com o detalhe das negociações, em vez de esperar por ele.
+  const provavel = ehPronix() ? escolherCard(candidatos, preferido) : null;
+  const idProvavel = provavel ? idDe(provavel) : null;
+  const atividadesProvavel = idProvavel ? atividadesDoCard(idProvavel).catch(() => null) : null;
+  const usuariosJa = usuarios();
+  const camposJa = camposDoContato();
+  usuariosJa.catch(() => {});
+  camposJa.catch(() => {});
   const detalhes = (await Promise.all(candidatos.map((d) => rd(`/deals/${encodeURIComponent(idDe(d))}`).catch(() => null)))).map(
     (det, i) => (det ? { ...candidatos[i], ...det } : candidatos[i])
   );
@@ -319,9 +333,9 @@ async function montarFicha(contato, extras = [], preferido = '') {
   const idNeg = escolhido ? idDe(escolhido) : null;
   const deal = escolhido || null;
   const [atividades, users, rotulosContato] = await Promise.all([
-    idNeg ? atividadesDoCard(idNeg) : null,
-    usuarios(),
-    camposDoContato(),
+    idNeg ? (idNeg === idProvavel ? atividadesProvavel : atividadesDoCard(idNeg)) : null,
+    usuariosJa,
+    camposJa,
   ]);
   const nomeDe = new Map();
   const cards = detalhes.map((d) => ({
@@ -342,6 +356,7 @@ async function montarFicha(contato, extras = [], preferido = '') {
     fechadaEm: d.closed_at || '',
     atualizadaEm: d.updated_at || '',
     escolhida: idDe(d) === idNeg,
+    url: linkDoCard(idDe(d)), // o painel lateral abre cada negociação direto no CRM
   })).reverse(); // o mais novo primeiro
   void nomeDe;
   const nomeUsuario = new Map(users.map((u) => [u.id, u.nome]));
