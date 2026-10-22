@@ -128,6 +128,8 @@ async function contexto(usuario, funilId) {
  * primeiro nome ("Cauã"). Sem o campo no RD, segue sem ele (com aviso); com opções e nenhuma dele, erro.
  */
 async function sdrDoUsuario(usuario) {
+  // No PronixCRM o SDR é uma coluna da negociação, gravada pelo próprio CRM: não se escreve pelo campo.
+  if (crm.ehPronix()) return { sdr: null, aviso: '' };
   const campos = await emCache('crm:campos-negociacao', async () =>
     lista(await crm.rd('/custom_fields', { for: 'deal' }), 'custom_fields').map((c) => ({
       id: idDe(c), rotulo: crm.consertarAcentos(c.label || ''), opcoes: lista(c.opts || c.options || []).map((o) => crm.consertarAcentos(String(o))),
@@ -168,10 +170,7 @@ async function desqualificarCard({ usuario, dealId, motivoId }) {
   // responde se faltar algo e o cartão mostra o motivo.
   const { sdr } = await sdrDoUsuario(usuario).catch(() => ({ sdr: null }));
 
-  const resp = await crm.rd(`/deals/${encodeURIComponent(id)}`, {}, {
-    metodo: 'PUT',
-    corpo: { ...(dest && dest.id !== de.id ? { deal_stage_id: dest.id } : {}), deal: { win: false, deal_lost_reason_id: motivo.id, deal_custom_fields: camposComSdr(deal, sdr) } },
-  });
+  const resp = await crm.perderCard(deal, { motivoId: motivo.id, etapaId: dest && dest.id !== de.id ? dest.id : '', camposRd: camposComSdr(deal, sdr) });
   if (!resp) throw new Error('O RD não achou o card na hora de gravar.');
   if (resp.win !== undefined && resp.win !== false) throw new Error('O RD respondeu, mas não marcou a perda.');
 
@@ -190,7 +189,8 @@ async function cardsDaEtapa(etapaId, usuarioRdId) {
   for (let page = 1; page <= MAX_PAGINAS; page++) {
     const r = await crm.rd('/deals', { deal_stage_id: etapaId, win: 'null', limit: 200, page, user_id: usuarioRdId || undefined });
     const pagina = lista(r, 'deals');
-    todos.push(...pagina);
+    // O PronixCRM ignora win e user_id na lista: em aberto e o dono são conferidos aqui (no RD já vêm assim).
+    todos.push(...(crm.ehPronix() ? pagina.filter((d) => aberto(d) && (!usuarioRdId || idDe(d.user) === String(usuarioRdId))) : pagina));
     if (pagina.length < 200 || (r && r.has_more === false)) break;
   }
   return todos;
@@ -205,7 +205,7 @@ function emailDoCard(deal) {
   return todos[0] || '';
 }
 /** Endereço do card no RD, para abrir direto. */
-const linkDoCard = (id) => `https://crm.rdstation.com/app/deals/${encodeURIComponent(id)}`;
+const linkDoCard = (id) => crm.linkDoCard(id);
 
 const cardPublico = (d, regra, dias) => ({
   id: idDe(d), nome: crm.consertarAcentos(d.name || '').slice(0, 120), etapa: regra.etapa.nome, motivo: regra.rotulo, dias,
@@ -286,10 +286,7 @@ async function executar({ usuario, ids, dias, escopo, funil, execucao }) {
       const parado = diasParado(deal);
       if (parado === null || parado <= minimo) { pular('teve movimento recente'); continue; }
 
-      const resp = await crm.rd(`/deals/${encodeURIComponent(id)}`, {}, {
-        metodo: 'PUT',
-        corpo: { deal_stage_id: ctx.destino.id, deal: { win: false, deal_lost_reason_id: regra.motivo.id, deal_custom_fields: camposComSdr(deal, ctx.sdr) } },
-      });
+      const resp = await crm.perderCard(deal, { motivoId: regra.motivo.id, etapaId: ctx.destino.id, camposRd: camposComSdr(deal, ctx.sdr) });
       if (!resp) throw new Error('o RD não achou o card na hora de gravar');
       const etapaNova = idDe(resp.deal_stage);
       if (etapaNova && etapaNova !== ctx.destino.id) throw new Error('o RD respondeu, mas o card não mudou de etapa');
@@ -376,7 +373,7 @@ async function cardsDoFunil(funilId, usuarioRdId) {
   for (let page = 1; page <= MAX_PAGINAS; page++) {
     const r = await crm.rd('/deals', { deal_pipeline_id: funilId, win: 'null', limit: 200, page, user_id: usuarioRdId });
     const pagina = lista(r, 'deals');
-    todos.push(...pagina);
+    todos.push(...(crm.ehPronix() ? pagina.filter((d) => aberto(d) && (!usuarioRdId || idDe(d.user) === String(usuarioRdId))) : pagina));
     if (pagina.length < 200 || (r && r.has_more === false)) break;
   }
   return todos;
@@ -500,10 +497,7 @@ async function fecharDuplicados({ usuario, pares, funil, execucao }) {
       if (!mesmoLead) { pular('os dois cards não têm mais e-mail ou telefone em comum'); continue; }
       if (ordem(deal) > ordem(fica)) { pular('passou a ser o card mais adiantado do lead'); continue; }
 
-      const resp = await crm.rd(`/deals/${encodeURIComponent(id)}`, {}, {
-        metodo: 'PUT',
-        corpo: { deal_stage_id: ctx.destino.id, deal: { win: false, deal_lost_reason_id: ctx.motivoDuplicado.id, deal_custom_fields: camposComSdr(deal, ctx.sdr) } },
-      });
+      const resp = await crm.perderCard(deal, { motivoId: ctx.motivoDuplicado.id, etapaId: ctx.destino.id, camposRd: camposComSdr(deal, ctx.sdr) });
       if (!resp) throw new Error('o RD não achou o card na hora de gravar');
       const etapaNova = idDe(resp.deal_stage);
       if (etapaNova && etapaNova !== ctx.destino.id) throw new Error('o RD respondeu, mas o card não mudou de etapa');
@@ -582,6 +576,8 @@ async function relatoriosSalvos({ limite = 60 } = {}) {
  */
 async function desfazer({ usuario, ids }) {
   if (!crm.moverLigado()) throw new Error('A escrita no RD está desligada no servidor (CRM_MOVER_ETAPA=0).');
+  // A API do PronixCRM não reabre negociação perdida (é pela tela do CRM, com permissão própria).
+  if (crm.ehPronix()) throw new Error('No CRM novo, reabrir uma negociação perdida é pela tela do CRM (a API não reabre). Abra o card pelo link e use "Reabrir".');
   const pedidos = [...new Set((Array.isArray(ids) ? ids : []).map(String))].slice(0, LOTE_MAX);
   const registro = await db.range(CHAVE_LOG);
   const saida = { desfeitos: [], erros: [] };
