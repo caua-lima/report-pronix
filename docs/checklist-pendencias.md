@@ -11,6 +11,14 @@ Detalhes técnicos em [`auditoria-pronix.md`](auditoria-pronix.md) e [`plano-imp
 - [x] 117 testes automáticos (`npm test`), sem rede e sem custo
 - [x] Merge local na `main`
 
+## Novo em 22/10: painel lateral do CRM, cartão mais rápido e sem coach (extensão 1.6.5 + servidor)
+
+- [x] Painel lateral fixo à direita do WhatsApp Web, como o do RD Station: lead, telefones, e-mails, reunião, todas as negociações (status, funil › etapa, responsável, valor, motivo da perda), formulário e últimas anotações
+- [x] Clicar numa negociação abre o card no CRM numa aba nova; "»" recolhe o painel numa aba (fica lembrado)
+- [x] Cartão mais rápido: troca de conversa percebida em 0,4 s, ficha guardada na aba por 10 min, pedidos ao CRM em paralelo
+- [x] Coach removido (extensão, servidor, painel, acessos e testes); pintar a reunião no Google Agenda continua
+- [ ] **Você:** enviar a extensão 1.6.5 à loja e conferir o painel numa conversa real
+
 ## Novo em 06 e 07/10: agenda, RD e painel (extensão 1.12.6 + servidor)
 
 - [x] Reunião do lead pelo Google Agenda no cartão (dia, hora e closer) e cor do pré-vendedor no evento
@@ -66,7 +74,7 @@ Detalhes técnicos em [`auditoria-pronix.md`](auditoria-pronix.md) e [`plano-imp
 - [x] Report manual em formato de chat
 - [ ] **Você:** `git push origin main` e enviar a extensão 1.10.0 à loja
 - [ ] **Você:** mandar a lista de closers (ou cadastrar na aba Closers)
-- [ ] **Você:** abrir o popup da extensão e conferir "Extensão v1.10.0 · Coach: liberado"; se o coach der erro, me mande a mensagem exata
+- [x] ~~**Você:** abrir o popup da extensão e conferir "Extensão v1.10.0 · Coach: liberado"; se o coach der erro, me mande a mensagem exata~~ (o coach saiu em 22/10)
 - [ ] **Você:** conferir a aba Base (o texto recomendado entrou no lugar do antigo; "Voltar aos textos anteriores" desfaz)
 - [ ] **Você:** gerar 2 ou 3 reports reais e conferir nível de consciência, perfil e a narração; corrigir na aba Resultados o que vier errado
 - [ ] Ainda não lê PDF/Word no chat manual (só áudio, print e texto)
@@ -81,7 +89,7 @@ Detalhes técnicos em [`auditoria-pronix.md`](auditoria-pronix.md) e [`plano-imp
 - [x] Botão "Coach da conversa" no cartão: perfil do lead, como abordar, objeções com resposta e perguntas (Groq gratuito); aprende com "Funcionou"
 - [x] Só para quem o master ligar (aba Acessos → Coach); padrão: só o master
 - [ ] **Você:** conferir que `GROQ_API_KEY` está na Vercel (é a mesma da transcrição) e enviar a extensão 1.9.0 à loja
-- [ ] **Você:** testar em 2 ou 3 conversas reais; se as sugestões vierem genéricas, me mande um exemplo para ajustar o prompt ou trocar o modelo (`GROQ_COACH_MODEL`)
+- [x] ~~**Você:** testar em 2 ou 3 conversas reais; se as sugestões vierem genéricas, me mande um exemplo para ajustar o prompt ou trocar o modelo (`GROQ_COACH_MODEL`)~~ (o coach saiu em 22/10)
 
 ## Novo em 29/09: ficha automática + resumo rápido (extensão 1.8.0 + servidor)
 

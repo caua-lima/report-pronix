@@ -5,8 +5,8 @@ handoff em PDF** para o closer — com um clique, direto do **WhatsApp Web** ou 
 Direct**, lendo o histórico inteiro e transcrevendo os áudios.
 
 Em volta do report, a ferramenta virou a mesa de trabalho do pré-vendedor: mostra a **ficha do
-lead no RD Station** ao lado da conversa, resume onde a conversa parou, tem um **coach gratuito**
-que lê o perfil do lead e sugere a próxima mensagem, move o card no RD quando o lead responde e
+lead no RD Station** ao lado da conversa, resume onde a conversa parou, abre um **painel lateral** com o lead e as negociações (um clique leva ao
+card no CRM), move o card no CRM quando o lead responde e
 acumula dados para responder, com número, **qual closer fecha com qual tipo de lead** e **o que
 funciona na prospecção**.
 
@@ -41,12 +41,12 @@ aberta e logada.
 
 | Para quem | O quê |
 | --- | --- |
-| **Pré-vendedor (SDR)** | Report em PDF com um clique; ficha do lead do RD ao abrir a conversa; resumo rápido para retomar um lead; coach em popup com a dica de como seguir; .zip com os reports do dia. |
+| **Pré-vendedor (SDR)** | Report em PDF com um clique; ficha do lead do RD ao abrir a conversa; resumo rápido para retomar um lead; painel lateral com as negociações do lead, cada uma com link para o card no CRM; .zip com os reports do dia. |
 | **Closer** | Handoff de até 2 páginas: resumo, perfil do lead e como conduzir, nível de consciência, sinais de compra, como foi a conversa e a fala pronta para abrir a reunião. |
 | **Gestão** | Custo por report e por SDR, PDFs de toda a equipe, resultado de cada reunião, matriz closer × perfil de lead, padrões da prospecção que fecha e insights escritos por IA gratuita. |
 
 **Custo:** só a geração do report (Anthropic) é paga. Transcrição de áudio, leitura de print,
-coach, insights, ficha do RD e a automação do cartão não têm custo por uso.
+insights, ficha do CRM e a automação do cartão não têm custo por uso.
 
 ---
 
@@ -129,8 +129,7 @@ Além do papel, o master liga quatro recursos **por pessoa** na aba Acessos:
 
 | Recurso | Padrão | O que libera |
 | --- | --- | --- |
-| **Popup do lead** | ligado para todos | Ficha do RD e resumo rápido no WhatsApp. |
-| **Coach** | só o master | Popup do coach: a dica de como seguir, quando você pede. |
+| **Popup do lead** | ligado para todos | Ficha do CRM, painel lateral e resumo rápido no WhatsApp. |
 | **Automação RD** | só o master | Mover o card para "Respondeu", etiqueta "Qualificado" e agendamento. |
 | **Etiquetas** | só o master | No cartão, o investimento do formulário ("R$ 3 a 5k", "R$ 5k+") e se o lead já vende. |
 | **Cor na agenda** | master: Banana; demais: nenhuma | A cor com que as reuniões dos leads da pessoa são pintadas no Google Agenda. O master já começa na Banana sem configurar; "Não pintar" escolhido à mão é respeitado. |
@@ -262,9 +261,30 @@ as reuniões realizadas e as vendas em que você foi o SDR — mês a mês, com 
 
 ## O cartão do lead no WhatsApp
 
-Ao abrir uma conversa no WhatsApp Web, um cartão aparece encostado na borda direita da conversa —
-e, para quem tem o Coach, o popup dele na borda esquerda. Liga e desliga no popup da extensão;
-**–** minimiza e **×** fecha só naquela conversa.
+Ao abrir uma conversa no WhatsApp Web, um cartão aparece encostado na borda direita da conversa e, na
+borda direita da tela, o **painel lateral do CRM**. Liga e desliga no popup da extensão; **–** minimiza e
+**×** fecha o cartão só naquela conversa.
+
+### Painel lateral do CRM
+
+Como a barra lateral que o RD Station tinha: um painel fixo à direita do WhatsApp Web (o WhatsApp encolhe para
+caber; nada fica por cima da conversa) com o lead da conversa aberta:
+
+- nome, telefones e e-mails, e o botão **Abrir o card no Pronix CRM ↗**, que vai direto para a negociação;
+- a reunião agendada, quando a agenda do Google já tem;
+- **Negociações (N)**: cada card do lead com status (em andamento, ganha, perdida e o motivo), funil › etapa,
+  responsável e valor. Clicou, abre aquele card no CRM numa aba nova;
+- **O que respondeu** (formulário e campos do card) e as **últimas anotações**.
+
+**»** recolhe o painel numa aba fina na borda (a escolha fica guardada); clicar na aba abre de novo. Lead não
+achado: o painel tem a mesma busca do cartão. Só link do próprio CRM vira link, e nada do CRM vira HTML
+(`extension/painel.js`). Sem a ficha do CRM liberada, o painel não aparece.
+
+**Mais rápido.** A extensão percebe a troca de conversa em até 0,4 s (antes 1,5 s), espera 0,25 s antes de
+buscar (antes 0,7 s) e guarda na aba a última ficha de cada conversa por 10 minutos: voltar a uma conversa
+mostra o lead na hora, e a busca nova só redesenha se algo mudou. No servidor, contato, negociações,
+anotações, campos e usuários do CRM são pedidos em paralelo, e a automação do cartão, a agenda e o **pintar a
+reunião no Google Agenda** também correm juntos.
 
 ### Ficha do RD Station
 
@@ -309,30 +329,6 @@ Usa a conversa que o resumo já leu (com os áudios transcritos), sem reler nem 
 fato numa mensagem: o que a IA inventasse sai. Conversa muito longa é enxugada (as mensagens mais recentes
 e as com sinal comercial ficam), e chegou mensagem nova depois do resumo, use **Atualizar**.
 
-### Coach da conversa (custo zero)
-
-Um **popup próprio**, separado do cartão da ficha, que só trabalha **quando você clica**:
-
-- **Pedir dica** lê as mensagens que já estão na tela (não rola a conversa nem toca áudio) e, num
-  modelo gratuito do Groq, devolve:
-  - **AGORA** — a dica do momento: o que a última fala do lead revela e o que fazer em seguida;
-  - a **próxima mensagem** pronta para copiar e o **perfil do lead**;
-  - a **análise completa** (recolhida): evidência do perfil, como abordar, **o que ainda falta
-    levantar** (BANT, a implicação do SPIN e o que o closer mais usa: valor disponível, cartão e
-    limite, meta, tentativa anterior, concorrente), objeções com resposta e perguntas.
-- **Ler conversa inteira** faz a leitura completa, com os áudios transcritos. As transcrições
-  ficam lembradas naquela aba e entram nas dicas seguintes; áudio ainda não lido aparece como
-  `[áudio]` e o popup avisa quantos faltam.
-- **Nada é pedido sozinho.** Chegou mensagem depois da dica? O popup só avisa e espera o clique
-  em **Atualizar**.
-- **Aprende sem treinar modelo:** o que o SDR marca como "Funcionou" vira exemplo nos próximos
-  pedidos.
-- **Popup de verdade:** arrasta pelo topo (o lugar fica guardado; duplo clique volta ao padrão),
-  minimizado mostra só a dica do momento, e não depende do RD.
-- **Modelos:** fila `openai/gpt-oss-120b` → `openai/gpt-oss-20b` → `llama-3.3-70b-versatile` →
-  `llama-3.1-8b-instant`. Saiu do ar ou bateu no limite, o seguinte assume. O plano gratuito
-  limita cerca de 8 mil tokens por minuto por modelo, por isso o pedido vai enxuto.
-
 ### Automação do cartão
 
 Três coisas, sem IA e sem custo, para quem o master ligou:
@@ -354,7 +350,7 @@ Três coisas, sem IA e sem custo, para quem o master ligou:
    "remarquei para 10/10 às 16h", "ficou para amanhã às 9h") — ou o lead escolhendo um horário
    que você ofereceu, seguido do seu "Agendado!". Citar reunião, horário ou diagnóstico não
    basta, e proposta ("posso agendar para amanhã às 15h?"), oferta de opções e duração ("2h por
-   dia") não contam. Agendamento dito em áudio entra quando o resumo, o coach ou o report leem
+   dia") não contam. Agendamento dito em áudio entra quando o resumo ou o report leem
    a conversa inteira. Depois do horário, vira "Estava agendado".
 
 O texto da conversa não vai ao servidor para isso — só o pedido de mover, a etiqueta e a data.
@@ -501,7 +497,7 @@ Conversa colada como texto, sem datas, não ganha essas linhas.
 
 ### As duas extensões no mesmo Chrome
 
-O Report PRONIX e o PRONIX Closer Report desenham o **mesmo** cartão e o mesmo coach no WhatsApp Web. Com as
+O Report PRONIX e o PRONIX Closer Report desenham o **mesmo** cartão e o mesmo painel lateral no WhatsApp Web. Com as
 duas ligadas, o cartão pulava de lugar e desligar a "Popup do lead" de uma sumia com a do outro. O Report PRONIX
 (1.5.3+) avisa na página (`data-report-dono="pronix"`) que é ele quem desenha; o Closer Report (1.13.2+),
 vendo o aviso, não consulta o RD nem desenha nada. Sem o Report PRONIX, o Closer Report volta a funcionar sozinho.
@@ -649,8 +645,8 @@ responde 403, sem chamar a IA; o texto da inteligência continua guardado, é s�
 ### Base de conhecimento
 
 Seis campos na aba **Base**: empresa, oferta e valores, perfil de cliente, roteiro, régua de
-qualificação (SPIN e BANT) e objeções. Entram no prefixo em cache de todo report e, resumidos, no
-coach. Campo nunca escrito vem com o texto recomendado (`src/baseInicial.js`, versão 3), montado
+qualificação (SPIN e BANT) e objeções. Entram no prefixo em cache de todo report. Campo nunca
+escrito vem com o texto recomendado (`src/baseInicial.js`, versão 3), montado
 com os scripts, apresentações, contratos e a análise de 12 reuniões que viraram venda
 ([docs/analise-calls-vendas.md](docs/analise-calls-vendas.md)). Uma versão nova só substitui o
 campo que ninguém editou; **Voltar aos textos anteriores** desfaz a migração.
@@ -724,7 +720,6 @@ Autenticação por cabeçalho `x-cr-key` (a chave do usuário). `gestor+` = mast
 | `POST /api/rd/atualizar` | chave | Batida de hora em hora da extensão: põe venda, follow-up, perda e closer dos reports em dia com o RD (no máximo a cada 30 min). |
 | `POST /api/lead/marca` | chave + automação | Etiqueta "Qualificado" e agendamento. |
 | `POST /api/resumo-rapido` | chave + popup do lead | Resumo rápido da conversa. |
-| `POST /api/coach` · `POST /api/coach/feedback` | chave + coach | Coach e o "Funcionou". |
 | `POST /api/afinidade` | chave | Nota de 0 a 10 do lead para um closer, com motivos e o PDF. |
 
 ### Dia a dia e gestão
@@ -766,7 +761,7 @@ Tudo tem padrão seguro no código; o `.env.example` traz a lista comentada.
 | --- | --- | --- |
 | `ANTHROPIC_API_KEY` | sempre | Gera os reports. |
 | `ADMIN_PASSWORD` | sempre | Acesso reserva do painel; cria o primeiro master. |
-| `GROQ_API_KEY` | produção | Áudio, print, coach e insights. Local sem ela: `faster-whisper`. |
+| `GROQ_API_KEY` | produção | Áudio, print e insights. Local sem ela: `faster-whisper`. |
 | `KV_REST_API_URL` · `KV_REST_API_TOKEN` | produção | Banco (Vercel KV / Upstash; também aceita `UPSTASH_REDIS_REST_URL` e `UPSTASH_REDIS_REST_TOKEN`). Vazias: `data/*.json`. |
 | `CRM_API_TOKEN` | ficha do lead | Token do CRM. Um token `pcrm_…` liga o **PronixCRM** (crm.pronixhub.com.br); outro valor, o RD Station. Tem prioridade sobre `RDSTATION_CRM_TOKEN`. |
 | `RDSTATION_CRM_TOKEN` | ficha do lead | Token do RD Station CRM (ou `pcrm_…`, do PronixCRM). Vazio, junto com `CRM_API_TOKEN`: ficha desligada. |
@@ -782,7 +777,7 @@ Tudo tem padrão seguro no código; o `.env.example` traz a lista comentada.
 | `ANTHROPIC_MODEL_RESUMO` | o dos reports | Modelo do resumo rápido. |
 | `GROQ_MODEL` | `whisper-large-v3-turbo` | Transcrição. |
 | `GROQ_VISION_MODEL` | `qwen/qwen3.6-27b` | Leitura de print (reserva: `qwen/qwen3.8-27b`). |
-| `GROQ_COACH_MODEL` | fila padrão | Modelo a tentar primeiro no coach e nos insights. |
+| `GROQ_COACH_MODEL` | fila padrão | Modelo a tentar primeiro nas análises gratuitas (insights e afins). O nome ficou do antigo coach. |
 | `OLLAMA_MODEL` · `OLLAMA_URL` | `llama3.1` · `localhost:11434` | Só com `LLM_PROVIDER=ollama`. |
 
 ### RD Station
@@ -813,7 +808,7 @@ Tudo tem padrão seguro no código; o `.env.example` traz a lista comentada.
 | `MAX_REPORT_OUTPUT_TOKENS` | `4000` | Teto de saída pedido à Anthropic. |
 | `MAX_AUDIO_BYTES` · `MAX_AUDIO_TRANSCRIPTION_CHARS` | `20971520` · `6000` | Tamanho do áudio e da transcrição. |
 | `MAX_IMAGEM_BYTES` | `4194304` | Tamanho do print. |
-| `MAX_RESUMO_CHARS` · `MAX_COACH_CHARS` | `16000` · `7000` | Conversa enviada ao resumo e ao coach. |
+| `MAX_RESUMO_CHARS` | `16000` | Conversa enviada ao resumo. |
 | `TRANSCRIPTION_CACHE_TTL_SEG` | `86400` | Cache da transcrição; `0` desliga. |
 | `ANTHROPIC_TIMEOUT_MS` · `GROQ_TIMEOUT_MS` | `50000` | A Vercel corta a função em 60 s. |
 | `USD_BRL_RATE` | `5.3` | Câmbio fixo, só para exibir a estimativa em reais. |
@@ -843,10 +838,9 @@ Tudo em `src/db.js` (Redis em produção, `data/*.json` local). **A conversa nã
 | `crm_movimentos` | Registro de cada card movido para "Respondeu" (últimos 500). |
 | `rd_limpeza_relatorios` | Um relatório por execução da limpeza: quando, funil e quantos cards por motivo (últimos 400). |
 | `rd_limpeza_log` | Cada card desqualificado pela limpeza do funil: de que etapa saiu, o motivo e quando (últimos 8.000). É o que permite desfazer. |
-| `coach_feedback` | Sugestões marcadas como úteis ou não. |
 | `aprendizado_consciencia` | Correções do nível de consciência (até 200). |
 | `insights_ultimo` | Últimos insights gerados. |
-| `cache:*` | Temporários: transcrições, ficha do RD (5 min), funis (1 h), resumos (7 dias), coach (24 h). |
+| `cache:*` | Temporários: transcrições, ficha do RD (5 min), funis (1 h), resumos (7 dias). |
 
 ### Copiar os dados de um banco para outro
 
@@ -879,13 +873,12 @@ temporária). O `jsdom` roda os scripts **reais** da extensão e do painel.
 | `qualidade.test.js` | Conferência de citações e normalização da conversa, em casos sintéticos. |
 | `report-rico.test.js` | Nível de consciência, "Como foi a conversa", sinais de compra e o limite de 2 páginas. |
 | `extensao-dom.test.js` | Leitura da conversa no WhatsApp e no Instagram: ordem, remetente, áudios, troca de conversa. |
-| `ficha-crm.test.js` | O cartão no WhatsApp: ficha, busca, vários cards e resumo. |
-| `coach-popup.test.js` | O popup do coach: só no clique, aviso de mensagens novas, erro, leitura com áudios, arrastar. |
+| `ficha-crm.test.js` | O cartão no WhatsApp: ficha, busca, vários cards, resumo, painel lateral e a ficha guardada na aba. |
 | `automacao-dom.test.js` | Mover para "Respondeu", etiqueta e agendamento no cartão. |
 | `automacao.test.js` | A escrita no RD e as marcas do lead, com RD simulado. |
 | `agenda.test.js` | Leitura de dia e horário nas mensagens. |
 | `crm.test.js` | Busca do lead no RD: telefone, nome, duplicados, cache. |
-| `coach.test.js` · `resumo.test.js` | Coach e resumo rápido no servidor, com IA simulada. |
+| `resumo.test.js` | Resumo rápido no servidor, com IA simulada. |
 | `inteligencia.test.js` | Perfil, closer × perfil, resultados, calibragem e base recomendada. |
 | `diario.test.js` | Regra do .zip do dia (vale o último report de cada lead). |
 | `painel.test.js` | O painel inteiro com API falsa. |
@@ -930,8 +923,8 @@ desligado até ele ser atualizado.
 - **Nada de fora vira HTML.** Nome do contato, dados do CRM e erros entram na tela como texto.
 - **Cada um vê o seu.** O SDR só reabre e baixa os próprios reports; a chave é mascarada no painel.
 - **Telefone e nome do lead** vão por POST, fora de URL e de log de acesso.
-- **Leitura sob clique.** O conteúdo das mensagens só vai ao servidor quando o SDR clica (report,
-  resumo ou coach). A automação do cartão lê no navegador e envia apenas o resultado.
+- **Leitura sob clique.** O conteúdo das mensagens só vai ao servidor quando o SDR clica (report
+  ou resumo). A automação do cartão lê no navegador e envia apenas o resultado.
 - **Tipo conferido pelos bytes** em áudio e imagem, não pela extensão do arquivo.
 
 A política completa, exigida pela Chrome Web Store, está em `/privacidade`
@@ -954,8 +947,6 @@ A política completa, exigida pela Chrome Web Store, está em `/privacidade`
 - **Automação do RD.** Montada pela documentação da API e testada com RD simulado; depende de o
   token ter permissão sobre os cards. A leitura de agendamento é por regra de texto e pode errar
   em frases fora do padrão — o × no cartão corrige.
-- **Coach e o plano gratuito.** Cada dica gasta do limite gratuito do Groq; quando acaba, o popup
-  avisa e os reports não são afetados (usam outro provedor).
 - **Amostra pequena.** A inteligência só vale com resultados marcados na rotina.
 - **Ainda não existe:** leitura de PDF e Word no chat manual, status por campo
   (confirmado/inferido) no report e expurgo automático dos PDFs antigos.
@@ -978,7 +969,7 @@ src/
   precos.js · stats.js        Preço por modelo; histórico, custo e resultados
   pdfStorage.js · diario.js   PDFs guardados; regra do .zip do dia
   transcribe.js · groq.js     Transcrição, visão e chat gratuito (com fila de modelos)
-  resumoRapido.js · coach.js  Resumo rápido e coach da conversa
+  resumoRapido.js             Resumo rápido da conversa
   crm.js · leads.js           RD Station (ficha e mover etapa); etiqueta e agendamento por lead
   inteligencia.js             Closer × perfil, padrões da prospecção, insights
   aprendizado.js              Correções que calibram o nível de consciência
@@ -987,7 +978,8 @@ src/
   db.js                       Redis em produção, arquivos localmente; cache e trava
 
 extension/                    Extensão MV3
-  content.js                  WhatsApp: leitura da conversa, áudios, cartão do lead, popup do coach
+  content.js                  WhatsApp: leitura da conversa, áudios e cartão do lead
+  painel.js                   Painel lateral do CRM: lead e negociações, cada uma com link para o card
   agenda.js                   Leitura de agendamento e de "lead respondeu" (sem rede)
   content-instagram.js        Instagram Direct: leitura da conversa e dos áudios
   inject.js                   Gancho de áudio no contexto da página
