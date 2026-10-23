@@ -741,3 +741,18 @@ test('painel lateral do Chrome: com a automação do cartão, o estado vai com o
   assert.equal(srv.paineis.filter((e) => e && e.tipo === 'ok').pop().podeEscrever, true);
   p.fechar();
 });
+
+test('painel lateral: clicar numa conversa da lista abre o painel junto, e ele mostra o lead novo na hora ("buscando")', async () => {
+  const srv = crmFalso((msg) => (msg.nome === 'Outra Pessoa' ? { ok: true, configurado: true, encontrado: false } : { ok: true, configurado: true, encontrado: true, ficha: FICHA_MARCOS }));
+  const p = abrir(srv);
+  await esperar(() => /Investimento/.test(textoCartao(p)), { motivo: 'ficha na tela' });
+  const lista = p.document.createElement('div');
+  lista.id = 'pane-side';
+  lista.innerHTML = '<div role="listitem"><span>Outra Pessoa</span></div>';
+  p.document.body.appendChild(lista);
+  lista.querySelector('span').click();
+  await esperar(() => srv.acoes.includes('abrirPainel'), { motivo: 'clique na lista abre o painel' });
+  trocarConversa(p, 'Outra Pessoa');
+  await esperar(() => srv.paineis.some((e) => e && e.tipo === 'carregando' && e.busca && e.busca.nome === 'Outra Pessoa'), { motivo: 'painel com o lead novo na hora' });
+  p.fechar();
+});

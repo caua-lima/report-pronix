@@ -1324,6 +1324,19 @@
     if (ficha.crmLigado !== true && estadoDoCartao.tipo === 'carregando') return; // ainda não se sabe se este usuário tem CRM
     publicarPainel(estadoDoCartao);
   }
+
+  // Abriu uma conversa pela lista do WhatsApp: o painel lateral abre junto. O Chrome só deixa abrir o painel num
+  // clique da pessoa — e é esse clique que vale. Já aberto, ele só segue mostrando o lead da conversa nova.
+  const LISTA_DE_CONVERSAS = '#pane-side, [aria-label="Lista de conversas"], [aria-label="Chat list"]';
+  document.addEventListener('click', (ev) => {
+    try {
+      if (!ficha.ligada || ficha.crmLigado === false) return;
+      if (!ev.target || !ev.target.closest || !ev.target.closest(LISTA_DE_CONVERSAS)) return;
+      chrome.runtime.sendMessage({ action: 'abrirPainel', automatico: true }, () => void chrome.runtime.lastError);
+    } catch (_) {
+      /* extensão recarregada */
+    }
+  }, true);
   function abrirPainelDoChrome() {
     try {
       chrome.runtime.sendMessage({ action: 'abrirPainel' }, (r) => {
@@ -2475,7 +2488,9 @@
     ficha.ultimoEstado = null; // o que estava na tela era da conversa anterior
     ficha.fechadaPara = null;
     clearTimeout(ficha.timer);
-    ficha.timer = setTimeout(() => consultarFicha({ telefone, nome: telefone && nome.replace(/\D/g, '') === telefone ? '' : nome }), 250);
+    // O painel troca na hora para o lead novo ("buscando…"), sem esperar a resposta do CRM.
+    if (ficha.crmLigado === true) publicarPainel({ tipo: 'carregando', busca: { telefone, nome } });
+    ficha.timer = setTimeout(() => consultarFicha({ telefone, nome: telefone && nome.replace(/\D/g, '') === telefone ? '' : nome }), 150);
   }
 
   try {
@@ -2520,6 +2535,7 @@
     ['Desqualificar com anotação', 'Motivos de desqualificação pedem que você escreva o que o lead disse (pelo menos 50 caracteres): o campo aparece no cartão, com o contador.'],
     ['Sugerir motivo e anotação', 'No Desqualificar, "✨ Sugerir motivo e anotação" lê a conversa da tela: lead sem resposta há 3 ou mais tentativas sai na hora (sem IA); nos outros casos, a IA gratuita escolhe o motivo e escreve a anotação. Confira e confirme.'],
     ['Handoff + ligação', 'No "Reunião realizada", o texto do report aparece para editar e há um campo para o que veio da ligação: os dois vão juntos para o CRM como handoff.'],
+    ['Painel abre junto', 'Clicou numa conversa na lista do WhatsApp, o painel lateral abre junto e já mostra o lead enquanto busca no CRM.'],
     ['Áudios de volta', 'O report voltou a achar e transcrever os áudios no formato novo do WhatsApp.'],
   ];
   function mostrarNovidades(id) {

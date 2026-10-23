@@ -366,7 +366,11 @@
 
   function corpoDoEstado(d) {
     if (!d || d.tipo === 'sem-conversa') return [el('div', 'color:#a39e93;margin-top:12px', 'Abra uma conversa para ver o lead no CRM.')];
-    if (d.tipo === 'carregando') return [el('div', 'color:#a39e93;margin-top:12px', 'Buscando no CRM…')];
+    if (d.tipo === 'carregando') {
+      const b = d.busca || {};
+      const quem = b.nome || b.telefone || '';
+      return [quem ? el('div', 'font-size:17px;font-weight:700;color:#f3efe6;margin-top:10px;word-break:break-word', quem) : null, el('div', 'color:#a39e93;margin-top:8px', 'Buscando no CRM…')].filter(Boolean);
+    }
     if (d.tipo === 'erro') {
       const b = el('button', `margin-top:10px;cursor:pointer;border:0;border-radius:7px;padding:7px 10px;background:#3a373f;color:#f3efe6;font-weight:600;font-family:inherit`, 'Tentar de novo');
       b.type = 'button';
