@@ -37,6 +37,7 @@ const casosDoCloser = require('./src/casos');
 const transcricoes = require('./src/transcricoes');
 const driveGoogle = require('./src/driveGoogle');
 const limpezaRd = require('./src/limpezaRd');
+const fluxoReuniao = require('./src/fluxoReuniao');
 const diagnostico = require('./src/diagnostico');
 const { gerarAfinidadePdfBuffer, nomeDoArquivo: nomeDoArquivoAfinidade } = require('./src/afinidadePdf');
 const { textoDoPdf } = require('./src/textoDoPdf');
@@ -1201,6 +1202,60 @@ app.post('/api/crm/desqualificar', auth, async (req, res) => {
   }
 });
 
+/**
+ * Painel lateral: o card mais antigo de um lead com dois em aberto vira perda por duplicidade. Os dois cards têm de
+ * ser do lead da conversa aberta (confere na ficha).
+ */
+app.post('/api/crm/duplicado', auth, async (req, res) => {
+  try {
+    if (semDesqualificar(req, res)) return;
+    if (!req.usuario.fichaCrm) return res.status(403).json({ erro: 'Ficha do lead desligada para este usuário.' });
+    const { busca = {}, dealId, manterId } = req.body || {};
+    const lead = await crm.consultarLead({ telefone: busca.telefone, nome: busca.nome, contatoId: busca.contatoId });
+    const cards = (lead && lead.ficha && lead.ficha.negociacoes) || [];
+    if (![dealId, manterId].every((x) => cards.some((c) => String(c.id) === String(x || '')))) {
+      return res.status(400).json({ erro: 'Estes cards não são do lead desta conversa. Abra a conversa de novo e tente outra vez.' });
+    }
+    const r = await fluxoReuniao.perderDuplicado({ usuario: req.usuario, dealId, manterId });
+    await crm.esquecerLead(busca).catch(() => {});
+    res.json(r);
+  } catch (err) {
+    res.status(/Não sei|Não há motivo|já está fechado|Não achei/.test(err.message) ? 400 : 502).json({ erro: err.message });
+  }
+});
+
+/** Painel lateral, "Reunião realizada": o caminho até a etapa, os closers e de onde vem o handoff (não escreve). */
+app.post('/api/crm/realizada/plano', auth, async (req, res) => {
+  try {
+    if (semDesqualificar(req, res)) return;
+    if (!req.usuario.fichaCrm) return res.status(403).json({ erro: 'Ficha do lead desligada para este usuário.' });
+    const { busca = {}, dealId, closerNome } = req.body || {};
+    const lead = await crm.consultarLead({ telefone: busca.telefone, nome: busca.nome, contatoId: busca.contatoId });
+    if (!((lead && lead.ficha && lead.ficha.negociacoes) || []).some((c) => String(c.id) === String(dealId || ''))) {
+      return res.status(400).json({ erro: 'Este card não é do lead desta conversa. Abra a conversa de novo e tente outra vez.' });
+    }
+    res.json({ ok: true, ...(await fluxoReuniao.planejar({ dealId, closerNome, busca })) });
+  } catch (err) {
+    res.status(502).json({ erro: err.message });
+  }
+});
+
+/** Painel lateral, "Reunião realizada" confirmada: move o card pelo caminho, define o closer e grava o handoff. */
+app.post('/api/crm/realizada', auth, async (req, res) => {
+  try {
+    if (semDesqualificar(req, res)) return;
+    if (!req.usuario.fichaCrm) return res.status(403).json({ erro: 'Ficha do lead desligada para este usuário.' });
+    const { busca = {}, dealId, assinatura, closerId, handoff, closerNome } = req.body || {};
+    const lead = await crm.consultarLead({ telefone: busca.telefone, nome: busca.nome, contatoId: busca.contatoId });
+    if (!((lead && lead.ficha && lead.ficha.negociacoes) || []).some((c) => String(c.id) === String(dealId || ''))) {
+      return res.status(400).json({ erro: 'Este card não é do lead desta conversa. Abra a conversa de novo e tente outra vez.' });
+    }
+    res.json(await fluxoReuniao.executar({ usuario: req.usuario, dealId, assinatura, closerId, handoff, closerNome, busca }));
+  } catch (err) {
+    res.status(502).json({ erro: err.message, feitos: err.feitos || [] });
+  }
+});
+
 /** O lead respondeu no WhatsApp: avança o card para "Respondeu" (só se ainda estiver antes dela). */
 app.post('/api/crm/respondeu', auth, async (req, res) => {
   try {
@@ -1583,6 +1638,7 @@ async function responderReport(req, res, dados, nome, origem, reportKey, captura
   // Gera o id aqui (não dentro de stats.registrar) pra poder salvar o PDF sob
   // a mesma chave — ver src/pdfStorage.js.
   const id = crypto.randomBytes(5).toString('hex');
+  const vinculoLido = await vinculoDoReport(vinculo, nome).catch(() => null);
   const base64 = buffer.toString('base64');
   // O report é o que importa: se o registro ou o salvamento do PDF falharem,
   // não derruba a entrega — o SDR já recebe o PDF de qualquer jeito.
@@ -1601,9 +1657,13 @@ async function responderReport(req, res, dados, nome, origem, reportKey, captura
       captura,
       citacoesRemovidas: meta.citacoesRemovidas || 0,
       leitura,
-      vinculo: await vinculoDoReport(vinculo, nome).catch(() => null),
+      vinculo: vinculoLido,
     })
     .catch((err) => console.error('Falha ao registrar o report:', err.message));
+  // O texto do report fica guardado pelo card do lead: é o handoff que o botão "Reunião realizada" grava no CRM.
+  await fluxoReuniao
+    .guardarHandoff({ dados, sdr: req.usuario.nome, reportId: id, vinculo: vinculoLido })
+    .catch((err) => console.error('Falha ao guardar o handoff:', err.message));
   // O PDF inteiro no banco enchia o plano grátis do Upstash. Em produção ele não é mais guardado (o SDR recebe
   // o PDF na hora e o painel redesenha a partir dos dados); GUARDAR_PDF=sim religa.
   if (process.env.GUARDAR_PDF === 'sim' || !process.env.VERCEL) {
