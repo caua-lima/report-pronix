@@ -10,8 +10,11 @@ const crypto = require('crypto');
  * em server.js — checam a chave antes de gerar, e um "forcarNovo" no pedido
  * pula a checagem).
  */
-function calcularReportKey({ historicoNormalizado, promptVersao, qualidade }) {
+function calcularReportKey({ historicoNormalizado, promptVersao, qualidade, contato }) {
+  // O lead entra na chave: o mesmo roteiro mandado a dois leads (e respostas iguais) não pode dar "report igual".
+  const lead = String(contato || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
   const base =
+    (lead ? lead + '|' : '') +
     JSON.stringify(historicoNormalizado || []) +
     '|' +
     (promptVersao || '') +

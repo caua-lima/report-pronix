@@ -1772,7 +1772,7 @@ app.post('/api/report-direto', auth, async (req, res) => {
     const { mensagens, nome, qualidade, captureQuality, vinculo, formulario } = req.body || {};
     const qualidadeFinal = qualidadeValida(qualidade);
     const { historico: normalizadas } = normalizarConversa(Array.isArray(mensagens) ? mensagens : []);
-    reportKey = calcularReportKey({ historicoNormalizado: normalizadas, promptVersao: PROMPT_VERSAO, qualidade: qualidadeFinal });
+    reportKey = calcularReportKey({ historicoNormalizado: normalizadas, promptVersao: PROMPT_VERSAO, qualidade: qualidadeFinal, contato: nome });
 
     if (!(await checarDuplicataETravar(req, res, reportKey))) return;
 
@@ -1822,7 +1822,7 @@ app.post('/api/report-texto', auth, async (req, res) => {
     const { texto, nome, qualidade, baseId } = req.body || {};
     const qualidadeFinal = qualidadeValida(qualidade);
     const { texto: textoNormalizado } = normalizarTextoLivre(String(texto || ''));
-    reportKey = calcularReportKey({ historicoNormalizado: textoNormalizado, promptVersao: PROMPT_VERSAO, qualidade: qualidadeFinal });
+    reportKey = calcularReportKey({ historicoNormalizado: textoNormalizado, promptVersao: PROMPT_VERSAO, qualidade: qualidadeFinal, contato: nome });
 
     if (!(await checarDuplicataETravar(req, res, reportKey))) return;
 

@@ -338,3 +338,12 @@ test('painel lateral só no WhatsApp Web: desligado no Chrome todo, ligado na ab
   await new Promise((r) => ouvinte({ action: 'abrirPainel' }, { id: 'x', tab: { id: 2, windowId: 9, url: 'https://web.whatsapp.com/' } }, r));
   assert.deepEqual(JSON.parse(JSON.stringify(abrir)), { tabId: 2 });
 });
+
+test('mistura de leads: o mesmo roteiro com dois leads não é "report igual" (o lead entra na chave)', () => {
+  const { calcularReportKey } = require('../src/idempotencia');
+  const historicoNormalizado = [{ from: 'eu', type: 'texto', content: 'Oi! Vi que você se cadastrou.', timestamp: null }, { from: 'eles', type: 'audio', content: '[áudio]', timestamp: null }];
+  const k = (contato) => calcularReportKey({ historicoNormalizado, promptVersao: 'v9', qualidade: 'standard', contato });
+  assert.notEqual(k('Marcos Pereira'), k('Ana Souza'));
+  assert.equal(k('Marcos Pereira'), k('marcos  pereira'), 'o mesmo lead (sem diferença de maiúscula ou espaço) continua igual');
+  assert.equal(k('Joao'), k('João'));
+});
