@@ -1307,11 +1307,11 @@
   // Painel lateral do Chrome (sidepanel.html): recebe o mesmo estado do cartão do lead, via service worker.
   const PAINEL_SEM_CONVERSA = { tipo: 'sem-conversa' };
   let painelEnviado; // o último estado mandado (o cartão se redesenha muito com o MESMO estado)
-  let painelPodia = false; // os botões que escrevem no CRM (o mesmo acesso do Desqualificar)
+  let painelPodia = false; // os botões que escrevem no CRM (o mesmo acesso do Desqualificar: a automação do cartão)
   function publicarPainel(estado) {
-    if (estado === painelEnviado && painelPodia === (ficha.desqualificar === true)) return;
+    if (estado === painelEnviado && painelPodia === (ficha.automacao === true)) return;
     painelEnviado = estado;
-    painelPodia = ficha.desqualificar === true;
+    painelPodia = ficha.automacao === true; // no Report PRONIX, os botões que escrevem no CRM vêm com a automação do cartão
     try {
       chrome.runtime.sendMessage({ action: 'painelEstado', estado: estado ? { ...estado, podeEscrever: painelPodia } : null }, () => void chrome.runtime.lastError);
     } catch (_) {

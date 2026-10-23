@@ -733,3 +733,11 @@ test('novidades: "Abrir o painel agora" pede ao service worker para abrir o pain
   assert.equal(p.storage.novidadesVistas, 'painel-crm-2026-10');
   p.fechar();
 });
+
+test('painel lateral do Chrome: com a automação do cartão, o estado vai com os botões que escrevem no CRM liberados', async () => {
+  const srv = crmFalso(() => ({ ok: true, configurado: true, encontrado: true, ficha: FICHA_PAINEL, automacao: true }));
+  const p = abrir(srv);
+  await esperar(() => srv.paineis.some((e) => e && e.tipo === 'ok'), { motivo: 'estado publicado' });
+  assert.equal(srv.paineis.filter((e) => e && e.tipo === 'ok').pop().podeEscrever, true);
+  p.fechar();
+});

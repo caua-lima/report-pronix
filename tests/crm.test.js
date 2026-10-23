@@ -394,3 +394,13 @@ test('anotação com valor de modelo não preenchido ({{…}}) de uma integraç�
     { rotulo: 'MOMENTO', valor: 'Sim, já vendo' }, { rotulo: 'FATURAMENTO', valor: 'Entre R$10.000 a R$50.000' },
   ]);
 });
+
+test('botões do painel (duplicado, qualificado, reunião realizada): sem a automação do cartão, 403; com ela, a rota responde sem erro de código', async () => {
+  for (const rota of ['/api/crm/duplicado', '/api/crm/realizada/plano', '/api/crm/realizada']) {
+    const sem = await post(rota, { busca: { telefone: '5571999998888' }, dealId: 'd1' }, { chave: E.sdr });
+    assert.equal(sem.status, 403, rota);
+    const com = await post(rota, { busca: { telefone: '5571999998888' }, dealId: 'd1', manterId: 'd2' }, { chave: E.admin });
+    assert.notEqual(com.status, 500, rota);
+    assert.doesNotMatch(String(com.json.erro || ''), /is not defined|is not a function/, rota);
+  }
+});

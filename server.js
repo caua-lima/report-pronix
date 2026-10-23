@@ -1208,7 +1208,7 @@ app.post('/api/crm/desqualificar', auth, async (req, res) => {
  */
 app.post('/api/crm/duplicado', auth, async (req, res) => {
   try {
-    if (semDesqualificar(req, res)) return;
+    if (semAutomacao(req, res)) return; // no Report PRONIX, o Desqualificar e os botões do painel vêm com a automação do cartão
     if (!req.usuario.fichaCrm) return res.status(403).json({ erro: 'Ficha do lead desligada para este usuário.' });
     const { busca = {}, dealId, manterId } = req.body || {};
     const lead = await crm.consultarLead({ telefone: busca.telefone, nome: busca.nome, contatoId: busca.contatoId });
@@ -1227,7 +1227,7 @@ app.post('/api/crm/duplicado', auth, async (req, res) => {
 /** Painel lateral, "Reunião realizada" ou "Qualificado" (alvo): o caminho até a etapa, os closers e de onde vem o handoff (não escreve). */
 app.post('/api/crm/realizada/plano', auth, async (req, res) => {
   try {
-    if (semDesqualificar(req, res)) return;
+    if (semAutomacao(req, res)) return; // no Report PRONIX, o Desqualificar e os botões do painel vêm com a automação do cartão
     if (!req.usuario.fichaCrm) return res.status(403).json({ erro: 'Ficha do lead desligada para este usuário.' });
     const { busca = {}, dealId, closerNome, alvo } = req.body || {};
     const lead = await crm.consultarLead({ telefone: busca.telefone, nome: busca.nome, contatoId: busca.contatoId });
@@ -1243,7 +1243,7 @@ app.post('/api/crm/realizada/plano', auth, async (req, res) => {
 /** Painel lateral, "Reunião realizada" confirmada: move o card pelo caminho, define o closer e grava o handoff. */
 app.post('/api/crm/realizada', auth, async (req, res) => {
   try {
-    if (semDesqualificar(req, res)) return;
+    if (semAutomacao(req, res)) return; // no Report PRONIX, o Desqualificar e os botões do painel vêm com a automação do cartão
     if (!req.usuario.fichaCrm) return res.status(403).json({ erro: 'Ficha do lead desligada para este usuário.' });
     const { busca = {}, dealId, assinatura, closerId, handoff, closerNome, alvo } = req.body || {};
     const qual = alvo === 'qualificado' ? 'qualificado' : 'realizada';
