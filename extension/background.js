@@ -151,6 +151,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         contatoId: String(msg.contatoId || '').slice(0, 40),
         dealId: String(msg.dealId || '').slice(0, 40),
         motivoId: String(msg.motivoId || '').slice(0, 40),
+        nota: String(msg.nota || '').slice(0, 2000),
       };
       const r = await chamar('/api/crm/desqualificar', corpo, { timeoutMs: 30000 });
       sendResponse(r.ok ? { ok: true, motivo: r.data.motivo || '', etapa: r.data.etapa || '' } : { ok: false, erro: r.erro });

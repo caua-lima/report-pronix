@@ -1953,12 +1953,18 @@
   function confirmarDesqualificar(estado, card) {
     const d = estado.desq;
     if (!d || !d.escolhido || d.enviando) return;
+    const nota = String(d.nota || '').replace(/\s+/g, ' ').trim();
+    if (precisaNota(d) && nota.length < NOTA_DESQ) {
+      d.erro = `Escreva o que o lead disse: pelo menos ${NOTA_DESQ} caracteres (faltam ${NOTA_DESQ - nota.length}).`;
+      redesenharFicha();
+      return;
+    }
     d.enviando = true;
     d.erro = '';
     redesenharFicha();
     const b = estado.busca || {};
     try {
-      chrome.runtime.sendMessage({ action: 'crmDesqualificar', telefone: b.telefone || '', nome: b.nome || '', contatoId: b.contatoId || '', dealId: card.id, motivoId: d.escolhido.id }, (r) => {
+      chrome.runtime.sendMessage({ action: 'crmDesqualificar', telefone: b.telefone || '', nome: b.nome || '', contatoId: b.contatoId || '', dealId: card.id, motivoId: d.escolhido.id, nota }, (r) => {
         if (chrome.runtime.lastError) return;
         if (r && r.ok) {
           // O cartão já mostra a perda (etiqueta DESQUALIFICADO com o motivo); a próxima consulta vem do RD.
@@ -1969,6 +1975,8 @@
         } else {
           d.enviando = false;
           d.erro = (r && r.erro) || 'O servidor não respondeu. Tente de novo.';
+          // O CRM pediu a anotação (motivo que não veio marcado como desqualificação): abre o campo.
+          if (/50 caracteres|conte o que o lead disse|o que o lead disse|OBSERVACAO_OBRIGATORIA/i.test(d.erro)) d.pedirNota = true;
         }
         if (ficha.ultimoEstado === estado) redesenharFicha();
       });
@@ -1977,6 +1985,9 @@
     }
   }
   /** A caixinha do "Desqualificar": a lista de motivos e, escolhido um, a confirmação. */
+  const NOTA_DESQ = 50;
+  /** O motivo escolhido pede a anotação: é de desqualificação, ou o CRM já respondeu que falta ela. */
+  const precisaNota = (d) => Boolean(d && d.escolhido && (d.escolhido.tipo === 'desqualificacao' || d.pedirNota));
   function caixaDesqualificar(estado, card) {
     const d = estado.desq;
     const caixa = elem('div', 'flex-basis:100%;margin-top:4px;padding:8px;border:1px solid #ff6f5c;border-radius:8px;background:rgba(255,111,92,.07)');
@@ -1991,13 +2002,35 @@
     if (d.escolhido) {
       caixa.appendChild(elem('div', 'font-size:12px;margin-bottom:6px', 'Dar perda no RD com o motivo:'));
       caixa.appendChild(elem('div', 'font-weight:700;color:#ff6f5c;margin-bottom:8px', d.escolhido.nome));
+      // Motivo de desqualificação: o CRM exige a anotação do que o lead disse (50+ caracteres).
+      if (precisaNota(d)) {
+        const conta = () => {
+          const n = String(d.nota || '').replace(/\s+/g, ' ').trim().length;
+          return n >= NOTA_DESQ ? `${n} caracteres ✓` : `${n}/${NOTA_DESQ} caracteres (faltam ${NOTA_DESQ - n})`;
+        };
+        caixa.appendChild(elem('div', 'font-size:12px;margin-bottom:4px;color:#a39e93', 'O que o lead disse (o CRM pede pelo menos 50 caracteres):'));
+        const ta = document.createElement('textarea');
+        ta.id = 'cr-desq-nota';
+        ta.style.cssText = 'width:100%;box-sizing:border-box;min-height:70px;background:#121113;color:#f3efe6;border:1px solid #3a373f;border-radius:6px;padding:6px;font:12px/1.4 inherit;resize:vertical';
+        ta.placeholder = 'Ex.: disse que não tem o investimento agora e que só vai pensar nisso no ano que vem.';
+        ta.value = d.nota || '';
+        const contador = elem('div', 'font-size:11px;color:#a39e93;margin:3px 0 8px', conta());
+        contador.id = 'cr-desq-nota-conta';
+        ta.addEventListener('input', () => { d.nota = ta.value; contador.textContent = conta(); });
+        ta.addEventListener('focus', () => { d.focoNota = true; });
+        ta.addEventListener('keydown', (ev) => ev.stopPropagation()); // atalhos do WhatsApp não roubam a digitação
+        caixa.appendChild(ta);
+        caixa.appendChild(contador);
+        // O cartão se redesenha quando algo muda: quem estava escrevendo continua no campo.
+        if (d.focoNota) setTimeout(() => { if (document.body.contains(ta)) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); } }, 0);
+      }
       if (d.enviando) caixa.appendChild(elem('div', 'font-size:12px;color:#a39e93', 'Dando perda no RD…'));
       else {
         const acoes = elem('div', 'display:flex;gap:6px');
         const sim = botao('Confirmar perda', 'border:0;background:#ff6f5c;color:#18171b;font-weight:700', () => confirmarDesqualificar(estado, card));
         sim.id = 'cr-desq-confirmar';
         acoes.appendChild(sim);
-        acoes.appendChild(botao('Voltar', 'border:1px solid #55515b;background:transparent;color:#f3efe6', () => { d.escolhido = null; d.erro = ''; redesenharFicha(); }));
+        acoes.appendChild(botao('Voltar', 'border:1px solid #55515b;background:transparent;color:#f3efe6', () => { d.escolhido = null; d.erro = ''; d.pedirNota = false; d.focoNota = false; redesenharFicha(); }));
         caixa.appendChild(acoes);
       }
     } else {
@@ -2408,6 +2441,7 @@
     ['Qualificado ✓', 'O lead qualificou e confirmou a reunião? Clique e o card vai para a etapa de qualificado do funil (ou "Agendou"). O painel mostra o caminho e só move quando você confirma. A etiqueta "Qualificado" do cartão vem junto.'],
     ['Reunião realizada →', 'Depois da reunião: escolha o closer e confirme. O card percorre as etapas do funil até "Reunião realizada" e o report do lead vai como handoff (gere o report antes; sem ele, o painel pede um texto).'],
     ['Perder como duplicado', 'Lead com dois cards em aberto: o botão aparece no mais antigo e marca a perda com o motivo de duplicidade, dizendo em qual card o lead continua.'],
+    ['Desqualificar com anotação', 'Motivos de desqualificação pedem que você escreva o que o lead disse (pelo menos 50 caracteres): o campo aparece no cartão, com o contador.'],
     ['Áudios de volta', 'O report voltou a achar e transcrever os áudios no formato novo do WhatsApp.'],
   ];
   function mostrarNovidades(id) {

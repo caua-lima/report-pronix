@@ -568,3 +568,74 @@ test('o Report PRONIX avisa na página que é ele quem desenha o cartão (o Clos
   const p = abrir(servidorFalso());
   assert.equal(p.document.documentElement.getAttribute('data-report-dono'), 'pronix');
 });
+
+test('Desqualificar: motivo de desqualificação pede a anotação do que o lead disse (50+ caracteres) e ela vai junto', async () => {
+  const srv = servidorFalso({ etapa: 'Respondeu', desqualificar: true });
+  const perdas = [];
+  let resposta = { ok: true, motivo: 'Sem perfil', etapa: 'Desqualificados' };
+  const original = srv.aoEnviar;
+  srv.aoEnviar = async (msg) => {
+    if (msg.action === 'crmMotivosPerda') return { ok: true, motivos: [{ id: 'm3', nome: 'Sem perfil', tipo: 'desqualificacao' }, { id: 'm1', nome: 'Nunca Respondeu (SDR)', tipo: '' }] };
+    if (msg.action === 'crmDesqualificar') { perdas.push(JSON.parse(JSON.stringify(msg))); return resposta; }
+    return original(msg);
+  };
+  const p = abrir(srv);
+  await fichaNaTela(p);
+  const caixa = () => p.document.getElementById('cr-desqualificar');
+  const nota = () => p.document.getElementById('cr-desq-nota');
+  await esperar(() => p.document.getElementById('cr-desqualificar-btn'), { motivo: 'botão Desqualificar' });
+  p.document.getElementById('cr-desqualificar-btn').click();
+  await esperar(() => caixa() && caixa().querySelectorAll('[data-motivo]').length === 2, { motivo: 'motivos' });
+
+  // motivo comum: sem campo
+  caixa().querySelector('[data-motivo="m1"]').click();
+  await esperar(() => p.document.getElementById('cr-desq-confirmar'), { motivo: 'confirmação' });
+  assert.equal(nota(), null);
+  [...caixa().querySelectorAll('button')].find((b) => b.textContent === 'Voltar').click();
+
+  // motivo de desqualificação: o campo aparece e não deixa mandar com menos de 50
+  await esperar(() => caixa().querySelector('[data-motivo="m3"]'), { motivo: 'lista de novo' });
+  caixa().querySelector('[data-motivo="m3"]').click();
+  await esperar(() => nota(), { motivo: 'campo da anotação' });
+  assert.ok(caixa().textContent.includes('0/50 caracteres (faltam 50)'), 'contador');
+  p.document.getElementById('cr-desq-confirmar').click();
+  await esperar(() => caixa().textContent.includes('pelo menos 50 caracteres (faltam 50)'), { motivo: 'aviso de anotação curta' });
+  assert.equal(perdas.length, 0, 'nada vai ao CRM sem a anotação');
+  const texto = 'Disse que não tem o investimento agora e só vai pensar nisso no ano que vem.';
+  nota().value = texto;
+  nota().dispatchEvent(new p.w.Event('input'));
+  assert.match(p.document.getElementById('cr-desq-nota-conta').textContent, /caracteres ✓/);
+  p.document.getElementById('cr-desq-confirmar').click();
+  await esperar(() => perdas.length === 1, { motivo: 'perda enviada' });
+  assert.deepEqual([perdas[0].motivoId, perdas[0].nota], ['m3', texto]);
+});
+
+test('Desqualificar: o CRM pediu a anotação num motivo que não veio marcado — o campo aparece para escrever', async () => {
+  const srv = servidorFalso({ etapa: 'Respondeu', desqualificar: true });
+  const perdas = [];
+  const original = srv.aoEnviar;
+  srv.aoEnviar = async (msg) => {
+    if (msg.action === 'crmMotivosPerda') return { ok: true, motivos: [{ id: 'm1', nome: 'Nunca Respondeu (SDR)' }] };
+    if (msg.action === 'crmDesqualificar') {
+      perdas.push(JSON.parse(JSON.stringify(msg)));
+      return perdas.length === 1 ? { ok: false, erro: 'O CRM não aceitou: Para desqualificar, conte o que o lead disse: pelo menos 50 caracteres (faltam 50).' } : { ok: true, motivo: 'Nunca Respondeu (SDR)', etapa: 'Desqualificados' };
+    }
+    return original(msg);
+  };
+  const p = abrir(srv);
+  await fichaNaTela(p);
+  const caixa = () => p.document.getElementById('cr-desqualificar');
+  await esperar(() => p.document.getElementById('cr-desqualificar-btn'), { motivo: 'botão' });
+  p.document.getElementById('cr-desqualificar-btn').click();
+  await esperar(() => caixa() && caixa().querySelector('[data-motivo="m1"]'), { motivo: 'motivos' });
+  caixa().querySelector('[data-motivo="m1"]').click();
+  await esperar(() => p.document.getElementById('cr-desq-confirmar'), { motivo: 'confirmação' });
+  p.document.getElementById('cr-desq-confirmar').click();
+  await esperar(() => p.document.getElementById('cr-desq-nota'), { motivo: 'campo depois da recusa do CRM' });
+  const texto = 'Lead pediu para não receber mais contato e disse que já fechou com outra empresa.';
+  p.document.getElementById('cr-desq-nota').value = texto;
+  p.document.getElementById('cr-desq-nota').dispatchEvent(new p.w.Event('input'));
+  p.document.getElementById('cr-desq-confirmar').click();
+  await esperar(() => perdas.length === 2, { motivo: 'segunda tentativa' });
+  assert.equal(perdas[1].nota, texto);
+});
