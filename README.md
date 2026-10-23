@@ -271,7 +271,8 @@ borda direita da tela, o **painel lateral do CRM**. Liga e desliga no popup da e
 **▤** no cartão do lead ou por **Abrir painel lateral do CRM** no popup da extensão, e mostra o lead da conversa
 aberta no WhatsApp Web:
 
-- nome, telefones e e-mails, e o botão **Abrir o card no Pronix CRM ↗**, que vai direto para a negociação;
+- nome, telefones e e-mails, o botão **Abrir o card no Pronix CRM ↗**, que vai direto para a negociação, e o link do
+  card com **Copiar link** (para colar no Pronix Calendar ao criar a reunião);
 - a reunião agendada, quando a agenda do Google já tem;
 - **Negociações (N)**: cada card do lead com status (em andamento, ganha, perdida e o motivo), funil › etapa,
   responsável e valor. Clicou, abre aquele card no CRM numa aba nova;
