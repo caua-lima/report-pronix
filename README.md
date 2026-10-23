@@ -288,6 +288,13 @@ mostra o lead na hora, e a busca nova só redesenha se algo mudou. No servidor, 
 anotações, campos e usuários do CRM são pedidos em paralelo, e a automação do cartão, a agenda e o **pintar a
 reunião no Google Agenda** também correm juntos.
 
+### Sugestão de motivo no Desqualificar
+
+No cartão, **✨ Sugerir motivo e anotação** lê as mensagens da tela. Lead sem resposta há 3 ou mais tentativas suas
+(em dias diferentes) depois da última mensagem dele: escolhe o motivo de "não respondeu" e escreve a anotação com as
+datas, sem IA. Nos outros casos, a IA gratuita (Groq, a do resumo rápido) escolhe um dos motivos do CRM e escreve a
+anotação (`src/sugestaoDesq.js`, `POST /api/crm/sugestao-desqualificacao`). Sem custo por uso; o SDR confere e confirma.
+
 ### Botões que escrevem no CRM (painel lateral)
 
 Para quem tem o acesso do **Desqualificar**, o painel ganha três botões. Nada muda no CRM sem confirmar no painel.
@@ -313,7 +320,8 @@ Para quem tem o acesso do **Desqualificar**, o painel ganha três botões. Nada 
   - O **closer** vira o responsável do card, na etapa que o exige (ou no fim, se nenhuma exigir). A lista é a dos
     closers cadastrados na aba Closers, achados no CRM pelo e-mail ou pelo nome.
   - O **handoff** é o texto do último report do lead (guardado 60 dias quando o report é gerado). Sem report, o
-    painel pede o texto. A API do CRM não aceita anexo de PDF: o report vai como o handoff, que é o campo do CRM
+    painel pede o texto. O texto aparece para editar, e o campo **Informações da ligação** complementa (começou no
+    WhatsApp e terminou na ligação): os dois vão juntos; se o card já tinha handoff, o complemento vira anotação no card. A API do CRM não aceita anexo de PDF: o report vai como o handoff, que é o campo do CRM
     para isso.
   - O token do CRM precisa das permissões `trocar_responsavel` e, para trocar de funil, `mover_de_funil`; sem
     elas o painel avisa antes de mexer em qualquer coisa.
