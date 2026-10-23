@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Report PRONIX",
-  "version": "1.6.12",
+  "version": "1.6.13",
   "description": "Gera o relatório de handoff de pré-vendas em PDF a partir da conversa aberta no WhatsApp Web ou no Instagram Direct.",
   "permissions": ["activeTab", "scripting", "storage", "alarms", "sidePanel"],
   "icons": {
@@ -24,9 +24,6 @@
       "48": "icons/icon48.png",
       "128": "icons/icon128.png"
     }
-  },
-  "side_panel": {
-    "default_path": "sidepanel.html"
   },
   "background": {
     "service_worker": "background.js"
