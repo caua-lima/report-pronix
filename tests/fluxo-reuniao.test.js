@@ -33,6 +33,13 @@ const FUNIS = [
     ],
   },
   {
+    id: 'f-smql', _id: 'f-smql', name: 'SMQLs Automaticos',
+    deal_stages: [
+      etapa('s-contato', 'Contato iniciado', 1, 'contato'), etapa('s-resp', 'Respondeu', 2, 'resposta'), etapa('s-emq', 'Em qualificação', 3, null),
+      etapa('s-agendou', 'Agendou', 4, 'reuniao_agendada'), etapa('s-real', 'Reunião Realizada', 5, 'reuniao_realizada'), etapa('s-desq', 'Desqualificado', 6, 'perda'),
+    ],
+  },
+  {
     id: 'f-ad', _id: 'f-ad', name: 'Aplicação Direta',
     deal_stages: [etapa('a-novo', 'Novo', 1, 'contato'), etapa('a-resp', 'Respondeu', 2, 'resposta'), etapa('a-apl', 'Aplicou', 3, null), etapa('a-perda', 'Perdido', 4, 'perda')],
   },
@@ -69,6 +76,8 @@ function reiniciar() {
     'd-mql': novoCard('d-mql', 'e-resp'),
     'd-ad': novoCard('d-ad', 'a-resp', { contacts: [{ id: 'c2', _id: 'c2', name: 'Outro Lead' }] }),
     'd-real': novoCard('d-real', 'e-real'),
+    'd-smql': novoCard('d-smql', 's-resp', { contacts: [{ id: 'c3', _id: 'c3', name: 'Lead SMQL' }] }),
+    'd-qual': novoCard('d-qual', 'e-qual', { contacts: [{ id: 'c4', _id: 'c4', name: 'Lead Qualificado' }] }),
     'd-velho': novoCard('d-velho', 'e-contato', { user: { id: 'u-isa', name: 'Isamara' }, created_at: '2026-08-11T12:00:00.000Z' }),
   };
   escritas.length = 0;
@@ -216,4 +225,43 @@ test('perder como duplicado: o card mais antigo vira perda com o motivo de dupli
   assert.equal(escritas[0].corpo.deal_lost_reason_id, 'm-dup');
   assert.match(escritas[0].corpo.deal_lost_note, /segue no card "PRXC \| Lead d-mql" \(Funil MQL › Respondeu\), id d-mql/);
   await assert.rejects(fluxo.perderDuplicado({ dealId: 'd-velho', manterId: 'd-velho' }), /Não sei qual card/);
+});
+
+// ---------------------------------------------------------------- botão "Qualificado"
+test('Qualificado: vai para a etapa "Qualificado" do funil, sem closer e sem handoff', async () => {
+  reiniciar();
+  const plano = await fluxo.planejar({ dealId: 'd-mql', alvo: 'qualificado' });
+  assert.deepEqual(plano.passos.map((p) => p.etapaNome), ['Qualificado']);
+  assert.equal(plano.precisaCloser, false);
+  const r = await fluxo.executar({ dealId: 'd-mql', assinatura: plano.assinatura, alvo: 'qualificado' });
+  assert.deepEqual(r.feitos, ['Qualificado']);
+  assert.deepEqual(escritas.map((e) => [e.caminho, e.corpo.deal_stage_id, e.corpo.user_id || '', e.corpo.handoff || '']), [['/deals/d-mql/stage', 'e-qual', '', '']]);
+  assert.equal(cards['d-mql'].user.id, 'u-caua', 'o responsável não muda');
+});
+
+test('Qualificado: funil sem "Qualificado" vai para a etapa de reunião agendada ("Agendou"), e "Em qualificação" não é confundida', async () => {
+  reiniciar();
+  const plano = await fluxo.planejar({ dealId: 'd-smql', alvo: 'qualificado' });
+  assert.deepEqual(plano.passos.map((p) => p.etapaNome), ['Agendou']);
+  const r = await fluxo.executar({ dealId: 'd-smql', assinatura: plano.assinatura, alvo: 'qualificado' });
+  assert.deepEqual(r.feitos, ['Agendou']);
+  assert.equal(cards['d-smql'].deal_stage.id, 's-agendou');
+});
+
+test('Qualificado: Aplicação Direta segue para o funil Closers, e lá a etapa pede o closer e o handoff', async () => {
+  reiniciar();
+  const plano = await fluxo.planejar({ dealId: 'd-ad', alvo: 'qualificado' });
+  assert.deepEqual(plano.passos.map((p) => [p.tipo, p.etapaNome, p.exigeCloser]), [['etapa', 'Aplicou', false], ['funil', 'Reunião Agendada', true]]);
+  assert.equal(plano.precisaCloser, true);
+  await assert.rejects(fluxo.executar({ dealId: 'd-ad', assinatura: plano.assinatura, alvo: 'qualificado', handoff: 'x'.repeat(60) }), /Escolha o closer/);
+  const r = await fluxo.executar({ dealId: 'd-ad', assinatura: plano.assinatura, alvo: 'qualificado', closerId: 'u-ph', handoff: 'Lead quer começar no Mercado Livre, tem R$ 5 mil e decide sozinho.' });
+  assert.deepEqual(r.feitos, ['Aplicou', 'Closers › Reunião Agendada', 'Closer: Paulo Henrique Pagoti']);
+});
+
+test('Qualificado: card que já está qualificado (ou adiante) não é mexido; o plano de um destino não vale para o outro', async () => {
+  reiniciar();
+  await assert.rejects(fluxo.planejar({ dealId: 'd-qual', alvo: 'qualificado' }), /já está em "Qualificado": qualificado ou adiante/);
+  const plano = await fluxo.planejar({ dealId: 'd-mql', alvo: 'qualificado' });
+  await assert.rejects(fluxo.executar({ dealId: 'd-mql', assinatura: plano.assinatura, alvo: 'realizada', closerId: 'u-ph', handoff: 'x'.repeat(60) }), /O card mudou/);
+  assert.deepEqual(escritas, []);
 });

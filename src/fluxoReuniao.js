@@ -24,6 +24,15 @@ const DEPOIS = new Set(['fup', 'negociacao_avancada', 'venda', 'perda']);
 const MARCOS = new Set(['resposta', 'reuniao_agendada']);
 const ehRealizada = (e) => Boolean(e) && e.categoria === 'reuniao_realizada';
 const fechada = (e) => Boolean(e) && (e.perdido || e.ganho || DEPOIS.has(e.categoria));
+/** "Qualificado", "Lead qualificado"... — nunca "Desqualificado" nem "Em qualificação". */
+const nomeQualificado = (e) => Boolean(e) && /(^|[^a-z])qualificad[oa]s?\b/.test(norm(e.nome));
+/**
+ * A etapa de "qualificado" de um funil (o lead qualificou e confirmou a reunião, mas ela ainda não aconteceu): a que
+ * se chama "Qualificado"; sem ela, a de reunião agendada (o "Agendou" de cada funil).
+ */
+const etapaQualificado = (funil) =>
+  funil.etapas.find((e) => nomeQualificado(e) && !fechada(e)) || funil.etapas.find((e) => e.categoria === 'reuniao_agendada' && !fechada(e)) || null;
+const ALVOS = { realizada: 'reunião realizada', qualificado: 'qualificado' };
 
 const DIAS_APRENDIZADO = 120;
 const AMOSTRA_POR_FUNIL = 60;
@@ -279,11 +288,13 @@ async function permissoes() {
 // ---------------------------------------------------------------- reunião realizada
 
 /**
- * O plano para levar o card até a reunião realizada: as passagens, quem pode ser o closer e de onde vem o handoff.
- * Não escreve nada.
+ * O plano para levar o card até a reunião realizada (alvo "realizada") ou até a etapa de qualificado do funil (alvo
+ * "qualificado"): as passagens, quem pode ser o closer e de onde vem o handoff. Não escreve nada.
  */
-async function planejar({ dealId, closerNome = '', busca = {} }) {
+async function planejar({ dealId, closerNome = '', busca = {}, alvo: qual = 'realizada' }) {
   exigirCrm();
+  if (!ALVOS[qual]) throw new Error('Destino desconhecido.');
+  const paraQualificado = qual === 'qualificado';
   const id = idOk(dealId);
   if (!id) throw new Error('Não sei qual é o card. Abra a conversa de novo.');
   const deal = await lerCard(id);
@@ -297,14 +308,22 @@ async function planejar({ dealId, closerNome = '', busca = {} }) {
   if (ehRealizada(onde.etapa) || fechada(onde.etapa) || onde.funil.etapas.some((e) => ehRealizada(e) && e.ordem < onde.etapa.ordem)) {
     throw new Error(`Este card já está em "${onde.etapa.nome}", na reunião realizada ou depois dela.`);
   }
+  if (paraQualificado) {
+    const q = etapaQualificado(onde.funil);
+    if (onde.etapa.categoria === 'reuniao_agendada' || nomeQualificado(onde.etapa) || (q && onde.etapa.ordem >= q.ordem)) {
+      throw new Error(`Este card já está em "${onde.etapa.nome}": qualificado ou adiante.`);
+    }
+  }
   const fluxos = await fluxosAprendidos().catch(() => VAZIO);
 
   const passos = [];
   let destino = null;
-  const alvo = onde.funil.etapas.find((e) => e.ordem > onde.etapa.ordem && ehRealizada(e));
-  if (alvo) {
-    passos.push(...caminhoNoFunil(onde.funil, onde.etapa, alvo, fluxos));
+  // Destino dentro do próprio funil: a etapa de qualificado (ou de reunião agendada) / a de reunião realizada.
+  const alvoNoFunil = paraQualificado ? etapaQualificado(onde.funil) : onde.funil.etapas.find((e) => e.ordem > onde.etapa.ordem && ehRealizada(e));
+  if (alvoNoFunil && alvoNoFunil.ordem > onde.etapa.ordem) {
+    passos.push(...caminhoNoFunil(onde.funil, onde.etapa, alvoNoFunil, fluxos));
   } else {
+    // Funil sem a etapa (ex.: Aplicação Direta): vai para o funil em que os cards dele seguiram para a reunião.
     destino = funilDeDestino(cat, onde.funil, fluxos);
     if (!destino) {
       throw new Error(
@@ -319,14 +338,19 @@ async function planejar({ dealId, closerNome = '', busca = {} }) {
       tipo: 'funil', funilId: destino.funil.id, funilNome: destino.funil.nome, etapaId: e.id, etapaNome: e.nome, exigeCloser: e.exigeCloser === true,
       vistos: destino.n, amostras: destino.total, como: destino.como,
     });
-    if (!ehRealizada(e)) {
+    if (paraQualificado) {
+      if (ehRealizada(e)) throw new Error(`Os cards de "${onde.funil.nome}" entram no funil "${destino.funil.nome}" já na reunião realizada: não há etapa de qualificado no caminho.`);
+      const q = etapaQualificado(destino.funil);
+      if (q && q.ordem > e.ordem) passos.push(...caminhoNoFunil(destino.funil, e, q, fluxos));
+    } else if (!ehRealizada(e)) {
       const fim = destino.funil.etapas.find((x) => x.ordem > e.ordem && ehRealizada(x));
       if (!fim) throw new Error(`No funil "${destino.funil.nome}" não há etapa de reunião realizada depois de "${e.nome}".`);
       passos.push(...caminhoNoFunil(destino.funil, e, fim, fluxos));
     }
   }
-  if (!passos.length || !ehRealizada(localizar(cat, passos[passos.length - 1].etapaId).etapa)) {
-    throw new Error('Não consegui montar o caminho até a reunião realizada deste card.');
+  const ultima = passos.length ? localizar(cat, passos[passos.length - 1].etapaId).etapa : null;
+  if (!ultima || (paraQualificado ? !(nomeQualificado(ultima) || ultima.categoria === 'reuniao_agendada') : !ehRealizada(ultima))) {
+    throw new Error(`Não consegui montar o caminho até ${ALVOS[qual]} deste card.`);
   }
 
   const listaClosers = await closersDoCrm().catch(() => []);
@@ -335,13 +359,14 @@ async function planejar({ dealId, closerNome = '', busca = {} }) {
   const perms = await permissoes();
   const faltando = [];
   if (perms && passos.some((p) => p.tipo === 'funil') && !perms.includes('mover_de_funil')) faltando.push('mover de funil (mover_de_funil)');
-  if (perms && !perms.includes('trocar_responsavel')) faltando.push('trocar o responsável para o closer (trocar_responsavel)');
+  if (perms && (!paraQualificado || precisaCloser) && !perms.includes('trocar_responsavel')) faltando.push('trocar o responsável para o closer (trocar_responsavel)');
   const contatoId = idDe((deal.contacts || [])[0]) || busca.contatoId || '';
   const guardado = await handoffGuardado({ dealId: id, contatoId, telefone: busca.telefone });
   return {
     card: { id, nome: crm.consertarAcentos(deal.name || ''), funil: onde.funil.nome, etapa: onde.etapa.nome, dono: dono.nome },
+    alvo: qual,
     passos,
-    assinatura: [onde.etapa.id].concat(passos.map((p) => `${p.tipo}:${p.etapaId}`)).join('>'),
+    assinatura: [qual, onde.etapa.id].concat(passos.map((p) => `${p.tipo}:${p.etapaId}`)).join('>'),
     precisaCloser,
     closers: listaClosers,
     closerSugerido: sugerirCloser(listaClosers, closerNome) || (listaClosers.some((c) => c.id === dono.id) ? dono.id : ''),
@@ -355,13 +380,15 @@ async function planejar({ dealId, closerNome = '', busca = {} }) {
  * Executa o plano conferido pelo SDR. Relê o card antes de cada passagem (versão), confere que ele foi para a etapa
  * pedida e para no primeiro erro, dizendo o que já foi feito.
  */
-async function executar({ usuario = {}, dealId, assinatura, closerId, handoff, closerNome = '', busca = {} }) {
-  const plano = await planejar({ dealId, closerNome, busca });
-  if (plano.assinatura !== String(assinatura || '')) throw new Error('O card mudou desde que o plano foi aberto. Abra "Reunião realizada" de novo para conferir.');
+async function executar({ usuario = {}, dealId, assinatura, closerId, handoff, closerNome = '', busca = {}, alvo: qual = 'realizada' }) {
+  const plano = await planejar({ dealId, closerNome, busca, alvo: qual });
+  if (plano.assinatura !== String(assinatura || '')) throw new Error('O card mudou desde que o plano foi aberto. Abra o botão de novo para conferir.');
+  // Reunião realizada: sempre com closer e handoff. Qualificado: só se alguma etapa do caminho pedir o closer.
+  const comCloser = qual === 'realizada' || plano.precisaCloser;
   if (plano.faltando.length) throw new Error(`O token do CRM não tem permissão para: ${plano.faltando.join(' e ')}. Peça ao administrador do CRM.`);
   const closer = closerId ? plano.closers.find((c) => c.id === String(closerId)) : null;
   if (closerId && !closer) throw new Error('Escolha um closer da lista.');
-  if (!closer) throw new Error('Escolha o closer da reunião.');
+  if (comCloser && !closer) throw new Error('Escolha o closer da reunião.');
   const id = plano.card.id;
   const rd = crm.rd;
   const feitos = [];
@@ -369,7 +396,7 @@ async function executar({ usuario = {}, dealId, assinatura, closerId, handoff, c
 
   let deal = await lerCard(id);
   let textoHandoff = '';
-  if (!(deal.handoff && deal.handoff.text)) {
+  if (comCloser && !(deal.handoff && deal.handoff.text)) {
     const guardado = await handoffGuardado({ dealId: id, contatoId: idDe((deal.contacts || [])[0]) || busca.contatoId, telefone: busca.telefone });
     textoHandoff = String(handoff || '').trim() || (guardado && guardado.texto) || '';
     if (textoHandoff.replace(/\s+/g, ' ').length < 40) throw new Error('Falta o handoff: gere o report desta conversa (ele vira o handoff) ou escreva o texto para o closer.');
@@ -385,7 +412,7 @@ async function executar({ usuario = {}, dealId, assinatura, closerId, handoff, c
     for (const p of plano.passos) {
       deal = await lerCard(id);
       const corpo = { versao: deal.versao, deal_stage_id: p.etapaId };
-      if (p.exigeCloser && !closerDefinido) {
+      if (p.exigeCloser && !closerDefinido && closer) {
         corpo.user_id = closer.id;
         if (textoHandoff) corpo.handoff = textoHandoff;
         closerDefinido = true;
@@ -399,7 +426,7 @@ async function executar({ usuario = {}, dealId, assinatura, closerId, handoff, c
     }
     // Nenhuma etapa pediu o closer: ele vira o responsável do card do mesmo jeito (é onde o CRM guarda o closer).
     deal = await lerCard(id);
-    if (!closerDefinido && idDe(deal.user) !== closer.id) {
+    if (qual === 'realizada' && !closerDefinido && idDe(deal.user) !== closer.id) {
       await rd(`/deals/${encodeURIComponent(id)}`, {}, { metodo: 'PUT', corpo: { deal: { user_id: closer.id, versao: deal.versao } } });
       feitos.push(`Closer: ${closer.nome}`);
     } else if (closerDefinido) {
