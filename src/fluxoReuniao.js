@@ -370,7 +370,8 @@ async function planejar({ dealId, closerNome = '', busca = {}, alvo: qual = 'rea
     precisaCloser,
     closers: listaClosers,
     closerSugerido: sugerirCloser(listaClosers, closerNome) || (listaClosers.some((c) => c.id === dono.id) ? dono.id : ''),
-    handoff: { noCrm: Boolean(deal.handoff && deal.handoff.text), doReport: guardado ? { quando: guardado.quando, sdr: guardado.sdr } : null },
+    // O texto do report vai junto: o SDR pode editar e complementar com o que veio da ligação.
+    handoff: { noCrm: Boolean(deal.handoff && deal.handoff.text), doReport: guardado ? { quando: guardado.quando, sdr: guardado.sdr, texto: guardado.texto } : null },
     aprendizado: { amostras: fluxos.amostras || 0 },
     faltando,
   };
@@ -380,7 +381,7 @@ async function planejar({ dealId, closerNome = '', busca = {}, alvo: qual = 'rea
  * Executa o plano conferido pelo SDR. Relê o card antes de cada passagem (versão), confere que ele foi para a etapa
  * pedida e para no primeiro erro, dizendo o que já foi feito.
  */
-async function executar({ usuario = {}, dealId, assinatura, closerId, handoff, closerNome = '', busca = {}, alvo: qual = 'realizada' }) {
+async function executar({ usuario = {}, dealId, assinatura, closerId, handoff, complemento = '', closerNome = '', busca = {}, alvo: qual = 'realizada' }) {
   const plano = await planejar({ dealId, closerNome, busca, alvo: qual });
   if (plano.assinatura !== String(assinatura || '')) throw new Error('O card mudou desde que o plano foi aberto. Abra o botão de novo para conferir.');
   // Reunião realizada: sempre com closer e handoff. Qualificado: só se alguma etapa do caminho pedir o closer.
@@ -396,9 +397,13 @@ async function executar({ usuario = {}, dealId, assinatura, closerId, handoff, c
 
   let deal = await lerCard(id);
   let textoHandoff = '';
+  const extra = String(complemento || '').trim().slice(0, 3000);
+  const handoffJaNoCrm = Boolean(deal.handoff && deal.handoff.text);
   if (comCloser && !(deal.handoff && deal.handoff.text)) {
     const guardado = await handoffGuardado({ dealId: id, contatoId: idDe((deal.contacts || [])[0]) || busca.contatoId, telefone: busca.telefone });
     textoHandoff = String(handoff || '').trim() || (guardado && guardado.texto) || '';
+    // Começou no WhatsApp e terminou na ligação: o que veio da ligação entra no mesmo handoff.
+    if (extra) textoHandoff = (textoHandoff ? textoHandoff + '\n\n' : '') + 'INFORMAÇÕES DA LIGAÇÃO\n' + extra;
     if (textoHandoff.replace(/\s+/g, ' ').length < 40) throw new Error('Falta o handoff: gere o report desta conversa (ele vira o handoff) ou escreva o texto para o closer.');
     textoHandoff = textoHandoff.slice(0, 6000);
   }
@@ -437,6 +442,15 @@ async function executar({ usuario = {}, dealId, assinatura, closerId, handoff, c
     const erro = new Error(feitos.length ? `Parou no meio: ${msg}. Já feito: ${feitos.join(' › ')}.` : `O CRM não aceitou: ${msg}`);
     erro.feitos = feitos;
     throw erro;
+  }
+  // O card já tinha handoff (o CRM não deixa reescrever sem permissão própria): o complemento vai como anotação.
+  if (extra && handoffJaNoCrm && comCloser) {
+    try {
+      await rd(`/deals/${encodeURIComponent(id)}/notes`, {}, { metodo: 'POST', corpo: { text: 'Complemento do handoff (ligação):\n' + extra } });
+      feitos.push('Complemento anotado');
+    } catch (e) {
+      feitos.push('Complemento não anotado: ' + String(e.message || e).replace(/^O CRM não aceitou: /, ''));
+    }
   }
   await crm.esquecerLead(busca).catch(() => {});
   return { ok: true, feitos, card: plano.card };

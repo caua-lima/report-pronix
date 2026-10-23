@@ -111,6 +111,7 @@ global.fetch = async (url, opts = {}) => {
     const c = cards[m[1]];
     const rota = m[2] || '';
     if (metodo === 'GET' && !rota) return ok(c);
+    if (rota === '/notes') return ok({ ok: true }); // anotação não pede versão
     if (corpo && (corpo.versao ?? (corpo.deal && corpo.deal.versao)) !== c.versao) return ok({ codigo: 'CONFLITO_VERSAO', mensagem: 'A versão enviada não é a atual.' }, 409);
     const sobe = (mud) => { cards[m[1]] = { ...c, ...mud, versao: c.versao + 1 }; return ok(cards[m[1]]); };
     if (rota === '/stage') {
@@ -264,4 +265,26 @@ test('Qualificado: card que já está qualificado (ou adiante) não é mexido; o
   const plano = await fluxo.planejar({ dealId: 'd-mql', alvo: 'qualificado' });
   await assert.rejects(fluxo.executar({ dealId: 'd-mql', assinatura: plano.assinatura, alvo: 'realizada', closerId: 'u-ph', handoff: 'x'.repeat(60) }), /O card mudou/);
   assert.deepEqual(escritas, []);
+});
+
+// ---------------------------------------------------------------- handoff complementado com a ligação
+test('Reunião realizada: o handoff do report (editado) e as informações da ligação vão juntos na passagem', async () => {
+  reiniciar();
+  await fluxo.guardarHandoff({ dados: DADOS_REPORT, sdr: 'Cauã Lima', reportId: 'r1', vinculo: { dealId: 'd-mql' } });
+  const plano = await fluxo.planejar({ dealId: 'd-mql' });
+  assert.ok(plano.handoff.doReport.texto.startsWith('Nome: Lead Teste'), 'o texto do report vem no plano para editar');
+  await fluxo.executar({ dealId: 'd-mql', assinatura: plano.assinatura, closerId: 'u-ph', handoff: 'Nome: Lead Teste (editado)', complemento: 'Na ligação disse que a esposa decide junto.' });
+  const passagem = escritas.find((e) => e.corpo.user_id);
+  assert.equal(passagem.corpo.handoff, 'Nome: Lead Teste (editado)\n\nINFORMAÇÕES DA LIGAÇÃO\nNa ligação disse que a esposa decide junto.');
+});
+
+test('Reunião realizada: card que já tinha handoff — o complemento da ligação vai como anotação no card', async () => {
+  reiniciar();
+  cards['d-mql'] = { ...cards['d-mql'], handoff: { text: 'Handoff já gravado no CRM.' } };
+  const plano = await fluxo.planejar({ dealId: 'd-mql' });
+  const r = await fluxo.executar({ dealId: 'd-mql', assinatura: plano.assinatura, closerId: 'u-ph', complemento: 'Na ligação confirmou o investimento.' });
+  assert.ok(r.feitos.includes('Complemento anotado'));
+  const nota = escritas.find((e) => e.caminho === '/deals/d-mql/notes');
+  assert.equal(nota.corpo.text, 'Complemento do handoff (ligação):\nNa ligação confirmou o investimento.');
+  assert.equal(escritas.some((e) => e.corpo && e.corpo.handoff), false, 'o handoff que já existe não é reescrito');
 });

@@ -668,14 +668,14 @@ test('painel: com dois cards em aberto, o mais antigo ganha "Perder como duplica
   painelDe(sp).querySelector('[data-pnx-realizada="d-novo"]').click();
   await esperar(() => painelDe(sp).querySelector('[data-pnx-closer]'), { motivo: 'plano na tela' });
   const t = painelDe(sp).textContent;
-  for (const x of ['Qualificado', 'Reunião Agendada', 'define o closer', '8 de 10 cards passaram aqui', 'Reunião Realizada', 'o report de 22/10/2026 (Cauã Lima) vai junto']) assert.ok(t.includes(x), 'faltou: ' + x);
+  for (const x of ['Qualificado', 'Reunião Agendada', 'define o closer', '8 de 10 cards passaram aqui', 'Reunião Realizada', 'o report de 22/10/2026 (Cauã Lima) (pode editar)', 'Informações da ligação']) assert.ok(t.includes(x), 'faltou: ' + x);
   assert.equal(painelDe(sp).querySelector('[data-pnx-closer]').value, 'u-ph');
   assert.equal(painelDe(sp).querySelector('b'), null, 'nome do CRM não vira HTML');
   assert.equal(pedidos[1].corpo.closerNome, 'Paulo Henrique');
   assert.equal(pedidos[1].corpo.alvo, 'realizada');
   painelDe(sp).querySelector('[data-pnx-confirmar="realizada"]').click();
   await esperar(() => /Pronto no CRM: Qualificado › Reunião Agendada › Reunião Realizada/.test(painelDe(sp).textContent), { motivo: 'movido' });
-  assert.deepEqual(pedidos[2].corpo, { busca: { telefone: '5571999998888' }, dealId: 'd-novo', assinatura: 'a1', closerId: 'u-ph', handoff: '', closerNome: 'Paulo Henrique', alvo: 'realizada' });
+  assert.deepEqual(pedidos[2].corpo, { busca: { telefone: '5571999998888' }, dealId: 'd-novo', assinatura: 'a1', closerId: 'u-ph', handoff: '', complemento: '', closerNome: 'Paulo Henrique', alvo: 'realizada' });
   assert.deepEqual(sp.enviadas.map((e) => e.msg.action), ['painelConsultar', 'painelConsultar'], 'o cartão busca o lead de novo depois de cada escrita');
   sp.fechar();
 });

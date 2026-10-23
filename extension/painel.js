@@ -134,14 +134,15 @@
     const r = await chamarServidor('/api/crm/realizada/plano', { busca: d.busca || {}, dealId: c.id, closerNome: (d.reuniao && d.reuniao.closer) || '', alvo });
     if (!aindaAberto(c.id) || estado.form.tipo !== alvo) return;
     if (!r || !r.ok) return mudarForm({ dealId: c.id, tipo: alvo, fase: 'erro', erro: (r && r.erro) || 'Não consegui montar o caminho no CRM.' });
-    mudarForm({ dealId: c.id, tipo: alvo, fase: 'plano', plano: r, closerId: r.closerSugerido || '', texto: '' });
+    const doReport = r.handoff && r.handoff.doReport;
+    mudarForm({ dealId: c.id, tipo: alvo, fase: 'plano', plano: r, closerId: r.closerSugerido || '', texto: (doReport && doReport.texto) || '', complemento: '' });
   }
 
   async function confirmarRealizada(form, c, d) {
     if (form.fase === 'enviando') return;
     mudarForm({ ...form, fase: 'enviando', erro: '' });
     const r = await chamarServidor('/api/crm/realizada', {
-      busca: d.busca || {}, dealId: c.id, assinatura: form.plano.assinatura, closerId: form.closerId, handoff: form.texto || '', closerNome: (d.reuniao && d.reuniao.closer) || '', alvo: form.tipo,
+      busca: d.busca || {}, dealId: c.id, assinatura: form.plano.assinatura, closerId: form.closerId, handoff: form.texto || '', complemento: form.complemento || '', closerNome: (d.reuniao && d.reuniao.closer) || '', alvo: form.tipo,
     });
     if (!aindaAberto(c.id)) return;
     if (!r || !r.ok) return mudarForm({ ...form, fase: 'plano', erro: (r && r.erro) || 'O CRM não aceitou.' });
@@ -212,18 +213,25 @@
     box.appendChild(sel);
 
     const h = p.handoff || {};
-    if (h.noCrm) box.appendChild(el('div', 'color:#3ddc84;margin-top:8px', 'Handoff: já está no card ✓'));
-    else if (h.doReport) box.appendChild(el('div', 'color:#3ddc84;margin-top:8px', `Handoff: o report de ${h.doReport.quando || 'hoje'}${h.doReport.sdr ? ' (' + h.doReport.sdr + ')' : ''} vai junto ✓`));
-    else {
-      box.appendChild(el('div', 'color:#ffc233;margin-top:8px', 'Sem report deste lead: gere o report da conversa ou escreva o handoff para o closer.'));
+    const campo = (rotulo, valor, dica, aoMudar, attr, altura) => {
+      box.appendChild(el('div', 'color:#a39e93;margin:8px 0 3px', rotulo));
       const ta = document.createElement('textarea');
-      ta.style.cssText = 'width:100%;box-sizing:border-box;min-height:80px;margin-top:4px;background:#211f24;color:#f3efe6;border:1px solid #3a373f;border-radius:7px;padding:6px;font:12px/1.4 inherit';
-      ta.value = form.texto || '';
-      ta.setAttribute('data-pnx-handoff', '1');
-      ta.addEventListener('input', () => { form.texto = ta.value; });
+      ta.style.cssText = `width:100%;box-sizing:border-box;min-height:${altura}px;background:#211f24;color:#f3efe6;border:1px solid #3a373f;border-radius:7px;padding:6px;font:12px/1.4 inherit;resize:vertical`;
+      ta.value = valor || '';
+      ta.placeholder = dica;
+      ta.setAttribute(attr, '1');
+      ta.addEventListener('input', () => aoMudar(ta.value));
       ta.addEventListener('keydown', (ev) => ev.stopPropagation());
       box.appendChild(ta);
+    };
+    if (h.noCrm) {
+      box.appendChild(el('div', 'color:#3ddc84;margin-top:8px', 'Handoff: já está no card ✓'));
+    } else {
+      const deOnde = h.doReport ? `Handoff — o report de ${h.doReport.quando || 'hoje'}${h.doReport.sdr ? ' (' + h.doReport.sdr + ')' : ''} (pode editar)` : 'Handoff para o closer (sem report deste lead: escreva aqui)';
+      campo(deOnde, form.texto, 'O que o closer precisa saber do lead.', (v) => { form.texto = v; }, 'data-pnx-handoff', h.doReport ? 140 : 80);
     }
+    campo(h.noCrm ? 'Informações da ligação (vão como anotação no card)' : 'Informações da ligação (complementam o handoff)', form.complemento,
+      'Começou no WhatsApp e seguiu na ligação? O que o lead contou na ligação.', (v) => { form.complemento = v; }, 'data-pnx-complemento', 60);
     }
     if ((p.faltando || []).length) box.appendChild(el('div', 'color:#ff6f5c;margin-top:8px', 'O token do CRM não tem permissão para: ' + p.faltando.join(' e ') + '. Peça ao administrador do CRM.'));
     if (form.erro) box.appendChild(el('div', 'color:#ff6f5c;margin-top:8px', form.erro));
