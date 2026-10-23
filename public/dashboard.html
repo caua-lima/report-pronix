@@ -1491,11 +1491,20 @@
       });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) {
-        const e = new Error(j.erro || 'Falha na requisição.');
+        // Sem { erro } no corpo = a resposta nem veio do nosso servidor: a Vercel cortou o pedido (60 s) ou ele caiu.
+        const semResposta = !j.erro;
+        const e = new Error(j.erro || mensagemSemResposta(r.status));
         e.status = r.status; // 409 = alguém alterou o mesmo report antes de você
+        e.semResposta = semResposta;
         throw e;
       }
       return j;
+    }
+    function mensagemSemResposta(status) {
+      if (status === 504 || status === 408) return 'O servidor passou do tempo (60 s) e foi interrompido. Tente de novo — o que já foi lido fica guardado.';
+      if (status === 413) return 'A resposta ficou grande demais para o servidor. Tente um período menor.';
+      if (status >= 500) return `O servidor falhou (erro ${status}). Tente de novo em instantes.`;
+      return `Falha na requisição (erro ${status}).`;
     }
 
     /** Mostra o login ou a área de admin nas duas abas de uma vez. */
@@ -1778,7 +1787,12 @@
         } else if (faltam) setStatus('statusMt', `Ainda faltam ${faltam} negociações para ler do CRM. Clique em "Atualizar do RD" em 1 minuto — o que já foi lido fica guardado.`, { erro: true });
         else setStatus('statusMt', `Lido do RD em ${quando}${d.cache ? ' (guardado por 20 min; "Atualizar do RD" lê de novo)' : ''}.`, { ok: true });
       } catch (e) {
-        setStatus('statusMt', e.message, { erro: true });
+        // A Vercel cortou o pedido (sem resposta do servidor): o que já foi lido ficou guardado, então tenta de novo sozinho.
+        if (e.semResposta && e.status >= 500 && rodadaMt < 20) {
+          rodadaMt++;
+          setStatus('statusMt', `O CRM está lento: o servidor passou do tempo nesta rodada (${rodadaMt}). Tentando de novo em 15 s — o que já foi lido fica guardado.`, { loading: true });
+          timerMt = setTimeout(() => carregarMatch(true, true), 15000);
+        } else setStatus('statusMt', e.message, { erro: true });
       } finally {
         $('mtAtualizar').disabled = false;
       }
