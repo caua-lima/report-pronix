@@ -67,7 +67,7 @@ global.fetch = async (url, opts = {}) => {
   if (p === '/users') return ok({ users: [{ id: 'u-caua', name: 'Cauã Lima' }] });
   if (p === '/custom_fields') return ok({ custom_fields: [{ id: 'cc1', label: 'Estado' }] });
   if (p === '/deal_pipelines') return ok([FUNIL]);
-  if (p === '/deal_lost_reasons') return ok({ deal_lost_reasons: [{ id: 'm1', name: 'Nunca Respondeu (SDR)', type: 'perda' }] });
+  if (p === '/deal_lost_reasons') return ok({ deal_lost_reasons: [{ id: 'm1', name: 'Nunca Respondeu (SDR)', type: 'perda' }, { id: 'm2', name: 'Sem perfil', type: 'desqualificacao' }] });
   return ok({ codigo: 'NAO_ENCONTRADO', mensagem: 'não existe' }, 404);
 };
 test.after(() => { global.fetch = fetchReal; fs.rmSync(DADOS, { recursive: true, force: true }); });
@@ -148,4 +148,15 @@ test('listas no PronixCRM: percorre pelo cursor e guarda o detalhe por id + upda
   } finally {
     global.fetch = antes;
   }
+});
+
+test('Desqualificar: motivo de "desqualificação" exige a anotação (50+ caracteres) e ela vai como deal_lost_note', async () => {
+  estado = DEAL();
+  pedidos.length = 0;
+  await assert.rejects(limpeza.desqualificarCard({ usuario: { id: 'u1', nome: 'Cauã Lima' }, dealId: 'd1', motivoId: 'm2', nota: 'curta' }), (e) => e.message.includes('Escreva o que o lead disse: pelo menos 50 caracteres (faltam 45)'));
+  assert.equal(pedidos.some((x) => x.metodo === 'POST'), false, 'nada vai ao CRM');
+  const nota = 'Disse que não tem o investimento agora e só vai pensar nisso no ano que vem.';
+  await limpeza.desqualificarCard({ usuario: { id: 'u1', nome: 'Cauã Lima' }, dealId: 'd1', motivoId: 'm2', nota });
+  const escrita = pedidos.find((x) => x.metodo === 'POST');
+  assert.deepEqual([escrita.caminho, escrita.corpo.deal_lost_reason_id, escrita.corpo.deal_lost_note], ['/deals/d1/lost', 'm2', nota]);
 });

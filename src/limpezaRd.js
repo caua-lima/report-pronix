@@ -72,8 +72,9 @@ async function emCache(chave, buscar) {
 
 /** Os motivos de perda cadastrados no RD. */
 const motivosDePerda = () =>
-  emCache('crm:motivos-perda', async () =>
-    lista(await crm.rd('/deal_lost_reasons', { limit: 200 }), 'deal_lost_reasons', 'lost_reasons').map((m) => ({ id: idDe(m), nome: crm.consertarAcentos(m.name || '') }))
+  emCache('crm:motivos-perda2', async () =>
+    // tipo (Pronix CRM): "perda" ou "desqualificacao" — este pede a anotação do que o lead disse (50+ caracteres)
+    lista(await crm.rd('/deal_lost_reasons', { limit: 200 }), 'deal_lost_reasons', 'lost_reasons').map((m) => ({ id: idDe(m), nome: crm.consertarAcentos(m.name || ''), tipo: String(m.type || '') }))
   );
 
 const acharEtapa = (f, alvo) => f.etapas.find((e) => norm(e.nome).startsWith(alvo));
@@ -152,13 +153,18 @@ async function sdrDoUsuario(usuario) {
  * mesmo registro da limpeza: aparece no relatório e dá para desfazer pelo painel.
  * @returns {Promise<{motivo: string, etapa: string, dealId: string}>}
  */
-async function desqualificarCard({ usuario, dealId, motivoId }) {
+const NOTA_MINIMA = 50; // o CRM recusa a desqualificação com anotação menor
+async function desqualificarCard({ usuario, dealId, motivoId, nota = '' }) {
   if (!crm.configurado()) throw new Error('O RD Station CRM não está configurado no servidor (RDSTATION_CRM_TOKEN).');
   if (!crm.moverLigado()) throw new Error('A escrita no RD está desligada no servidor (CRM_MOVER_ETAPA=0).');
   const id = /^[A-Za-z0-9_-]{1,40}$/.test(String(dealId || '')) ? String(dealId) : '';
   if (!id) throw new Error('Não sei qual é o card deste lead. Abra a conversa de novo.');
   const motivo = (await motivosDePerda()).find((m) => m.id === String(motivoId || ''));
   if (!motivo) throw new Error('Escolha um dos motivos de perda da lista.');
+  const anotacao = String(nota || '').replace(/\s+/g, ' ').trim().slice(0, 2000);
+  if (motivo.tipo === 'desqualificacao' && anotacao.length < NOTA_MINIMA) {
+    throw new Error(`Escreva o que o lead disse: pelo menos ${NOTA_MINIMA} caracteres (faltam ${NOTA_MINIMA - anotacao.length}).`);
+  }
   const deal = await crm.rd(`/deals/${encodeURIComponent(id)}`);
   if (!deal) throw new Error('Não achei este card no RD.');
   if (!aberto(deal)) throw new Error(deal.win === false ? 'Este card já está como perdido no RD.' : 'Este card já foi fechado no RD.');
@@ -170,7 +176,7 @@ async function desqualificarCard({ usuario, dealId, motivoId }) {
   // responde se faltar algo e o cartão mostra o motivo.
   const { sdr } = await sdrDoUsuario(usuario).catch(() => ({ sdr: null }));
 
-  const resp = await crm.perderCard(deal, { motivoId: motivo.id, etapaId: dest && dest.id !== de.id ? dest.id : '', camposRd: camposComSdr(deal, sdr) });
+  const resp = await crm.perderCard(deal, { motivoId: motivo.id, etapaId: dest && dest.id !== de.id ? dest.id : '', camposRd: camposComSdr(deal, sdr), nota: anotacao });
   if (!resp) throw new Error('O RD não achou o card na hora de gravar.');
   if (resp.win !== undefined && resp.win !== false) throw new Error('O RD respondeu, mas não marcou a perda.');
 

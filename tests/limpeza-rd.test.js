@@ -76,7 +76,7 @@ crm.rd = async (caminho, params = {}, { metodo = 'GET', corpo } = {}) => {
   }
   throw new Error('chamada ao RD não prevista no teste: ' + caminho);
 };
-const limparCache = async () => { await db.cacheDel('crm:motivos-perda'); await db.cacheDel('crm:campos-negociacao'); };
+const limparCache = async () => { await db.cacheDel('crm:motivos-perda2'); await db.cacheDel('crm:campos-negociacao'); };
 test.beforeEach(async () => { reiniciar(); await limparCache(); });
 test.after(() => fs.rmSync(DADOS, { recursive: true, force: true }));
 const EU = { id: 'meu-id', nome: 'Cauã Lima' };

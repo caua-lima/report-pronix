@@ -1187,18 +1187,18 @@ app.post('/api/crm/desqualificar', auth, async (req, res) => {
   try {
     if (semAutomacao(req, res)) return;
     if (!req.usuario.fichaCrm) return res.status(403).json({ erro: 'Ficha do lead desligada para este usuário.' });
-    const { telefone, nome, contatoId, dealId, motivoId } = req.body || {};
+    const { telefone, nome, contatoId, dealId, motivoId, nota } = req.body || {};
     const busca = { telefone, nome, contatoId };
     const lead = await crm.consultarLead(busca);
     const cards = (lead && lead.ficha && lead.ficha.negociacoes) || [];
     if (!cards.some((c) => String(c.id) === String(dealId || ''))) {
       return res.status(400).json({ erro: 'Este card não é do lead desta conversa. Abra a conversa de novo e tente outra vez.' });
     }
-    const r = await limpezaRd.desqualificarCard({ usuario: req.usuario, dealId, motivoId });
+    const r = await limpezaRd.desqualificarCard({ usuario: req.usuario, dealId, motivoId, nota });
     await crm.esquecerLead(busca).catch(() => {});
     res.json({ ok: true, ...r });
   } catch (err) {
-    res.status(/Escolha um|não é do lead|já está como perdido|já foi fechado|Não sei qual/.test(err.message) ? 400 : 502).json({ erro: err.message });
+    res.status(/Escolha um|não é do lead|já está como perdido|já foi fechado|Não sei qual|Escreva o que o lead disse/.test(err.message) ? 400 : 502).json({ erro: err.message });
   }
 });
 
