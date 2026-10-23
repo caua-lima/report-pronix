@@ -705,3 +705,31 @@ test('painel: "Qualificado ✓" mostra o caminho sem pedir closer quando nenhuma
   assert.equal(pedidos[1].corpo.assinatura, 'q1');
   sp.fechar();
 });
+
+test('novidades: depois de atualizar, o WhatsApp mostra uma vez o que mudou e como usar', async () => {
+  const srv = crmFalso(() => ({ ok: true, configurado: true, encontrado: true, ficha: FICHA_MARCOS }));
+  const p = abrir(srv, { storage: { novidadesPendentes: 'painel-crm-2026-10' } });
+  await esperar(() => p.document.getElementById('pronix-novidades'), { motivo: 'aviso de novidades' });
+  const t = p.document.getElementById('pronix-novidades').textContent;
+  for (const x of ['Painel lateral do CRM', 'Copiar link do card', 'Pronix Calendar', 'Qualificado ✓', 'Reunião realizada →', 'Perder como duplicado', 'Áudios de volta']) assert.ok(t.includes(x), 'faltou: ' + x);
+  [...p.document.querySelectorAll('#pronix-novidades button')].find((b) => b.textContent === 'Entendi').click();
+  assert.equal(p.document.getElementById('pronix-novidades'), null);
+  assert.equal(p.storage.novidadesVistas, 'painel-crm-2026-10');
+  p.fechar();
+  // já visto: não aparece de novo
+  const p2 = abrir(srv, { storage: { novidadesPendentes: 'painel-crm-2026-10', novidadesVistas: 'painel-crm-2026-10' } });
+  await esperar(() => /Investimento/.test(textoCartao(p2)), { motivo: 'cartão' });
+  await new Promise((r) => setTimeout(r, 50));
+  assert.equal(p2.document.getElementById('pronix-novidades'), null);
+  p2.fechar();
+});
+
+test('novidades: "Abrir o painel agora" pede ao service worker para abrir o painel lateral', async () => {
+  const srv = crmFalso(() => ({ ok: true, configurado: true, encontrado: true, ficha: FICHA_MARCOS }));
+  const p = abrir(srv, { storage: { novidadesPendentes: 'painel-crm-2026-10' } });
+  await esperar(() => p.document.getElementById('pronix-novidades'), { motivo: 'aviso de novidades' });
+  [...p.document.querySelectorAll('#pronix-novidades button')].find((b) => b.textContent === 'Abrir o painel agora').click();
+  await esperar(() => srv.acoes.includes('abrirPainel'), { motivo: 'pedido do painel' });
+  assert.equal(p.storage.novidadesVistas, 'painel-crm-2026-10');
+  p.fechar();
+});

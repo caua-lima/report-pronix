@@ -2397,6 +2397,68 @@
     /* sem storage (contexto inválido): sem ficha */
   }
 
+
+  // ---------------------------------------------------------------------------
+  // Aviso de novidades: depois de instalar ou atualizar, uma vez, o que mudou e como usar.
+  // ---------------------------------------------------------------------------
+  const NOVIDADES_ID = 'pronix-novidades';
+  const NOVIDADES = [
+    ['Painel lateral do CRM', 'Abre na barra lateral do Chrome: clique no botão ▤ do cartão do lead ou no ícone da extensão → "Abrir painel lateral do CRM". Mostra o lead da conversa aberta, todas as negociações dele (clique numa para abrir o card no CRM), o formulário e as últimas anotações. Ele acompanha quando você troca de conversa.'],
+    ['Copiar link do card', 'No painel, embaixo de "Abrir o card no Pronix CRM": o link do card com o botão "Copiar link". É só colar no Pronix Calendar ao criar a reunião.'],
+    ['Qualificado ✓', 'O lead qualificou e confirmou a reunião? Clique e o card vai para a etapa de qualificado do funil (ou "Agendou"). O painel mostra o caminho e só move quando você confirma. A etiqueta "Qualificado" do cartão vem junto.'],
+    ['Reunião realizada →', 'Depois da reunião: escolha o closer e confirme. O card percorre as etapas do funil até "Reunião realizada" e o report do lead vai como handoff (gere o report antes; sem ele, o painel pede um texto).'],
+    ['Perder como duplicado', 'Lead com dois cards em aberto: o botão aparece no mais antigo e marca a perda com o motivo de duplicidade, dizendo em qual card o lead continua.'],
+    ['Áudios de volta', 'O report voltou a achar e transcrever os áudios no formato novo do WhatsApp.'],
+  ];
+  function mostrarNovidades(id) {
+    if (document.getElementById(NOVIDADES_ID)) return;
+    const fechar = () => {
+      try {
+        chrome.storage.local.set({ novidadesVistas: id });
+      } catch (_) {
+        /* ok */
+      }
+      fundo.remove();
+    };
+    const botao = (texto, cor, fundoCor, aoClicar) => {
+      const b = elem('button', `cursor:pointer;border:${fundoCor ? '0' : '1px solid ' + cor};border-radius:9px;padding:10px 14px;background:${fundoCor || 'transparent'};color:${cor};font:700 13px inherit`, texto);
+      b.type = 'button';
+      b.addEventListener('click', aoClicar);
+      return b;
+    };
+    const lista = elem('div', 'display:grid;gap:10px;margin-top:14px');
+    NOVIDADES.forEach(([titulo, texto]) =>
+      lista.appendChild(elem('div', 'padding:10px 12px;border-radius:10px;background:#211f24;border:1px solid #3a373f',
+        elem('div', 'font-weight:700;color:#ffc233;margin-bottom:3px', titulo),
+        elem('div', 'color:#e9e5dc;font-size:13px;line-height:1.45', texto))));
+    const caixa = elem('div', 'width:min(560px,calc(100vw - 32px));max-height:calc(100vh - 48px);overflow:auto;box-sizing:border-box;background:#1a191c;color:#f3efe6;border:1px solid #3a373f;border-top:4px solid #ffc233;border-radius:14px;padding:20px 22px;font:14px/1.4 Segoe UI,system-ui,-apple-system,Roboto,sans-serif;box-shadow:0 20px 60px rgba(0,0,0,.55)',
+      elem('div', 'font-size:11px;letter-spacing:.14em;color:#ffc233;font-weight:700', 'NOVIDADES DA EXTENSÃO'),
+      elem('div', 'font-size:20px;font-weight:700;margin-top:4px', 'O que mudou e como usar'),
+      lista,
+      elem('div', 'color:#a39e93;font-size:12px;margin-top:12px', 'Os botões Qualificado, Reunião realizada e Perder como duplicado aparecem para quem tem o acesso liberado pelo master (o mesmo do Desqualificar).'),
+      elem('div', 'display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin-top:16px',
+        botao('Abrir o painel agora', '#ffc233', '', () => { abrirPainelDoChrome(); fechar(); }),
+        botao('Entendi', '#18171b', '#ffc233', fechar)));
+    const fundo = elem('div', 'position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center', caixa);
+    fundo.id = NOVIDADES_ID;
+    fundo.setAttribute('role', 'dialog');
+    fundo.setAttribute('aria-label', 'Novidades da extensão');
+    fundo.addEventListener('click', (ev) => { if (ev.target === fundo) fechar(); });
+    document.body.appendChild(fundo);
+  }
+  try {
+    chrome.storage.local.get({ novidadesPendentes: '', novidadesVistas: '' }, (c) => {
+      if (!c || !c.novidadesPendentes || c.novidadesPendentes === c.novidadesVistas) return;
+      // Um instante para o WhatsApp montar a tela (e, com as duas extensões, para o Report PRONIX se anunciar).
+      setTimeout(() => {
+        if (false && document.documentElement.getAttribute('data-report-dono') === 'pronix') return;
+        mostrarNovidades(c.novidadesPendentes);
+      }, 2500);
+    });
+  } catch (_) {
+    /* sem storage */
+  }
+
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (msg && msg.action === 'start') {
       // Dispara em background e responde na hora para o popup poder fechar.

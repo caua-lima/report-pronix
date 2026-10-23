@@ -321,3 +321,14 @@ function agendarAquecimento(ms) {
   if (!chrome.alarms) return;
   chrome.alarms.create(ALARME_AQUECER, { when: Date.now() + Math.max(60 * 1000, ms) });
 }
+
+// Instalou ou atualizou: o WhatsApp Web mostra UMA vez o aviso do que mudou e de como usar (content.js).
+const NOVIDADES = 'painel-crm-2026-10';
+if (chrome.runtime.onInstalled) chrome.runtime.onInstalled.addListener((d) => {
+  if (!d || (d.reason !== 'install' && d.reason !== 'update')) return;
+  try {
+    chrome.storage.local.set({ novidadesPendentes: NOVIDADES });
+  } catch (_) {
+    /* sem storage */
+  }
+});
