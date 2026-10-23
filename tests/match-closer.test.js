@@ -147,7 +147,7 @@ test('rotas: só o master; a meta fica salva por mês e entra no plano; a segund
   const s2 = await api('PUT', '/api/master/match/meta', E.caua.chave, { mes, desde: '2026-07-01', meta1: '120.000', meta2: '', conversaoAlvo: '30' });
   assert.deepEqual(s2.json.meta, { meta1: 120000, meta2: 0, meta3: 0, conversaoAlvo: 30 });
   assert.deepEqual(s2.json.plano.metas.map((m) => m.alvo), [120000]);
-  await api('PUT', '/api/master/match/meta', E.caua.chave, { mes, meta1: '100.000', meta2: 150000, conversaoAlvo: '25' });
+  await api('PUT', '/api/master/match/meta', E.caua.chave, { mes, desde: '2026-07-01', meta1: '100.000', meta2: 150000, conversaoAlvo: '25' });
 
   r = await api('GET', '/api/master/match?desde=2026-07-01', E.caua.chave);
   assert.equal(consultas.length, lidas, 'abrir de novo não relê o RD');

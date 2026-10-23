@@ -29,7 +29,7 @@ const { produtoPeloNome } = require('./vendasRd');
 const { sdrDoCard, leadDoCard } = require('./vendasDoRd');
 const analises = require('./matchAnalises');
 
-const DESDE_PADRAO = () => process.env.MATCH_DESDE || '2026-07-01';
+const DESDE_PADRAO = () => process.env.MATCH_DESDE || '2026-06-01'; // o CRM novo tem o histórico desde junho
 const CLOSER_PADRAO = () => process.env.MATCH_CLOSER || 'Paulo Henrique';
 const TIME_PADRAO = 'Ágatha Vielmi, Nicoly Beatriz, Reinaldo Junior, Samuel Filipe, Luiza Lemes, Juliana Ferreira, Isamara';
 /** Os SDRs do time (nomes como aparecem no campo SDR do card, ou o primeiro nome). */
@@ -64,7 +64,8 @@ function nomeBate(valor, nome) {
 function quemEhOSdr(deal, usuario, time) {
   const campo = (Array.isArray(deal.deal_custom_fields) ? deal.deal_custom_fields : [])
     .find((c) => norm(c && c.custom_field && c.custom_field.label) === 'sdr');
-  const bruto = String((campo && campo.value) || '').trim();
+  // Pronix CRM: a coluna "sdr" do card é a fonte; o campo personalizado "SDR" fica de reserva (cards antigos do RD).
+  const bruto = String((deal.sdr && deal.sdr.name) || (campo && campo.value) || '').trim();
   if (!norm(bruto)) return { tipo: 'sem', nome: '' };
   if (nomeBate(bruto, usuario.nome)) return { tipo: 'eu', nome: usuario.nome };
   const doTime = time.find((n) => nomeBate(bruto, n));
@@ -89,8 +90,13 @@ function diaDoValor(v) {
   return Number.isFinite(Date.parse(s)) && /^\d{4}-\d{2}-\d{2}T/.test(s) ? stats.emDiaLocal(s) : '';
 }
 
+/** Etapa de reunião realizada: pela categoria do Pronix CRM (catalogo: id da etapa -> categoria) ou pelo nome. */
+const ehEtapaRealizada = (h, catalogo) =>
+  Boolean(h) && ((catalogo && catalogo.get(String(h.deal_stage_id || '')) === 'reuniao_realizada') || /^reuniao realizada/.test(norm(h.deal_stage_name)));
+const passouPelaRealizada = (deal, catalogo) => (Array.isArray(deal.deal_stage_histories) ? deal.deal_stage_histories : []).some((h) => ehEtapaRealizada(h, catalogo));
+
 /** Dia da reunião do card: campo de data com "reunião"/"call" no nome; senão, a criação do card. */
-function dataDaReuniao(deal) {
+function dataDaReuniao(deal, catalogo = null) {
   for (const c of Array.isArray(deal.deal_custom_fields) ? deal.deal_custom_fields : []) {
     const rotulo = norm(c && c.custom_field && c.custom_field.label);
     if (!/(reuniao|call)/.test(rotulo) || !/(data|dia|quando)/.test(rotulo)) continue;
@@ -99,7 +105,7 @@ function dataDaReuniao(deal) {
   }
   // PronixCRM: o histórico de etapas diz quando o card ENTROU na etapa de reunião realizada (a primeira vez).
   const passagens = (Array.isArray(deal.deal_stage_histories) ? deal.deal_stage_histories : [])
-    .filter((h) => h && h.start_date && /^reuniao realizada/.test(norm(h.deal_stage_name)))
+    .filter((h) => h && h.start_date && ehEtapaRealizada(h, catalogo))
     .map((h) => stats.emDiaLocal(h.start_date))
     .sort();
   if (passagens.length) return { dia: passagens[0], origem: 'historico' };
@@ -107,12 +113,21 @@ function dataDaReuniao(deal) {
 }
 
 /** O que o card diz da reunião: 'venda' | 'nao_comprou' | 'fup' | 'no_show' | 'antes' (ainda não aconteceu). */
-function estadoDoCard(deal) {
+function estadoDoCard(deal, catalogo = null) {
   if (deal.win === true) return 'venda';
   const etapa = norm(deal.deal_stage && deal.deal_stage.name);
+  const hist = Array.isArray(deal.deal_stage_histories) ? deal.deal_stage_histories : [];
   if (deal.win === false) {
-    return NO_SHOW.test(norm(deal.deal_lost_reason && deal.deal_lost_reason.name)) ? 'no_show' : 'nao_comprou';
+    if (NO_SHOW.test(norm(deal.deal_lost_reason && deal.deal_lost_reason.name))) return 'no_show';
+    // Pronix CRM com histórico: perdido sem nunca ter passado pela reunião realizada = a reunião não aconteceu.
+    if (catalogo && catalogo.size && hist.length > 1 && !passouPelaRealizada(deal, catalogo)) return 'no_show';
+    return 'nao_comprou';
   }
+  // Pela categoria da etapa atual (em qualquer funil): reunião realizada, follow-up e negociação avançada vêm depois da reunião.
+  const cat = catalogo && catalogo.get(String((deal.deal_stage && (deal.deal_stage.id || deal.deal_stage._id)) || ''));
+  if (cat === 'venda') return 'venda';
+  if (cat === 'reuniao_realizada' || cat === 'fup' || cat === 'negociacao_avancada') return 'fup';
+  if (cat === 'reuniao_agendada' || cat === 'contato' || cat === 'resposta') return passouPelaRealizada(deal, catalogo) ? 'fup' : 'antes';
   if (/^vendido/.test(etapa)) return 'venda';
   if (/^nao compraram/.test(etapa)) return 'nao_comprou';
   if (ETAPAS_REALIZADA.test(etapa)) return 'fup';
@@ -129,8 +144,12 @@ async function buscarCardsPronix({ usuario, time, nomeCloser, desde, hoje }) {
   const diag = { paginas: 0, truncado: false };
   const nomes = [usuario.nome].concat((time || []).filter((n) => !nomeBate(n, usuario.nome)));
   const ids = [];
-  // Só os funis dos closers: é onde o card fica depois da reunião (listar todos os funis do SDR passa de 8 mil cards).
-  const funis = await crm.funisDosClosers();
+  // Os funis em que existe reunião realizada (pela categoria da etapa, em qualquer funil) e os de closer pelo nome.
+  // Listar todos os funis do SDR passa de 8 mil cards; a lista é barata, o detalhe é que custa — e só os do closer são lidos.
+  const todos = await crm.funis().catch(() => []);
+  const comRealizada = todos.filter((f) => f.etapas.some((e) => e.categoria === 'reuniao_realizada'));
+  const funis = [...new Map(comRealizada.concat(await crm.funisDosClosers()).map((f) => [f.id, f])).values()];
+  diag.funis = funis.map((f) => f.nome);
   for (const nome of nomes) {
     const u = await crm.usuarioDoCrm(nome);
     if (!u) continue;
@@ -188,7 +207,7 @@ async function levantar({ usuario, closer, desde, atualizar = false } = {}) {
   const nomeCloser = String(closer || CLOSER_PADRAO()).trim();
   const inicio = /^\d{4}-\d{2}-\d{2}$/.test(String(desde || '')) ? desde : DESDE_PADRAO();
   const time = timeDeSdrs();
-  const chaveCache = `match2_${usuario.id}_${slug(nomeCloser)}_${inicio}_${slug(time.join(' '))}`;
+  const chaveCache = `match3_${usuario.id}_${slug(nomeCloser)}_${inicio}_${slug(time.join(' '))}`;
   if (!atualizar) {
     const guardado = await db.cacheGet(chaveCache).catch(() => null);
     if (guardado) {
@@ -203,9 +222,12 @@ async function levantar({ usuario, closer, desde, atualizar = false } = {}) {
   const rdUsers = await crm.usuariosRd().catch(() => []);
   const closerRd = rdUsers.find((u) => palavrasBatem(u.nome, nomeCloser)) || null;
   const { cards, diag } = await buscarCards({ closerRd, desde: inicio, hoje, usuario, time, nomeCloser });
+  // Pronix CRM: id da etapa -> categoria ("reuniao_realizada", "fup"...), para reconhecer a reunião em qualquer funil.
+  const catalogo = new Map();
+  if (crm.ehPronix()) (await crm.funis().catch(() => [])).forEach((f) => f.etapas.forEach((e) => e.categoria && catalogo.set(e.id, e.categoria)));
 
   const diagnostico = {
-    closerNoRd: closerRd ? closerRd.nome : '', cardsLidos: cards.length, paginas: diag.paginas, truncado: diag.truncado, pendentesDoCrm: diag.pendentes || 0,
+    closerNoRd: closerRd ? closerRd.nome : '', funis: diag.funis || [], cardsLidos: cards.length, paginas: diag.paginas, truncado: diag.truncado, pendentesDoCrm: diag.pendentes || 0,
     deOutroCloser: 0, semSdr: 0, deOutroSdr: 0, doTime: 0, noShow: 0, aindaNaoAconteceu: 0, foraDoPeriodo: 0, dataPeloCampo: 0, dataPeloHistorico: 0, dataPelaCriacao: 0,
     etapasSemReuniao: {}, doReport: 0,
   };
@@ -215,7 +237,7 @@ async function levantar({ usuario, closer, desde, atualizar = false } = {}) {
     const quem = quemEhOSdr(d, usuario, time);
     if (quem.tipo === 'sem') { diagnostico.semSdr++; continue; }
     if (quem.tipo === 'outro') { diagnostico.deOutroSdr++; continue; }
-    const estado = estadoDoCard(d);
+    const estado = estadoDoCard(d, catalogo);
     if (estado === 'no_show') { diagnostico.noShow++; continue; }
     if (estado === 'antes') {
       diagnostico.aindaNaoAconteceu++;
@@ -225,7 +247,7 @@ async function levantar({ usuario, closer, desde, atualizar = false } = {}) {
     }
     const venda = estado === 'venda';
     const diaVenda = venda && d.closed_at ? stats.emDiaLocal(d.closed_at) : '';
-    let { dia, origem } = dataDaReuniao(d);
+    let { dia, origem } = dataDaReuniao(d, catalogo);
     if (diaVenda && (!dia || dia > diaVenda)) { dia = diaVenda; origem = origem || 'venda'; } // reunião não vem depois da venda
     const contaReuniao = dia >= inicio && dia <= hoje;
     const contaVenda = venda && diaVenda >= inicio && diaVenda <= hoje;
