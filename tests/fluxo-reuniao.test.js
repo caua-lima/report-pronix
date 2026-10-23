@@ -288,3 +288,10 @@ test('Reunião realizada: card que já tinha handoff — o complemento da ligaç
   assert.equal(nota.corpo.text, 'Complemento do handoff (ligação):\nNa ligação confirmou o investimento.');
   assert.equal(escritas.some((e) => e.corpo && e.corpo.handoff), false, 'o handoff que já existe não é reescrito');
 });
+
+test('o texto do report fica guardado também pelo id do report (para complementar com a ligação depois)', async () => {
+  await fluxo.guardarHandoff({ dados: DADOS_REPORT, sdr: 'Cauã Lima', reportId: 'rep123', vinculo: {} });
+  assert.match(await fluxo.textoDoReport('rep123'), /^Nome: Lead Teste/);
+  assert.equal(await fluxo.textoDoReport('nao-existe'), '');
+  assert.equal(await fluxo.textoDoReport('../x'), '');
+});

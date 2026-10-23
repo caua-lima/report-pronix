@@ -90,12 +90,25 @@ const chavesDoHandoff = ({ dealId, contatoId, telefone }) =>
 /** Guarda o texto do report pelo card, pelo contato e pelo telefone do lead (60 dias): é o handoff da "Reunião realizada". */
 async function guardarHandoff({ dados, sdr, reportId, vinculo }) {
   const v = vinculo || {};
-  const chaves = chavesDoHandoff(v);
+  // pelo card, pelo contato, pelo telefone — e pelo próprio report (para complementar depois com a ligação)
+  const chaves = chavesDoHandoff(v).concat(idOk(reportId) ? [`handoff:r:${idOk(reportId)}`] : []);
   if (!chaves.length) return false;
   const quando = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
   const valor = JSON.stringify({ texto: textoDoHandoff(dados, { sdr, quando }), reportId: String(reportId || ''), quando, sdr: String(sdr || '').slice(0, 80) });
   await Promise.all(chaves.map((k) => db.cacheSet(k, valor, TTL_HANDOFF)));
   return true;
+}
+
+/** O texto de um report pelo id (guardado na geração, 60 dias). */
+async function textoDoReport(reportId) {
+  const id = idOk(reportId);
+  if (!id) return '';
+  const g = await db.cacheGet(`handoff:r:${id}`).catch(() => null);
+  try {
+    return (g && JSON.parse(g).texto) || '';
+  } catch (_) {
+    return '';
+  }
 }
 
 async function handoffGuardado(onde) {
@@ -477,4 +490,4 @@ async function perderDuplicado({ usuario = {}, dealId, manterId }) {
   return { ok: true, motivo: motivo.nome };
 }
 
-module.exports = { planejar, executar, perderDuplicado, guardarHandoff, handoffGuardado, textoDoHandoff, fluxosAprendidos, closersDoCrm };
+module.exports = { planejar, executar, perderDuplicado, guardarHandoff, handoffGuardado, textoDoReport, textoDoHandoff, fluxosAprendidos, closersDoCrm };

@@ -566,6 +566,20 @@
         <div id="estimativaCusto" class="hint" style="margin-top:6px"></div>
       </div>
 
+      <details id="compBox" class="card" style="margin-top:12px">
+        <summary style="cursor:pointer;font-weight:700"><i data-ic="plus"></i> Complementar um report do WhatsApp com a ligação</summary>
+        <div class="hint" style="margin:10px 0">Qualificou pelo WhatsApp e depois ligou? Escolha o report (ou cole o texto do PDF), escreva o que veio da ligação e gere o <b>report completo</b>. Ele fica preso ao mesmo lead e é o que vai como handoff para o closer.</div>
+        <div class="row">
+          <div style="flex:3;min-width:220px"><label for="compBase">Report do WhatsApp</label><select id="compBase"><option value="">Carregando os seus reports…</option></select></div>
+          <button id="compUsar" type="button" class="btn sec" style="align-self:flex-end">Trazer o texto</button>
+        </div>
+        <label for="compReport" style="margin-top:10px">Texto do report do WhatsApp</label>
+        <textarea id="compReport" rows="7" placeholder="Escolha o report acima ou cole aqui o texto do PDF."></textarea>
+        <label for="compLigacao" style="margin-top:10px">Informações da ligação</label>
+        <textarea id="compLigacao" rows="5" placeholder="O que o lead contou na ligação: investimento, decisor, objeções, o que ficou combinado…"></textarea>
+        <button id="compGerar" type="button" class="btn" style="margin-top:10px">Gerar report completo</button>
+        <div id="statusComp" class="status"></div>
+      </details>
       <button id="gerar" class="btn btn-block">Gerar Report</button>
       <div id="status" class="status"></div>
 
@@ -3868,7 +3882,7 @@
       try {
         const r = await fetchComTempo('/api/report-texto', {
           method: 'POST', headers: hdr({ 'Content-Type': 'application/json' }),
-          body: JSON.stringify({ texto: textoFinal, nome: $('nomeLead').value.trim(), forcarNovo: !!forcarNovo }),
+          body: JSON.stringify({ texto: textoFinal, nome: $('nomeLead').value.trim(), forcarNovo: !!forcarNovo, ...(compBaseId ? { baseId: compBaseId } : {}) }),
         });
         const data = await r.json();
         if (!r.ok) throw new Error(data.erro || 'Erro ao gerar o report.');
@@ -3895,6 +3909,60 @@
       } finally { gerandoAgora = false; atualizarBotaoGerar(); }
     }
     $('gerar').addEventListener('click', () => gerar(false));
+
+    // ---------- Complementar um report do WhatsApp com a ligação ----------
+    let compBaseId = ''; // o report de origem: o novo fica preso ao mesmo lead
+    let compCarregado = false;
+    async function carregarBasesComp() {
+      if (compCarregado) return;
+      compCarregado = true;
+      try {
+        const r = await fetchComTempo('/api/report-base', { headers: hdr() });
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.erro || 'Não consegui listar os seus reports.');
+        const quando = (iso) => new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+        $('compBase').innerHTML = '<option value="">Escolha um report seu…</option>' + (j.reports || []).map((x) => `<option value="${esc(x.id)}">${esc(x.lead || 'Lead')} · ${esc(quando(x.quando))}</option>`).join('');
+      } catch (e) {
+        compCarregado = false;
+        $('compBase').innerHTML = '<option value="">(cole o texto do PDF abaixo)</option>';
+        setStatus('statusComp', e.message, { erro: true });
+      }
+    }
+    $('compBox').addEventListener('toggle', () => { if ($('compBox').open) carregarBasesComp(); });
+    $('compUsar').addEventListener('click', async () => {
+      const id = $('compBase').value;
+      if (!id) return setStatus('statusComp', 'Escolha um report na lista (ou cole o texto).', { erro: true });
+      setStatus('statusComp', 'Trazendo o texto…', { loading: true });
+      try {
+        const r = await fetchComTempo('/api/report-base/' + encodeURIComponent(id), { headers: hdr() });
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.erro || 'Não achei o texto deste report.');
+        $('compReport').value = j.texto;
+        if (!$('nomeLead').value.trim() && j.lead) $('nomeLead').value = j.lead;
+        compBaseId = id;
+        setStatus('statusComp', 'Texto do report trazido. Agora escreva o que veio da ligação.', { ok: true });
+      } catch (e) {
+        setStatus('statusComp', e.message, { erro: true });
+      }
+    });
+    $('compReport').addEventListener('input', () => { if (!$('compReport').value.trim()) compBaseId = ''; });
+    $('compGerar').addEventListener('click', () => {
+      const base = $('compReport').value.trim();
+      const ligacao = $('compLigacao').value.trim();
+      if (!base) return setStatus('statusComp', 'Traga ou cole o texto do report do WhatsApp.', { erro: true });
+      if (ligacao.length < 20) return setStatus('statusComp', 'Escreva o que veio da ligação (pelo menos uma frase).', { erro: true });
+      // A IA recebe os dois, marcados: o report do WhatsApp e, valendo mais quando divergir, a ligação.
+      $('texto').value = [
+        '[REPORT ANTERIOR — gerado da conversa no WhatsApp]',
+        base,
+        '',
+        '[INFORMAÇÕES DA LIGAÇÃO — o SDR falou com o lead por telefone depois do WhatsApp; quando divergir do report anterior, vale a ligação]',
+        ligacao,
+      ].join('\n');
+      if ($('chatTextoBox')) $('chatTextoBox').open = true;
+      setStatus('statusComp', 'Gerando o report completo (é o botão "Gerar Report", com os dois juntos)…', { ok: true });
+      gerar(false).finally(() => { compBaseId = ''; }); // o vínculo vale só para este report
+    });
 
     // Estimativa de custo (determinística, sem IA) — atualiza com debounce ao digitar.
     let estimativaTimer = null;

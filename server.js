@@ -1784,10 +1784,33 @@ app.post('/api/report-direto', auth, async (req, res) => {
   }
 });
 
+// Complementar um report do WhatsApp com a ligação (aba Gerar report): os reports da pessoa e o texto de cada um.
+app.get('/api/report-base', auth, async (req, res) => {
+  try {
+    const meus = (await stats.listar({})).filter((r) => r.usuarioId === req.usuario.id).sort((a, b) => String(b.quando).localeCompare(String(a.quando))).slice(0, 40);
+    res.set('Cache-Control', 'no-store');
+    res.json({ ok: true, reports: meus.map((r) => ({ id: r.id, lead: r.lead || r.contato || '', quando: r.quando, origem: r.origem || '' })) });
+  } catch (err) {
+    res.status(500).json({ erro: err.message });
+  }
+});
+app.get('/api/report-base/:id', auth, async (req, res) => {
+  try {
+    const r = await stats.buscarPorId(String(req.params.id || ''));
+    if (!r || r.usuarioId !== req.usuario.id) return res.status(404).json({ erro: 'Report não encontrado.' });
+    const texto = await fluxoReuniao.textoDoReport(r.id);
+    if (!texto) return res.status(404).json({ erro: 'Este report é de antes de o sistema guardar o texto. Abra o PDF, copie o texto e cole no campo.' });
+    res.set('Cache-Control', 'no-store');
+    res.json({ ok: true, lead: r.lead || '', texto });
+  } catch (err) {
+    res.status(500).json({ erro: err.message });
+  }
+});
+
 app.post('/api/report-texto', auth, async (req, res) => {
   let reportKey = null;
   try {
-    const { texto, nome, qualidade } = req.body || {};
+    const { texto, nome, qualidade, baseId } = req.body || {};
     const qualidadeFinal = qualidadeValida(qualidade);
     const { texto: textoNormalizado } = normalizarTextoLivre(String(texto || ''));
     reportKey = calcularReportKey({ historicoNormalizado: textoNormalizado, promptVersao: PROMPT_VERSAO, qualidade: qualidadeFinal });
@@ -1795,7 +1818,13 @@ app.post('/api/report-texto', auth, async (req, res) => {
     if (!(await checarDuplicataETravar(req, res, reportKey))) return;
 
     const dados = await dadosDeTexto({ texto, nome, sdr: req.usuario.nome, qualidade: qualidadeFinal });
-    await responderReport(req, res, dados, nome, 'manual', reportKey);
+    // Complemento de um report do WhatsApp: o report novo fica preso ao mesmo lead (card, contato, telefone).
+    let vinculo;
+    if (baseId) {
+      const base = await stats.buscarPorId(String(baseId)).catch(() => null);
+      if (base && base.usuarioId === req.usuario.id) vinculo = { telefone: base.telefone, email: base.leadEmail, contatoId: base.rdContatoId, dealId: base.rdDealId };
+    }
+    await responderReport(req, res, dados, nome, 'manual', reportKey, undefined, vinculo);
   } catch (err) {
     res.status(/Cole a conversa/i.test(err.message) ? 400 : 500).json({ erro: err.message });
   } finally {

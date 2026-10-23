@@ -288,6 +288,14 @@ mostra o lead na hora, e a busca nova só redesenha se algo mudou. No servidor, 
 anotações, campos e usuários do CRM são pedidos em paralelo, e a automação do cartão, a agenda e o **pintar a
 reunião no Google Agenda** também correm juntos.
 
+### Complementar um report do WhatsApp com a ligação (site)
+
+Na aba **Gerar report**, o bloco **"Complementar um report do WhatsApp com a ligação"**: qualificou pelo WhatsApp e
+depois ligou? Escolha um report seu (o texto vem sozinho — guardado 60 dias desde a geração; report mais antigo, cole
+o texto do PDF), escreva o que veio da ligação e clique em **Gerar report completo**. A IA recebe os dois, marcados, e
+vale a ligação quando divergir. O report novo fica preso ao mesmo lead (card, contato e telefone do report de origem)
+e passa a ser o handoff do "Reunião realizada" (`GET /api/report-base`, `POST /api/report-texto` com `baseId`).
+
 ### Sugestão de motivo no Desqualificar
 
 No cartão, **✨ Sugerir motivo e anotação** lê as mensagens da tela. Lead sem resposta há 3 ou mais tentativas suas
