@@ -262,6 +262,45 @@
     return caixa.childNodes.length ? caixa : null;
   }
 
+  /** O link do card à vista, com "Copiar link" (para colar no Pronix Calendar ao criar a reunião). */
+  function linhaDoLink(url) {
+    const campo = el('input', 'flex:1;min-width:0;background:#121113;border:1px solid #3a373f;border-radius:7px;color:#f3efe6;padding:7px 9px;font-size:11.5px;font-family:inherit');
+    campo.readOnly = true;
+    campo.value = url;
+    campo.setAttribute('data-pnx-link', '1');
+    campo.addEventListener('focus', () => campo.select());
+    const botao = el('button', `cursor:pointer;border:1px solid ${OURO};border-radius:7px;padding:7px 10px;background:transparent;color:${OURO};font-weight:700;font-size:11.5px;font-family:inherit;white-space:nowrap`, 'Copiar link');
+    botao.type = 'button';
+    botao.setAttribute('data-pnx-copiar', '1');
+    const avisar = (texto) => {
+      botao.textContent = texto;
+      setTimeout(() => { botao.textContent = 'Copiar link'; }, 1800);
+    };
+    const copiarNaMao = () => {
+      campo.focus();
+      campo.select();
+      let ok = false;
+      try {
+        ok = document.execCommand('copy');
+      } catch (_) {
+        ok = false;
+      }
+      avisar(ok ? 'Copiado ✓' : 'Ctrl+C');
+    };
+    botao.addEventListener('click', () => {
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(url).then(() => avisar('Copiado ✓'), copiarNaMao);
+          return;
+        }
+      } catch (_) {
+        /* cai no jeito antigo */
+      }
+      copiarNaMao();
+    });
+    return el('div', 'display:flex;gap:6px;margin-top:8px', campo, botao);
+  }
+
   function corpoDoLead(d) {
     const f = d.ficha;
     const crmNome = f.crmNome || 'CRM';
@@ -279,6 +318,7 @@
       b.rel = 'noopener noreferrer';
       b.setAttribute('data-pnx-abrir', '1');
       partes.push(b);
+      partes.push(linhaDoLink(urlPrincipal));
     }
 
     if (d.reuniao && d.reuniao.quando) {

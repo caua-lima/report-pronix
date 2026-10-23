@@ -550,6 +550,13 @@ test('painel lateral do Chrome: o cartão publica o lead; o painel mostra as neg
   assert.equal(d1.getAttribute('href'), 'https://crm.pronixhub.com.br/#/deals/d1');
   assert.equal(d1.getAttribute('target'), '_blank');
   assert.equal(painelDe(sp).querySelector('[data-pnx-abrir]').getAttribute('href'), 'https://crm.pronixhub.com.br/#/deals/d1');
+  // o link do card à vista, para copiar e colar no Pronix Calendar
+  assert.equal(painelDe(sp).querySelector('[data-pnx-link]').value, 'https://crm.pronixhub.com.br/#/deals/d1');
+  let copiado = '';
+  Object.defineProperty(sp.w.navigator, 'clipboard', { configurable: true, value: { writeText: async (x) => { copiado = x; } } });
+  painelDe(sp).querySelector('[data-pnx-copiar]').click();
+  await esperar(() => /Copiado/.test(painelDe(sp).querySelector('[data-pnx-copiar]').textContent), { motivo: 'copiado' });
+  assert.equal(copiado, 'https://crm.pronixhub.com.br/#/deals/d1');
   // link que não é do CRM nunca vira link; texto do CRM nunca vira HTML
   assert.equal(painelDe(sp).querySelector('[data-pnx-deal="d0"]').tagName, 'DIV');
   assert.equal(painelDe(sp).querySelector('b'), null);
