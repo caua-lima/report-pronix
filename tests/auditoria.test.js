@@ -304,3 +304,37 @@ test('manifest e popup carregam o leitor de agendamento ANTES do content.js do W
   const agenda = ler('extension/agenda.js');
   assert.ok(!/fetch\(|chrome\.|XMLHttpRequest|sendMessage/.test(agenda));
 });
+
+test('servidor: toda trava de acesso chamada nas rotas (semX(req, res)) existe no server.js', () => {
+  const s = ler('server.js');
+  const chamadas = new Set(s.split('if (sem').slice(1).map((x) => 'sem' + x.split('(')[0]).filter((n) => /^sem[A-Z]/.test(n) && s.includes('if (' + n + '(req, res)) return;')));
+  assert.ok(chamadas.size > 0);
+  for (const nome of chamadas) assert.ok(s.includes('const ' + nome + ' = (req, res) =>'), 'faltou definir ' + nome);
+});
+
+test('painel lateral só no WhatsApp Web: desligado no Chrome todo, ligado na aba do WhatsApp, desligado nas outras', async () => {
+  const opcoes = [];
+  let aoAtualizar = null;
+  let abrir = null;
+  const chrome = {
+    runtime: { id: 'x', onMessage: { addListener: () => {} }, onInstalled: { addListener: () => {} } },
+    storage: { local: { get: (_k, cb) => cb({}), set: () => {} }, session: { set: () => {} } },
+    alarms: { create: () => {}, clear: () => {}, get: (_n, cb) => cb && cb(null), onAlarm: { addListener: () => {} } },
+    sidePanel: { setOptions: async (o) => { opcoes.push(o); }, open: async (o) => { abrir = o; } },
+    tabs: {
+      onUpdated: { addListener: (fn) => { aoAtualizar = fn; } },
+      query: (_q, cb) => cb([{ id: 1, url: 'https://web.whatsapp.com/' }, { id: 2, url: 'https://calendar.google.com/calendar/u/0/r' }, { id: 3 }]),
+    },
+  };
+  let ouvinte = null;
+  chrome.runtime.onMessage.addListener = (fn) => { ouvinte = fn; };
+  vm.runInNewContext(ler('extension/background.js'), { chrome, fetch: async () => ({}), URL, JSON, Promise, console, AbortSignal, setTimeout });
+  assert.deepEqual(JSON.parse(JSON.stringify(opcoes.slice(0, 4))), [{ enabled: false }, { tabId: 1, path: 'sidepanel.html', enabled: true }, { tabId: 2, enabled: false }, { tabId: 3, enabled: false }]);
+  opcoes.length = 0;
+  aoAtualizar(2, { status: 'loading' }, { id: 2, url: 'https://web.whatsapp.com/' });
+  aoAtualizar(1, { url: 'https://crm.pronixhub.com.br/#/deals/x' }, { id: 1, url: 'https://crm.pronixhub.com.br/#/deals/x' });
+  assert.deepEqual(JSON.parse(JSON.stringify(opcoes)), [{ tabId: 2, path: 'sidepanel.html', enabled: true }, { tabId: 1, enabled: false }]);
+  // o botão do cartão abre o painel só na aba do WhatsApp (não na janela toda)
+  await new Promise((r) => ouvinte({ action: 'abrirPainel' }, { id: 'x', tab: { id: 2, windowId: 9, url: 'https://web.whatsapp.com/' } }, r));
+  assert.deepEqual(JSON.parse(JSON.stringify(abrir)), { tabId: 2 });
+});

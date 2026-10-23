@@ -78,11 +78,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     })();
     return true;
   }
-  // Botão do cartão: abre o painel lateral do Chrome nesta janela.
+  // Botão do cartão: abre o painel lateral nesta aba do WhatsApp (só nela).
   if (msg && msg.action === 'abrirPainel') {
     try {
+      const tabId = sender.tab.id;
+      ajustarPainel(tabId, sender.tab.url || 'https://web.whatsapp.com/');
       chrome.sidePanel
-        .open({ windowId: sender.tab.windowId })
+        .open({ tabId })
         .then(() => sendResponse({ ok: true }), (e) => sendResponse({ ok: false, erro: String((e && e.message) || e) }));
     } catch (e) {
       sendResponse({ ok: false, erro: String((e && e.message) || e) });
@@ -333,3 +335,28 @@ if (chrome.runtime.onInstalled) chrome.runtime.onInstalled.addListener((d) => {
     /* sem storage */
   }
 });
+
+// Painel lateral do CRM só nas abas do WhatsApp Web: desligado no Chrome todo e ligado aba por aba. Assim ele some
+// ao trocar para outra aba (Agenda, CRM...) e volta ao voltar para o WhatsApp.
+const PAINEL = 'sidepanel.html';
+const ehWhatsApp = (url) => String(url || '').startsWith('https://web.whatsapp.com/');
+function ajustarPainel(tabId, url) {
+  if (!chrome.sidePanel || !chrome.sidePanel.setOptions || tabId == null) return;
+  const opcoes = ehWhatsApp(url) ? { tabId, path: PAINEL, enabled: true } : { tabId, enabled: false };
+  try {
+    Promise.resolve(chrome.sidePanel.setOptions(opcoes)).catch(() => {});
+  } catch (_) {
+    /* aba fechada */
+  }
+}
+if (chrome.sidePanel && chrome.sidePanel.setOptions && chrome.tabs) {
+  try {
+    Promise.resolve(chrome.sidePanel.setOptions({ enabled: false })).catch(() => {});
+    chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
+      if (info && (info.url || info.status)) ajustarPainel(tabId, (tab && tab.url) || info.url);
+    });
+    chrome.tabs.query({}, (abas) => (abas || []).forEach((a) => ajustarPainel(a.id, a.url)));
+  } catch (_) {
+    /* Chrome sem a API */
+  }
+}

@@ -408,17 +408,23 @@ $('testar').addEventListener('click', () => {
   chrome.storage.local.set({ server: getServer(), chave: getChave() }, testarConexao);
 });
 $('gerar').addEventListener('click', () => gerar());
-// Painel lateral do Chrome: a janela é lida ao abrir o popup, para o open() sair direto do clique (o Chrome exige).
-let janelaDoPopup = null;
+// Painel lateral: só na aba do WhatsApp Web. A aba é lida ao abrir o popup, para o open() sair direto do clique
+// (o Chrome exige).
+let abaDoPopup = null;
 try {
-  chrome.windows.getCurrent((w) => { janelaDoPopup = w ? w.id : null; });
+  chrome.tabs.query({ active: true, currentWindow: true }, (abas) => { abaDoPopup = (abas && abas[0]) || null; });
 } catch (_) {
   /* sem a API */
 }
 $('painelLateral').addEventListener('click', () => {
+  if (!abaDoPopup || !String(abaDoPopup.url || '').startsWith('https://web.whatsapp.com/')) {
+    $('painelLateral').textContent = 'O painel abre na aba do WhatsApp Web';
+    return;
+  }
   try {
-    if (!chrome.sidePanel || janelaDoPopup == null) throw new Error();
-    chrome.sidePanel.open({ windowId: janelaDoPopup }).then(() => window.close(), () => {});
+    if (!chrome.sidePanel) throw new Error();
+    chrome.sidePanel.setOptions({ tabId: abaDoPopup.id, path: 'sidepanel.html', enabled: true });
+    chrome.sidePanel.open({ tabId: abaDoPopup.id }).then(() => window.close(), () => {});
   } catch (_) {
     $('painelLateral').textContent = 'Atualize o Chrome para usar o painel lateral';
   }
