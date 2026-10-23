@@ -663,9 +663,9 @@ const nomeQualificado = () => String(process.env.CRM_ETAPA_QUALIFICADO || 'Quali
 /** O card está na etapa "Qualificado" do funil? (é uma das origens da etiqueta no cartão do WhatsApp) */
 const ehEtapaQualificado = (etapa) => Boolean(etapa) && normalizarNome(etapa) === normalizarNome(nomeQualificado());
 
-/** Funis do RD com as etapas na ordem do funil: [{ id, nome, etapas: [{ id, nome, ordem }] }]. Cache de 1h. */
+/** Funis com as etapas na ordem do funil: [{ id, nome, etapas: [{ id, nome, ordem, perdido, ganho, categoria, exigeCloser }] }]. Cache de 1h. */
 async function funis() {
-  const guardado = await db.cacheGet('crm:funis2');
+  const guardado = await db.cacheGet('crm:funis3');
   if (guardado) {
     try {
       return JSON.parse(guardado);
@@ -678,7 +678,7 @@ async function funis() {
     r = await rd('/deal_pipelines', { limit: 200 });
   } catch (e) {
     // RD fora do ar ou plano sem acesso aos funis: não repete a consulta a cada conversa aberta.
-    await db.cacheSet('crm:funis2', '[]', 120);
+    await db.cacheSet('crm:funis3', '[]', 120);
     throw e;
   }
   const lista = Array.isArray(r) ? r : (r && (r.deal_pipelines || r.pipelines)) || [];
@@ -690,13 +690,13 @@ async function funis() {
       etapas = (det && det.deal_stages) || [];
     }
     const ordenadas = etapas
-      .map((e, i) => ({ id: idDe(e), nome: consertarAcentos(e.name || ''), o: Number.isFinite(Number(e.order)) ? Number(e.order) : i, i, perdido: e.eh_perdido === true, ganho: e.eh_ganho === true }))
+      .map((e, i) => ({ id: idDe(e), nome: consertarAcentos(e.name || ''), o: Number.isFinite(Number(e.order)) ? Number(e.order) : i, i, perdido: e.eh_perdido === true, ganho: e.eh_ganho === true, categoria: e.categoria || null, exigeCloser: e.exige_closer === true }))
       .sort((a, b) => a.o - b.o || a.i - b.i)
-      .map((e, ordem) => ({ id: e.id, nome: e.nome, ordem, perdido: e.perdido, ganho: e.ganho }));
+      .map((e, ordem) => ({ id: e.id, nome: e.nome, ordem, perdido: e.perdido, ganho: e.ganho, categoria: e.categoria, exigeCloser: e.exigeCloser }));
     saida.push({ id: idDe(p), nome: consertarAcentos(p.name || ''), etapas: ordenadas });
   }
   // Lista vazia fica pouco tempo no cache: pode ter sido uma falha passageira do RD.
-  await db.cacheSet('crm:funis2', JSON.stringify(saida), saida.some((f) => f.etapas.length) ? 3600 : 120);
+  await db.cacheSet('crm:funis3', JSON.stringify(saida), saida.some((f) => f.etapas.length) ? 3600 : 120);
   return saida;
 }
 
