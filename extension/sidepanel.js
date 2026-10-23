@@ -9,6 +9,8 @@
     tabId = v && v.tabId != null ? v.tabId : null;
     const e = v && v.estado;
     painel.atualizar(e && e.tipo ? e : { tipo: 'sem-conversa' }, {
+      // Botões que escrevem no CRM (duplicado, reunião realizada): o service worker leva ao servidor com a chave.
+      servidor: (caminho, corpo) => new Promise((res) => chrome.runtime.sendMessage({ action: 'crmPainel', caminho, corpo }, (r) => res(chrome.runtime.lastError ? { ok: false, erro: 'A extensão não respondeu. Tente de novo.' } : r))),
       consultar: (busca) => {
         if (tabId == null) return;
         chrome.tabs.sendMessage(tabId, { action: 'painelConsultar', busca: busca || {} }, () => void chrome.runtime.lastError);

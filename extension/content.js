@@ -1307,11 +1307,13 @@
   // Painel lateral do Chrome (sidepanel.html): recebe o mesmo estado do cartão do lead, via service worker.
   const PAINEL_SEM_CONVERSA = { tipo: 'sem-conversa' };
   let painelEnviado; // o último estado mandado (o cartão se redesenha muito com o MESMO estado)
+  let painelPodia = false; // os botões que escrevem no CRM (o mesmo acesso do Desqualificar)
   function publicarPainel(estado) {
-    if (estado === painelEnviado) return;
+    if (estado === painelEnviado && painelPodia === (ficha.desqualificar === true)) return;
     painelEnviado = estado;
+    painelPodia = ficha.desqualificar === true;
     try {
-      chrome.runtime.sendMessage({ action: 'painelEstado', estado: estado || null }, () => void chrome.runtime.lastError);
+      chrome.runtime.sendMessage({ action: 'painelEstado', estado: estado ? { ...estado, podeEscrever: painelPodia } : null }, () => void chrome.runtime.lastError);
     } catch (_) {
       /* extensão recarregada: este script ficou órfão */
     }

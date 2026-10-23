@@ -65,6 +65,19 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     sendResponse({ ok: true });
     return false;
   }
+  // Botões do painel lateral que escrevem no CRM: só estas rotas.
+  if (msg && msg.action === 'crmPainel') {
+    const permitidas = ['/api/crm/duplicado', '/api/crm/realizada/plano', '/api/crm/realizada'];
+    if (!permitidas.includes(msg.caminho)) {
+      sendResponse({ ok: false, erro: 'Ação desconhecida.' });
+      return false;
+    }
+    (async () => {
+      const r = await chamar(msg.caminho, msg.corpo || {}, { timeoutMs: 58000 });
+      sendResponse(r.ok ? { ok: true, ...r.data } : { ok: false, erro: r.erro });
+    })();
+    return true;
+  }
   // Botão do cartão: abre o painel lateral do Chrome nesta janela.
   if (msg && msg.action === 'abrirPainel') {
     try {

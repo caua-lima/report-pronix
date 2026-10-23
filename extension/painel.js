@@ -16,7 +16,7 @@
   const OURO = '#ffc233';
   const FONTE_TITULO = 'Bahnschrift,DIN Alternate,Roboto Condensed,Arial Narrow,sans-serif';
 
-  const estado = { aberto: true, ultimo: null, acoes: {} };
+  const estado = { aberto: true, ultimo: null, acoes: {}, form: null, chaveLead: '' };
   try {
     chrome.storage.local.get({ painelLateralAberto: true }, (c) => {
       estado.aberto = !c || c.painelLateralAberto !== false;
@@ -97,6 +97,163 @@
     return item;
   }
 
+
+  // ---------------------------------------------------------------- botões que escrevem no CRM
+  // Só para quem o master liberou (o mesmo acesso do Desqualificar). Nada é feito sem confirmar aqui.
+  const dataDe = (s) => {
+    const t = String(s || '');
+    const m = t.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+    return (m ? Date.parse(`${m[3]}-${m[2]}-${m[1]}`) : Date.parse(t)) || 0;
+  };
+  /** Com mais de um card em aberto, o que fica é o mais novo (empate: o escolhido); os outros são os duplicados. */
+  function cardQueFica(negs) {
+    const abertas = negs.filter((c) => c.aberta);
+    if (!abertas.length) return null;
+    return abertas.slice().sort((a, b) => dataDe(b.criadaEm) - dataDe(a.criadaEm) || (b.escolhida ? 1 : 0) - (a.escolhida ? 1 : 0))[0];
+  }
+  function botaoAcao(texto, cor, aoClicar) {
+    const b = el('button', `cursor:pointer;border:1px solid ${cor};border-radius:7px;padding:6px 9px;background:transparent;color:${cor};font-weight:700;font-size:11.5px;font-family:inherit`, texto);
+    b.type = 'button';
+    b.addEventListener('click', aoClicar);
+    return b;
+  }
+  function chamarServidor(caminho, corpo) {
+    return Promise.resolve()
+      .then(() => estado.acoes.servidor(caminho, corpo))
+      .catch((e) => ({ ok: false, erro: String((e && e.message) || e) }));
+  }
+  function mudarForm(f) {
+    estado.form = f;
+    desenhar();
+  }
+  const aindaAberto = (dealId) => estado.form && estado.form.dealId === dealId;
+
+  async function abrirPlano(c, d) {
+    mudarForm({ dealId: c.id, tipo: 'realizada', fase: 'carregando' });
+    const r = await chamarServidor('/api/crm/realizada/plano', { busca: d.busca || {}, dealId: c.id, closerNome: (d.reuniao && d.reuniao.closer) || '' });
+    if (!aindaAberto(c.id)) return;
+    if (!r || !r.ok) return mudarForm({ dealId: c.id, tipo: 'realizada', fase: 'erro', erro: (r && r.erro) || 'Não consegui montar o caminho no CRM.' });
+    mudarForm({ dealId: c.id, tipo: 'realizada', fase: 'plano', plano: r, closerId: r.closerSugerido || '', texto: '' });
+  }
+
+  async function confirmarRealizada(form, c, d) {
+    if (form.fase === 'enviando') return;
+    mudarForm({ ...form, fase: 'enviando', erro: '' });
+    const r = await chamarServidor('/api/crm/realizada', {
+      busca: d.busca || {}, dealId: c.id, assinatura: form.plano.assinatura, closerId: form.closerId, handoff: form.texto || '', closerNome: (d.reuniao && d.reuniao.closer) || '',
+    });
+    if (!aindaAberto(c.id)) return;
+    if (!r || !r.ok) return mudarForm({ ...form, fase: 'plano', erro: (r && r.erro) || 'O CRM não aceitou.' });
+    mudarForm({ dealId: c.id, tipo: 'realizada', fase: 'feito', texto: 'Pronto no CRM: ' + (r.feitos || []).join(' › ') });
+    if (estado.acoes.consultar) estado.acoes.consultar(d.busca || {});
+  }
+
+  async function confirmarDuplicado(form, c, d, fica) {
+    if (form.fase === 'enviando') return;
+    mudarForm({ ...form, fase: 'enviando', erro: '' });
+    const r = await chamarServidor('/api/crm/duplicado', { busca: d.busca || {}, dealId: c.id, manterId: fica.id });
+    if (!aindaAberto(c.id)) return;
+    if (!r || !r.ok) return mudarForm({ ...form, fase: 'confirmar', erro: (r && r.erro) || 'O CRM não aceitou.' });
+    mudarForm({ dealId: c.id, tipo: 'dup', fase: 'feito', texto: `Perdido como duplicado (motivo: ${r.motivo || 'duplicidade'}).` });
+    if (estado.acoes.consultar) estado.acoes.consultar(d.busca || {});
+  }
+
+  function caixaDoForm(form, c, d, fica) {
+    const box = el('div', 'flex-basis:100%;padding:9px 10px;border-radius:9px;background:#121113;border:1px solid #3a373f;font-size:12px');
+    box.setAttribute('data-pnx-form', form.tipo);
+    const cancelar = () => botaoAcao('Cancelar', '#a39e93', () => mudarForm(null));
+    if (form.fase === 'feito') {
+      box.appendChild(el('div', 'color:#3ddc84;font-weight:600', form.texto));
+      return box;
+    }
+    if (form.tipo === 'dup') {
+      box.appendChild(el('div', '', `Dar perda neste card como duplicado? O lead continua em "${fica.nome || 'outro card'}" (${[fica.funil, fica.etapa].filter(Boolean).join(' › ')}).`));
+      if (form.erro) box.appendChild(el('div', 'color:#ff6f5c;margin-top:6px', form.erro));
+      const ok = botaoAcao(form.fase === 'enviando' ? 'Marcando…' : 'Confirmar perda', '#ff6f5c', () => confirmarDuplicado(form, c, d, fica));
+      ok.setAttribute('data-pnx-confirmar', 'dup');
+      box.appendChild(el('div', 'display:flex;gap:6px;margin-top:8px', ok, cancelar()));
+      return box;
+    }
+    if (form.fase === 'carregando') {
+      box.appendChild(el('div', 'color:#a39e93', 'Montando o caminho no CRM…'));
+      return box;
+    }
+    if (form.fase === 'erro') {
+      box.appendChild(el('div', 'color:#ff6f5c', form.erro));
+      box.appendChild(el('div', 'margin-top:8px', cancelar()));
+      return box;
+    }
+    const p = form.plano;
+    box.appendChild(el('div', 'font-weight:700;color:#f3efe6;margin-bottom:6px', 'Reunião realizada — o card vai passar por:'));
+    const lista = el('ol', 'margin:0 0 8px;padding-left:18px');
+    (p.passos || []).forEach((s) => {
+      const extra = [s.exigeCloser ? 'define o closer' : '', s.amostras ? `${s.vistos} de ${s.amostras} cards passaram aqui` : ''].filter(Boolean).join(' · ');
+      lista.appendChild(el('li', 'margin-bottom:3px',
+        el('span', 'color:#f3efe6', (s.tipo === 'funil' ? `Funil ${s.funilNome} › ` : '') + s.etapaNome),
+        extra ? el('span', 'color:#a39e93', ' (' + extra + ')') : null));
+    });
+    box.appendChild(lista);
+
+    const sel = document.createElement('select');
+    sel.style.cssText = 'width:100%;background:#211f24;color:#f3efe6;border:1px solid #3a373f;border-radius:7px;padding:6px;font-size:12px;font-family:inherit';
+    sel.setAttribute('data-pnx-closer', '1');
+    [{ id: '', nome: 'Escolha o closer…' }].concat(p.closers || []).forEach((x) => {
+      const o = document.createElement('option');
+      o.value = x.id;
+      o.textContent = x.nome;
+      if (x.id === form.closerId) o.selected = true;
+      sel.appendChild(o);
+    });
+    sel.addEventListener('change', () => { form.closerId = sel.value; desenhar(); });
+    box.appendChild(el('div', 'color:#a39e93;margin:4px 0 3px', 'Closer'));
+    box.appendChild(sel);
+
+    const h = p.handoff || {};
+    if (h.noCrm) box.appendChild(el('div', 'color:#3ddc84;margin-top:8px', 'Handoff: já está no card ✓'));
+    else if (h.doReport) box.appendChild(el('div', 'color:#3ddc84;margin-top:8px', `Handoff: o report de ${h.doReport.quando || 'hoje'}${h.doReport.sdr ? ' (' + h.doReport.sdr + ')' : ''} vai junto ✓`));
+    else {
+      box.appendChild(el('div', 'color:#ffc233;margin-top:8px', 'Sem report deste lead: gere o report da conversa ou escreva o handoff para o closer.'));
+      const ta = document.createElement('textarea');
+      ta.style.cssText = 'width:100%;box-sizing:border-box;min-height:80px;margin-top:4px;background:#211f24;color:#f3efe6;border:1px solid #3a373f;border-radius:7px;padding:6px;font:12px/1.4 inherit';
+      ta.value = form.texto || '';
+      ta.setAttribute('data-pnx-handoff', '1');
+      ta.addEventListener('input', () => { form.texto = ta.value; });
+      ta.addEventListener('keydown', (ev) => ev.stopPropagation());
+      box.appendChild(ta);
+    }
+    if ((p.faltando || []).length) box.appendChild(el('div', 'color:#ff6f5c;margin-top:8px', 'O token do CRM não tem permissão para: ' + p.faltando.join(' e ') + '. Peça ao administrador do CRM.'));
+    if (form.erro) box.appendChild(el('div', 'color:#ff6f5c;margin-top:8px', form.erro));
+    const pode = !(p.faltando || []).length && Boolean(form.closerId) && form.fase !== 'enviando';
+    const ok = botaoAcao(form.fase === 'enviando' ? 'Movendo no CRM…' : 'Confirmar e mover', pode ? OURO : '#5b5760', () => { if (pode) confirmarRealizada(form, c, d); });
+    ok.setAttribute('data-pnx-confirmar', 'realizada');
+    if (!pode) ok.title = form.closerId ? '' : 'Escolha o closer';
+    box.appendChild(el('div', 'display:flex;gap:6px;margin-top:10px', ok, cancelar()));
+    return box;
+  }
+
+  function acoesDoCard(c, d, fica) {
+    if (!d.podeEscrever || !estado.acoes.servidor) return null;
+    const form = estado.form && estado.form.dealId === c.id ? estado.form : null;
+    const caixa = el('div', 'margin:-2px 0 10px;display:flex;flex-wrap:wrap;gap:6px');
+    if (form && (form.fase === 'feito' || (c.aberta && fica))) {
+      caixa.appendChild(caixaDoForm(form, c, d, fica));
+      return caixa;
+    }
+    if (!c.aberta || !fica) return null;
+    const abertas = (d.ficha.negociacoes || []).filter((x) => x.aberta);
+    if (abertas.length >= 2 && c.id !== fica.id) {
+      const b = botaoAcao('Perder como duplicado', '#ff6f5c', () => mudarForm({ dealId: c.id, tipo: 'dup', fase: 'confirmar' }));
+      b.setAttribute('data-pnx-duplicado', c.id);
+      caixa.appendChild(b);
+    }
+    if (c.id === fica.id) {
+      const b = botaoAcao('Reunião realizada →', OURO, () => abrirPlano(c, d));
+      b.setAttribute('data-pnx-realizada', c.id);
+      caixa.appendChild(b);
+    }
+    return caixa.childNodes.length ? caixa : null;
+  }
+
   function corpoDoLead(d) {
     const f = d.ficha;
     const crmNome = f.crmNome || 'CRM';
@@ -126,7 +283,12 @@
     const negs = f.negociacoes || [];
     partes.push(titulo(`Negociações (${negs.length})`));
     if (!negs.length) partes.push(el('div', 'color:#a39e93', 'Este contato não tem negociação no CRM.'));
-    negs.forEach((c) => partes.push(itemNegociacao(c, crmNome)));
+    const fica = cardQueFica(negs);
+    negs.forEach((c) => {
+      partes.push(itemNegociacao(c, crmNome));
+      const acoes = acoesDoCard(c, d, fica);
+      if (acoes) partes.push(acoes);
+    });
 
     const respostas = [].concat((f.formulario && f.formulario.campos) || [], f.campos || []).filter((c) => c && c.rotulo && c.valor);
     if (respostas.length) {
@@ -228,6 +390,13 @@
   /** O content.js chama a cada mudança do cartão do lead (mesmo estado: carregando, ok, erro, não achado...). */
   function atualizar(dados, acoes) {
     if (acoes) estado.acoes = acoes;
+    // Outro lead na tela: o que estava aberto (confirmação, plano) era do anterior.
+    const b = (dados && dados.busca) || {};
+    const chave = dados ? JSON.stringify([b.telefone || '', b.nome || '', b.contatoId || '']) : '';
+    if (chave !== estado.chaveLead) {
+      estado.form = null;
+      estado.chaveLead = chave;
+    }
     // O cartão se redesenha a cada resumo com o MESMO estado: aí o painel fica como está (e na mesma rolagem).
     if (dados && dados === estado.ultimo && (document.getElementById(ID) || document.getElementById(ABA_ID))) return;
     estado.ultimo = dados || null;

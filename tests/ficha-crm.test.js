@@ -508,7 +508,7 @@ const fsPainel = require('fs');
 const pathPainel = require('path');
 
 /** Abre o sidepanel.html de verdade (painel.js + sidepanel.js) com o estado que o service worker guardou. */
-function abrirPainelDoChrome(painelLead) {
+function abrirPainelDoChrome(painelLead, responderServidor = () => ({ ok: false, erro: 'sem servidor' })) {
   const raiz = pathPainel.join(__dirname, '..', 'extension');
   const html = fsPainel.readFileSync(pathPainel.join(raiz, 'sidepanel.html'), 'utf8').replace(/<script[^>]*><\/script>/g, '');
   const dom = new JSDOM(html, { runScripts: 'outside-only', url: 'chrome-extension://teste/sidepanel.html' });
@@ -516,7 +516,7 @@ function abrirPainelDoChrome(painelLead) {
   const enviadas = [];
   const ouvintes = [];
   w.chrome = {
-    runtime: { lastError: null },
+    runtime: { lastError: null, sendMessage: (msg, cb) => Promise.resolve(responderServidor(msg)).then((r) => cb && cb(r)) },
     storage: {
       local: { get: (p, cb) => cb({ ...p }), set: () => {} },
       session: { get: (_k, cb) => cb({ painelLead }) },
@@ -613,4 +613,65 @@ test('sem coach: a extensão nunca pede dica nem feedback do coach ao servidor',
   assert.deepEqual(srv.acoes.filter((a) => /coach|permiss/i.test(a)), []);
   assert.doesNotMatch(textoCartao(p), /coach|como abordar/i);
   p.fechar();
+});
+
+
+// ---------------------------------------------------------------- botões do painel que escrevem no CRM
+const FICHA_DUPLA = {
+  ...FICHA_PAINEL,
+  negociacoes: [
+    { id: 'd-novo', nome: 'PRXC | Marcos (novo)', etapa: 'Respondeu', funil: 'SMQLs Automaticos', responsavel: 'Cauã Lima', aberta: true, ganha: false, perdida: false, escolhida: true, criadaEm: '17/10/2026', url: 'https://crm.pronixhub.com.br/#/deals/d-novo' },
+    { id: 'd-velho', nome: 'PRXC | Marcos (antigo)', etapa: 'Contato iniciado', funil: 'Funil MQL', responsavel: 'Isamara', aberta: true, ganha: false, perdida: false, escolhida: false, criadaEm: '11/08/2026', url: 'https://crm.pronixhub.com.br/#/deals/d-velho' },
+  ],
+};
+
+test('painel: com dois cards em aberto, o mais antigo ganha "Perder como duplicado"; o mais novo, "Reunião realizada"', async () => {
+  const pedidos = [];
+  const sp = abrirPainelDoChrome({ estado: { tipo: 'ok', ficha: FICHA_DUPLA, busca: { telefone: '5571999998888' }, podeEscrever: true, reuniao: { quando: '2026-10-23T17:00', closer: 'Paulo Henrique' } }, tabId: 7 }, (msg) => {
+    pedidos.push(JSON.parse(JSON.stringify(msg)));
+    if (msg.caminho === '/api/crm/duplicado') return { ok: true, motivo: 'Duplicado' };
+    if (msg.caminho === '/api/crm/realizada/plano') {
+      return {
+        ok: true, assinatura: 'a1', precisaCloser: true, faltando: [], closerSugerido: 'u-ph',
+        closers: [{ id: 'u-ph', nome: 'Paulo Henrique Pagoti' }, { id: 'u-rap', nome: 'Raphael <b>Ribeiro</b>' }],
+        handoff: { noCrm: false, doReport: { quando: '22/10/2026', sdr: 'Cauã Lima' } },
+        passos: [{ tipo: 'etapa', funilNome: 'SMQLs Automaticos', etapaNome: 'Qualificado', exigeCloser: false, vistos: 8, amostras: 10 }, { tipo: 'etapa', funilNome: 'SMQLs Automaticos', etapaNome: 'Reunião Agendada', exigeCloser: true }, { tipo: 'etapa', funilNome: 'SMQLs Automaticos', etapaNome: 'Reunião Realizada' }],
+      };
+    }
+    if (msg.caminho === '/api/crm/realizada') return { ok: true, feitos: ['Qualificado', 'Reunião Agendada', 'Reunião Realizada', 'Closer: Paulo Henrique Pagoti'] };
+    return { ok: false, erro: 'inesperado' };
+  });
+  const p = painelDe(sp);
+  assert.ok(p.querySelector('[data-pnx-duplicado="d-velho"]'), 'o antigo tem o botão de duplicado');
+  assert.equal(p.querySelector('[data-pnx-duplicado="d-novo"]'), null, 'o novo não');
+  assert.ok(p.querySelector('[data-pnx-realizada="d-novo"]'));
+  assert.equal(p.querySelector('[data-pnx-realizada="d-velho"]'), null);
+
+  // duplicado: pede confirmação antes de mexer no CRM
+  p.querySelector('[data-pnx-duplicado="d-velho"]').click();
+  assert.equal(pedidos.length, 0, 'nada vai ao servidor sem confirmar');
+  assert.match(painelDe(sp).textContent, /O lead continua em "PRXC \| Marcos \(novo\)" \(SMQLs Automaticos › Respondeu\)/);
+  painelDe(sp).querySelector('[data-pnx-confirmar="dup"]').click();
+  await esperar(() => /Perdido como duplicado/.test(painelDe(sp).textContent), { motivo: 'perda feita' });
+  assert.deepEqual(pedidos[0], { action: 'crmPainel', caminho: '/api/crm/duplicado', corpo: { busca: { telefone: '5571999998888' }, dealId: 'd-velho', manterId: 'd-novo' } });
+
+  // reunião realizada: mostra o caminho, o closer da agenda já escolhido e o handoff do report; só move ao confirmar
+  painelDe(sp).querySelector('[data-pnx-realizada="d-novo"]').click();
+  await esperar(() => painelDe(sp).querySelector('[data-pnx-closer]'), { motivo: 'plano na tela' });
+  const t = painelDe(sp).textContent;
+  for (const x of ['Qualificado', 'Reunião Agendada', 'define o closer', '8 de 10 cards passaram aqui', 'Reunião Realizada', 'o report de 22/10/2026 (Cauã Lima) vai junto']) assert.ok(t.includes(x), 'faltou: ' + x);
+  assert.equal(painelDe(sp).querySelector('[data-pnx-closer]').value, 'u-ph');
+  assert.equal(painelDe(sp).querySelector('b'), null, 'nome do CRM não vira HTML');
+  assert.equal(pedidos[1].corpo.closerNome, 'Paulo Henrique');
+  painelDe(sp).querySelector('[data-pnx-confirmar="realizada"]').click();
+  await esperar(() => /Pronto no CRM: Qualificado › Reunião Agendada › Reunião Realizada/.test(painelDe(sp).textContent), { motivo: 'movido' });
+  assert.deepEqual(pedidos[2].corpo, { busca: { telefone: '5571999998888' }, dealId: 'd-novo', assinatura: 'a1', closerId: 'u-ph', handoff: '', closerNome: 'Paulo Henrique' });
+  assert.deepEqual(sp.enviadas.map((e) => e.msg.action), ['painelConsultar', 'painelConsultar'], 'o cartão busca o lead de novo depois de cada escrita');
+  sp.fechar();
+});
+
+test('painel: sem o acesso do Desqualificar, nenhum botão que escreve no CRM', () => {
+  const sp = abrirPainelDoChrome({ estado: { tipo: 'ok', ficha: FICHA_DUPLA, busca: {}, podeEscrever: false }, tabId: 7 }, () => ({ ok: true }));
+  assert.equal(painelDe(sp).querySelector('[data-pnx-duplicado], [data-pnx-realizada]'), null);
+  sp.fechar();
 });
