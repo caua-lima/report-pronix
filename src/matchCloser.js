@@ -37,6 +37,11 @@ const timeDeSdrs = () => String(process.env.MATCH_SDRS_TIME || TIME_PADRAO).spli
 const MAX_PAGINAS = 15;
 const FOLGA_CRIACAO_DIAS = 75; // card criado até isso antes do início ainda pode ter a reunião no período
 const CACHE_SEG = 20 * 60;
+// A Vercel corta o pedido em 60 s e devolve uma página de erro (a tela só mostrava "Falha na requisição.").
+// O pedido inteiro — listas, detalhes, formulários e reports — tem este orçamento; o que não couber fica para a
+// próxima rodada (a aba continua sozinha), e o que já foi lido fica guardado.
+const ORCAMENTO_MS = () => Number(process.env.MATCH_ORCAMENTO_MS) || 45000;
+const LISTA_SEG = 10 * 60; // a lista (só id + versão das negociações do closer) vale para as rodadas seguidas
 
 const norm = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 const idDe = (d) => String((d && (d.id || d._id)) || '');
@@ -140,8 +145,8 @@ function estadoDoCard(deal, catalogo = null) {
  * toda reunião realizada ou venda depois dele mexeu no card — só as do closer, com o detalhe (campos, datas,
  * motivo, produtos). A lista do PronixCRM ignora user_id e win: o closer e o desfecho são conferidos aqui.
  */
-async function buscarCardsPronix({ usuario, time, nomeCloser, desde, hoje }) {
-  const diag = { paginas: 0, truncado: false };
+async function buscarCardsPronix({ usuario, time, nomeCloser, desde, hoje, prazoFinal = Date.now() + ORCAMENTO_MS() }) {
+  const diag = { paginas: 0, truncado: false, listasPendentes: 0 };
   const nomes = [usuario.nome].concat((time || []).filter((n) => !nomeBate(n, usuario.nome)));
   const ids = [];
   // Os funis em que existe reunião realizada (pela categoria da etapa, em qualquer funil) e os de closer pelo nome.
@@ -150,23 +155,47 @@ async function buscarCardsPronix({ usuario, time, nomeCloser, desde, hoje }) {
   const comRealizada = todos.filter((f) => f.etapas.some((e) => e.categoria === 'reuniao_realizada'));
   const funis = [...new Map(comRealizada.concat(await crm.funisDosClosers()).map((f) => [f.id, f])).values()];
   diag.funis = funis.map((f) => f.nome);
+  // Cada par SDR x funil vira uma lista (paginada pelo cursor). Eram lidas uma a uma, sem olhar o relógio: com o time
+  // todo desde junho isso sozinho passava de 60 s. Agora vão 4 de cada vez, cada lista pronta fica guardada (só o
+  // id e a versão das negociações do closer) e, quando o tempo das listas acaba, o resto fica para a próxima rodada.
+  const pares = [];
   for (const nome of nomes) {
     const u = await crm.usuarioDoCrm(nome);
     if (!u) continue;
-    for (const funil of funis.length ? funis : [null]) {
-      const deals = await crm.listarNegociacoes({ sdr_id: String(u.id), ...(funil ? { deal_pipeline_id: funil.id } : {}), updated_at_period: 'true', start_date: crm.instanteDoDia(desde), end_date: crm.instanteDoDia(hoje, true) });
-      diag.paginas += Math.max(1, Math.ceil(deals.length / 200));
-      deals.filter((d) => palavrasBatem((d.user && d.user.name) || '', nomeCloser)).forEach((d) => ids.push(d)); // as suas primeiro: são lidas antes
-    }
+    for (const funil of funis.length ? funis : [null]) pares.push({ sdrId: String(u.id), funil });
   }
-  // O CRM aceita 600 consultas por minuto e a Vercel corta em 60 s: lê o que cabe em ~38 s; o resto fica para a próxima.
-  const cards = await crm.detalhesDe(ids, { prazoMs: Number(process.env.MATCH_PRAZO_MS) || 38000 });
-  diag.pendentes = cards.pendentes || 0;
+  const prazoListas = prazoFinal - Number(process.env.MATCH_RESERVA_DETALHE_MS || 15000);
+  const listas = new Array(pares.length).fill(null);
+  const lerPar = async ({ sdrId, funil }) => {
+    const chave = `match_lista1_${sdrId}_${funil ? funil.id : 'todos'}_${slug(nomeCloser)}_${desde}_${hoje}`;
+    const guardada = await db.cacheGet(chave).catch(() => null);
+    if (guardada) { try { return JSON.parse(guardada); } catch (_) { /* relê */ } }
+    const deals = await crm.listarNegociacoes({ sdr_id: sdrId, ...(funil ? { deal_pipeline_id: funil.id } : {}), updated_at_period: 'true', start_date: crm.instanteDoDia(desde), end_date: crm.instanteDoDia(hoje, true) });
+    diag.paginas += Math.max(1, Math.ceil(deals.length / 200));
+    const doCloser = deals.filter((d) => palavrasBatem((d.user && d.user.name) || '', nomeCloser)).map((d) => ({ id: idDe(d), updated_at: d.updated_at || '', user: d.user }));
+    await db.cacheSet(chave, JSON.stringify(doCloser), LISTA_SEG).catch(() => {});
+    return doCloser;
+  };
+  let proximo = 0;
+  const trabalhador = async () => {
+    while (proximo < pares.length && Date.now() < prazoListas) {
+      const i = proximo++;
+      listas[i] = await lerPar(pares[i]);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(4, pares.length) }, trabalhador));
+  diag.listasPendentes = listas.filter((l) => l === null).length;
+  listas.forEach((l) => (l || []).forEach((d) => ids.push(d))); // na ordem dos pares: as suas primeiro, são lidas antes
+  // O CRM aceita 600 consultas por minuto: lê o detalhe no tempo que sobrar (deixando folga para montar a resposta).
+  const sobra = prazoFinal - Date.now() - Number(process.env.MATCH_FOLGA_MS || 7000);
+  const cards = sobra > 1500 ? await crm.detalhesDe(ids, { prazoMs: Math.min(Number(process.env.MATCH_PRAZO_MS) || 38000, sobra) }) : Object.assign([], { pendentes: ids.length });
+  // Lista ainda não lida conta como pendente (com pelo menos 1): a tela continua sozinha e o resultado não é guardado.
+  diag.pendentes = (cards.pendentes || 0) + diag.listasPendentes;
   return { cards, diag };
 }
 
-async function buscarCards({ closerRd, desde, hoje, usuario, time, nomeCloser }) {
-  if (crm.ehPronix()) return buscarCardsPronix({ usuario, time, nomeCloser, desde, hoje });
+async function buscarCards({ closerRd, desde, hoje, usuario, time, nomeCloser, prazoFinal }) {
+  if (crm.ehPronix()) return buscarCardsPronix({ usuario, time, nomeCloser, desde, hoje, prazoFinal });
   const porId = new Map();
   const diag = { paginas: 0, truncado: false };
   const corte = somaDias(desde, -FOLGA_CRIACAO_DIAS);
@@ -203,6 +232,7 @@ async function buscarCards({ closerRd, desde, hoje, usuario, time, nomeCloser })
  * @param {{usuario: {id, nome}, closer?: string, desde?: string, atualizar?: boolean}} pedido
  */
 async function levantar({ usuario, closer, desde, atualizar = false } = {}) {
+  const prazoFinal = Date.now() + ORCAMENTO_MS();
   if (!crm.configurado()) throw new Error('O RD Station não está configurado no servidor.');
   const nomeCloser = String(closer || CLOSER_PADRAO()).trim();
   const inicio = /^\d{4}-\d{2}-\d{2}$/.test(String(desde || '')) ? desde : DESDE_PADRAO();
@@ -221,7 +251,7 @@ async function levantar({ usuario, closer, desde, atualizar = false } = {}) {
   const hoje = stats.emDiaLocal(new Date().toISOString());
   const rdUsers = await crm.usuariosRd().catch(() => []);
   const closerRd = rdUsers.find((u) => palavrasBatem(u.nome, nomeCloser)) || null;
-  const { cards, diag } = await buscarCards({ closerRd, desde: inicio, hoje, usuario, time, nomeCloser });
+  const { cards, diag } = await buscarCards({ closerRd, desde: inicio, hoje, usuario, time, nomeCloser, prazoFinal });
   // Pronix CRM: id da etapa -> categoria ("reuniao_realizada", "fup"...), para reconhecer a reunião em qualquer funil.
   const catalogo = new Map();
   if (crm.ehPronix()) (await crm.funis().catch(() => [])).forEach((f) => f.etapas.forEach((e) => e.categoria && catalogo.set(e.id, e.categoria)));
@@ -307,7 +337,7 @@ async function levantar({ usuario, closer, desde, atualizar = false } = {}) {
     x.consciencia = (v && v.consciencia) || '';
   }
   // Profissão e investimento que não estão nos campos do card: da anotação do formulário (uma vez por card).
-  const form = await analises.completarPeloFormulario(reunioes).catch(() => ({ lidos: 0, pendentes: 0 }));
+  const form = await analises.completarPeloFormulario(reunioes, { prazoFinal: prazoFinal + 5000 }).catch(() => ({ lidos: 0, pendentes: 0 }));
   diagnostico.formulariosLidos = form.lidos;
   diagnostico.formulariosPendentes = form.pendentes;
 
