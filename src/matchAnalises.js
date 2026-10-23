@@ -95,19 +95,24 @@ function situacaoDeVenda(texto) {
  * Card sem profissão e sem investimento nos campos: lê a anotação do formulário no RD (uma vez por card,
  * guardada). Faz no máximo FORM_POR_VEZ cards por atualização; os outros ficam para a próxima.
  */
-async function completarPeloFormulario(reunioes) {
+async function completarPeloFormulario(reunioes, { prazoFinal = 0 } = {}) {
   const faltam = reunioes.filter((r) => r.fonte === 'rd' && r.contaReuniao && !r.lead_.profissao && !r.lead_.investimento);
   let lidos = 0;
   let pendentes = 0;
   const fila = [];
-  for (const r of faltam) {
-    const guardado = await db.cacheGet('form_deal2_' + r.id).catch(() => null);
+  // O guardado é lido 20 de cada vez (um a um, centenas de leituras somavam segundos preciosos dos 60 da Vercel).
+  const guardados = [];
+  for (let i = 0; i < faltam.length; i += 20) {
+    guardados.push(...await Promise.all(faltam.slice(i, i + 20).map((r) => db.cacheGet('form_deal2_' + r.id).catch(() => null))));
+  }
+  faltam.forEach((r, i) => {
+    const guardado = guardados[i];
     if (guardado) {
-      try { Object.assign(r.lead_, JSON.parse(guardado)); continue; } catch (_) { /* relê */ }
+      try { Object.assign(r.lead_, JSON.parse(guardado)); return; } catch (_) { /* relê */ }
     }
     if (fila.length < FORM_POR_VEZ) fila.push(r);
     else pendentes++;
-  }
+  });
   const ler = async (r) => {
     const a = await crm.atividadesDoCard(r.id).catch(() => null); // no PronixCRM, /activities?deal_id traria as de todos
     const notas = ((a && a.activities) || []).map((x) => crm.limparTexto(x.text)).filter(Boolean);
@@ -117,7 +122,11 @@ async function completarPeloFormulario(reunioes) {
     lidos++;
     if (a) await db.cacheSet('form_deal2_' + r.id, JSON.stringify(campos), FORM_TTL).catch(() => {});
   };
-  for (let i = 0; i < fila.length; i += 6) await Promise.all(fila.slice(i, i + 6).map(ler));
+  for (let i = 0; i < fila.length; i += 6) {
+    // Sem tempo (prazo do pedido): o resto fica para a próxima atualização.
+    if (prazoFinal && Date.now() > prazoFinal) { pendentes += fila.length - i; break; }
+    await Promise.all(fila.slice(i, i + 6).map(ler));
+  }
   return { lidos, pendentes };
 }
 
