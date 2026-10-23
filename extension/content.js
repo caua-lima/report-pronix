@@ -1985,6 +1985,75 @@
     }
   }
   /** A caixinha do "Desqualificar": a lista de motivos e, escolhido um, a confirmação. */
+
+  // ---------------------------------------------------------------- sugestão de motivo e anotação
+  const semAcento = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const diaBR = (iso) => `${String(iso).slice(8, 10)}/${String(iso).slice(5, 7)}`;
+  /**
+   * Sem IA: o lead não responde há 3 ou mais tentativas suas (em dias diferentes, quando a tela mostra a data) depois
+   * da última mensagem dele. Escolhe o motivo de "não respondeu" do CRM e escreve a anotação com as datas.
+   */
+  function sugestaoPorRegra(msgs, motivos) {
+    const lista = (msgs || []).filter(Boolean);
+    let i = lista.length - 1;
+    const minhas = [];
+    while (i >= 0 && lista[i].from === 'eu') { minhas.unshift(lista[i]); i--; }
+    const leadFalou = i >= 0;
+    const comData = minhas.some((m) => m.timestamp);
+    const dias = [...new Set(minhas.map((m) => (m.timestamp ? String(m.timestamp).slice(0, 10) : '')).filter(Boolean))];
+    const tentativas = comData ? dias.length : minhas.length;
+    if (tentativas < 3) return null;
+    const achar = (re) => (motivos || []).find((m) => re.test(semAcento(m.nome)));
+    const motivo = (!leadFalou && achar(/nunca respond/)) || achar(/parou de respond|sem resposta|nao respond|deixou de respond|sumiu|nunca respond/);
+    if (!motivo) return null;
+    const quando = dias.length ? ` (${dias.map(diaBR).join(', ')})` : '';
+    const ultima = !leadFalou ? ' O lead nunca respondeu.' : lista[i].timestamp ? ` A última mensagem do lead foi em ${diaBR(String(lista[i].timestamp).slice(0, 10))}.` : '';
+    return {
+      motivo,
+      nota: `Lead não respondeu após ${tentativas} tentativas de recontato${quando}.${ultima} Perda por falta de retorno.`,
+      porque: `${tentativas} tentativas sem resposta (regra, sem IA)`,
+    };
+  }
+  /** Botão "Sugerir motivo e anotação": a regra resolve o "não responde"; o resto vai à IA gratuita do servidor. */
+  function sugerirDesqualificacao(estado) {
+    const d = estado.desq;
+    if (!d || !d.motivos || d.sugerindo) return;
+    let msgs = [];
+    try {
+      msgs = mensagensVisiveis(acharMensagens(document.querySelector('#main') || document));
+    } catch (_) {
+      msgs = [];
+    }
+    const regra = sugestaoPorRegra(msgs, d.motivos);
+    const aplicar = (motivo, nota, porque) => {
+      d.escolhido = motivo;
+      d.nota = nota || '';
+      d.sugerida = true;
+      d.porque = porque || '';
+      d.erro = '';
+    };
+    if (regra) {
+      aplicar(regra.motivo, regra.nota, regra.porque);
+      redesenharFicha();
+      return;
+    }
+    d.sugerindo = true;
+    d.erro = '';
+    redesenharFicha();
+    const enviar = msgs.filter((m) => m && m.content).slice(-60).map((m) => ({ from: m.from, content: String(m.content).slice(0, 400), timestamp: m.timestamp || null }));
+    try {
+      chrome.runtime.sendMessage({ action: 'crmSugestaoDesq', mensagens: enviar }, (r) => {
+        if (chrome.runtime.lastError || !estado.desq) return;
+        d.sugerindo = false;
+        const motivo = r && r.ok && d.motivos.find((m) => String(m.id) === String(r.motivoId));
+        if (motivo) aplicar(motivo, r.nota, r.porque ? r.porque + ' (IA gratuita)' : 'sugestão da IA gratuita');
+        else d.erro = (r && r.erro) || 'Não consegui sugerir. Escolha o motivo à mão.';
+        if (ficha.ultimoEstado === estado) redesenharFicha();
+      });
+    } catch (_) {
+      d.sugerindo = false;
+    }
+  }
   const NOTA_DESQ = 50;
   /** O motivo escolhido pede a anotação: é de desqualificação, ou o CRM já respondeu que falta ela. */
   const precisaNota = (d) => Boolean(d && d.escolhido && (d.escolhido.tipo === 'desqualificacao' || d.pedirNota));
@@ -2003,7 +2072,8 @@
       caixa.appendChild(elem('div', 'font-size:12px;margin-bottom:6px', 'Dar perda no RD com o motivo:'));
       caixa.appendChild(elem('div', 'font-weight:700;color:#ff6f5c;margin-bottom:8px', d.escolhido.nome));
       // Motivo de desqualificação: o CRM exige a anotação do que o lead disse (50+ caracteres).
-      if (precisaNota(d)) {
+      if (d.porque) caixa.appendChild(elem('div', 'font-size:11px;color:#3ddc84;margin:-4px 0 6px', 'Sugestão: ' + d.porque + '. Confira antes de confirmar.'));
+      if (precisaNota(d) || d.sugerida) {
         const conta = () => {
           const n = String(d.nota || '').replace(/\s+/g, ' ').trim().length;
           return n >= NOTA_DESQ ? `${n} caracteres ✓` : `${n}/${NOTA_DESQ} caracteres (faltam ${NOTA_DESQ - n})`;
@@ -2030,11 +2100,17 @@
         const sim = botao('Confirmar perda', 'border:0;background:#ff6f5c;color:#18171b;font-weight:700', () => confirmarDesqualificar(estado, card));
         sim.id = 'cr-desq-confirmar';
         acoes.appendChild(sim);
-        acoes.appendChild(botao('Voltar', 'border:1px solid #55515b;background:transparent;color:#f3efe6', () => { d.escolhido = null; d.erro = ''; d.pedirNota = false; d.focoNota = false; redesenharFicha(); }));
+        acoes.appendChild(botao('Voltar', 'border:1px solid #55515b;background:transparent;color:#f3efe6', () => { d.escolhido = null; d.erro = ''; d.pedirNota = false; d.focoNota = false; d.sugerida = false; d.porque = ''; redesenharFicha(); }));
         caixa.appendChild(acoes);
       }
     } else {
       caixa.appendChild(elem('div', 'font-size:12px;margin-bottom:6px;color:#a39e93', 'Por que desqualificar? O card vira perda no RD com este motivo.'));
+      if (d.motivos) {
+        const sug = botao(d.sugerindo ? 'Lendo a conversa…' : '✨ Sugerir motivo e anotação', 'border:1px solid #3ddc84;background:transparent;color:#3ddc84;font-weight:700;margin-bottom:6px', () => sugerirDesqualificacao(estado));
+        sug.id = 'cr-desq-sugerir';
+        sug.title = 'Lê as mensagens da tela: lead sem resposta há 3+ tentativas sai por regra; o resto, pela IA gratuita';
+        caixa.appendChild(sug);
+      }
       if (!d.motivos && !d.erro) caixa.appendChild(elem('div', 'font-size:12px;color:#a39e93', 'Buscando os motivos no RD…'));
       if (d.motivos) {
         const lista = elem('div', 'display:flex;flex-direction:column;gap:4px;max-height:190px;overflow:auto');
@@ -2442,6 +2518,8 @@
     ['Reunião realizada →', 'Depois da reunião: escolha o closer e confirme. O card percorre as etapas do funil até "Reunião realizada" e o report do lead vai como handoff (gere o report antes; sem ele, o painel pede um texto).'],
     ['Perder como duplicado', 'Lead com dois cards em aberto: o botão aparece no mais antigo e marca a perda com o motivo de duplicidade, dizendo em qual card o lead continua.'],
     ['Desqualificar com anotação', 'Motivos de desqualificação pedem que você escreva o que o lead disse (pelo menos 50 caracteres): o campo aparece no cartão, com o contador.'],
+    ['Sugerir motivo e anotação', 'No Desqualificar, "✨ Sugerir motivo e anotação" lê a conversa da tela: lead sem resposta há 3 ou mais tentativas sai na hora (sem IA); nos outros casos, a IA gratuita escolhe o motivo e escreve a anotação. Confira e confirme.'],
+    ['Handoff + ligação', 'No "Reunião realizada", o texto do report aparece para editar e há um campo para o que veio da ligação: os dois vão juntos para o CRM como handoff.'],
     ['Áudios de volta', 'O report voltou a achar e transcrever os áudios no formato novo do WhatsApp.'],
   ];
   function mostrarNovidades(id) {

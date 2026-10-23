@@ -145,6 +145,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     })();
     return true;
   }
+  if (msg && msg.action === 'crmSugestaoDesq') {
+    (async () => {
+      const mensagens = (Array.isArray(msg.mensagens) ? msg.mensagens : []).slice(-60).map((m) => ({
+        from: m && m.from === 'eu' ? 'eu' : 'eles', content: String((m && m.content) || '').slice(0, 400), timestamp: (m && m.timestamp) || null,
+      }));
+      const r = await chamar('/api/crm/sugestao-desqualificacao', { mensagens }, { timeoutMs: 45000 });
+      sendResponse(r.ok ? { ok: true, motivoId: r.data.motivoId, nota: r.data.nota || '', porque: r.data.porque || '' } : { ok: false, erro: r.erro });
+    })();
+    return true;
+  }
   if (msg && msg.action === 'crmDesqualificar') {
     (async () => {
       const corpo = {

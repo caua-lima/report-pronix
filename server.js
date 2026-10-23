@@ -38,6 +38,7 @@ const transcricoes = require('./src/transcricoes');
 const driveGoogle = require('./src/driveGoogle');
 const limpezaRd = require('./src/limpezaRd');
 const fluxoReuniao = require('./src/fluxoReuniao');
+const sugestaoDesq = require('./src/sugestaoDesq');
 const diagnostico = require('./src/diagnostico');
 const { gerarAfinidadePdfBuffer, nomeDoArquivo: nomeDoArquivoAfinidade } = require('./src/afinidadePdf');
 const { textoDoPdf } = require('./src/textoDoPdf');
@@ -1245,13 +1246,13 @@ app.post('/api/crm/realizada', auth, async (req, res) => {
   try {
     if (semAutomacao(req, res)) return; // no Report PRONIX, o Desqualificar e os botões do painel vêm com a automação do cartão
     if (!req.usuario.fichaCrm) return res.status(403).json({ erro: 'Ficha do lead desligada para este usuário.' });
-    const { busca = {}, dealId, assinatura, closerId, handoff, closerNome, alvo } = req.body || {};
+    const { busca = {}, dealId, assinatura, closerId, handoff, complemento, closerNome, alvo } = req.body || {};
     const qual = alvo === 'qualificado' ? 'qualificado' : 'realizada';
     const lead = await crm.consultarLead({ telefone: busca.telefone, nome: busca.nome, contatoId: busca.contatoId });
     if (!((lead && lead.ficha && lead.ficha.negociacoes) || []).some((c) => String(c.id) === String(dealId || ''))) {
       return res.status(400).json({ erro: 'Este card não é do lead desta conversa. Abra a conversa de novo e tente outra vez.' });
     }
-    const r = await fluxoReuniao.executar({ usuario: req.usuario, dealId, assinatura, closerId, handoff, closerNome, busca, alvo: qual });
+    const r = await fluxoReuniao.executar({ usuario: req.usuario, dealId, assinatura, closerId, handoff, complemento, closerNome, busca, alvo: qual });
     // Qualificado no CRM: a etiqueta "Qualificado" do cartão acompanha (como se marcada à mão).
     if (qual === 'qualificado') {
       await leads.marcar(conversaDoPedido({ telefone: busca.telefone, nome: busca.nome }), { qualificado: true, manual: true, por: req.usuario.nome, usuarioId: req.usuario.id }).catch(() => null);
@@ -1259,6 +1260,22 @@ app.post('/api/crm/realizada', auth, async (req, res) => {
     res.json(r);
   } catch (err) {
     res.status(502).json({ erro: err.message, feitos: err.feitos || [] });
+  }
+});
+
+/**
+ * Desqualificar, "Sugerir motivo e anotação": a IA gratuita (Groq) lê as mensagens da tela e escolhe um dos motivos
+ * de perda do CRM, com a anotação. Os motivos vêm do servidor (não do pedido). O caso "não respondeu depois de N
+ * tentativas" a extensão resolve sozinha, sem chegar aqui.
+ */
+app.post('/api/crm/sugestao-desqualificacao', auth, async (req, res) => {
+  try {
+    if (semAutomacao(req, res)) return;
+    if (!req.usuario.fichaCrm) return res.status(403).json({ erro: 'Ficha do lead desligada para este usuário.' });
+    const mensagens = Array.isArray(req.body && req.body.mensagens) ? req.body.mensagens.slice(-80) : [];
+    res.json({ ok: true, ...(await sugestaoDesq.sugerir({ mensagens, motivos: await limpezaRd.motivosDePerda() })) });
+  } catch (err) {
+    res.status(502).json({ erro: err.message });
   }
 });
 

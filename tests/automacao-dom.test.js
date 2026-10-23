@@ -639,3 +639,65 @@ test('Desqualificar: o CRM pediu a anotação num motivo que não veio marcado �
   await esperar(() => perdas.length === 2, { motivo: 'segunda tentativa' });
   assert.equal(perdas[1].nota, texto);
 });
+
+// ---------------------------------------------------------------- sugestão de motivo e anotação
+const SEM_RESPOSTA = [
+  { from: 'eles', texto: 'Oi, tenho interesse', hora: '10:00, 01/09/2026' },
+  { from: 'eu', texto: 'Oi! Conseguiu ver a mensagem?', hora: '10:00, 02/09/2026' },
+  { from: 'eu', texto: 'Bom dia, ainda tem interesse?', hora: '10:00, 04/09/2026' },
+  { from: 'eu', texto: 'Última tentativa por aqui', hora: '10:00, 08/09/2026' },
+];
+function comMotivos(srv, extra = {}) {
+  const original = srv.aoEnviar;
+  const pedidos = { sugestao: [], perda: [] };
+  srv.aoEnviar = async (msg) => {
+    if (msg.action === 'crmMotivosPerda') return { ok: true, motivos: [{ id: 'm1', nome: 'Parou de Responder (SDR/Closer)', tipo: 'perda' }, { id: 'm2', nome: 'Sem dinheiro', tipo: 'desqualificacao' }] };
+    if (msg.action === 'crmSugestaoDesq') { pedidos.sugestao.push(JSON.parse(JSON.stringify(msg))); return extra.sugestao || { ok: false, erro: 'sem IA' }; }
+    if (msg.action === 'crmDesqualificar') { pedidos.perda.push(JSON.parse(JSON.stringify(msg))); return { ok: true, motivo: 'x', etapa: 'Desqualificados' }; }
+    return original(msg);
+  };
+  return pedidos;
+}
+
+test('Sugerir motivo: lead sem resposta há 3 tentativas — sai por regra, sem IA, com as datas na anotação', async () => {
+  const srv = servidorFalso({ etapa: 'Respondeu', desqualificar: true });
+  const pedidos = comMotivos(srv);
+  const p = abrir(srv, SEM_RESPOSTA);
+  await fichaNaTela(p);
+  const caixa = () => p.document.getElementById('cr-desqualificar');
+  await esperar(() => p.document.getElementById('cr-desqualificar-btn'), { motivo: 'botão Desqualificar' });
+  p.document.getElementById('cr-desqualificar-btn').click();
+  await esperar(() => p.document.getElementById('cr-desq-sugerir'), { motivo: 'botão de sugestão' });
+  p.document.getElementById('cr-desq-sugerir').click();
+  await esperar(() => p.document.getElementById('cr-desq-nota'), { motivo: 'sugestão aplicada' });
+  assert.equal(pedidos.sugestao.length, 0, 'sem IA');
+  assert.ok(caixa().textContent.includes('Parou de Responder (SDR/Closer)'));
+  assert.ok(caixa().textContent.includes('3 tentativas sem resposta (regra, sem IA)'));
+  const nota = p.document.getElementById('cr-desq-nota').value;
+  assert.ok(nota.startsWith('Lead não respondeu após 3 tentativas de recontato (02/09, 04/09, 08/09). A última mensagem do lead foi em 01/09.'), nota);
+  p.document.getElementById('cr-desq-confirmar').click();
+  await esperar(() => pedidos.perda.length === 1, { motivo: 'perda enviada' });
+  assert.deepEqual([pedidos.perda[0].motivoId, pedidos.perda[0].nota], ['m1', nota]);
+});
+
+test('Sugerir motivo: o lead disse por que não segue — a IA gratuita escolhe o motivo e escreve a anotação', async () => {
+  const srv = servidorFalso({ etapa: 'Respondeu', desqualificar: true });
+  const pedidos = comMotivos(srv, { sugestao: { ok: true, motivoId: 'm2', nota: 'Lead disse que não tem dinheiro agora para investir e que vai esperar o ano que vem.', porque: 'Disse que não tem dinheiro' } });
+  const conversa = [
+    { from: 'eu', texto: 'Consegue investir a partir de R$3 mil?', hora: '10:00, 01/09/2026' },
+    { from: 'eles', texto: 'Agora não tenho esse dinheiro, só ano que vem', hora: '10:05, 01/09/2026' },
+  ];
+  const p = abrir(srv, conversa);
+  await fichaNaTela(p);
+  await esperar(() => p.document.getElementById('cr-desqualificar-btn'), { motivo: 'botão' });
+  p.document.getElementById('cr-desqualificar-btn').click();
+  await esperar(() => p.document.getElementById('cr-desq-sugerir'), { motivo: 'botão de sugestão' });
+  p.document.getElementById('cr-desq-sugerir').click();
+  await esperar(() => p.document.getElementById('cr-desq-nota'), { motivo: 'sugestão da IA' });
+  assert.equal(pedidos.sugestao.length, 1);
+  assert.deepEqual(pedidos.sugestao[0].mensagens.map((m) => [m.from, m.content]), [['eu', 'Consegue investir a partir de R$3 mil?'], ['eles', 'Agora não tenho esse dinheiro, só ano que vem']]);
+  const caixa = p.document.getElementById('cr-desqualificar').textContent;
+  assert.ok(caixa.includes('Sem dinheiro'));
+  assert.ok(caixa.includes('Disse que não tem dinheiro (IA gratuita)'));
+  assert.equal(p.document.getElementById('cr-desq-nota').value, 'Lead disse que não tem dinheiro agora para investir e que vai esperar o ano que vem.');
+});

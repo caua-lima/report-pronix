@@ -160,3 +160,32 @@ test('Desqualificar: motivo de "desqualificação" exige a anotação (50+ carac
   const escrita = pedidos.find((x) => x.metodo === 'POST');
   assert.deepEqual([escrita.caminho, escrita.corpo.deal_lost_reason_id, escrita.corpo.deal_lost_note], ['/deals/d1/lost', 'm2', nota]);
 });
+
+// ---------------------------------------------------------------- sugestão de desqualificação (IA gratuita simulada)
+test('sugestão de desqualificação: a IA escolhe um motivo DA LISTA; motivo fora da lista não passa', async () => {
+  const sugestao = require('../src/sugestaoDesq');
+  const antes = global.fetch;
+  const chave = process.env.GROQ_API_KEY;
+  process.env.GROQ_API_KEY = 'gsk_teste';
+  let resposta = { motivoId: 'm2', nota: 'Lead disse que não tem dinheiro agora para investir.', porque: 'Sem dinheiro' };
+  let enviado = '';
+  global.fetch = async (url, opts = {}) => {
+    if (!String(url).includes('groq.com')) return antes(url, opts);
+    enviado = JSON.parse(opts.body).messages.map((m) => m.content).join('\n');
+    return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: JSON.stringify(resposta) } }] }) };
+  };
+  try {
+    const motivos = [{ id: 'm1', nome: 'Parou de responder', tipo: 'perda' }, { id: 'm2', nome: 'Sem dinheiro', tipo: 'desqualificacao' }];
+    const mensagens = [{ from: 'eu', content: 'Consegue investir?' }, { from: 'eles', content: 'Agora não tenho' }];
+    const r = await sugestao.sugerir({ mensagens, motivos });
+    assert.deepEqual(r, { motivoId: 'm2', nota: 'Lead disse que não tem dinheiro agora para investir.', porque: 'Sem dinheiro' });
+    assert.ok(enviado.includes('- m2: Sem dinheiro'));
+    assert.ok(enviado.includes('Lead: Agora não tenho'));
+    resposta = { motivoId: 'inventado', nota: 'x' };
+    await assert.rejects(sugestao.sugerir({ mensagens, motivos }), (e) => e.message.includes('não escolheu um motivo da lista'));
+    await assert.rejects(sugestao.sugerir({ mensagens: [], motivos }), (e) => e.message.includes('Não há mensagens na tela'));
+  } finally {
+    global.fetch = antes;
+    if (chave === undefined) delete process.env.GROQ_API_KEY; else process.env.GROQ_API_KEY = chave;
+  }
+});
