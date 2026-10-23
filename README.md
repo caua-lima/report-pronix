@@ -289,11 +289,17 @@ reunião no Google Agenda** também correm juntos.
 
 ### Botões que escrevem no CRM (painel lateral)
 
-Para quem tem o acesso do **Desqualificar**, o painel ganha dois botões. Nada muda no CRM sem confirmar no painel.
+Para quem tem o acesso do **Desqualificar**, o painel ganha três botões. Nada muda no CRM sem confirmar no painel.
 
 - **Perder como duplicado** — aparece no card **mais antigo** quando o lead tem dois ou mais em aberto (o mais novo
   é o que fica), mesmo que o card antigo seja de outra pessoa. Marca a perda com o motivo de duplicidade cadastrado
   no CRM (um motivo com "duplic" no nome) e a nota diz em qual card o lead segue.
+- **Qualificado ✓** — no card que fica, para o lead que qualificou e confirmou a reunião (que ainda não
+  aconteceu). Vai para a etapa "Qualificado" do funil (o nome, nunca "Desqualificado" nem "Em qualificação"); funil
+  sem ela, para a etapa de reunião agendada (o "Agendou"); funil sem nenhuma das duas (ex.: Aplicação Direta), para
+  o funil e a etapa em que os cards dele entraram. Closer e handoff só são pedidos se a etapa exigir o closer. A
+  etiqueta "Qualificado" do cartão acompanha. Com os qualificados numa coluna própria, o CRM mostra quem qualificou e
+  não chegou na reunião.
 - **Reunião realizada →** — no card que fica. Mostra o caminho que o card vai fazer até a etapa de reunião
   realizada, o closer (já escolhido quando a agenda do Google tem a reunião) e de onde vem o handoff; confirmado,
   move passo a passo, conferindo cada passagem, e para no primeiro erro dizendo o que já foi feito.
