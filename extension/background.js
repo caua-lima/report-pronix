@@ -336,7 +336,7 @@ function agendarAquecimento(ms) {
 }
 
 // Instalou ou atualizou: o WhatsApp Web mostra UMA vez o aviso do que mudou e de como usar (content.js).
-const NOVIDADES = 'painel-crm-2026-10';
+const NOVIDADES = 'painel-crm-2026-10-23'; // mudou a lista de novidades: todos veem de novo uma vez
 if (chrome.runtime.onInstalled) chrome.runtime.onInstalled.addListener((d) => {
   if (!d || (d.reason !== 'install' && d.reason !== 'update')) return;
   try {

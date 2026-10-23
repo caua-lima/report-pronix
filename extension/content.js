@@ -77,12 +77,22 @@
   // um buffer pequeno é atropelado antes do código alcançar os áudios mais adiante
   // na lista — por isso o teto é alto: cabe uma conversa cheia sem perder nada.
   const blobsAudio = [];
+  // A conversa aberta quando o WhatsApp criou o arquivo: o report só aceita arquivo da conversa dele. Sem isso, um
+  // áudio ouvido em OUTRA conversa (e que ficou na fila) podia ser transcrito no report deste lead.
+  const conversaDaTela = () => {
+    try {
+      return nomeDoContato();
+    } catch (_) {
+      return '';
+    }
+  };
+  let conversaDaLeitura = ''; // a conversa do report que está sendo lido agora ('' = sem leitura)
   const MAX_BLOBS_FILA = 500;
   let totalBlobsVistos = 0; // quantos arquivos o WhatsApp já criou (a fila é cortada em MAX_BLOBS_FILA; este não)
   window.addEventListener('message', (ev) => {
     if (ev.source === window && ev.data && ev.data.__crAudio && ev.data.url) {
       totalBlobsVistos++;
-      blobsAudio.push({ url: ev.data.url, ts: ev.data.ts || Date.now() });
+      blobsAudio.push({ url: ev.data.url, ts: ev.data.ts || Date.now(), conversa: conversaDaTela() });
       if (blobsAudio.length > MAX_BLOBS_FILA) blobsAudio.shift();
     }
   });
@@ -222,6 +232,8 @@
       const antigosOk = i >= 6 && !blobsAudio.some((b) => !b.usado && b.ts >= t0);
       for (const b of blobsAudio) {
         if (b.usado || (b.ts < t0 && !antigosOk)) continue;
+        // De outra conversa, nunca. Arquivo antigo (criado antes do clique) só se for, com certeza, desta conversa.
+        if (conversaDaLeitura && (b.ts < t0 ? b.conversa !== conversaDaLeitura : b.conversa && b.conversa !== conversaDaLeitura)) continue;
         b.usado = true;
         const buf = await fetchArrayBuffer(b.url);
         if (ehAudioBuffer(buf)) {
@@ -246,6 +258,7 @@
   // um que ainda falta. tentadosNestaPassada evita reclicar o mesmo áudio enquanto
   // ele fica na tela durante a rolagem; zera a cada passada de repescagem.
   async function capturarAudiosVisiveis(root, audioBytes, tentadosNestaPassada, iteracoes) {
+    if (conversaDaLeitura && nomeDoContato() !== conversaDaLeitura) return; // outra conversa na tela
     const todas = acharMensagens(root);
     const chaves = chavesDasMensagens(todas);
     for (let i = 0; i < todas.length; i++) {
@@ -253,6 +266,7 @@
       if (!ehAudio(el)) continue;
       const chave = chaves[i];
       if (!chave || audioBytes.has(chave) || tentadosNestaPassada.has(chave)) continue;
+      if (conversaDaLeitura && nomeDoContato() !== conversaDaLeitura) return; // trocou de conversa no meio
       tentadosNestaPassada.add(chave);
       try {
         const b64 = await capturarBytes(el, chave.slice(0, 8), iteracoes);
@@ -730,15 +744,23 @@
     const alvoJid = jidPredominante(root);
     const alvoNome = nomeDoContato();
     let divergenciasDeNome = 0;
+    conversaDaLeitura = alvoNome;
+    /**
+     * Ainda é a conversa do report? Não: nada da tela é lido nesta volta (devolve false) e, se continuar assim por 3
+     * voltas, a leitura para. Antes, a outra conversa era lida até a 3ª volta — e, se o SDR voltasse, ficava no report.
+     */
     const garantirMesmaConversa = () => {
       const jid = jidPredominante(root);
       if (alvoJid && jid) {
         if (jid !== alvoJid) throw new Error(MSG_CONVERSA_MUDOU);
-        return;
+        return true;
       }
-      const nome = alvoNome ? nomeDoContato() : '';
-      divergenciasDeNome = nome && nome !== alvoNome ? divergenciasDeNome + 1 : 0;
+      if (!alvoNome) return true;
+      const nome = nomeDoContato();
+      const outra = nome !== alvoNome; // cabeçalho vazio (trocando de conversa) também não é esta
+      divergenciasDeNome = outra ? divergenciasDeNome + 1 : 0;
       if (divergenciasDeNome >= 3) throw new Error(MSG_CONVERSA_MUDOU);
+      return !outra;
     };
 
     const scroller = acharScroller(acharMensagens(root)[0]);
@@ -747,7 +769,7 @@
     let seq = 0;
 
     const capturar = () => {
-      garantirMesmaConversa();
+      if (!garantirMesmaConversa()) return; // outra conversa na tela: não lê nada dela
       const els = acharMensagens(root);
       const chaves = chavesDasMensagens(els); // a mesma chave da captura do áudio
       els.forEach((el, i) => {
@@ -837,7 +859,7 @@
             // quem enviou já veio do DOM (aria-label "Você:"), não sobrescreve.
             reg.content = resp.texto.trim();
             if (audiosLidos.size > 3000) audiosLidos.clear();
-            audiosLidos.set(chave, reg.content); // a leitura rápida da tela usa sem transcrever de novo
+            audiosLidos.set(conversaDaLeitura + '|' + chave, reg.content); // a leitura rápida da tela usa sem transcrever de novo
           } else if (resp && resp.erro) {
             logA('transcrição falhou:', resp.erro);
           }
@@ -1100,6 +1122,11 @@
     try {
       // De qual conversa é este report (o SDR pode trocar de conversa enquanto a IA escreve).
       const conversaDoJob = conversaAbertaAgora();
+      // O que vai junto com o report (o lead no CRM e o formulário) sai AGORA, da conversa do report. Lido no fim,
+      // depois de minutos de leitura e transcrição, podia ser o cartão de outro lead (o SDR já em outra conversa).
+      const fichaDoJob = conversaDoJob && ficha.ultimoEstado && ficha.ultimoEstado.tipo === 'ok' && ficha.chave === chaveDaConversa(conversaDoJob) ? ficha.ultimoEstado : null;
+      const vinculoDoJob = fichaDoJob ? vinculoDoLead(fichaDoJob) : conversaDoJob && conversaDoJob.telefone ? { telefone: String(conversaDoJob.telefone), email: '', contatoId: '', dealId: '' } : null;
+      const formularioDoJob = fichaDoJob ? formularioDoLead(fichaDoJob) : null;
       mostrarBadge({
         texto:
           '<b>Lendo a conversa…</b><br>Capturando e transcrevendo áudios pode demorar um pouco. ' +
@@ -1150,7 +1177,7 @@
         mensagensLead: stats.doLead,
       };
       let resp = await new Promise((resolve) =>
-        chrome.runtime.sendMessage({ action: 'reportFetch', server, mensagens, nome, captureQuality, vinculo: vinculoDoLead(), formulario: formularioDoLead() }, resolve)
+        chrome.runtime.sendMessage({ action: 'reportFetch', server, mensagens, nome, captureQuality, vinculo: vinculoDoJob, formulario: formularioDoJob }, resolve)
       );
 
       if (!resp || !resp.ok) {
@@ -1178,7 +1205,7 @@
         }
         mostrarBadge({ texto: '<b>Gerando de novo…</b>', loading: true });
         resp = await new Promise((resolve) =>
-          chrome.runtime.sendMessage({ action: 'reportFetch', server, mensagens, nome, captureQuality, forcarNovo: true, vinculo: vinculoDoLead(), formulario: formularioDoLead() }, resolve)
+          chrome.runtime.sendMessage({ action: 'reportFetch', server, mensagens, nome, captureQuality, forcarNovo: true, vinculo: vinculoDoJob, formulario: formularioDoJob }, resolve)
         );
         if (!resp || !resp.ok) {
           mostrarBadge({ texto: escHtml((resp && resp.erro) || 'Falha ao gerar o report.'), cor: '#ff6f5c' });
@@ -1278,8 +1305,7 @@
    * telefone. O servidor guarda isso no report e é por aí que depois puxa o resultado da reunião (o nome
    * do contato no WhatsApp não serve para achar o card). Sem cartão na tela, vai só o telefone da conversa.
    */
-  function vinculoDoLead() {
-    const est = ficha.ultimoEstado;
+  function vinculoDoLead(est = ficha.ultimoEstado) {
     const f = est && est.ficha && typeof est.ficha === 'object' ? est.ficha : null;
     const escolhido = f ? (f.negociacoes || []).find((c) => c && c.escolhida) : null;
     return {
@@ -1293,8 +1319,7 @@
    * O que o formulário do lead no RD diz e o report pode usar: hoje, a profissão (inteira, sem encurtar).
    * O servidor só põe no PDF de quem tem "Profissão no report" ligado.
    */
-  function formularioDoLead() {
-    const est = ficha.ultimoEstado;
+  function formularioDoLead(est = ficha.ultimoEstado) {
     const f = est && est.ficha && typeof est.ficha === 'object' ? est.ficha : null;
     if (!f) return null;
     const campos = ((f.formulario && f.formulario.campos) || []).concat(f.campos || []);
@@ -1729,7 +1754,7 @@
       try {
         if (ehAudio(el)) {
           // Áudio que uma leitura completa já transcreveu nesta aba entra com o texto; senão, como [áudio].
-          const lido = audiosLidos.get(chaves[i]) || '';
+          const lido = audiosLidos.get(conversaDaTela() + '|' + chaves[i]) || '';
           out.push({ from: ehDeMim(el) ? 'eu' : 'eles', type: 'audio', content: lido || '[áudio]', timestamp: null });
           continue;
         }
@@ -2527,6 +2552,7 @@
   // ---------------------------------------------------------------------------
   const NOVIDADES_ID = 'pronix-novidades';
   const NOVIDADES = [
+    ['Report sem mistura de leads', 'Corrigido: o report não pega mais áudio nem mensagem de outro lead — acontecia quando você tinha ouvido áudios em outras conversas ou trocava de conversa durante a leitura.'],
     ['Painel lateral do CRM', 'Abre na barra lateral do Chrome: clique no botão ▤ do cartão do lead ou no ícone da extensão → "Abrir painel lateral do CRM". Mostra o lead da conversa aberta, todas as negociações dele (clique numa para abrir o card no CRM), o formulário e as últimas anotações. Ele acompanha quando você troca de conversa.'],
     ['Copiar link do card', 'No painel, embaixo de "Abrir o card no Pronix CRM": o link do card com o botão "Copiar link". É só colar no Pronix Calendar ao criar a reunião.'],
     ['Qualificado ✓', 'O lead qualificou e confirmou a reunião? Clique e o card vai para a etapa de qualificado do funil (ou "Agendou"). O painel mostra o caminho e só move quando você confirma. A etiqueta "Qualificado" do cartão vem junto.'],

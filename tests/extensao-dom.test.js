@@ -618,3 +618,76 @@ for (const modo of ['aria', 'estrutura']) {
     pagina.fechar();
   });
 }
+
+// ---------------------------------------------------------------- mistura de leads (relato dos SDRs)
+const trocarCabecalho = (p, nome) => {
+  const s = p.document.querySelector('#main header span');
+  s.setAttribute('title', nome);
+  s.textContent = nome;
+};
+
+test('mistura de leads: áudio que ficou na fila de OUTRA conversa nunca entra no report deste lead', async () => {
+  const conversa = [
+    { from: 'eu', texto: 'Oi', hora: '10:00, 01/09/2026' },
+    { from: 'eles', tipo: 'audio', semBytes: true },
+    { from: 'eu', texto: 'Ok', hora: '10:05, 01/09/2026' },
+  ];
+  const { envio, pagina } = await rodarWhatsApp(conversa, {
+    opcoes: { idsSimples: true },
+    durante: (p) => {
+      // o SDR ouviu um áudio na conversa de outro lead: o arquivo ficou na fila
+      trocarCabecalho(p, 'Outro Lead');
+      postarBlobsAntigos(p, [77]);
+      trocarCabecalho(p, 'Contato Teste');
+    },
+  });
+  assert.deepEqual(envio.mensagens.filter((m) => m.type === 'audio').map((m) => m.content), ['[áudio]'], 'o áudio do outro lead não foi transcrito aqui');
+  assert.equal(envio.captureQuality.audiosTranscritos, 0);
+  pagina.fechar();
+});
+
+test('mistura de leads: trocou de conversa no meio da leitura e voltou — nada da outra conversa entra no report', async () => {
+  const conversa = [
+    { from: 'eu', texto: 'Oi, tudo bem?', hora: '10:00, 01/09/2026' },
+    { from: 'eles', texto: 'Tudo sim', hora: '10:01, 01/09/2026' },
+    { from: 'eu', texto: 'Consegue investir?', hora: '10:02, 01/09/2026' },
+    { from: 'eles', texto: 'Consigo', hora: '10:03, 01/09/2026' },
+  ];
+  const servidor = servidorFalso();
+  const { envio, pagina } = await rodarWhatsApp(conversa, {
+    servidor,
+    opcoes: { idsSimples: true }, // o WhatsApp de hoje: o id da mensagem não diz de qual conversa ela é
+    durante: (p) => {
+      let vezes = 0;
+      const rolagem = p.document.getElementById('rolagem');
+      const desc = Object.getOwnPropertyDescriptor(rolagem, 'scrollTop');
+      const originais = [...rolagem.querySelectorAll('[data-id]')].map((el) => [el.getAttribute('data-id'), el.querySelector('.selectable-text').textContent]);
+      Object.defineProperty(rolagem, 'scrollTop', {
+        get: desc.get,
+        set: (v) => {
+          vezes++;
+          if (vezes === 5) {
+            // abriu a conversa de outro lead
+            trocarCabecalho(p, 'Outro Lead');
+            rolagem.querySelectorAll('[data-id]').forEach((el, i) => {
+              el.setAttribute('data-id', 'OUTRO' + i);
+              el.querySelector('.selectable-text').textContent = 'mensagem do outro lead ' + i;
+            });
+          }
+          if (vezes === 6) {
+            // e voltou
+            trocarCabecalho(p, 'Contato Teste');
+            rolagem.querySelectorAll('[data-id]').forEach((el, i) => {
+              el.setAttribute('data-id', originais[i][0]);
+              el.querySelector('.selectable-text').textContent = originais[i][1];
+            });
+          }
+          desc.set(v);
+        },
+      });
+    },
+  });
+  assert.equal(servidor.chamadas.reports.length, 1);
+  assert.deepEqual(envio.mensagens.map((m) => m.content), ['Oi, tudo bem?', 'Tudo sim', 'Consegue investir?', 'Consigo']);
+  pagina.fechar();
+});
