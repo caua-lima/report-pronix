@@ -646,6 +646,8 @@ test('painel: com dois cards em aberto, o mais antigo ganha "Perder como duplica
   assert.equal(p.querySelector('[data-pnx-duplicado="d-novo"]'), null, 'o novo não');
   assert.ok(p.querySelector('[data-pnx-realizada="d-novo"]'));
   assert.equal(p.querySelector('[data-pnx-realizada="d-velho"]'), null);
+  assert.ok(p.querySelector('[data-pnx-qualificado="d-novo"]'), 'o card que fica também tem o Qualificado');
+  assert.equal(p.querySelector('[data-pnx-qualificado="d-velho"]'), null);
 
   // duplicado: pede confirmação antes de mexer no CRM
   p.querySelector('[data-pnx-duplicado="d-velho"]').click();
@@ -663,9 +665,10 @@ test('painel: com dois cards em aberto, o mais antigo ganha "Perder como duplica
   assert.equal(painelDe(sp).querySelector('[data-pnx-closer]').value, 'u-ph');
   assert.equal(painelDe(sp).querySelector('b'), null, 'nome do CRM não vira HTML');
   assert.equal(pedidos[1].corpo.closerNome, 'Paulo Henrique');
+  assert.equal(pedidos[1].corpo.alvo, 'realizada');
   painelDe(sp).querySelector('[data-pnx-confirmar="realizada"]').click();
   await esperar(() => /Pronto no CRM: Qualificado › Reunião Agendada › Reunião Realizada/.test(painelDe(sp).textContent), { motivo: 'movido' });
-  assert.deepEqual(pedidos[2].corpo, { busca: { telefone: '5571999998888' }, dealId: 'd-novo', assinatura: 'a1', closerId: 'u-ph', handoff: '', closerNome: 'Paulo Henrique' });
+  assert.deepEqual(pedidos[2].corpo, { busca: { telefone: '5571999998888' }, dealId: 'd-novo', assinatura: 'a1', closerId: 'u-ph', handoff: '', closerNome: 'Paulo Henrique', alvo: 'realizada' });
   assert.deepEqual(sp.enviadas.map((e) => e.msg.action), ['painelConsultar', 'painelConsultar'], 'o cartão busca o lead de novo depois de cada escrita');
   sp.fechar();
 });
@@ -673,5 +676,25 @@ test('painel: com dois cards em aberto, o mais antigo ganha "Perder como duplica
 test('painel: sem o acesso do Desqualificar, nenhum botão que escreve no CRM', () => {
   const sp = abrirPainelDoChrome({ estado: { tipo: 'ok', ficha: FICHA_DUPLA, busca: {}, podeEscrever: false }, tabId: 7 }, () => ({ ok: true }));
   assert.equal(painelDe(sp).querySelector('[data-pnx-duplicado], [data-pnx-realizada]'), null);
+  sp.fechar();
+});
+
+test('painel: "Qualificado ✓" mostra o caminho sem pedir closer quando nenhuma etapa exige, e move ao confirmar', async () => {
+  const pedidos = [];
+  const sp = abrirPainelDoChrome({ estado: { tipo: 'ok', ficha: FICHA_DUPLA, busca: { telefone: '5571999998888' }, podeEscrever: true }, tabId: 7 }, (msg) => {
+    pedidos.push(JSON.parse(JSON.stringify(msg)));
+    if (msg.caminho === '/api/crm/realizada/plano') return { ok: true, alvo: 'qualificado', assinatura: 'q1', precisaCloser: false, faltando: [], closers: [{ id: 'u-ph', nome: 'PH' }], closerSugerido: '', handoff: { noCrm: false, doReport: null }, passos: [{ tipo: 'etapa', funilNome: 'SMQLs Automaticos', etapaNome: 'Qualificado' }] };
+    if (msg.caminho === '/api/crm/realizada') return { ok: true, feitos: ['Qualificado'] };
+    return { ok: false };
+  });
+  painelDe(sp).querySelector('[data-pnx-qualificado="d-novo"]').click();
+  await esperar(() => /Qualificado — o card vai passar por/.test(painelDe(sp).textContent), { motivo: 'plano do qualificado' });
+  assert.equal(pedidos[0].corpo.alvo, 'qualificado');
+  assert.equal(painelDe(sp).querySelector('[data-pnx-closer]'), null, 'sem closer quando nenhuma etapa pede');
+  assert.equal(painelDe(sp).querySelector('[data-pnx-handoff]'), null);
+  painelDe(sp).querySelector('[data-pnx-confirmar="qualificado"]').click();
+  await esperar(() => /Pronto no CRM: Qualificado/.test(painelDe(sp).textContent), { motivo: 'movido' });
+  assert.equal(pedidos[1].corpo.alvo, 'qualificado');
+  assert.equal(pedidos[1].corpo.assinatura, 'q1');
   sp.fechar();
 });

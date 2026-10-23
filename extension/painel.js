@@ -128,23 +128,24 @@
   }
   const aindaAberto = (dealId) => estado.form && estado.form.dealId === dealId;
 
-  async function abrirPlano(c, d) {
-    mudarForm({ dealId: c.id, tipo: 'realizada', fase: 'carregando' });
-    const r = await chamarServidor('/api/crm/realizada/plano', { busca: d.busca || {}, dealId: c.id, closerNome: (d.reuniao && d.reuniao.closer) || '' });
-    if (!aindaAberto(c.id)) return;
-    if (!r || !r.ok) return mudarForm({ dealId: c.id, tipo: 'realizada', fase: 'erro', erro: (r && r.erro) || 'Não consegui montar o caminho no CRM.' });
-    mudarForm({ dealId: c.id, tipo: 'realizada', fase: 'plano', plano: r, closerId: r.closerSugerido || '', texto: '' });
+  /** alvo: 'realizada' (reunião realizada) ou 'qualificado' (qualificou e confirmou a reunião, que ainda não aconteceu). */
+  async function abrirPlano(c, d, alvo = 'realizada') {
+    mudarForm({ dealId: c.id, tipo: alvo, fase: 'carregando' });
+    const r = await chamarServidor('/api/crm/realizada/plano', { busca: d.busca || {}, dealId: c.id, closerNome: (d.reuniao && d.reuniao.closer) || '', alvo });
+    if (!aindaAberto(c.id) || estado.form.tipo !== alvo) return;
+    if (!r || !r.ok) return mudarForm({ dealId: c.id, tipo: alvo, fase: 'erro', erro: (r && r.erro) || 'Não consegui montar o caminho no CRM.' });
+    mudarForm({ dealId: c.id, tipo: alvo, fase: 'plano', plano: r, closerId: r.closerSugerido || '', texto: '' });
   }
 
   async function confirmarRealizada(form, c, d) {
     if (form.fase === 'enviando') return;
     mudarForm({ ...form, fase: 'enviando', erro: '' });
     const r = await chamarServidor('/api/crm/realizada', {
-      busca: d.busca || {}, dealId: c.id, assinatura: form.plano.assinatura, closerId: form.closerId, handoff: form.texto || '', closerNome: (d.reuniao && d.reuniao.closer) || '',
+      busca: d.busca || {}, dealId: c.id, assinatura: form.plano.assinatura, closerId: form.closerId, handoff: form.texto || '', closerNome: (d.reuniao && d.reuniao.closer) || '', alvo: form.tipo,
     });
     if (!aindaAberto(c.id)) return;
     if (!r || !r.ok) return mudarForm({ ...form, fase: 'plano', erro: (r && r.erro) || 'O CRM não aceitou.' });
-    mudarForm({ dealId: c.id, tipo: 'realizada', fase: 'feito', texto: 'Pronto no CRM: ' + (r.feitos || []).join(' › ') });
+    mudarForm({ dealId: c.id, tipo: form.tipo, fase: 'feito', texto: 'Pronto no CRM: ' + (r.feitos || []).join(' › ') });
     if (estado.acoes.consultar) estado.acoes.consultar(d.busca || {});
   }
 
@@ -184,7 +185,8 @@
       return box;
     }
     const p = form.plano;
-    box.appendChild(el('div', 'font-weight:700;color:#f3efe6;margin-bottom:6px', 'Reunião realizada — o card vai passar por:'));
+    const comCloser = form.tipo === 'realizada' || p.precisaCloser;
+    box.appendChild(el('div', 'font-weight:700;color:#f3efe6;margin-bottom:6px', (form.tipo === 'qualificado' ? 'Qualificado' : 'Reunião realizada') + ' — o card vai passar por:'));
     const lista = el('ol', 'margin:0 0 8px;padding-left:18px');
     (p.passos || []).forEach((s) => {
       const extra = [s.exigeCloser ? 'define o closer' : '', s.amostras ? `${s.vistos} de ${s.amostras} cards passaram aqui` : ''].filter(Boolean).join(' · ');
@@ -194,6 +196,7 @@
     });
     box.appendChild(lista);
 
+    if (comCloser) {
     const sel = document.createElement('select');
     sel.style.cssText = 'width:100%;background:#211f24;color:#f3efe6;border:1px solid #3a373f;border-radius:7px;padding:6px;font-size:12px;font-family:inherit';
     sel.setAttribute('data-pnx-closer', '1');
@@ -221,11 +224,12 @@
       ta.addEventListener('keydown', (ev) => ev.stopPropagation());
       box.appendChild(ta);
     }
+    }
     if ((p.faltando || []).length) box.appendChild(el('div', 'color:#ff6f5c;margin-top:8px', 'O token do CRM não tem permissão para: ' + p.faltando.join(' e ') + '. Peça ao administrador do CRM.'));
     if (form.erro) box.appendChild(el('div', 'color:#ff6f5c;margin-top:8px', form.erro));
-    const pode = !(p.faltando || []).length && Boolean(form.closerId) && form.fase !== 'enviando';
+    const pode = !(p.faltando || []).length && (!comCloser || Boolean(form.closerId)) && form.fase !== 'enviando';
     const ok = botaoAcao(form.fase === 'enviando' ? 'Movendo no CRM…' : 'Confirmar e mover', pode ? OURO : '#5b5760', () => { if (pode) confirmarRealizada(form, c, d); });
-    ok.setAttribute('data-pnx-confirmar', 'realizada');
+    ok.setAttribute('data-pnx-confirmar', form.tipo);
     if (!pode) ok.title = form.closerId ? '' : 'Escolha o closer';
     box.appendChild(el('div', 'display:flex;gap:6px;margin-top:10px', ok, cancelar()));
     return box;
@@ -247,7 +251,11 @@
       caixa.appendChild(b);
     }
     if (c.id === fica.id) {
-      const b = botaoAcao('Reunião realizada →', OURO, () => abrirPlano(c, d));
+      // Qualificado: o lead qualificou e confirmou a reunião — vai para a etapa de qualificado do funil (ou a de agendada).
+      const q = botaoAcao('Qualificado ✓', '#3ddc84', () => abrirPlano(c, d, 'qualificado'));
+      q.setAttribute('data-pnx-qualificado', c.id);
+      caixa.appendChild(q);
+      const b = botaoAcao('Reunião realizada →', OURO, () => abrirPlano(c, d, 'realizada'));
       b.setAttribute('data-pnx-realizada', c.id);
       caixa.appendChild(b);
     }
