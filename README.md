@@ -287,6 +287,30 @@ mostra o lead na hora, e a busca nova só redesenha se algo mudou. No servidor, 
 anotações, campos e usuários do CRM são pedidos em paralelo, e a automação do cartão, a agenda e o **pintar a
 reunião no Google Agenda** também correm juntos.
 
+### Botões que escrevem no CRM (painel lateral)
+
+Para quem tem o acesso do **Desqualificar**, o painel ganha dois botões. Nada muda no CRM sem confirmar no painel.
+
+- **Perder como duplicado** — aparece no card **mais antigo** quando o lead tem dois ou mais em aberto (o mais novo
+  é o que fica), mesmo que o card antigo seja de outra pessoa. Marca a perda com o motivo de duplicidade cadastrado
+  no CRM (um motivo com "duplic" no nome) e a nota diz em qual card o lead segue.
+- **Reunião realizada →** — no card que fica. Mostra o caminho que o card vai fazer até a etapa de reunião
+  realizada, o closer (já escolhido quando a agenda do Google tem a reunião) e de onde vem o handoff; confirmado,
+  move passo a passo, conferindo cada passagem, e para no primeiro erro dizendo o que já foi feito.
+  - As etapas são reconhecidas pela **categoria** que o CRM dá a cada uma (resposta, reunião agendada, reunião
+    realizada…), igual em todos os funis, qualquer que seja o nome. O caminho passa por "Qualificado", pelas
+    etapas de resposta e de reunião agendada e pelas etapas de trabalho por onde a maioria dos cards passou.
+  - Funil sem etapa de reunião realizada (ex.: **Aplicação Direta**): o sistema aprende para qual funil e em qual
+    etapa os cards dele foram, pelo histórico dos cards que já chegaram na reunião nos últimos 120 dias (cache de
+    12 h). Sem esse histórico e com mais de um funil possível, ele não adivinha: pede para fazer pela tela uma vez.
+  - O **closer** vira o responsável do card, na etapa que o exige (ou no fim, se nenhuma exigir). A lista é a dos
+    closers cadastrados na aba Closers, achados no CRM pelo e-mail ou pelo nome.
+  - O **handoff** é o texto do último report do lead (guardado 60 dias quando o report é gerado). Sem report, o
+    painel pede o texto. A API do CRM não aceita anexo de PDF: o report vai como o handoff, que é o campo do CRM
+    para isso.
+  - O token do CRM precisa das permissões `trocar_responsavel` e, para trocar de funil, `mover_de_funil`; sem
+    elas o painel avisa antes de mexer em qualquer coisa.
+
 ### Ficha do RD Station
 
 Etapa e funil, responsável, as respostas do formulário (a anotação com linhas "Campo: valor"),
