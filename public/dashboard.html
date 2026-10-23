@@ -572,6 +572,8 @@
         <div class="row">
           <div style="flex:3;min-width:220px"><label for="compBase">Report do WhatsApp</label><select id="compBase"><option value="">Carregando os seus reports…</option></select></div>
           <button id="compUsar" type="button" class="btn sec" style="align-self:flex-end">Trazer o texto</button>
+          <button id="compAnexar" type="button" class="btn sec" style="align-self:flex-end" title="Anexe o PDF do report do WhatsApp">📎 Anexar o PDF</button>
+          <input id="compPdf" type="file" accept="application/pdf,.pdf" class="hidden" />
         </div>
         <label for="compReport" style="margin-top:10px">Texto do report do WhatsApp</label>
         <textarea id="compReport" rows="7" placeholder="Escolha o report acima ou cole aqui o texto do PDF."></textarea>
@@ -3946,6 +3948,25 @@
       }
     });
     $('compReport').addEventListener('input', () => { if (!$('compReport').value.trim()) compBaseId = ''; });
+    $('compAnexar').addEventListener('click', () => $('compPdf').click());
+    $('compPdf').addEventListener('change', async () => {
+      const arq = $('compPdf').files && $('compPdf').files[0];
+      if (!arq) return;
+      setStatus('statusComp', 'Lendo o PDF…', { loading: true });
+      try {
+        const pdfBase64 = await new Promise((ok, erro) => { const fr = new FileReader(); fr.onload = () => ok(String(fr.result).split(',')[1] || ''); fr.onerror = () => erro(new Error('Não consegui abrir o arquivo.')); fr.readAsDataURL(arq); });
+        const r = await fetchComTempo('/api/report-pdf-texto', { method: 'POST', headers: hdr({ 'Content-Type': 'application/json' }), body: JSON.stringify({ pdfBase64 }) });
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.erro || 'Não consegui ler o PDF.');
+        $('compReport').value = j.texto;
+        compBaseId = '';
+        setStatus('statusComp', `📎 ${arq.name} anexado. Agora escreva o que veio da ligação.`, { ok: true });
+      } catch (e) {
+        setStatus('statusComp', e.message, { erro: true });
+      } finally {
+        $('compPdf').value = '';
+      }
+    });
     $('compGerar').addEventListener('click', () => {
       const base = $('compReport').value.trim();
       const ligacao = $('compLigacao').value.trim();

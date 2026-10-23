@@ -756,3 +756,31 @@ test('painel lateral: clicar numa conversa da lista abre o painel junto, e ele m
   await esperar(() => srv.paineis.some((e) => e && e.tipo === 'carregando' && e.busca && e.busca.nome === 'Outra Pessoa'), { motivo: 'painel com o lead novo na hora' });
   p.fechar();
 });
+
+test('Reunião realizada: anexa o PDF do report e ele vai como handoff (o texto do PDF, sem precisar ler)', async () => {
+  const pedidos = [];
+  const sp = abrirPainelDoChrome({ estado: { tipo: 'ok', ficha: FICHA_DUPLA, busca: { telefone: '5571999998888' }, podeEscrever: true }, tabId: 7 }, (msg) => {
+    pedidos.push(JSON.parse(JSON.stringify(msg)));
+    if (msg.caminho === '/api/crm/realizada/plano') return { ok: true, alvo: 'realizada', assinatura: 'a1', precisaCloser: true, faltando: [], closers: [{ id: 'u-ph', nome: 'PH' }], closerSugerido: 'u-ph', handoff: { noCrm: false, doReport: null }, passos: [{ tipo: 'etapa', funilNome: 'F', etapaNome: 'Reunião Realizada', exigeCloser: true }] };
+    if (msg.caminho === '/api/report-pdf-texto') return { ok: true, texto: 'Lead: Marcos\nInvestimento: R$ 5 mil' };
+    if (msg.caminho === '/api/crm/realizada') return { ok: true, feitos: ['Reunião Realizada'] };
+    return { ok: false };
+  });
+  // o seletor de arquivo do navegador: devolve o PDF escolhido
+  sp.w.HTMLInputElement.prototype.click = function () {
+    if (this.type !== 'file') return;
+    Object.defineProperty(this, 'files', { configurable: true, value: [new sp.w.File([new Uint8Array([37, 80, 68, 70, 45])], 'Report_Marcos.pdf', { type: 'application/pdf' })] });
+    this.dispatchEvent(new sp.w.Event('change'));
+  };
+  painelDe(sp).querySelector('[data-pnx-realizada="d-novo"]').click();
+  await esperar(() => painelDe(sp).querySelector('[data-pnx-anexar]'), { motivo: 'botão de anexar' });
+  painelDe(sp).querySelector('[data-pnx-anexar]').click();
+  await esperar(() => /Report_Marcos\.pdf anexado — vai como handoff/.test(painelDe(sp).textContent), { motivo: 'PDF anexado' });
+  const pdf = pedidos.find((x) => x.caminho === '/api/report-pdf-texto');
+  assert.equal(pdf.corpo.pdfBase64, 'JVBERi0=', 'o PDF vai em base64');
+  assert.equal(painelDe(sp).querySelector('[data-pnx-handoff]'), null, 'sem textão: só o anexo');
+  painelDe(sp).querySelector('[data-pnx-confirmar="realizada"]').click();
+  await esperar(() => pedidos.some((x) => x.caminho === '/api/crm/realizada'), { motivo: 'moveu' });
+  assert.equal(pedidos.find((x) => x.caminho === '/api/crm/realizada').corpo.handoff, 'Lead: Marcos\nInvestimento: R$ 5 mil');
+  sp.fechar();
+});

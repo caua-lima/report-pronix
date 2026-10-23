@@ -160,6 +160,38 @@
     if (estado.acoes.consultar) estado.acoes.consultar(d.busca || {});
   }
 
+  /** Escolhe o PDF do report: o servidor tira o texto e ele vira o handoff. */
+  function escolherPdf(form) {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'application/pdf,.pdf';
+    input.addEventListener('change', () => {
+      const arq = input.files && input.files[0];
+      if (arq) lerPdf(form, arq);
+    });
+    input.click();
+  }
+  async function lerPdf(form, arq) {
+    form.lendoPdf = true;
+    form.erroPdf = '';
+    desenhar();
+    const pdfBase64 = await new Promise((ok) => {
+      const fr = new FileReader();
+      fr.onload = () => ok(String(fr.result).split(',')[1] || '');
+      fr.onerror = () => ok('');
+      fr.readAsDataURL(arq);
+    });
+    const r = await chamarServidor('/api/report-pdf-texto', { pdfBase64 });
+    form.lendoPdf = false;
+    if (r && r.ok && r.texto) {
+      form.texto = r.texto;
+      form.pdfNome = arq.name || 'report.pdf';
+    } else {
+      form.erroPdf = (r && r.erro) || 'Não consegui ler o PDF.';
+    }
+    desenhar();
+  }
+
   function caixaDoForm(form, c, d, fica) {
     const box = el('div', 'flex-basis:100%;padding:9px 10px;border-radius:9px;background:#121113;border:1px solid #3a373f;font-size:12px');
     box.setAttribute('data-pnx-form', form.tipo);
@@ -226,8 +258,17 @@
     };
     if (h.noCrm) {
       box.appendChild(el('div', 'color:#3ddc84;margin-top:8px', 'Handoff: já está no card ✓'));
+    } else if (form.pdfNome) {
+      // Anexou o PDF do report: ele vai como handoff (o CRM não aceita arquivo — vai o texto dele).
+      const trocar = botaoAcao('Trocar', '#a39e93', () => escolherPdf(form));
+      box.appendChild(el('div', 'display:flex;align-items:center;gap:8px;margin-top:8px;color:#3ddc84',
+        el('span', 'flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap', '📎 ' + form.pdfNome + ' anexado — vai como handoff ✓'), trocar));
     } else {
-      const deOnde = h.doReport ? `Handoff — o report de ${h.doReport.quando || 'hoje'}${h.doReport.sdr ? ' (' + h.doReport.sdr + ')' : ''} (pode editar)` : 'Handoff para o closer (sem report deste lead: escreva aqui)';
+      const deOnde = h.doReport ? `Handoff — o report de ${h.doReport.quando || 'hoje'}${h.doReport.sdr ? ' (' + h.doReport.sdr + ')' : ''} (pode editar)` : 'Handoff para o closer: anexe o PDF do report ou escreva aqui';
+      const anexar = botaoAcao(form.lendoPdf ? 'Lendo o PDF…' : '📎 Anexar o PDF do report', OURO, () => { if (!form.lendoPdf) escolherPdf(form); });
+      anexar.setAttribute('data-pnx-anexar', '1');
+      box.appendChild(el('div', 'margin-top:8px', anexar));
+      if (form.erroPdf) box.appendChild(el('div', 'color:#ff6f5c;margin-top:6px', form.erroPdf));
       campo(deOnde, form.texto, 'O que o closer precisa saber do lead.', (v) => { form.texto = v; }, 'data-pnx-handoff', h.doReport ? 140 : 80);
     }
     campo(h.noCrm ? 'Informações da ligação (vão como anotação no card)' : 'Informações da ligação (complementam o handoff)', form.complemento,

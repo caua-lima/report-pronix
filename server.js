@@ -38,6 +38,7 @@ const transcricoes = require('./src/transcricoes');
 const driveGoogle = require('./src/driveGoogle');
 const limpezaRd = require('./src/limpezaRd');
 const fluxoReuniao = require('./src/fluxoReuniao');
+const { textoDoReportPdf } = require('./src/pdfTexto');
 const sugestaoDesq = require('./src/sugestaoDesq');
 const diagnostico = require('./src/diagnostico');
 const { gerarAfinidadePdfBuffer, nomeDoArquivo: nomeDoArquivoAfinidade } = require('./src/afinidadePdf');
@@ -1785,6 +1786,14 @@ app.post('/api/report-direto', auth, async (req, res) => {
 });
 
 // Complementar um report do WhatsApp com a ligação (aba Gerar report): os reports da pessoa e o texto de cada um.
+/** O PDF do report anexado (painel lateral ou site): o texto dele vira o handoff — o CRM não aceita arquivo. */
+app.post('/api/report-pdf-texto', auth, async (req, res) => {
+  try {
+    res.json({ ok: true, texto: textoDoReportPdf(req.body && req.body.pdfBase64) });
+  } catch (err) {
+    res.status(400).json({ erro: err.message });
+  }
+});
 app.get('/api/report-base', auth, async (req, res) => {
   try {
     const meus = (await stats.listar({})).filter((r) => r.usuarioId === req.usuario.id).sort((a, b) => String(b.quando).localeCompare(String(a.quando))).slice(0, 40);

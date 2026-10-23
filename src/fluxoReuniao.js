@@ -135,7 +135,7 @@ const VAZIO = { porFunil: {}, transicoes: {}, amostras: 0 };
  * realizada (o detalhe fica guardado por card). Cache de 12 h; leitura incompleta fica só 15 min.
  */
 async function fluxosAprendidos() {
-  const guardado = await db.cacheGet('crm:fluxos1').catch(() => null);
+  const guardado = await db.cacheGet('crm:fluxos2').catch(() => null);
   if (guardado) {
     try {
       return JSON.parse(guardado);
@@ -155,7 +155,7 @@ async function fluxosAprendidos() {
   const desde = new Date(Date.now() - DIAS_APRENDIZADO * 86400000).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
   const t0 = Date.now();
   let incompleto = false;
-  const saida = { porFunil: {}, transicoes: {}, amostras: 0, quando: new Date().toISOString() };
+  const saida = { porFunil: {}, transicoes: {}, amostras: 0, closers: {}, quando: new Date().toISOString() };
   const vistos = new Set();
   for (const f of comRealizada) {
     if (Date.now() - t0 > 35000) { incompleto = true; break; }
@@ -176,6 +176,9 @@ async function fluxosAprendidos() {
       if (iReal < 0) continue;
       const caminho = hist.slice(0, iReal + 1).map((h) => ({ etapa: String(h.deal_stage_id), funil: String(h.deal_pipeline_id || funilDaEtapa.get(String(h.deal_stage_id)) || '') }));
       saida.amostras++;
+      // Quem é dono do card que chegou na reunião realizada é closer (é onde o CRM guarda o closer).
+      const dono = d.user && idDe(d.user);
+      if (dono) saida.closers[dono] = { nome: crm.consertarAcentos(d.user.name || ''), n: ((saida.closers[dono] && saida.closers[dono].n) || 0) + 1 };
       const funisDoCaminho = new Set();
       caminho.forEach((p) => {
         if (!p.funil) return;
@@ -196,7 +199,7 @@ async function fluxosAprendidos() {
     }
   }
   // as visitas contam uma vez por card (um card que voltou para a mesma etapa não pesa dobrado)
-  await db.cacheSet('crm:fluxos1', JSON.stringify(saida), incompleto ? 900 : 12 * 3600).catch(() => {});
+  await db.cacheSet('crm:fluxos2', JSON.stringify(saida), incompleto ? 900 : 12 * 3600).catch(() => {});
   return saida;
 }
 
@@ -263,14 +266,28 @@ async function usuariosDoCrm() {
 }
 
 /** Os closers que dá para escolher: os cadastrados aqui (aba Closers), achados no CRM pelo e-mail ou pelo nome. */
-async function closersDoCrm() {
+/** Todas as palavras do nome cadastrado estão no nome do CRM? ("Pedro Palermo" acha "Pedro Henrique Melo Palermo") */
+const nomeCabe = (curto, longo) => {
+  const p = new Set(norm(longo).split(' '));
+  const c = norm(curto).split(' ').filter(Boolean);
+  return c.length > 0 && c.every((x) => p.has(x));
+};
+/**
+ * Os closers que dá para escolher: os cadastrados aqui (aba Closers), achados no CRM pelo e-mail ou pelas palavras do
+ * nome, e os que o CRM mostra como donos dos cards que chegaram na reunião realizada (o histórico). Nenhum: todos.
+ */
+async function closersDoCrm(fluxos) {
   const doCrm = await usuariosDoCrm();
   const nossos = await closers.listar().catch(() => []);
   const achados = [];
+  const pôr = (u) => { if (u && u.id && !achados.some((a) => a.id === u.id)) achados.push({ id: u.id, nome: u.nome }); };
   for (const c of nossos) {
-    const u = doCrm.find((x) => (c.email && x.email === String(c.email).toLowerCase()) || norm(x.nome) === norm(c.nome));
-    if (u && !achados.some((a) => a.id === u.id)) achados.push({ id: u.id, nome: u.nome });
+    const doEmail = c.email && doCrm.find((x) => x.email && x.email === String(c.email).toLowerCase());
+    const doNome = doCrm.filter((x) => nomeCabe(c.nome, x.nome));
+    pôr(doEmail || (doNome.length === 1 ? doNome[0] : doNome.find((x) => norm(x.nome) === norm(c.nome))));
   }
+  Object.entries((fluxos && fluxos.closers) || {}).sort((x, y) => y[1].n - x[1].n).forEach(([id, c]) => pôr(doCrm.find((u) => u.id === id) || { id, nome: c.nome }));
+  achados.sort((x, y) => x.nome.localeCompare(y.nome, 'pt-BR'));
   return achados.length ? achados : doCrm.map((u) => ({ id: u.id, nome: u.nome }));
 }
 
@@ -366,7 +383,7 @@ async function planejar({ dealId, closerNome = '', busca = {}, alvo: qual = 'rea
     throw new Error(`Não consegui montar o caminho até ${ALVOS[qual]} deste card.`);
   }
 
-  const listaClosers = await closersDoCrm().catch(() => []);
+  const listaClosers = await closersDoCrm(fluxos).catch(() => []);
   const dono = { id: idDe(deal.user), nome: crm.consertarAcentos((deal.user && deal.user.name) || '') };
   const precisaCloser = passos.some((p) => p.exigeCloser);
   const perms = await permissoes();

@@ -67,7 +67,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   // Botões do painel lateral que escrevem no CRM: só estas rotas.
   if (msg && msg.action === 'crmPainel') {
-    const permitidas = ['/api/crm/duplicado', '/api/crm/realizada/plano', '/api/crm/realizada'];
+    const permitidas = ['/api/crm/duplicado', '/api/crm/realizada/plano', '/api/crm/realizada', '/api/report-pdf-texto'];
     if (!permitidas.includes(msg.caminho)) {
       sendResponse({ ok: false, erro: 'Ação desconhecida.' });
       return false;

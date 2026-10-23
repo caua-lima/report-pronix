@@ -97,7 +97,7 @@ global.fetch = async (url, opts = {}) => {
   if (recusar && p === recusar.caminho) return ok({ codigo: 'X', mensagem: recusar.mensagem }, 422);
   if (p === '/deal_pipelines') return ok(FUNIS);
   if (p === '/me') return ok({ user: { id: 'u-caua', name: 'Cauã Lima' }, permissions: ['trocar_responsavel', 'mover_de_funil'] });
-  if (p === '/users') return ok({ users: [{ id: 'u-caua', name: 'Cauã Lima', email: 'caua@x.test' }, { id: 'u-ph', name: 'Paulo Henrique Pagoti', email: 'ph@x.test' }, { id: 'u-isa', name: 'Isamara', email: 'isa@x.test' }] });
+  if (p === '/users') return ok({ users: [{ id: 'u-caua', name: 'Cauã Lima', email: 'caua@x.test' }, { id: 'u-ph', name: 'Paulo Henrique Pagoti', email: 'ph@x.test' }, { id: 'u-isa', name: 'Isamara', email: 'isa@x.test' }, { id: 'u-pedro', name: 'Pedro Henrique Melo Palermo', email: '' }, { id: 'u-zoe', name: 'Zoe Closer', email: '' }] });
   if (p === '/deal_lost_reasons') return ok({ deal_lost_reasons: [{ id: 'm-sumiu', name: 'Nunca respondeu' }, { id: 'm-dup', name: 'Duplicidade de card' }] });
   if (p === '/deals' && metodo === 'GET') {
     if (semHistorico) return ok({ deals: [] });
@@ -106,7 +106,8 @@ global.fetch = async (url, opts = {}) => {
     return ok({ deals: ids.map((id) => ({ id, _id: id, updated_at: '2026-09-10T12:00:00.000Z' })) });
   }
   const m = p.match(/^\/deals\/([^/]+)(\/[a-z_]+)?$/);
-  if (m && HISTORICOS[m[1]]) return ok({ id: m[1], _id: m[1], updated_at: '2026-09-10T12:00:00.000Z', deal_stage_histories: HISTORICOS[m[1]] });
+  // donos dos cards que chegaram na reunião realizada: os closers que o histórico ensina
+  if (m && HISTORICOS[m[1]]) return ok({ id: m[1], _id: m[1], updated_at: '2026-09-10T12:00:00.000Z', deal_stage_histories: HISTORICOS[m[1]], user: m[1] === 'm1' ? { id: 'u-zoe', name: 'Zoe Closer' } : { id: 'u-ph', name: 'Paulo Henrique Pagoti' } });
   if (m && cards[m[1]]) {
     const c = cards[m[1]];
     const rota = m[2] || '';
@@ -154,11 +155,13 @@ test('o report vira o texto do handoff, nos tópicos que o closer lê', () => {
 test('funil que vai até a reunião: Qualificado → Reunião Agendada (closer + handoff do report) → Reunião Realizada', async () => {
   reiniciar();
   await closers.criar('Paulo Henrique Pagoti', 'ph@x.test');
+  await closers.criar('Pedro Palermo', ''); // no CRM: Pedro Henrique Melo Palermo
   await fluxo.guardarHandoff({ dados: DADOS_REPORT, sdr: 'Cauã Lima', reportId: 'r1', vinculo: { dealId: 'd-mql', contatoId: 'c1' } });
   const plano = await fluxo.planejar({ dealId: 'd-mql', closerNome: 'Paulo Henrique' });
   assert.deepEqual(plano.passos.map((p) => [p.tipo, p.etapaNome, p.exigeCloser]), [['etapa', 'Qualificado', false], ['etapa', 'Reunião Agendada', true], ['etapa', 'Reunião Realizada', false]]);
   assert.equal(plano.closerSugerido, 'u-ph', 'o closer da agenda vem escolhido');
-  assert.deepEqual(plano.closers, [{ id: 'u-ph', nome: 'Paulo Henrique Pagoti' }], 'só os closers cadastrados');
+  assert.deepEqual(plano.closers, [{ id: 'u-ph', nome: 'Paulo Henrique Pagoti' }, { id: 'u-pedro', nome: 'Pedro Henrique Melo Palermo' }, { id: 'u-zoe', nome: 'Zoe Closer' }],
+    'os cadastrados (pelas palavras do nome) e os donos das reuniões realizadas — nunca um SDR');
   assert.ok(plano.handoff.doReport, 'o report deste card vai como handoff');
   assert.deepEqual(plano.faltando, []);
 
@@ -208,12 +211,12 @@ test('o CRM recusou no meio: para ali e diz o que já foi feito', async () => {
 test('funil sem caminho conhecido (nenhum card dele chegou na reunião e há dois funis com a etapa): não adivinha', async () => {
   reiniciar();
   semHistorico = true;
-  await db.cacheDel('crm:fluxos1');
+  await db.cacheDel('crm:fluxos2');
   try {
     await assert.rejects(fluxo.planejar({ dealId: 'd-ad' }), /Não sei para qual funil os cards de "Aplicação Direta" vão/);
   } finally {
     semHistorico = false;
-    await db.cacheDel('crm:fluxos1');
+    await db.cacheDel('crm:fluxos2');
   }
 });
 
@@ -294,4 +297,17 @@ test('o texto do report fica guardado também pelo id do report (para complement
   assert.match(await fluxo.textoDoReport('rep123'), /^Nome: Lead Teste/);
   assert.equal(await fluxo.textoDoReport('nao-existe'), '');
   assert.equal(await fluxo.textoDoReport('../x'), '');
+});
+
+test('PDF do report anexado: vira o texto do handoff (sem o rodapé); arquivo que não é PDF não passa', async () => {
+  const { gerarPdfBuffer } = require('../src/generatePdf');
+  const { textoDoReportPdf } = require('../src/pdfTexto');
+  const buf = await gerarPdfBuffer({ lead: 'Lead Teste', sdr: 'SDR Teste', resumo: [{ rotulo: 'Investimento', valor: 'R$ 5 mil' }], secoes: [{ titulo: 'O que o closer deve bater', numerada: true, itens: ['Mostrar casos de loja física'] }], abertura: 'Oi, o SDR me passou o contexto.', citacoes: [], dores: [], sinais_compra: [], frase_impacto: '' });
+  const texto = textoDoReportPdf(buf.toString('base64'));
+  assert.match(texto, /Lead: Lead Teste/);
+  assert.match(texto, /Investimento: R\$ 5 mil/);
+  assert.match(texto, /Mostrar casos de loja física/);
+  assert.doesNotMatch(texto, /Handoff de pré-vendas · SDR/, 'sem o rodapé da página');
+  assert.throws(() => textoDoReportPdf(Buffer.from('não sou pdf').toString('base64')), /não é um PDF/);
+  assert.throws(() => textoDoReportPdf(''), /Anexe o PDF/);
 });
