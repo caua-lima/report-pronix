@@ -2292,7 +2292,7 @@ test('Match com PH: medidor da meta, plano do mês, comparativo, mês a mês e a
   assert.ok(visivel(p.document.querySelector('.tab[data-aba="match"]')), 'item no menu');
   assert.equal(p.$('tituloPagina').textContent, 'Match com PH');
   const q = api.pedidos.find((x) => x.chave === 'GET /api/master/match').query;
-  assert.deepEqual([q.get('closer'), q.get('desde'), q.get('atualizar'), q.get('escopo')], ['Paulo Henrique', '2026-07-01', null, 'minhas']);
+  assert.deepEqual([q.get('closer'), q.get('desde'), q.get('atualizar'), q.get('escopo')], ['Paulo Henrique', '2026-06-01', null, 'minhas'], 'o padrão é junho (o CRM novo tem o histórico desde junho)');
   assert.equal(p.$('mtEscopoMinhas').getAttribute('aria-pressed'), 'true', 'começa em "Só as minhas"');
 
   // Você x time: as duas conversões lado a lado, por SDR e por profissão

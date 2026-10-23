@@ -875,7 +875,7 @@
         <div class="head"><div class="t"><i data-ic="chart"></i>Match com o closer</div><div class="sub" id="mtSubAba">— as reuniões realizadas e as vendas em que você foi o SDR, lidas do RD</div></div>
         <div class="row">
           <div style="min-width:200px;flex:1"><label for="mtCloser">Closer</label><input id="mtCloser" value="Paulo Henrique" /></div>
-          <div style="min-width:150px"><label for="mtDesde">Desde</label><input id="mtDesde" type="date" value="2026-07-01" /></div>
+          <div style="min-width:150px"><label for="mtDesde">Desde</label><input id="mtDesde" type="date" value="2026-06-01" /></div>
           <div><label id="mtEscopoRotulo">De quem</label><div class="mt-seg" role="group" aria-labelledby="mtEscopoRotulo"><button type="button" id="mtEscopoMinhas" aria-pressed="true">Só as minhas</button><button type="button" id="mtEscopoTime" aria-pressed="false">Time todo</button></div></div>
           <button id="mtAtualizar" class="btn sec"><i data-ic="refresh"></i>Atualizar do RD</button>
         </div>
@@ -1754,8 +1754,14 @@
       ].map((x) => '<div style="margin-bottom:6px">' + x + '</div>').join('');
     }
 
-    async function carregarMatch(atualizar) {
+    // Leitura em partes: o CRM aceita 600 consultas por minuto e o servidor tem 60 s por pedido. Faltando cards, a
+    // aba continua sozinha (o que já foi lido fica guardado) até ler tudo — sem precisar clicar de novo.
+    let rodadaMt = 0;
+    let timerMt = null;
+    async function carregarMatch(atualizar, continuacao = false) {
       if (matchDados && !atualizar) return desenharMatch(matchDados);
+      if (!continuacao) rodadaMt = 0;
+      clearTimeout(timerMt);
       setStatus('statusMt', atualizar ? 'Lendo os cards do closer no RD… (pode levar até um minuto)' : 'Carregando…', { loading: true });
       $('mtAtualizar').disabled = true;
       try {
@@ -1765,7 +1771,11 @@
         desenharMatch(d);
         const quando = new Date(d.atualizadoEm).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
         const faltam = (d.diagnostico && d.diagnostico.pendentesDoCrm) || 0;
-        if (faltam) setStatus('statusMt', `Ainda faltam ${faltam} negociações para ler do CRM (ele aceita 600 consultas por minuto). Os números já aparecem, mas incompletos: clique em "Atualizar do RD" de novo em 1 minuto — o que já foi lido fica guardado.`, { erro: true });
+        if (faltam && rodadaMt < 20) {
+          rodadaMt++;
+          setStatus('statusMt', `Lendo o CRM em partes: faltam ${faltam} negociações (rodada ${rodadaMt}). Os números já aparecem e vão se completando sozinhos — pode deixar a aba aberta.`, { loading: true });
+          timerMt = setTimeout(() => carregarMatch(true, true), 15000);
+        } else if (faltam) setStatus('statusMt', `Ainda faltam ${faltam} negociações para ler do CRM. Clique em "Atualizar do RD" em 1 minuto — o que já foi lido fica guardado.`, { erro: true });
         else setStatus('statusMt', `Lido do RD em ${quando}${d.cache ? ' (guardado por 20 min; "Atualizar do RD" lê de novo)' : ''}.`, { ok: true });
       } catch (e) {
         setStatus('statusMt', e.message, { erro: true });
@@ -1783,7 +1793,8 @@
     try {
       const salvo = JSON.parse(localStorage.getItem('mtFiltro') || 'null');
       if (salvo && salvo.closer) $('mtCloser').value = salvo.closer;
-      if (salvo && /^\d{4}-\d{2}-\d{2}$/.test(salvo.desde || '')) $('mtDesde').value = salvo.desde;
+      // 1º de julho era o padrão antigo: o CRM novo tem o histórico desde junho, então o padrão passou a ser junho.
+      if (salvo && /^\d{4}-\d{2}-\d{2}$/.test(salvo.desde || '') && salvo.desde !== '2026-07-01') $('mtDesde').value = salvo.desde;
       if (salvo && salvo.escopo === 'time') escopoMt = 'time';
     } catch (_) { /* sem armazenamento: fica o padrão */ }
     const lembrarFiltroMt = () => {
