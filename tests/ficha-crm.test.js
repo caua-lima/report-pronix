@@ -508,7 +508,7 @@ const fsPainel = require('fs');
 const pathPainel = require('path');
 
 /** Abre o sidepanel.html de verdade (painel.js + sidepanel.js) com o estado que o service worker guardou. */
-function abrirPainelDoChrome(painelLead, responderServidor = () => ({ ok: false, erro: 'sem servidor' })) {
+function abrirPainelDoChrome(painelLead, responderServidor = () => ({ ok: false, erro: 'sem servidor' }), opcoes = {}) {
   const raiz = pathPainel.join(__dirname, '..', 'extension');
   const html = fsPainel.readFileSync(pathPainel.join(raiz, 'sidepanel.html'), 'utf8').replace(/<script[^>]*><\/script>/g, '');
   const dom = new JSDOM(html, { runScripts: 'outside-only', url: 'chrome-extension://teste/sidepanel.html' });
@@ -519,13 +519,18 @@ function abrirPainelDoChrome(painelLead, responderServidor = () => ({ ok: false,
     runtime: { lastError: null, sendMessage: (msg, cb) => Promise.resolve(responderServidor(msg)).then((r) => cb && cb(r)) },
     storage: {
       local: { get: (p, cb) => cb({ ...p }), set: () => {} },
-      session: { get: (_k, cb) => cb({ painelLead }) },
+      // opcoes.sessao: outras chaves guardadas (o lead de cada aba: "painelLead:<id>")
+      session: { get: (k, cb) => { const tudo = { painelLead, ...(opcoes.sessao || {}) }; cb({ [k]: tudo[k] }); } },
       onChanged: { addListener: (fn) => ouvintes.push(fn) },
     },
-    tabs: { sendMessage: (tabId, msg, cb) => { enviadas.push({ tabId, msg }); if (cb) cb(); } },
+    tabs: {
+      sendMessage: (tabId, msg, cb) => { enviadas.push({ tabId, msg }); if (cb) cb(opcoes.responderAba ? opcoes.responderAba(msg) : undefined); },
+      // opcoes.abas: a aba ativa desta janela (sem ela, o painel ainda não sabe a própria aba)
+      ...(opcoes.abas ? { query: (_q, cb) => cb(opcoes.abas), onActivated: { addListener: () => {} } } : {}),
+    },
   };
   for (const a of ['painel.js', 'sidepanel.js']) w.eval(fsPainel.readFileSync(pathPainel.join(raiz, a), 'utf8'));
-  return { w, document: w.document, enviadas, mudar: (v) => ouvintes.forEach((fn) => fn({ painelLead: { newValue: v } }, 'session')), fechar: () => w.close() };
+  return { w, document: w.document, enviadas, mudar: (v, chave = 'painelLead') => ouvintes.forEach((fn) => fn({ [chave]: { newValue: v } }, 'session')), fechar: () => w.close() };
 }
 const painelDe = (p) => p.document.getElementById('pronix-painel-lateral');
 
@@ -782,5 +787,17 @@ test('Reunião realizada: anexa o PDF do report e ele vai como handoff (o texto 
   painelDe(sp).querySelector('[data-pnx-confirmar="realizada"]').click();
   await esperar(() => pedidos.some((x) => x.caminho === '/api/crm/realizada'), { motivo: 'moveu' });
   assert.equal(pedidos.find((x) => x.caminho === '/api/crm/realizada').corpo.handoff, 'Lead: Marcos\nInvestimento: R$ 5 mil');
+  sp.fechar();
+});
+
+test('painel lateral: cada aba do WhatsApp tem o seu lead — outra aba (sem conversa) não apaga o desta', () => {
+  const desta = { estado: { tipo: 'ok', ficha: FICHA_PAINEL, busca: { telefone: '5571999998888' } }, tabId: 9 };
+  const sp = abrirPainelDoChrome({ estado: { tipo: 'sem-conversa' }, tabId: 3 }, undefined, { abas: [{ id: 9, url: 'https://web.whatsapp.com/' }], sessao: { 'painelLead:9': desta } });
+  assert.match(painelDe(sp).textContent, /Marcos Pereira/);
+  sp.mudar({ estado: { tipo: 'sem-conversa' }, tabId: 3 }); // a outra aba publicou
+  sp.mudar({ estado: { tipo: 'sem-conversa' }, tabId: 3 }, 'painelLead:3');
+  assert.match(painelDe(sp).textContent, /Marcos Pereira/, 'continua com o lead desta aba');
+  sp.mudar({ estado: { tipo: 'carregando', busca: { nome: 'Júlia' } }, tabId: 9 }, 'painelLead:9');
+  assert.match(painelDe(sp).textContent, /Júlia/);
   sp.fechar();
 });

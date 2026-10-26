@@ -58,7 +58,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg && msg.action === 'painelEstado') {
     const tabId = sender && sender.tab ? sender.tab.id : null;
     try {
-      chrome.storage.session.set({ painelLead: { estado: msg.estado || null, tabId, em: Date.now() } });
+      // Um lead por aba: outra aba do WhatsApp (outra janela, sem conversa aberta) não apaga o desta.
+      // "painelLead" (o último de qualquer aba) fica para o painel que ainda não sabe a própria aba.
+      const valor = { estado: msg.estado || null, tabId, em: Date.now() };
+      chrome.storage.session.set(tabId != null ? { ['painelLead:' + tabId]: valor, painelLead: valor } : { painelLead: valor });
     } catch (_) {
       /* sem storage.session */
     }
@@ -366,6 +369,14 @@ if (chrome.sidePanel && chrome.sidePanel.setOptions && chrome.tabs) {
       if (info && (info.url || info.status)) ajustarPainel(tabId, (tab && tab.url) || info.url);
     });
     chrome.tabs.query({}, (abas) => (abas || []).forEach((a) => ajustarPainel(a.id, a.url)));
+    // Aba fechada: o lead guardado dela sai junto.
+    if (chrome.tabs.onRemoved) chrome.tabs.onRemoved.addListener((tabId) => {
+      try {
+        Promise.resolve(chrome.storage.session.remove('painelLead:' + tabId)).catch(() => {});
+      } catch (_) {
+        /* ok */
+      }
+    });
   } catch (_) {
     /* Chrome sem a API */
   }
