@@ -2558,6 +2558,8 @@
   // ---------------------------------------------------------------------------
   const NOVIDADES_ID = 'pronix-novidades';
   const NOVIDADES = [
+    ['Botão Atualizar no painel', 'No topo do painel lateral, "↻ Atualizar" puxa de novo as informações do CRM para a conversa aberta. Abriu a conversa e o painel não mostrou o lead? Clique nele. Se nem assim, recarregue o WhatsApp (F5).'],
+    ['Painel sempre com o lead certo', 'Corrigido: com outra aba ou janela do WhatsApp aberta, o painel às vezes ficava em "Abra uma conversa". Agora cada aba tem o seu lead.'],
     ['Report sem mistura de leads', 'Corrigido: o report não pega mais áudio nem mensagem de outro lead — acontecia quando você tinha ouvido áudios em outras conversas ou trocava de conversa durante a leitura.'],
     ['Painel lateral do CRM', 'Abre na barra lateral do Chrome: clique no botão ▤ do cartão do lead ou no ícone da extensão → "Abrir painel lateral do CRM". Mostra o lead da conversa aberta, todas as negociações dele (clique numa para abrir o card no CRM), o formulário e as últimas anotações. Ele acompanha quando você troca de conversa.'],
     ['Copiar link do card', 'No painel, embaixo de "Abrir o card no Pronix CRM": o link do card com o botão "Copiar link". É só colar no Pronix Calendar ao criar a reunião.'],

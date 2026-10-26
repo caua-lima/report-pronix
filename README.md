@@ -267,6 +267,10 @@ borda direita da tela, o **painel lateral do CRM**. Liga e desliga no popup da e
 
 ### Painel lateral do CRM
 
+**↻ Atualizar** (no topo do painel, desde a 1.6.17) faz a aba ler de novo a conversa aberta e buscar o lead no CRM;
+sem resposta da aba, o painel pede para recarregar o WhatsApp (F5). Cada aba do WhatsApp guarda o seu lead
+(`painelLead:<aba>` no `chrome.storage.session`): outra aba ou janela sem conversa aberta não apaga mais o lead do painel.
+
 É o **painel lateral do próprio Chrome** (`chrome.sidePanel`), como o da extensão do RD Station: abre pelo botão
 **▤** no cartão do lead ou por **Abrir painel lateral do CRM** no popup da extensão, e mostra o lead da conversa
 aberta no WhatsApp Web:
