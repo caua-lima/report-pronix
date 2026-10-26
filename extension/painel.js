@@ -16,7 +16,9 @@
   const OURO = '#ffc233';
   const FONTE_TITULO = 'Bahnschrift,DIN Alternate,Roboto Condensed,Arial Narrow,sans-serif';
 
-  const estado = { aberto: true, ultimo: null, acoes: {}, form: null, chaveLead: '' };
+  // notaDesq: o que está escrito no campo do Desqualificar (fica aqui no painel até confirmar).
+  // statusAtualizar: o aviso do botão Atualizar ("Atualizando…" ou o erro).
+  const estado = { aberto: true, ultimo: null, acoes: {}, form: null, chaveLead: '', notaDesq: null, statusAtualizar: '' };
   try {
     chrome.storage.local.get({ painelLateralAberto: true }, (c) => {
       estado.aberto = !c || c.painelLateralAberto !== false;
@@ -350,6 +352,164 @@
     return el('div', 'display:flex;gap:6px;margin-top:8px', campo, botao);
   }
 
+  // ---------------------------------------------------------------- o que o cartão do WhatsApp mostra
+  // Etiquetas (Qualificado, agendado, formulário, recontato, perda), Desqualificar, aviso e resumo rápido. Vêm prontas
+  // da aba do WhatsApp ("cartao"); cada clique volta para lá, que faz o que o cartão faria.
+  function cliqueDoCartao(acao) {
+    if (!estado.acoes.cartao) return;
+    Promise.resolve(estado.acoes.cartao(estado.chaveLead, acao)).then((r) => {
+      if (r && r.ok === false && r.erro) { estado.statusAtualizar = r.erro; desenhar(); }
+    }, () => {});
+  }
+  const ESTILO_CHIP = 'border-radius:999px;padding:3px 10px;font-size:11px;font-weight:700;line-height:1.5;letter-spacing:.04em;font-family:inherit';
+  function linhaDeEtiquetas(itens) {
+    const linha = el('div', 'display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:10px');
+    linha.setAttribute('data-pnx-etiquetas', '1');
+    (itens || []).forEach((it) => {
+      if (it.tipo === 'chip') {
+        const c = el('span', `${ESTILO_CHIP};border:1px solid ${it.cor};background:${it.fundo};color:${it.cor}`, String(it.texto || ''));
+        if (it.titulo) c.title = String(it.titulo);
+        if (it.id) c.setAttribute('data-pnx-etiqueta', it.id);
+        linha.appendChild(c);
+        if (it.tirar) {
+          const x = el('button', 'cursor:pointer;border:0;background:transparent;color:#a39e93;font-size:14px;line-height:1;padding:0 2px;font-family:inherit', '×');
+          x.type = 'button';
+          x.title = String(it.tirar.titulo || '');
+          x.setAttribute('aria-label', x.title);
+          x.setAttribute('data-pnx-tirar', it.tirar.acao.tipo);
+          x.addEventListener('click', () => cliqueDoCartao(it.tirar.acao));
+          linha.appendChild(x);
+        }
+      } else if (it.tipo === 'botao') {
+        const b = el('button', `${ESTILO_CHIP};cursor:pointer;border:1px dashed ${it.borda};background:transparent;color:${it.cor}`, String(it.texto || ''));
+        b.type = 'button';
+        b.title = String(it.titulo || '');
+        b.setAttribute('data-pnx-acao', it.acao.tipo);
+        b.addEventListener('click', () => cliqueDoCartao(it.acao));
+        linha.appendChild(b);
+      } else if (it.tipo === 'formulario') {
+        const doForm = el('div', 'flex-basis:100%;display:flex;flex-wrap:wrap;gap:6px');
+        (it.itens || []).forEach((x) => {
+          const c = el('span', `border-radius:999px;padding:3px 11px;font-size:12px;font-weight:800;line-height:1.5;border:1px solid ${x.fundo};background:${x.fundo};color:${x.cor}`, String(x.texto || ''));
+          c.title = String(x.titulo || '');
+          doForm.appendChild(c);
+        });
+        linha.appendChild(doForm);
+      }
+    });
+    return linha.childNodes.length ? linha : null;
+  }
+
+  function caixaDesqualificar(dz) {
+    const box = el('div', 'margin-top:10px;padding:9px 10px;border:1px solid #ff6f5c;border-radius:9px;background:rgba(255,111,92,.07);font-size:12px');
+    box.setAttribute('data-pnx-desq', '1');
+    const botao = (texto, estilo, aoClicar) => {
+      const b = el('button', 'cursor:pointer;border-radius:7px;padding:5px 9px;font-size:12px;font-family:inherit;' + estilo, texto);
+      b.type = 'button';
+      b.addEventListener('click', aoClicar);
+      return b;
+    };
+    if (dz.escolhido) {
+      box.appendChild(el('div', 'margin-bottom:4px', 'Dar perda no CRM com o motivo:'));
+      box.appendChild(el('div', 'font-weight:700;color:#ff6f5c;margin-bottom:8px', String(dz.escolhido.nome || '')));
+      if (dz.porque) box.appendChild(el('div', 'font-size:11px;color:#3ddc84;margin:-4px 0 6px', 'Sugestão: ' + dz.porque + '. Confira antes de confirmar.'));
+      // O texto do campo fica aqui no painel; a sugestão (nova versão) troca o que estava escrito.
+      const chave = estado.chaveLead + '|' + dz.escolhido.id;
+      if (!estado.notaDesq || estado.notaDesq.chave !== chave || estado.notaDesq.versao !== dz.notaVersao) estado.notaDesq = { chave, versao: dz.notaVersao, texto: dz.nota || '' };
+      const nota = estado.notaDesq;
+      if (dz.comNota) {
+        const minimo = Number(dz.minimo) || 50;
+        const conta = () => {
+          const n = nota.texto.replace(/\s+/g, ' ').trim().length;
+          return n >= minimo ? `${n} caracteres ✓` : `${n}/${minimo} caracteres (faltam ${minimo - n})`;
+        };
+        box.appendChild(el('div', 'color:#a39e93;margin-bottom:4px', `O que o lead disse (o CRM pede pelo menos ${minimo} caracteres):`));
+        const ta = document.createElement('textarea');
+        ta.style.cssText = 'width:100%;box-sizing:border-box;min-height:80px;background:#121113;color:#f3efe6;border:1px solid #3a373f;border-radius:7px;padding:6px;font:12px/1.4 inherit;resize:vertical';
+        ta.placeholder = 'Ex.: disse que não tem o investimento agora e que só vai pensar nisso no ano que vem.';
+        ta.value = nota.texto;
+        ta.setAttribute('data-pnx-desq-nota', '1');
+        const contador = el('div', 'font-size:11px;color:#a39e93;margin:3px 0 8px', conta());
+        ta.addEventListener('input', () => { nota.texto = ta.value; contador.textContent = conta(); });
+        ta.addEventListener('keydown', (ev) => ev.stopPropagation());
+        box.appendChild(ta);
+        box.appendChild(contador);
+      }
+      if (dz.enviando) box.appendChild(el('div', 'color:#a39e93', 'Dando perda no CRM…'));
+      else {
+        const sim = botao('Confirmar perda', 'border:0;background:#ff6f5c;color:#18171b;font-weight:700', () => cliqueDoCartao({ tipo: 'desqConfirmar', nota: nota.texto }));
+        sim.setAttribute('data-pnx-desq-confirmar', '1');
+        box.appendChild(el('div', 'display:flex;gap:6px', sim, botao('Voltar', 'border:1px solid #55515b;background:transparent;color:#f3efe6', () => cliqueDoCartao({ tipo: 'desqVoltar' }))));
+      }
+    } else {
+      box.appendChild(el('div', 'color:#a39e93;margin-bottom:6px', 'Por que desqualificar? O card vira perda no CRM com este motivo.'));
+      if (dz.motivos) {
+        const sug = botao(dz.sugerindo ? 'Lendo a conversa…' : '✨ Sugerir motivo e anotação', 'border:1px solid #3ddc84;background:transparent;color:#3ddc84;font-weight:700;margin-bottom:6px', () => cliqueDoCartao({ tipo: 'desqSugerir' }));
+        sug.setAttribute('data-pnx-desq-sugerir', '1');
+        sug.title = 'Lê as mensagens da tela: lead sem resposta há 3+ tentativas sai por regra; o resto, pela IA gratuita';
+        box.appendChild(sug);
+        const lista = el('div', 'display:flex;flex-direction:column;gap:4px;max-height:220px;overflow:auto');
+        dz.motivos.forEach((m) => {
+          const x = botao(String(m.nome || ''), 'text-align:left;border:1px solid #3a373f;background:#121113;color:#f3efe6', () => cliqueDoCartao({ tipo: 'desqMotivo', id: m.id }));
+          x.setAttribute('data-pnx-motivo', String(m.id));
+          lista.appendChild(x);
+        });
+        box.appendChild(lista);
+      } else if (!dz.erro) box.appendChild(el('div', 'color:#a39e93', 'Buscando os motivos no CRM…'));
+      box.appendChild(el('div', 'margin-top:6px', botao('Cancelar', 'border:1px solid #55515b;background:transparent;color:#a39e93', () => cliqueDoCartao({ tipo: 'desqCancelar' }))));
+    }
+    if (dz.erro) box.appendChild(el('div', 'color:#ff6f5c;margin-top:6px', String(dz.erro)));
+    return box;
+  }
+
+  function blocoResumo(r) {
+    const caixa = el('div', 'padding:9px 11px;border-radius:10px;background:#211f24;border:1px solid #3a373f');
+    caixa.setAttribute('data-pnx-resumo', '1');
+    const botao = (texto, destaque) => {
+      const b = el('button', `cursor:pointer;border:${destaque ? '0' : '1px solid #3a373f'};border-radius:7px;padding:6px 10px;background:${destaque ? OURO : 'transparent'};color:${destaque ? '#18171b' : '#f3efe6'};font-weight:700;font-size:12px;font-family:inherit`, texto);
+      b.type = 'button';
+      b.setAttribute('data-pnx-resumo-pedir', '1');
+      b.addEventListener('click', () => cliqueDoCartao({ tipo: 'resumo' }));
+      return b;
+    };
+    if (!r) {
+      caixa.appendChild(botao('Resumo rápido da conversa', true));
+      caixa.appendChild(el('div', 'font-size:11px;color:#a39e93;margin-top:5px', 'Lê a conversa e os áudios (no mudo) e mostra o cenário e onde parou.'));
+      return caixa;
+    }
+    if (r.tipo === 'carregando') {
+      caixa.appendChild(el('div', 'color:#a39e93', 'Lendo a conversa e os áudios… não troque de conversa.'));
+      return caixa;
+    }
+    if (r.tipo === 'erro') {
+      caixa.appendChild(el('div', 'color:#ff6f5c;margin-bottom:6px', String(r.erro || 'Não consegui gerar o resumo.')));
+      caixa.appendChild(botao('Tentar de novo'));
+      return caixa;
+    }
+    const dd = r.dados || {};
+    if (dd.cenario) caixa.appendChild(el('div', 'color:#f3efe6;margin-bottom:4px', String(dd.cenario)));
+    [['Onde parou', dd.peQueParou, true], ['Última pergunta', dd.ultimaPergunta], ['Próximo passo', dd.proximoPasso]].forEach(([rotulo, valor, forte]) => {
+      if (!valor) return;
+      caixa.appendChild(el('div', 'margin-top:6px',
+        el('div', 'font-size:10.5px;color:#a39e93;text-transform:uppercase;letter-spacing:.04em', rotulo),
+        el('div', `color:${forte ? OURO : '#f3efe6'};font-weight:${forte ? 700 : 500}`, String(valor))));
+    });
+    const meta = [dd.aguardando === 'voce' ? 'Você deve responder' : dd.aguardando === 'lead' ? 'Aguardando o lead' : '', dd.ultimaMensagem ? 'última mensagem ' + dd.ultimaMensagem : ''].filter(Boolean).join(' · ');
+    caixa.appendChild(el('div', 'display:flex;align-items:center;gap:8px;margin-top:8px', meta ? el('div', 'flex:1;font-size:11px;color:#a39e93', meta) : el('div', 'flex:1'), botao('Atualizar resumo')));
+    return caixa;
+  }
+
+  /** As partes do cartão no painel: etiquetas, aviso e Desqualificar (logo abaixo do nome). */
+  function topoDoCartao(c) {
+    if (!c) return [];
+    const partes = [];
+    const linha = linhaDeEtiquetas(c.itens);
+    if (linha) partes.push(linha);
+    if (c.aviso && c.aviso.texto) partes.push(el('div', `margin-top:8px;font-size:12px;color:${c.aviso.erro ? '#ff6f5c' : '#3ddc84'}`, c.aviso.texto));
+    if (c.desq) partes.push(caixaDesqualificar(c.desq));
+    return partes;
+  }
+
   function corpoDoLead(d) {
     const f = d.ficha;
     const crmNome = f.crmNome || 'CRM';
@@ -357,6 +517,7 @@
     partes.push(el('div', 'font-size:17px;font-weight:700;color:#f3efe6;margin-top:2px;word-break:break-word', f.nome || 'Lead'));
     const contatos = [].concat(f.telefones || [], f.emails || []).filter(Boolean);
     if (contatos.length) partes.push(el('div', 'color:#a39e93;font-size:12px;margin-top:3px;word-break:break-word', contatos.join(' · ')));
+    topoDoCartao(d.cartao).forEach((p) => partes.push(p));
 
     const escolhida = (f.negociacoes || []).find((c) => c.escolhida);
     const urlPrincipal = linkSeguro((escolhida && escolhida.url) || (f.negociacao && f.negociacao.url));
@@ -377,12 +538,25 @@
         d.reuniao.closer ? el('div', 'color:#a39e93;font-size:12px;margin-top:2px', 'Com ' + d.reuniao.closer) : null));
     }
 
+    if (d.cartao) {
+      partes.push(titulo('Resumo rápido'));
+      partes.push(blocoResumo(d.cartao.resumo));
+    }
+
     const negs = f.negociacoes || [];
     partes.push(titulo(`Negociações (${negs.length})`));
     if (!negs.length) partes.push(el('div', 'color:#a39e93', 'Este contato não tem negociação no CRM.'));
+    if (d.cartao && d.cartao.escolherCard) partes.push(el('div', 'color:#a39e93;font-size:11.5px;margin:-2px 0 8px', 'O card com borda dourada é o desta conversa (etiquetas, Desqualificar, automação). Era outro? Clique em "Usar este card" — fica lembrado.'));
     const fica = cardQueFica(negs);
     negs.forEach((c) => {
       partes.push(itemNegociacao(c, crmNome));
+      if (d.cartao && d.cartao.escolherCard && !c.escolhida) {
+        const usar = el('button', 'cursor:pointer;border:1px solid #3a373f;border-radius:7px;padding:5px 9px;background:transparent;color:#f3efe6;font-weight:600;font-size:11.5px;font-family:inherit;margin:-2px 0 10px', 'Usar este card');
+        usar.type = 'button';
+        usar.setAttribute('data-pnx-escolher', String(c.id || ''));
+        usar.addEventListener('click', () => cliqueDoCartao({ tipo: 'escolherCard', dealId: c.id }));
+        partes.push(usar);
+      }
       const acoes = acoesDoCard(c, d, fica);
       if (acoes) partes.push(acoes);
     });
@@ -394,6 +568,8 @@
         respostas.map((c) => el('div', 'padding:7px 9px;border-radius:8px;background:#211f24;border:1px solid #3a373f;min-width:0',
           el('div', 'font-size:10.5px;color:#a39e93;overflow:hidden;text-overflow:ellipsis;white-space:nowrap', c.rotulo),
           el('div', 'font-weight:600;color:#f3efe6;word-break:break-word;font-size:12px', c.valor)))));
+      const anotado = [f.formulario && f.formulario.autor, f.formulario && f.formulario.quando].filter(Boolean).join(' · ');
+      if (anotado) partes.push(el('div', 'font-size:11px;color:#a39e93;margin-top:5px', 'Anotado por ' + anotado));
     }
 
     if ((f.anotacoes || []).length) {
@@ -406,7 +582,26 @@
   }
 
   function corpoDoEstado(d) {
-    if (!d || d.tipo === 'sem-conversa') return [el('div', 'color:#a39e93;margin-top:12px', 'Abra uma conversa para ver o lead no CRM.')];
+    const partes = corpoBase(d);
+    // Lead não achado, vários contatos ou erro: as etiquetas e o resumo rápido do cartão também valem.
+    if (d && d.cartao && !['ok', 'carregando', 'sem-conversa', 'outra-extensao'].includes(d.tipo)) {
+      topoDoCartao(d.cartao).forEach((p) => partes.push(p));
+      partes.push(titulo('Resumo rápido'));
+      partes.push(blocoResumo(d.cartao.resumo));
+    }
+    return partes;
+  }
+
+  function corpoBase(d) {
+    if (!d || d.tipo === 'sem-conversa') {
+      return [
+        el('div', 'color:#a39e93;margin-top:12px', 'Abra uma conversa para ver o lead no CRM.'),
+        el('div', 'color:#a39e93;margin-top:6px;font-size:12px', 'Abriu e não apareceu? Clique em "↻ Atualizar" aqui em cima.'),
+      ];
+    }
+    if (d.tipo === 'outra-extensao') {
+      return [el('div', 'color:#f3efe6;margin-top:12px;line-height:1.5', 'Nesta aba quem mostra o lead é o Report PRONIX (a outra extensão instalada). Abra o painel dele: ícone do Report PRONIX › "Abrir painel lateral do CRM".')];
+    }
     if (d.tipo === 'carregando') {
       const b = d.busca || {};
       const quem = b.nome || b.telefone || '';
@@ -476,16 +671,58 @@
       document.body.appendChild(painel);
     }
     const rolagem = painel.scrollTop;
+    // Quem estava escrevendo num campo continua nele depois de redesenhar (chegou estado novo do WhatsApp).
+    const ativo = document.activeElement;
+    const campoAtivo = ativo && painel.contains(ativo) ? ['data-pnx-desq-nota', 'data-pnx-handoff', 'data-pnx-complemento'].find((a) => ativo.hasAttribute(a)) : '';
+    const cursor = campoAtivo ? [ativo.selectionStart, ativo.selectionEnd] : null;
     painel.textContent = '';
     const recolher = el('button', 'cursor:pointer;border:0;border-radius:7px;padding:4px 9px;background:#3a373f;color:#f3efe6;font-weight:700;font-family:inherit', '»');
     recolher.type = 'button';
     recolher.title = 'Recolher o painel (o WhatsApp volta à largura toda)';
     recolher.addEventListener('click', () => { estado.aberto = false; guardarAberto(); desenhar(); });
     const crmNome = (d && d.ficha && d.ficha.crmNome) || 'CRM';
+    // "Atualizar": a aba do WhatsApp lê de novo a conversa aberta e busca o lead no CRM.
+    let atualizar = null;
+    if (estado.acoes.atualizar) {
+      atualizar = el('button', `cursor:pointer;border:1px solid ${OURO};border-radius:7px;padding:4px 10px;background:transparent;color:${OURO};font-weight:700;font-size:11.5px;font-family:inherit;white-space:nowrap`, estado.statusAtualizar === 'Atualizando…' ? 'Atualizando…' : '↻ Atualizar');
+      atualizar.type = 'button';
+      atualizar.title = 'Puxar de novo as informações do CRM para a conversa aberta';
+      atualizar.setAttribute('data-pnx-atualizar', '1');
+      atualizar.addEventListener('click', async () => {
+        if (estado.statusAtualizar === 'Atualizando…') return;
+        estado.statusAtualizar = 'Atualizando…';
+        desenhar();
+        let r;
+        try {
+          r = await estado.acoes.atualizar();
+        } catch (e) {
+          r = { ok: false, erro: String((e && e.message) || e) };
+        }
+        estado.statusAtualizar = r && r.ok ? (r.semConversa ? 'Nenhuma conversa aberta no WhatsApp.' : '') : (r && r.erro) || 'Não consegui atualizar.';
+        desenhar();
+      });
+    }
     painel.appendChild(el('div', 'display:flex;align-items:center;justify-content:space-between;gap:8px;border-bottom:3px solid ' + OURO + ';padding-bottom:9px',
-      el('div', `font:700 12px ${FONTE_TITULO};letter-spacing:.14em;color:${OURO}`, crmNome.toUpperCase()), PAGINA ? null : recolher));
+      el('div', `font:700 12px ${FONTE_TITULO};letter-spacing:.14em;color:${OURO}`, crmNome.toUpperCase()),
+      el('div', 'display:flex;gap:6px;align-items:center', atualizar, PAGINA ? null : recolher)));
+    if (estado.statusAtualizar && estado.statusAtualizar !== 'Atualizando…') {
+      const aviso = el('div', 'margin-top:8px;font-size:12px;color:#ff9d8f', estado.statusAtualizar);
+      aviso.setAttribute('data-pnx-status', '1');
+      painel.appendChild(aviso);
+    }
     corpoDoEstado(d).forEach((p) => painel.appendChild(p));
     painel.scrollTop = rolagem;
+    if (campoAtivo) {
+      const volta = painel.querySelector(`[${campoAtivo}]`);
+      if (volta) {
+        volta.focus();
+        try {
+          volta.setSelectionRange(cursor[0], cursor[1]);
+        } catch (_) {
+          /* ok */
+        }
+      }
+    }
   }
 
   /** O content.js chama a cada mudança do cartão do lead (mesmo estado: carregando, ok, erro, não achado...). */
@@ -496,8 +733,11 @@
     const chave = dados ? JSON.stringify([b.telefone || '', b.nome || '', b.contatoId || '']) : '';
     if (chave !== estado.chaveLead) {
       estado.form = null;
+      estado.notaDesq = null;
       estado.chaveLead = chave;
     }
+    // Chegou o lead (ou a conversa mudou): o aviso de erro do Atualizar sai.
+    if (dados && dados !== estado.ultimo && estado.statusAtualizar !== 'Atualizando…') estado.statusAtualizar = '';
     // O cartão se redesenha a cada resumo com o MESMO estado: aí o painel fica como está (e na mesma rolagem).
     if (dados && dados === estado.ultimo && (document.getElementById(ID) || document.getElementById(ABA_ID))) return;
     estado.ultimo = dados || null;

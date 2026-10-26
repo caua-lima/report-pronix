@@ -1343,6 +1343,12 @@
       /* extensão recarregada: este script ficou órfão */
     }
   }
+  /** Manda de novo o que está na tela (botão Atualizar do painel, aba que voltou a ficar visível). */
+  function republicarPainel() {
+    painelEnviado = undefined;
+    if (!document.querySelector('#main')) return ficha.crmLigado === true ? publicarPainel(PAINEL_SEM_CONVERSA) : null;
+    if (ficha.ultimoEstado) atualizarPainel(ficha.ultimoEstado);
+  }
   /** O painel mostra o lead só para quem tem a ficha do CRM (o servidor diz em "configurado"). */
   function atualizarPainel(estadoDoCartao) {
     if (!ficha.ligada || ficha.crmLigado === false || !estadoDoCartao || estadoDoCartao.tipo === 'sem-crm') return publicarPainel(null);
@@ -2626,9 +2632,35 @@
       sendResponse({ ok: true });
       return false;
     }
+    if (msg && msg.action === 'painelAtualizar') {
+      // Botão "Atualizar" do painel: lê de novo a conversa aberta e busca o lead no CRM.
+      if (!document.querySelector('#main')) {
+        republicarPainel();
+        sendResponse({ ok: true, semConversa: true });
+        return false;
+      }
+      painelEnviado = undefined;
+      ficha.chave = null; // o vigia trata como conversa nova: busca de novo
+      ficha.fechadaPara = null;
+      try {
+        verificarConversa();
+      } catch (_) {
+        /* o próximo tique do vigia tenta */
+      }
+      sendResponse({ ok: true });
+      return false;
+    }
     if (msg && msg.action === 'ping') {
       sendResponse({ ok: true });
       return false;
+    }
+  });
+  // Voltou para esta aba do WhatsApp: o painel lateral recebe de novo o lead que está na tela.
+  document.addEventListener('visibilitychange', () => {
+    try {
+      if (document.visibilityState === 'visible') republicarPainel();
+    } catch (_) {
+      /* órfão */
     }
   });
 

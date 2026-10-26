@@ -801,3 +801,24 @@ test('painel lateral: cada aba do WhatsApp tem o seu lead — outra aba (sem con
   assert.match(painelDe(sp).textContent, /Júlia/);
   sp.fechar();
 });
+
+test('painel lateral: "Atualizar" faz a aba buscar o lead de novo no CRM', async () => {
+  const srv = crmFalso(() => ({ ok: true, configurado: true, encontrado: true, ficha: FICHA_MARCOS }));
+  const p = abrir(srv);
+  await esperar(() => srv.consultas.length === 1, { motivo: '1ª busca' });
+  await esperar(() => srv.paineis.some((e) => e && e.tipo === 'ok'), { motivo: 'lead no painel' });
+  const publicados = srv.paineis.length;
+  p.mensagem({ action: 'painelAtualizar' });
+  await esperar(() => srv.consultas.length === 2, { motivo: 'buscou de novo' });
+  await esperar(() => srv.paineis.length > publicados, { motivo: 'publicou de novo' });
+  p.fechar();
+});
+
+test('painel lateral: "Atualizar" sem resposta da aba pede para recarregar o WhatsApp', async () => {
+  const sp = abrirPainelDoChrome({ estado: { tipo: 'sem-conversa' }, tabId: 7 });
+  assert.match(painelDe(sp).textContent, /Abriu e não apareceu\? Clique em "↻ Atualizar"/);
+  painelDe(sp).querySelector('[data-pnx-atualizar]').click();
+  await esperar(() => painelDe(sp).querySelector('[data-pnx-status]'), { motivo: 'aviso' });
+  assert.match(painelDe(sp).querySelector('[data-pnx-status]').textContent, /Recarregue o WhatsApp \(F5\)/);
+  sp.fechar();
+});
