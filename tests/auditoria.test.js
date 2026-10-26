@@ -284,11 +284,11 @@ test('automação: o service worker manda só a etiqueta e a data do agendamento
 
 test('automação: "lead respondeu" vai para a rota de mover o card, só com a identificação do lead e do card', async () => {
   const { chamadas, enviar } = carregarBackground({ chave: 'k' }, { corpo: { movido: true, de: 'Contato iniciado', para: 'Respondeu' } });
-  const r = await enviar({ action: 'crmRespondeu', telefone: '5571999998888', nome: '', contatoId: '', dealId: 'd1', mensagens: [{ content: 'x' }] });
+  const r = await enviar({ action: 'crmRespondeu', telefone: '5571999998888', nome: '', contatoId: '', dealId: 'd1', respostaEm: '2026-10-21T17:05:00.000Z', mensagens: [{ content: 'x' }] });
   assert.deepEqual(JSON.parse(JSON.stringify(r)), { ok: true, movido: true, de: 'Contato iniciado', para: 'Respondeu', motivo: '' });
   assert.equal(chamadas[0].url, 'https://report-pronix.vercel.app/api/crm/respondeu');
   assert.equal(chamadas[0].opts.method, 'POST');
-  assert.deepEqual(JSON.parse(chamadas[0].opts.body), { telefone: '5571999998888', nome: '', contatoId: '', dealId: 'd1' });
+  assert.deepEqual(JSON.parse(chamadas[0].opts.body), { telefone: '5571999998888', nome: '', contatoId: '', dealId: 'd1', respostaEm: '2026-10-21T17:05:00.000Z' }, 'leva a data da resposta; as mensagens não saem');
 
   // a consulta da ficha leva de que conversa é (para o servidor lembrar a etiqueta do lead certo)
   await enviar({ action: 'crmLead', telefone: '71988887777', conversa: { telefone: '5571999998888', nome: 'Marcos', outro: 'x' } });

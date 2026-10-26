@@ -162,3 +162,23 @@ test('texto do cartão: hoje, amanhã, dia da semana e "passou"', () => {
   assert.equal(agenda.descrever('amanhã', agora), null);
   assert.equal(agenda.descrever('', agora), null);
 });
+
+test('resposta a ESTA tentativa: só conta mensagem minha e, depois, do lead — as duas desde o início da tentativa', () => {
+  const t = (iso) => Date.parse(iso);
+  const desde = t('2026-10-20T12:00:00Z');
+  const m = (from, iso) => ({ from, ts: iso ? t(iso) : undefined });
+  // recuperação: o lead respondeu em março; agora só eu falei
+  assert.equal(agenda.respostaDepoisDe([m('eu', '2026-03-01T13:00:00Z'), m('eles', '2026-03-01T13:05:00Z'), m('eu', '2026-10-20T12:30:00Z')], desde), null);
+  // ele respondeu à recuperação
+  assert.deepEqual(agenda.respostaDepoisDe([m('eu', '2026-03-01T13:00:00Z'), m('eles', '2026-03-01T13:05:00Z'), m('eu', '2026-10-20T12:30:00Z'), m('eles', '2026-10-21T17:05:00Z')], desde), { em: t('2026-10-21T17:05:00Z') });
+  // a resposta dele em áudio (sem data) vale a data da mensagem anterior
+  assert.deepEqual(agenda.respostaDepoisDe([m('eu', '2026-10-20T12:30:00Z'), m('eles')], desde), { em: t('2026-10-20T12:30:00Z') });
+  // ele escreveu primeiro nesta tentativa e eu ainda não respondi: não é resposta
+  assert.equal(agenda.respostaDepoisDe([m('eles', '2026-10-20T13:00:00Z'), m('eu', '2026-10-20T13:10:00Z')], desde), null);
+  // mensagens sem data nenhuma (não dá para saber de quando são): não conta
+  assert.equal(agenda.respostaDepoisDe([m('eu'), m('eles')], desde), null);
+  // sem o início da tentativa: não conta
+  assert.equal(agenda.respostaDepoisDe([m('eu', '2026-10-20T12:30:00Z'), m('eles', '2026-10-20T12:40:00Z')], NaN), null);
+  // o WhatsApp mostra a hora sem segundos: resposta no mesmo minuto em que a tentativa começou vale
+  assert.deepEqual(agenda.respostaDepoisDe([m('eu', '2026-10-20T12:00:00Z'), m('eles', '2026-10-20T12:00:00Z')], t('2026-10-20T12:00:40Z')), { em: t('2026-10-20T12:00:00Z') });
+});

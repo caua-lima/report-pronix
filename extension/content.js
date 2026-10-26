@@ -1805,15 +1805,22 @@
     enviarMarca(conversa, { agendadoPara: achado.quando, fonteTs: achado.fonteTs, regra: agendaLib.REGRA });
   }
 
-  /** Lead respondeu e o card ainda está antes de "Respondeu": pede ao servidor para avançar no RD (uma vez por card). */
+  /**
+   * Lead respondeu a ESTA tentativa de contato e o card ainda está antes de "Respondeu": pede ao servidor para avançar
+   * no RD (uma vez por card). Só conta resposta com data depois de o card entrar na tentativa atual (contatoDesde, que
+   * vem do CRM): numa recuperação, a conversa traz o histórico antigo, em que o lead respondeu meses atrás — isso não
+   * move nada. Sem essa data na ficha, não move. O servidor confere a data de novo antes de mexer no card.
+   */
   function avancarParaRespondeu(est, mensagens) {
-    if (est.tipo !== 'ok' || !est.podeResponder || !agendaLib || !agendaLib.leadRespondeu(mensagens)) return;
+    if (est.tipo !== 'ok' || !est.podeResponder || !agendaLib || !agendaLib.respostaDepoisDe) return;
     const card = ((est.ficha && est.ficha.negociacoes) || []).find((c) => c.escolhida);
     if (!card || !card.id || auto.tentados.has(card.id)) return;
+    const resposta = agendaLib.respostaDepoisDe(mensagens, Date.parse(card.contatoDesde || ''));
+    if (!resposta) return;
     auto.tentados.add(card.id);
     const b = est.busca || {};
     try {
-      chrome.runtime.sendMessage({ action: 'crmRespondeu', telefone: b.telefone || '', nome: b.nome || '', contatoId: b.contatoId || '', dealId: card.id }, (r) => {
+      chrome.runtime.sendMessage({ action: 'crmRespondeu', telefone: b.telefone || '', nome: b.nome || '', contatoId: b.contatoId || '', dealId: card.id, respostaEm: new Date(resposta.em).toISOString() }, (r) => {
         if (chrome.runtime.lastError || !r) return;
         est.podeResponder = false;
         if (r.ok && r.movido) {
@@ -1836,13 +1843,21 @@
   function automatizar() {
     const est = ficha.ultimoEstado;
     if (!ficha.automacao || !agendaLib || !est || est.tipo === 'carregando' || jobEmAndamento) return;
+    // O contato no topo tem de ser o da ficha: mensagem de outro lead nunca vale para este.
+    if (ficha.conversa && ficha.conversa.nome && conversaDaTela() && conversaDaTela() !== ficha.conversa.nome) return;
+    // Mover para "Respondeu" espera a conversa nova assentar na tela (as mensagens da anterior podem ainda estar ali);
+    // adiado, tenta de novo no próximo tique.
+    const assentou = Date.now() - (ficha.trocouEm || 0) >= 1500;
     const els = acharMensagens(document.querySelector('#main') || document);
     const ultimo = els.length ? els[els.length - 1] : null;
     const assinatura = [ficha.seq, els.length, ultimo ? ultimo.getAttribute('data-id') || (ultimo.textContent || '').length : ''].join('|');
-    if (assinatura === auto.assinatura) return;
+    if (assinatura === auto.assinatura && !(auto.moverAdiado && assentou)) return;
+    const repetida = assinatura === auto.assinatura;
     auto.assinatura = assinatura;
     const mensagens = mensagensVisiveis(els);
-    avancarParaRespondeu(est, mensagens);
+    auto.moverAdiado = !assentou;
+    if (assentou) avancarParaRespondeu(est, mensagens);
+    if (repetida) return; // só voltou para tentar mover: o resto já rodou com estas mensagens
     anotarAgendamento(mensagens, ficha.conversa);
     anotarAtividade(mensagens, ficha.conversa);
   }
@@ -2516,6 +2531,7 @@
     }
     ficha.chave = chave;
     ficha.conversa = { telefone, nome };
+    ficha.trocouEm = Date.now(); // a automação espera a conversa nova assentar na tela
     ficha.ultimoEstado = null; // o que estava na tela era da conversa anterior
     ficha.fechadaPara = null;
     clearTimeout(ficha.timer);
@@ -2558,6 +2574,7 @@
   // ---------------------------------------------------------------------------
   const NOVIDADES_ID = 'pronix-novidades';
   const NOVIDADES = [
+    ['"Respondeu" só com resposta de verdade', 'Corrigido: cards de recuperação iam para "Respondeu" sozinhos, porque a conversa tinha o lead respondendo meses atrás. Agora só conta a resposta do lead DEPOIS que o card entrou na tentativa de contato atual (a data vem do CRM), e o servidor confere a data antes de mover.'],
     ['Botão Atualizar no painel', 'No topo do painel lateral, "↻ Atualizar" puxa de novo as informações do CRM para a conversa aberta. Abriu a conversa e o painel não mostrou o lead? Clique nele. Se nem assim, recarregue o WhatsApp (F5).'],
     ['Painel sempre com o lead certo', 'Corrigido: com outra aba ou janela do WhatsApp aberta, o painel às vezes ficava em "Abra uma conversa". Agora cada aba tem o seu lead.'],
     ['Report sem mistura de leads', 'Corrigido: o report não pega mais áudio nem mensagem de outro lead — acontecia quando você tinha ouvido áudios em outras conversas ou trocava de conversa durante a leitura.'],

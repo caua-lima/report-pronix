@@ -238,7 +238,7 @@
     return null;
   }
 
-  /** O lead respondeu? Existe mensagem dele DEPOIS de uma mensagem minha (texto, áudio ou mídia). */
+  /** O lead respondeu? Existe mensagem dele DEPOIS de uma mensagem minha (texto, áudio ou mídia). Sem olhar datas. */
   function leadRespondeu(mensagens) {
     let minha = false;
     for (const m of Array.isArray(mensagens) ? mensagens : []) {
@@ -247,6 +247,28 @@
       else if (minha) return true;
     }
     return false;
+  }
+
+  /**
+   * O lead respondeu a ESTA tentativa de contato? Uma mensagem minha e, depois dela, uma do lead — as duas a partir
+   * de `desdeMs` (quando o card entrou na tentativa atual). O histórico antigo da conversa (numa recuperação, o lead
+   * respondeu meses atrás) não conta. Mensagem sem data (áudio, foto) vale a data da anterior que tem; antes da 1ª
+   * mensagem com data não dá para saber, e não conta.
+   * @returns {{ em: number } | null} quando o lead respondeu (ms) — é o que o servidor confere antes de mover
+   */
+  function respostaDepoisDe(mensagens, desdeMs) {
+    if (!Number.isFinite(desdeMs) || desdeMs <= 0) return null;
+    const desde = Math.floor(desdeMs / 60000) * 60000; // o WhatsApp mostra a hora sem os segundos
+    let data = null;
+    let minha = false;
+    for (const m of Array.isArray(mensagens) ? mensagens : []) {
+      if (!m) continue;
+      if (Number.isFinite(m.ts)) data = m.ts;
+      if (data === null || data < desde) continue;
+      if (m.from === 'eu') minha = true;
+      else if (minha) return { em: data };
+    }
+    return null;
   }
 
   const DIA_CURTO = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
@@ -263,7 +285,7 @@
     return { texto: `${dia} às ${m[4]}:${m[5]}`, passou: d.getTime() < ref.getTime() };
   }
 
-  const api = { lerAgendamento, detectarAgendamento, leadRespondeu, descrever, REGRA };
+  const api = { lerAgendamento, detectarAgendamento, leadRespondeu, respostaDepoisDe, descrever, REGRA };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else raiz.__crAgenda = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

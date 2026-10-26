@@ -132,6 +132,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         nome: String(msg.nome || '').slice(0, 80),
         contatoId: String(msg.contatoId || '').slice(0, 40),
         dealId: String(msg.dealId || '').slice(0, 40),
+        respostaEm: String(msg.respostaEm || '').slice(0, 40), // quando o lead respondeu (o servidor confere)
       };
       const r = await chamar('/api/crm/respondeu', corpo, { timeoutMs: 25000 });
       if (!r.ok) return sendResponse({ ok: false, erro: r.erro });
@@ -339,7 +340,7 @@ function agendarAquecimento(ms) {
 }
 
 // Instalou ou atualizou: o WhatsApp Web mostra UMA vez o aviso do que mudou e de como usar (content.js).
-const NOVIDADES = 'painel-atualizar-2026-10-26'; // mudou a lista de novidades: todos veem de novo uma vez
+const NOVIDADES = 'respondeu-recuperacao-2026-10-26'; // mudou a lista de novidades: todos veem de novo uma vez
 if (chrome.runtime.onInstalled) chrome.runtime.onInstalled.addListener((d) => {
   if (!d || (d.reason !== 'install' && d.reason !== 'update')) return;
   try {

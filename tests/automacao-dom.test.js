@@ -5,11 +5,15 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { abrirPagina, montarWhatsApp, esperar, dormir } = require('./helpers/dom');
 
+// Desde quando o card está na tentativa atual (vem do CRM): antes das mensagens da conversa de teste (01/09/2026 10:00).
+const CONTATO_DESDE = new Date(2026, 7, 31, 12, 0).toISOString();
+// A hora em que o lead respondeu, como a extensão manda ao servidor (a das mensagens de teste, no fuso local).
+const RESPOSTA_EM = new Date(2026, 8, 1, 10, 0).toISOString();
 const fichaDoRd = (etapa) => ({
   nome: 'Marcos Pereira', telefones: ['(71) 99999-8888'], emails: [],
   negociacao: { nome: 'Marcos Pereira', etapa, funil: 'Funil SDR', responsavel: 'Cauã Lima', fonte: '', campanha: '', criadaEm: '', url: 'https://crm.rdstation.com/app/deals/d1' },
   totalNegociacoes: 1,
-  negociacoes: [{ id: 'd1', nome: 'Marcos Pereira', etapa, funil: 'Funil SDR', responsavel: 'Cauã Lima', criadaEm: '28/09/2026', aberta: true, escolhida: true }],
+  negociacoes: [{ id: 'd1', nome: 'Marcos Pereira', etapa, funil: 'Funil SDR', responsavel: 'Cauã Lima', criadaEm: '28/09/2026', contatoDesde: CONTATO_DESDE, aberta: true, escolhida: true }],
   formulario: null, campos: [], anotacoes: [],
 });
 const SEM_MARCA = { qualificado: false, origem: '', agendadoPara: '', agendaFonteTs: -1 };
@@ -77,7 +81,7 @@ test('lead respondeu e o card está antes de "Respondeu": pede para mover uma ve
   const srv = servidorFalso();
   const p = abrir(srv);
   await esperar(() => srv.pedidos.respondeu.length === 1, { motivo: 'pedido para mover' });
-  assert.deepEqual(srv.pedidos.respondeu[0], { action: 'crmRespondeu', telefone: '5571999998888', nome: '', contatoId: '', dealId: 'd1' });
+  assert.deepEqual(srv.pedidos.respondeu[0], { action: 'crmRespondeu', telefone: '5571999998888', nome: '', contatoId: '', dealId: 'd1', respostaEm: RESPOSTA_EM });
   await esperar(() => /Movido para "Respondeu" no RD\./.test(texto(p)), { motivo: 'aviso no cartão' });
   assert.match(texto(p), /Respondeu · Funil SDR/, 'a etapa do cartão já é a nova');
   assert.doesNotMatch(texto(p), /Contato iniciado/);
@@ -700,4 +704,62 @@ test('Sugerir motivo: o lead disse por que não segue — a IA gratuita escolhe 
   assert.ok(caixa.includes('Sem dinheiro'));
   assert.ok(caixa.includes('Disse que não tem dinheiro (IA gratuita)'));
   assert.equal(p.document.getElementById('cr-desq-nota').value, 'Lead disse que não tem dinheiro agora para investir e que vai esperar o ano que vem.');
+});
+
+// ---------------------------------------------------------------- recuperação: o histórico antigo não é resposta
+/** Servidor falso cuja ficha diz que o card entrou na tentativa atual em `desde` (ISO) — ou sem a data (servidor antigo). */
+function servidorDaRecuperacao(desde) {
+  const base = servidorFalso();
+  return {
+    ...base,
+    aoEnviar: async (msg) => {
+      const r = await base.aoEnviar(msg);
+      if (msg.action === 'crmLead' && r.ficha) r.ficha.negociacoes[0].contatoDesde = desde;
+      return r;
+    },
+  };
+}
+function chegarRespostaEm(p, hora, textoMsg = 'Oi! Tenho interesse sim') {
+  const el = p.document.createElement('div');
+  el.className = 'message-in';
+  el.setAttribute('data-id', 'A5RECUP00001');
+  el.innerHTML = `<div class="copyable-text" data-pre-plain-text="[${hora}] Marcos: "><span class="selectable-text"></span></div>`;
+  el.querySelector('.selectable-text').textContent = textoMsg;
+  p.document.getElementById('rolagem').appendChild(el);
+}
+const HISTORICO_ANTIGO = [
+  { from: 'eu', texto: 'Oi Marcos, tudo bem?', hora: '10:00, 01/03/2026' },
+  { from: 'eles', texto: 'Tudo, me manda os horários', hora: '10:05, 01/03/2026' },
+  { from: 'eu', texto: 'Oi Marcos! Voltando a falar com você sobre a mentoria', hora: '09:30, 20/10/2026' },
+];
+
+test('recuperação: o lead respondeu em março (histórico da conversa) — o card NÃO vai para "Respondeu"; só quando ele responde agora', async () => {
+  const srv = servidorDaRecuperacao(new Date(2026, 9, 20, 9, 0).toISOString());
+  const p = abrir(srv, HISTORICO_ANTIGO);
+  await fichaNaTela(p);
+  await dormir(1900); // passou a espera da conversa assentar e o vigia leu as mensagens
+  assert.equal(srv.pedidos.respondeu.length, 0, 'a resposta de março não é resposta à recuperação');
+  chegarRespostaEm(p, '14:05, 21/10/2026');
+  await esperar(() => srv.pedidos.respondeu.length === 1, { motivo: 'agora o lead respondeu' });
+  assert.equal(srv.pedidos.respondeu[0].respostaEm, new Date(2026, 9, 21, 14, 5).toISOString(), 'manda quando o lead respondeu, para o servidor conferir');
+});
+
+test('recuperação: resposta do lead de antes da volta ao contato, mesmo depois de uma mensagem minha, não move', async () => {
+  const srv = servidorDaRecuperacao(new Date(2026, 9, 20, 9, 0).toISOString());
+  const p = abrir(srv, [
+    { from: 'eu', texto: 'Oi Marcos, ainda tem interesse?', hora: '09:00, 15/10/2026' },
+    { from: 'eles', texto: 'Agora não', hora: '09:10, 15/10/2026' },
+    { from: 'eu', texto: 'Oi Marcos! Voltando a falar com você', hora: '09:30, 20/10/2026' },
+  ]);
+  await fichaNaTela(p);
+  await dormir(1900);
+  assert.equal(srv.pedidos.respondeu.length, 0);
+});
+
+test('ficha sem a data da tentativa (servidor antigo): nunca move, mesmo com o lead respondendo', async () => {
+  const srv = servidorDaRecuperacao(undefined);
+  const p = abrir(srv);
+  await fichaNaTela(p);
+  await dormir(1900);
+  assert.equal(srv.pedidos.respondeu.length, 0);
 });

@@ -386,8 +386,15 @@ e as com sinal comercial ficam), e chegou mensagem nova depois do resumo, use **
 Três coisas, sem IA e sem custo, para quem o master ligou:
 
 1. **Mover para "Respondeu" no RD.** Com a conversa aberta, se há mensagem do lead depois de uma
-   mensagem sua e o card está em aberto e **antes** de "Respondeu" no mesmo funil, o servidor
-   avança o card. É a única escrita **automática** que o sistema faz no RD (a outra é a limpeza do funil, pedida pelo master): nunca volta um card, não mexe em
+   mensagem sua — **as duas depois do início da tentativa de contato atual do card** — e o card está em
+   aberto e **antes** de "Respondeu" no mesmo funil, o servidor avança o card. O início da tentativa
+   (`contatoDesde` na ficha, `inicioDaTentativa` em `src/crm.js`) vem do histórico de etapas do card: a
+   entrada na sequência de etapas antes de "Respondeu" no funil atual, nunca antes da criação. Assim, num
+   card de **recuperação** (card antigo que voltou ao contato, ou que veio de outro funil), a resposta antiga
+   do lead que está no histórico da conversa **não conta**. A extensão manda a data da resposta
+   (`respostaEm`) e o servidor confere de novo: sem a data (extensão antiga), com data de antes da
+   tentativa ou no futuro, não move. A automação também espera 1,5 s depois de trocar de conversa e
+   confere que o contato no topo é o da ficha. É a única escrita **automática** que o sistema faz no RD (a outra é a limpeza do funil, pedida pelo master): nunca volta um card, não mexe em
    card fechado nem em funil sem essa etapa, confere tudo de novo no RD na hora e registra cada
    movimento. O RD só aceita se o dono do token for o responsável pelo card ou do mesmo time; se
    recusar, o cartão mostra o motivo.
