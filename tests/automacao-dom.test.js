@@ -763,3 +763,11 @@ test('ficha sem a data da tentativa (servidor antigo): nunca move, mesmo com o l
   await dormir(1900);
   assert.equal(srv.pedidos.respondeu.length, 0);
 });
+
+// ---------------------------------------------------------------- o "Respondeu" não depende do cartão
+test('com o cartão desmarcado no menu da extensão, o "Respondeu" automático continua', async () => {
+  const srv = servidorFalso();
+  const p = abrir(srv, RESPONDEU, { storage: { fichaCrm: false } });
+  await esperar(() => srv.pedidos.respondeu.length === 1, { motivo: 'moveu sem o cartão na tela' });
+  assert.equal(cartao(p), null);
+});

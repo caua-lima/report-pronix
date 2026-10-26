@@ -89,10 +89,51 @@
   let conversaDaLeitura = ''; // a conversa do report que está sendo lido agora ('' = sem leitura)
   const MAX_BLOBS_FILA = 500;
   let totalBlobsVistos = 0; // quantos arquivos o WhatsApp já criou (a fila é cortada em MAX_BLOBS_FILA; este não)
+  // De que conversa é cada arquivo. O WhatsApp novo BAIXA os áudios da conversa assim que ela é clicada na lista —
+  // antes de o nome dela aparecer no topo. Pelo nome do topo, esses arquivos ficavam com a conversa ANTERIOR e o
+  // report recusava todos ("sem blob de áudio"). Agora a conversa do arquivo é a da "rodada" em que ele foi criado:
+  // tudo o que surge depois de um clique na lista é da conversa que esse clique abriu (o nome que aparece no topo em
+  // seguida). Sem clique (aberta por link ou atalho), a troca do nome no topo abre a rodada.
+  const LISTA_DE_CONVERSAS_AUDIO = '#pane-side, [aria-label="Lista de conversas"], [aria-label="Chat list"]';
+  const ESPERA_NOME_DA_RODADA = 8000; // clicou e o topo não mudou em 8 s: é a mesma conversa (ou um filtro da lista)
+  let rodada = { inicio: 0, nome: '', anterior: '' };
+  function novaRodada(nome) {
+    rodada = { inicio: Date.now(), nome: nome || '', anterior: rodada.nome || rodada.anterior || '' };
+  }
+  function acompanharRodada() {
+    const nome = conversaDaTela();
+    if (!nome) return;
+    if (!rodada.nome) {
+      // logo depois do clique o topo ainda mostra a conversa anterior: espera o nome mudar (ou o tempo passar)
+      if (nome !== rodada.anterior || Date.now() - rodada.inicio > ESPERA_NOME_DA_RODADA) rodada.nome = nome;
+      return;
+    }
+    if (nome !== rodada.nome) novaRodada(nome); // trocou de conversa sem clique na lista
+  }
+  document.addEventListener('click', (ev) => {
+    try {
+      if (!ev.target || !ev.target.closest || !ev.target.closest(LISTA_DE_CONVERSAS_AUDIO)) return;
+      acompanharRodada(); // a conversa de antes do clique fica registrada
+      novaRodada('');
+    } catch (_) {
+      /* ok */
+    }
+  }, true);
+  setInterval(() => {
+    try {
+      acompanharRodada();
+    } catch (_) {
+      /* ok */
+    }
+  }, 300);
+  /** A conversa de um arquivo da fila: a da rodada em que ele foi criado; sem ela, o nome do topo naquela hora. */
+  const conversaDoBlob = (b) => (b.rodada && b.rodada.nome) || b.conversa || '';
+
   window.addEventListener('message', (ev) => {
     if (ev.source === window && ev.data && ev.data.__crAudio && ev.data.url) {
       totalBlobsVistos++;
-      blobsAudio.push({ url: ev.data.url, ts: ev.data.ts || Date.now(), conversa: conversaDaTela() });
+      acompanharRodada();
+      blobsAudio.push({ url: ev.data.url, ts: ev.data.ts || Date.now(), conversa: conversaDaTela(), rodada });
       if (blobsAudio.length > MAX_BLOBS_FILA) blobsAudio.shift();
     }
   });
@@ -110,14 +151,19 @@
     let audio = 0;
     let outros = 0;
     let semBytes = 0;
+    const deOutra = new Map(); // conversa -> quantos áudios válidos dela (os que não são desta leitura)
     for (const b of blobsAudio.slice(-30)) {
       if (b.ts >= t0) continue;
       const buf = await fetchArrayBuffer(b.url);
       if (!buf) semBytes++;
-      else if (ehAudioBuffer(buf)) audio++;
-      else outros++;
+      else if (ehAudioBuffer(buf)) {
+        audio++;
+        const c = conversaDoBlob(b);
+        if (conversaDaLeitura && c !== conversaDaLeitura) deOutra.set(c || '(sem nome)', (deOutra.get(c || '(sem nome)') || 0) + 1);
+      } else outros++;
     }
-    logA(`fila anterior ao clique: ${audio} áudio(s) válido(s), ${outros} outro(s), ${semBytes} sem bytes`);
+    const outrasTxt = [...deOutra].map(([c, n]) => `${n} de "${c}"`).join(', ');
+    logA(`fila anterior ao clique: ${audio} áudio(s) válido(s)${outrasTxt ? ` (de outra conversa: ${outrasTxt})` : ''}, ${outros} outro(s), ${semBytes} sem bytes`);
   }
 
   // O gancho que intercepta os áudios precisa rodar no contexto da PÁGINA. O
@@ -232,8 +278,10 @@
       const antigosOk = i >= 6 && !blobsAudio.some((b) => !b.usado && b.ts >= t0);
       for (const b of blobsAudio) {
         if (b.usado || (b.ts < t0 && !antigosOk)) continue;
-        // De outra conversa, nunca. Arquivo antigo (criado antes do clique) só se for, com certeza, desta conversa.
-        if (conversaDaLeitura && (b.ts < t0 ? b.conversa !== conversaDaLeitura : b.conversa && b.conversa !== conversaDaLeitura)) continue;
+        // De outra conversa, nunca. Arquivo antigo (criado antes do clique) só se for, com certeza, desta conversa —
+        // pela rodada em que foi criado (o WhatsApp baixa os áudios ao abrir a conversa, antes de o nome mudar no topo).
+        const doBlob = conversaDoBlob(b);
+        if (conversaDaLeitura && (b.ts < t0 ? doBlob !== conversaDaLeitura : doBlob && doBlob !== conversaDaLeitura)) continue;
         b.usado = true;
         const buf = await fetchArrayBuffer(b.url);
         if (ehAudioBuffer(buf)) {
@@ -1294,7 +1342,7 @@
     return achados.size === 1 ? [...achados.values()][0] : '';
   }
   const ficha = {
-    ligada: true, minimizada: false, chave: null, fechadaPara: null, seq: 0, timer: null, vigia: null, ultimoEstado: null,
+    ligada: true, cartaoLocal: true, minimizada: false, chave: null, fechadaPara: null, seq: 0, timer: null, vigia: null, ultimoEstado: null,
     pos: null, // { left, top } quando o usuário arrastou o cartão; null = lugar padrão
     automacao: false, // o master ligou a automação para esta chave (mover para "Respondeu", etiqueta e agendamento)
     etiquetas: false, // o master ligou as etiquetas do formulário (investimento e se já vende)
@@ -2298,7 +2346,14 @@
 
   function renderFicha(estado) {
     atualizarPainel(estado); // o painel lateral acompanha o cartão, mesmo com o cartão fechado nesta conversa
-    if (!ficha.ligada || (ficha.fechadaPara && ficha.fechadaPara === ficha.chave)) return;
+    if (!ficha.cartaoLocal) {
+      // Cartão desmarcado no menu da extensão: o lead fica só no painel lateral — e a automação ("Respondeu",
+      // contagem do dia) segue igual.
+      ficha.ultimoEstado = estado;
+      esconderFicha();
+      return;
+    }
+    if (ficha.fechadaPara && ficha.fechadaPara === ficha.chave) return;
     ficha.ultimoEstado = estado;
     let el = document.getElementById(FICHA_ID);
     if (!el) {
@@ -2543,7 +2598,9 @@
   try {
     chrome.storage.local.get({ fichaCrm: true, fichaCrmMinimizada: false, fichaPos: null }, (c) => {
       const lugar = (p) => (p && Number.isFinite(p.left) && Number.isFinite(p.top) ? { left: p.left, top: p.top } : null);
-      ficha.ligada = c.fichaCrm !== false;
+      // A opção do menu da extensão esconde só o cartão flutuante: a ficha, o painel lateral, o "Respondeu" automático
+      // e a contagem de recontatos rodam sempre (antes, desmarcar para tirar o cartão desligava tudo isso junto).
+      ficha.cartaoLocal = c.fichaCrm !== false;
       ficha.minimizada = !!c.fichaCrmMinimizada;
       ficha.pos = lugar(c.fichaPos);
       ficha.vigia = setInterval(() => {
@@ -2557,11 +2614,9 @@
     if (chrome.storage.onChanged) {
       chrome.storage.onChanged.addListener((mud) => {
         if (!mud.fichaCrm) return;
-        ficha.ligada = mud.fichaCrm.newValue !== false;
-        if (!ficha.ligada) {
-          esconderFicha();
-        }
-        ficha.chave = null; // ao religar, busca de novo a conversa aberta
+        ficha.cartaoLocal = mud.fichaCrm.newValue !== false;
+        if (!ficha.cartaoLocal) esconderFicha();
+        else if (ficha.ultimoEstado) renderFicha(ficha.ultimoEstado); // religou: o cartão volta com o lead da tela
       });
     }
   } catch (_) {
@@ -2574,6 +2629,8 @@
   // ---------------------------------------------------------------------------
   const NOVIDADES_ID = 'pronix-novidades';
   const NOVIDADES = [
+    ['Áudios de volta no report', 'Corrigido: o WhatsApp novo baixa os áudios assim que você abre a conversa, e o report deixava esses áudios de fora ("sem blob de áudio"). Agora eles são lidos — e áudio de outra conversa continua sem entrar no report.'],
+    ['"Respondeu" sem depender do cartão', 'No menu da extensão, a opção agora é "Mostrar o cartão flutuante": desmarcada, só o cartão some. A ficha no painel lateral, o "Respondeu" automático e as etiquetas continuam funcionando (antes, desmarcar desligava tudo junto).'],
     ['"Respondeu" só com resposta de verdade', 'Corrigido: cards de recuperação iam para "Respondeu" sozinhos, porque a conversa tinha o lead respondendo meses atrás. Agora só conta a resposta do lead DEPOIS que o card entrou na tentativa de contato atual (a data vem do CRM), e o servidor confere a data antes de mover.'],
     ['Botão Atualizar no painel', 'No topo do painel lateral, "↻ Atualizar" puxa de novo as informações do CRM para a conversa aberta. Abriu a conversa e o painel não mostrou o lead? Clique nele. Se nem assim, recarregue o WhatsApp (F5).'],
     ['Painel sempre com o lead certo', 'Corrigido: com outra aba ou janela do WhatsApp aberta, o painel às vezes ficava em "Abra uma conversa". Agora cada aba tem o seu lead.'],

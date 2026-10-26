@@ -691,3 +691,55 @@ test('mistura de leads: trocou de conversa no meio da leitura e voltou — nada 
   assert.deepEqual(envio.mensagens.map((m) => m.content), ['Oi, tudo bem?', 'Tudo sim', 'Consegue investir?', 'Consigo']);
   pagina.fechar();
 });
+
+// ---------------------------------------------------------------- WhatsApp novo: baixa os áudios ao clicar na conversa
+test('WhatsApp novo: os áudios baixados logo depois do clique na conversa (antes de o nome mudar no topo) SÃO lidos', async () => {
+  const conversa = [
+    { from: 'eu', texto: 'Oi', hora: '10:00, 01/09/2026' },
+    { from: 'eles', tipo: 'audio', semBytes: true },
+    { from: 'eles', tipo: 'audio', semBytes: true },
+    { from: 'eu', texto: 'Ok', hora: '10:05, 01/09/2026' },
+  ];
+  const { envio, pagina } = await rodarWhatsApp(conversa, {
+    opcoes: { idsSimples: true },
+    durante: (p) => {
+      // o SDR estava em outra conversa e clicou nesta na lista
+      trocarCabecalho(p, 'Lead Anterior');
+      const lista = p.document.createElement('div');
+      lista.id = 'pane-side';
+      lista.innerHTML = '<div role="listitem"><span>Contato Teste</span></div>';
+      p.document.body.appendChild(lista);
+      lista.querySelector('span').click();
+      // o WhatsApp baixa os áudios desta conversa ANTES de trocar o nome no topo
+      postarBlobsAntigos(p, [51, 52]);
+      trocarCabecalho(p, 'Contato Teste');
+    },
+  });
+  assert.deepEqual(envio.mensagens.filter((m) => m.type === 'audio').map((m) => m.content), ['transcrição do áudio 51', 'transcrição do áudio 52']);
+  assert.equal(envio.captureQuality.audiosTranscritos, 2);
+  pagina.fechar();
+});
+
+test('mistura de leads: áudio ouvido na conversa anterior, ANTES do clique nesta, continua fora do report', async () => {
+  const conversa = [
+    { from: 'eu', texto: 'Oi', hora: '10:00, 01/09/2026' },
+    { from: 'eles', tipo: 'audio', semBytes: true },
+    { from: 'eu', texto: 'Ok', hora: '10:05, 01/09/2026' },
+  ];
+  const { envio, pagina } = await rodarWhatsApp(conversa, {
+    opcoes: { idsSimples: true },
+    durante: (p) => {
+      trocarCabecalho(p, 'Lead Anterior');
+      postarBlobsAntigos(p, [77]); // ouviu um áudio na conversa do outro lead
+      const lista = p.document.createElement('div');
+      lista.id = 'pane-side';
+      lista.innerHTML = '<div role="listitem"><span>Contato Teste</span></div>';
+      p.document.body.appendChild(lista);
+      lista.querySelector('span').click(); // e só depois abriu esta
+      trocarCabecalho(p, 'Contato Teste');
+    },
+  });
+  assert.deepEqual(envio.mensagens.filter((m) => m.type === 'audio').map((m) => m.content), ['[áudio]']);
+  assert.equal(envio.captureQuality.audiosTranscritos, 0);
+  pagina.fechar();
+});

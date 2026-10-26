@@ -182,11 +182,11 @@ test('erro do servidor: mostra a mensagem e "Tentar de novo" consulta outra vez'
   p.fechar();
 });
 
-test('desligado no popup: não consulta nada; religar busca a conversa aberta', async () => {
+test('cartão desmarcado no menu da extensão: sem cartão, mas a ficha vai para o painel; religar mostra o cartão', async () => {
   const srv = crmFalso(() => ({ ok: true, configurado: true, encontrado: true, ficha: FICHA_MARCOS }));
   const p = abrir(srv, { storage: { fichaCrm: false } });
-  await dormir(120);
-  assert.equal(srv.consultas.length, 0);
+  await esperar(() => srv.paineis.some((e) => e && e.tipo === 'ok'), { motivo: 'lead no painel lateral' });
+  assert.equal(srv.consultas.length, 1, 'consulta o CRM mesmo sem o cartão (o painel e a automação precisam)');
   assert.equal(cartao(p), null);
   p.w.chrome.storage.local.set({ fichaCrm: true });
   await esperar(() => /Investimento/.test(textoCartao(p)), { motivo: 'religado' });
