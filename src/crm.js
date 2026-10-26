@@ -324,6 +324,8 @@ async function montarFicha(contato, extras = [], preferido = '') {
   const atividadesProvavel = idProvavel ? atividadesDoCard(idProvavel).catch(() => null) : null;
   const usuariosJa = usuarios();
   const camposJa = camposDoContato();
+  // os funis (cache de 1h): é por eles que cada card diz desde quando está na tentativa de contato atual
+  const funisJa = funis().catch(() => []);
   usuariosJa.catch(() => {});
   camposJa.catch(() => {});
   const detalhes = (await Promise.all(candidatos.map((d) => rd(`/deals/${encodeURIComponent(idDe(d))}`).catch(() => null)))).map(
@@ -332,10 +334,11 @@ async function montarFicha(contato, extras = [], preferido = '') {
   const escolhido = escolherCard(detalhes, preferido);
   const idNeg = escolhido ? idDe(escolhido) : null;
   const deal = escolhido || null;
-  const [atividades, users, rotulosContato] = await Promise.all([
+  const [atividades, users, rotulosContato, listaFunis] = await Promise.all([
     idNeg ? (idNeg === idProvavel ? atividadesProvavel : atividadesDoCard(idNeg)) : null,
     usuariosJa,
     camposJa,
+    funisJa,
   ]);
   const nomeDe = new Map();
   const cards = detalhes.map((d) => ({
@@ -345,6 +348,8 @@ async function montarFicha(contato, extras = [], preferido = '') {
     funil: (d.deal_pipeline && d.deal_pipeline.name) || '',
     responsavel: (d.user && d.user.name) || '',
     criadaEm: quandoBR(d.created_at),
+    // Desde quando está na tentativa de contato atual: só resposta do lead depois disso move para "Respondeu".
+    contatoDesde: inicioDaTentativa(d, acharEtapa(listaFunis || [], { etapaId: idDe(d.deal_stage), etapaNome: (d.deal_stage && d.deal_stage.name) || '', funilNome: (d.deal_pipeline && d.deal_pipeline.name) || '' })),
     aberta: estaAberta(d),
     ganha: d.win === true, // o closer marcou a venda no RD
     perdida: d.win === false, // marcou como perdida
@@ -716,6 +721,37 @@ function acharEtapa(lista, { etapaId, etapaNome, funilNome }) {
 
 const etapaRespondeu = (funil) => funil.etapas.find((x) => mesmoNome(x.nome, nomeRespondeu())) || null;
 
+/**
+ * Desde quando o card está na tentativa de contato ATUAL (ISO). Só uma mensagem do lead depois disso é resposta a
+ * esta tentativa — numa recuperação, a conversa traz o histórico antigo (o lead respondeu meses atrás) e isso não
+ * pode mover o card para "Respondeu".
+ *  - pelo histórico de etapas do card: a entrada na sequência de etapas ANTES de "Respondeu" em que ele está agora,
+ *    no funil atual (card antigo que voltou para o contato, ou foi para o funil de recuperação, recomeça ali);
+ *  - nunca antes de o card ser criado; histórico que não bate com o funil: a última troca de etapa.
+ * @returns {string} '' quando não dá para saber (aí nada se move)
+ */
+function inicioDaTentativa(deal, onde) {
+  if (!deal) return '';
+  const criado = Date.parse(deal.created_at || '') || 0;
+  const hist = (Array.isArray(deal.deal_stage_histories) ? deal.deal_stage_histories : [])
+    .filter((h) => h && h.deal_stage_id && Number.isFinite(Date.parse(h.start_date || '')))
+    .sort((a, b) => Date.parse(a.start_date) - Date.parse(b.start_date));
+  const alvo = onde && onde.funil ? etapaRespondeu(onde.funil) : null;
+  let inicio = 0;
+  if (alvo) {
+    for (let i = hist.length - 1; i >= 0; i--) {
+      const v = hist[i].deal_stage_id;
+      const idEtapa = v && typeof v === 'object' ? idDe(v) : String(v);
+      const e = onde.funil.etapas.find((x) => x.id === idEtapa);
+      if (!e || e.ordem >= alvo.ordem) break;
+      inicio = Date.parse(hist[i].start_date);
+    }
+  }
+  if (!inicio && hist.length) inicio = Date.parse(hist[hist.length - 1].start_date);
+  const t = Math.max(criado, inicio);
+  return t ? new Date(t).toISOString() : '';
+}
+
 /** O card escolhido da ficha está em aberto e ANTES de "Respondeu"? É o que diz à extensão se vale tentar mover. */
 async function antesDeRespondeu(ficha) {
   if (!moverLigado() || !ficha || !ficha.negociacao) return false;
@@ -728,8 +764,10 @@ async function antesDeRespondeu(ficha) {
 
 /**
  * Move o card do lead para "Respondeu". Confere tudo de novo no RD na hora (a ficha pode estar em cache):
- * o card tem de ser deste lead, estar em aberto e numa etapa anterior a "Respondeu" do MESMO funil.
- * @param {{telefone?: string, nome?: string, contatoId?: string, dealId?: string}} busca
+ * o card tem de ser deste lead, estar em aberto e numa etapa anterior a "Respondeu" do MESMO funil — e a resposta
+ * do lead (respostaEm, a data/hora da mensagem dele no WhatsApp) tem de ser DEPOIS do início desta tentativa de
+ * contato (inicioDaTentativa). Sem a data, ou com data de antes (o histórico antigo de uma recuperação), não move.
+ * @param {{telefone?: string, nome?: string, contatoId?: string, dealId?: string, respostaEm?: string}} busca
  * @returns {Promise<{movido: boolean, de?: string, para?: string, motivo?: string}>}
  */
 async function moverParaRespondeu(busca = {}, { usuarioNome = '' } = {}) {
@@ -753,6 +791,14 @@ async function moverParaRespondeu(busca = {}, { usuarioNome = '' } = {}) {
   const alvo = etapaRespondeu(onde.funil);
   if (!alvo) return { movido: false, motivo: 'sem-etapa' };
   if (onde.etapa.ordem >= alvo.ordem) return { movido: false, motivo: 'ja-adiante', etapa: onde.etapa.nome };
+  // A resposta é a esta tentativa? (extensão antiga não manda a data: não move — melhor esperar que mover errado)
+  const resposta = Date.parse(String(busca.respostaEm || ''));
+  if (!Number.isFinite(resposta)) return { movido: false, motivo: 'sem-data-da-resposta' };
+  const desde = Date.parse(inicioDaTentativa(deal, onde));
+  if (!Number.isFinite(desde)) return { movido: false, motivo: 'sem-inicio-da-tentativa' };
+  // O WhatsApp mostra a hora sem os segundos: a resposta vale a partir do minuto em que a tentativa começou.
+  if (resposta < Math.floor(desde / 60000) * 60000) return { movido: false, motivo: 'resposta-antes-da-tentativa' };
+  if (resposta > Date.now() + 10 * 60000) return { movido: false, motivo: 'resposta-no-futuro' };
 
   const resp = await mudarEtapa(deal, alvo.id);
   if (!resp) throw new Error('O RD Station não achou o card para mudar de etapa.');
@@ -927,6 +973,7 @@ module.exports = {
   saoAMesmaPessoa,
   antesDeRespondeu,
   moverParaRespondeu,
+  inicioDaTentativa,
   ehEtapaQualificado,
   configurado,
   variantesTelefone,

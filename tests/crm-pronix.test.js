@@ -99,7 +99,7 @@ test('ficha do lead pelo telefone: as negociações vêm de /deals?contact_id e 
 test('"Respondeu" automático: POST /deals/:id/stage com a versão lida', async () => {
   estado = DEAL();
   pedidos.length = 0;
-  const r = await crm.moverParaRespondeu({ telefone: '5571999998888' });
+  const r = await crm.moverParaRespondeu({ telefone: '5571999998888', respostaEm: new Date().toISOString() });
   assert.deepEqual(r, { movido: true, de: 'Contato iniciado', para: 'Respondeu' });
   const escrita = pedidos.find((x) => x.metodo === 'POST');
   assert.deepEqual([escrita.caminho, escrita.corpo], ['/deals/d1/stage', { deal_stage_id: 'e-respondeu', versao: 7 }]);

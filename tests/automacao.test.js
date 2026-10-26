@@ -54,8 +54,19 @@ const LEADS = {
   '11110005': { id: 'a5', name: 'Lead De Outro Responsavel', card: 'd5' },
   '11110006': { id: 'a6', name: 'Lead Com Automacao Desligada', card: 'd6' },
   '11110007': { id: 'a7', name: 'Lead Novo', card: 'd7' },
+  '11110008': { id: 'a8', name: 'Lead Da Recuperacao', card: 'd8' },
 };
-const etapaDoCard = { d1: 's2', d2: 's4', d3: 's2', d4: 'k1', d5: 's1', d6: 's2', d7: 's1' };
+const etapaDoCard = { d1: 's2', d2: 's4', d3: 's2', d4: 'k1', d5: 's1', d6: 's2', d7: 's1', d8: 's2' };
+// Card de recuperação: criado em março, o lead respondeu, foi desqualificado e o card voltou para "Contato iniciado" em outubro.
+const RECUPERACAO = {
+  created_at: '2026-03-01T10:00:00-03:00',
+  deal_stage_histories: [
+    { deal_stage_id: 's2', deal_pipeline_id: 'p1', start_date: '2026-03-01T10:00:00-03:00' },
+    { deal_stage_id: 's3', deal_pipeline_id: 'p1', start_date: '2026-03-02T09:00:00-03:00' },
+    { deal_stage_id: 's7', deal_pipeline_id: 'p1', start_date: '2026-03-10T09:00:00-03:00' },
+    { deal_stage_id: 's2', deal_pipeline_id: 'p1', start_date: '2026-10-20T09:00:00-03:00' },
+  ],
+};
 const FECHADOS = new Set(['d3']);
 
 const chamadasRd = [];
@@ -77,6 +88,7 @@ global.fetch = async (url, opts = {}) => {
       id, name: 'PRXC | ' + id, created_at: '2026-09-28T20:00:00-03:00', updated_at: '2026-09-29T10:00:00-03:00',
       closed_at: FECHADOS.has(id) ? '2026-09-30T10:00:00-03:00' : null, win: FECHADOS.has(id) ? false : null,
       deal_stage: { _id: e.id, id: e.id, name: e.name }, deal_pipeline: { id: funil.id, name: funil.name }, user: { name: 'Cauã Lima' },
+      ...(id === 'd8' ? RECUPERACAO : {}),
     };
   };
   if (p === '/contacts') {
@@ -138,7 +150,8 @@ async function chamar(metodo, rota, corpo, chave) {
 const post = (rota, corpo, chave) => chamar('POST', rota, corpo, chave);
 const tel = (final) => '55119' + final;
 const ficha = (final, chave = E.master) => post('/api/crm/lead', { telefone: tel(final) }, chave);
-const mover = (final, extra = {}, chave = E.master) => post('/api/crm/respondeu', { telefone: tel(final), ...extra }, chave);
+// respostaEm: quando o lead respondeu (a extensão manda a data da mensagem dele); padrão: agora
+const mover = (final, extra = {}, chave = E.master) => post('/api/crm/respondeu', { telefone: tel(final), respostaEm: new Date().toISOString(), ...extra }, chave);
 const marca = (corpo, chave = E.master) => post('/api/lead/marca', corpo, chave);
 const SEM_MARCA = { qualificado: false, origem: '', agendadoPara: '', agendaFonteTs: -1 };
 
@@ -448,4 +461,48 @@ test('agendador diário: só roda com o segredo que a Vercel envia', async () =>
   } finally {
     delete process.env.CRON_SECRET;
   }
+});
+
+// ---------------------------------------------------------------- recuperação: só resposta desta tentativa move
+test('recuperação: resposta antiga do lead (de antes de o card voltar ao contato) NUNCA move o card para "Respondeu"', async () => {
+  escritas.length = 0;
+  // a ficha diz desde quando o card está na tentativa atual: a volta para "Contato iniciado" em 20/10, não a criação
+  const f = await ficha('11110008');
+  const card = f.json.ficha.negociacoes.find((c) => c.id === 'd8');
+  assert.equal(card.contatoDesde, new Date('2026-10-20T09:00:00-03:00').toISOString());
+  assert.equal(f.json.podeResponder, true, 'está em "Contato iniciado"');
+
+  // extensão antiga (sem a data da resposta): não move
+  assert.deepEqual((await mover('11110008', { respostaEm: undefined })).json, { movido: false, motivo: 'sem-data-da-resposta' });
+  // a resposta de março (o histórico da conversa) e a de maio: antes da volta ao contato
+  assert.deepEqual((await mover('11110008', { respostaEm: '2026-03-02T08:30:00-03:00' })).json, { movido: false, motivo: 'resposta-antes-da-tentativa' });
+  assert.deepEqual((await mover('11110008', { respostaEm: '2026-05-01T12:00:00-03:00' })).json, { movido: false, motivo: 'resposta-antes-da-tentativa' });
+  // data inventada no futuro também não
+  assert.deepEqual((await mover('11110008', { respostaEm: new Date(Date.now() + 3600000).toISOString() })).json, { movido: false, motivo: 'resposta-no-futuro' });
+  assert.equal(escritas.length, 0, 'nenhuma escrita no CRM');
+  assert.equal(etapaDoCard.d8, 's2');
+
+  // o lead respondeu à recuperação (depois de 20/10): aí sim
+  assert.deepEqual((await mover('11110008', { respostaEm: '2026-10-21T14:05:00-03:00' })).json, { movido: true, de: 'Contato iniciado', para: 'Respondeu' });
+  assert.deepEqual(escritas.map((e) => [e.card, e.corpo.deal_stage_id]), [['d8', 's3']]);
+});
+
+test('início da tentativa: criação do card; volta ao contato pelo histórico; histórico de outro funil vale a última troca', () => {
+  const crm = require('../src/crm');
+  const funil = { etapas: [{ id: 'e1', nome: 'Novo', ordem: 1 }, { id: 'e2', nome: 'Contato iniciado', ordem: 2 }, { id: 'e3', nome: 'Respondeu', ordem: 3 }, { id: 'e9', nome: 'Perdido', ordem: 9 }] };
+  const onde = { funil };
+  const h = (id, quando) => ({ deal_stage_id: id, start_date: quando });
+  // card novo, sem histórico: a criação
+  assert.equal(crm.inicioDaTentativa({ created_at: '2026-10-01T12:00:00Z' }, onde), '2026-10-01T12:00:00.000Z');
+  // andou só antes de "Respondeu" (Novo -> Contato iniciado): a entrada em "Novo" (a tentativa começou ali)
+  assert.equal(crm.inicioDaTentativa({ created_at: '2026-10-01T12:00:00Z', deal_stage_histories: [h('e1', '2026-10-01T12:00:00Z'), h('e2', '2026-10-02T12:00:00Z')] }, onde), '2026-10-01T12:00:00.000Z');
+  // passou de "Respondeu", perdeu e voltou para o contato: a volta
+  assert.equal(crm.inicioDaTentativa({ created_at: '2026-03-01T12:00:00Z', deal_stage_histories: [h('e2', '2026-03-01T12:00:00Z'), h('e3', '2026-03-02T12:00:00Z'), h('e9', '2026-03-05T12:00:00Z'), h('e2', '2026-10-20T12:00:00Z')] }, onde), '2026-10-20T12:00:00.000Z');
+  // veio de outro funil (recuperação em funil próprio): a entrada neste
+  assert.equal(crm.inicioDaTentativa({ created_at: '2026-03-01T12:00:00Z', deal_stage_histories: [h('x1', '2026-03-01T12:00:00Z'), h('x5', '2026-04-01T12:00:00Z'), h('e2', '2026-10-20T12:00:00Z')] }, onde), '2026-10-20T12:00:00.000Z');
+  // histórico que não bate com o funil: a última troca de etapa, nunca antes da criação
+  assert.equal(crm.inicioDaTentativa({ created_at: '2026-03-01T12:00:00Z', deal_stage_histories: [h('x1', '2026-02-01T12:00:00Z')] }, onde), '2026-03-01T12:00:00.000Z');
+  assert.equal(crm.inicioDaTentativa({ created_at: '2026-03-01T12:00:00Z', deal_stage_histories: [h('x1', '2026-09-01T12:00:00Z')] }, onde), '2026-09-01T12:00:00.000Z');
+  // sem data nenhuma: '' (nada se move)
+  assert.equal(crm.inicioDaTentativa({}, onde), '');
 });

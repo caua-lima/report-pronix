@@ -1285,8 +1285,10 @@ app.post('/api/crm/respondeu', auth, async (req, res) => {
   try {
     if (semAutomacao(req, res)) return;
     if (!req.usuario.fichaCrm) return res.status(403).json({ erro: 'Ficha do lead desligada para este usuário.' });
-    const { telefone, nome, contatoId, dealId } = req.body || {};
-    res.json(await crm.moverParaRespondeu({ telefone, nome, contatoId, dealId }, { usuarioNome: req.usuario.nome }));
+    // respostaEm: quando o lead respondeu (a data da mensagem dele no WhatsApp). Sem ela, ou de antes desta tentativa
+    // de contato (o histórico antigo de uma recuperação), o card não se move.
+    const { telefone, nome, contatoId, dealId, respostaEm } = req.body || {};
+    res.json(await crm.moverParaRespondeu({ telefone, nome, contatoId, dealId, respostaEm }, { usuarioNome: req.usuario.nome }));
   } catch (err) {
     res.status(502).json({ erro: err.message });
   }
