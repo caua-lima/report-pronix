@@ -262,8 +262,9 @@ as reuniões realizadas e as vendas em que você foi o SDR — mês a mês, com 
 ## O cartão do lead no WhatsApp
 
 Ao abrir uma conversa no WhatsApp Web, um cartão aparece encostado na borda direita da conversa e, na
-borda direita da tela, o **painel lateral do CRM**. Liga e desliga no popup da extensão; **–** minimiza e
-**×** fecha o cartão só naquela conversa.
+borda direita da tela, o **painel lateral do CRM**. O **cartão flutuante** some quando a opção "Mostrar o cartão flutuante" está desmarcada no menu da extensão — só ele: a ficha no painel lateral, o "Respondeu" automático, as etiquetas e a contagem de recontatos continuam. **–** minimiza e **×** fecha o cartão só naquela conversa.
+
+**Áudios abertos com a conversa.** O WhatsApp novo baixa os áudios assim que a conversa é clicada na lista, antes de o nome dela aparecer no topo. Cada arquivo de áudio fica com a conversa da "rodada" do clique (o nome que aparece no topo em seguida), e o report usa os da sua conversa — áudio ouvido em outra conversa continua de fora.
 
 ### Painel lateral do CRM
 
