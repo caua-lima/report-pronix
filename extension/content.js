@@ -2241,11 +2241,21 @@
     if (estado.tipo === 'carregando') return null;
     // A perda vem da própria ficha do RD: aparece para quem vê o cartão, com ou sem as outras etiquetas ligadas.
     const perda = perdaNoRd(estado.ficha);
-    if (!ficha.automacao && !ficha.etiquetas && !perda) return null;
+    const historico = estado.ficha && estado.ficha.historicoComercial;
+    if (!ficha.automacao && !ficha.etiquetas && !perda && !historico) return null;
     const marca = estado.marca || {};
     const conversa = ficha.conversa;
     const linha = elem('div', 'display:flex;flex-wrap:wrap;align-items:center;gap:5px;margin-top:7px');
     linha.id = 'cr-etiquetas';
+    // O lead JÁ passou pelos closers (comprou, fez reunião, teve reunião marcada): é a 1ª coisa que se vê, para todos.
+    if (historico && historico.resumo) {
+      const cores = { comprou: ['#3ddc84', '#05130c'], reuniao: ['#ff9f43', '#2a1500'], agendada: ['#ffc233', '#121214'], closers: ['#8aa9ff', '#0d1730'] };
+      const [fundo, cor] = cores[historico.resumo.tipo] || cores.reuniao;
+      const aviso = elem('div', 'flex-basis:100%;box-sizing:border-box;border-radius:8px;padding:4px 10px;font-size:12px;font-weight:800;line-height:1.5;text-align:center;background:' + fundo + ';color:' + cor, '⚠ ' + historico.resumo.texto);
+      aviso.id = 'cr-historico';
+      aviso.title = historico.resumo.titulo || '';
+      linha.appendChild(aviso);
+    }
     const base = 'border-radius:5px;padding:2px 8px;font-size:11px;font-weight:600;line-height:1.5;letter-spacing:.07em;font-family:Bahnschrift,DIN Alternate,Roboto Condensed,Arial Narrow,sans-serif';
     const tirar = (titulo, aoClicar) => {
       const b = elem('button', 'cursor:pointer;border:0;background:transparent;color:#a39e93;font-size:13px;line-height:1;padding:0 2px;font-family:inherit', '×');
@@ -2632,6 +2642,9 @@
   // ---------------------------------------------------------------------------
   const NOVIDADES_ID = 'pronix-novidades';
   const NOVIDADES = [
+    ['Lead que já passou pelos closers', 'Antes de chamar, o painel (e o cartão) avisa em destaque: JÁ COMPROU, JÁ FEZ REUNIÃO, JÁ TEVE REUNIÃO MARCADA ou JÁ PASSOU PELOS CLOSERS — com a data, o closer e o card, olhando todos os cards do lead.'],
+    ['Mudar etapa à mão', 'No painel, no card da conversa: "Mudar etapa à mão". Se a automação falhar (ex.: não foi para Respondeu), escolha a etapa e confirme — sem abrir o CRM. Reunião, desqualificação e venda continuam pelos botões próprios.'],
+    ['Transcrição no Histórico do card', 'A conversa do WhatsApp de cada report agora também entra como anotação no card do CRM — aparece no Histórico.'],
     ['Todos os closers no "Reunião realizada"', 'Corrigido: a lista de closers mostrava só parte deles (o CRM manda os usuários em páginas e só a primeira era lida). Agora vêm todos; quem está na aba Closers mas não existe no CRM aparece num aviso logo abaixo da lista.'],
     ['"Respondeu" para todos', 'O card passa para "Respondeu" sozinho para todo mundo que usa a ficha do CRM — não depende mais da "Automação RD" liberada pelo master. E a conversa do WhatsApp (com os áudios transcritos) vai para o card do lead no CRM a cada report.'],
     ['Áudios de volta no report', 'Corrigido: o WhatsApp novo baixa os áudios assim que você abre a conversa, e o report deixava esses áudios de fora ("sem blob de áudio"). Agora eles são lidos — e áudio de outra conversa continua sem entrar no report.'],

@@ -70,7 +70,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   // Botões do painel lateral que escrevem no CRM: só estas rotas.
   if (msg && msg.action === 'crmPainel') {
-    const permitidas = ['/api/crm/duplicado', '/api/crm/realizada/plano', '/api/crm/realizada', '/api/report-pdf-texto'];
+    const permitidas = ['/api/crm/duplicado', '/api/crm/realizada/plano', '/api/crm/realizada', '/api/report-pdf-texto', '/api/crm/etapas', '/api/crm/etapa'];
     if (!permitidas.includes(msg.caminho)) {
       sendResponse({ ok: false, erro: 'Ação desconhecida.' });
       return false;
@@ -340,7 +340,7 @@ function agendarAquecimento(ms) {
 }
 
 // Instalou ou atualizou: o WhatsApp Web mostra UMA vez o aviso do que mudou e de como usar (content.js).
-const NOVIDADES = 'todos-os-closers-2026-10-27'; // mudou a lista de novidades: todos veem de novo uma vez
+const NOVIDADES = 'historico-e-etapa-2026-10-27'; // mudou a lista de novidades: todos veem de novo uma vez
 if (chrome.runtime.onInstalled) chrome.runtime.onInstalled.addListener((d) => {
   if (!d || (d.reason !== 'install' && d.reason !== 'update')) return;
   try {

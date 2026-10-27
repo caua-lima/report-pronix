@@ -292,9 +292,92 @@
     return box;
   }
 
+  // ---------------------------------------------------------------- mudar a etapa à mão (se a automação falhar)
+  // Para todos com a ficha: lista as etapas do funil do card (o servidor confere tudo no CRM) e move só ao confirmar.
+  async function abrirEtapas(c, d) {
+    mudarForm({ dealId: c.id, tipo: 'etapa', fase: 'carregando' });
+    const r = await chamarServidor('/api/crm/etapas', { busca: d.busca || {}, dealId: c.id });
+    if (!aindaAberto(c.id) || estado.form.tipo !== 'etapa') return;
+    if (!r || !r.ok) return mudarForm({ dealId: c.id, tipo: 'etapa', fase: 'erro', erro: (r && r.erro) || 'Não consegui ler as etapas do funil.' });
+    const etapas = r.etapas || [];
+    const iAtual = etapas.findIndex((e) => e.atual);
+    const podem = etapas.filter((e) => e.permitida && !e.atual);
+    // sugestão: "Respondeu" quando o card está antes dela; senão, a próxima etapa permitida
+    const resp = podem.find((e) => e.id === r.respondeu && etapas.indexOf(e) > iAtual);
+    const proxima = etapas.slice(iAtual + 1).find((e) => e.permitida);
+    mudarForm({ dealId: c.id, tipo: 'etapa', fase: 'escolher', etapas, funil: r.funil || '', etapaId: (resp || proxima || podem[0] || {}).id || '' });
+  }
+  async function confirmarEtapa(form, c, d) {
+    if (form.fase === 'enviando' || !form.etapaId) return;
+    mudarForm({ ...form, fase: 'enviando', erro: '' });
+    const r = await chamarServidor('/api/crm/etapa', { busca: d.busca || {}, dealId: c.id, etapaId: form.etapaId });
+    if (!aindaAberto(c.id)) return;
+    if (!r || !r.ok) return mudarForm({ ...form, fase: 'escolher', erro: (r && r.erro) || 'O CRM não aceitou.' });
+    mudarForm({ dealId: c.id, tipo: 'etapa', fase: 'feito', texto: r.movido ? `Movido para "${r.para}" no CRM.` : `O card já estava em "${r.etapa}".` });
+    if (estado.acoes.consultar) estado.acoes.consultar(d.busca || {});
+  }
+  function blocoEtapaManual(c, d) {
+    if (!estado.acoes.servidor || !c.aberta) return null;
+    const form = estado.form && estado.form.dealId === c.id && estado.form.tipo === 'etapa' ? estado.form : null;
+    if (!form) {
+      const b = botaoAcao('Mudar etapa à mão', '#a39e93', () => abrirEtapas(c, d));
+      b.setAttribute('data-pnx-mudar-etapa', String(c.id || ''));
+      b.title = 'Se a automação falhar: muda a etapa deste card aqui mesmo, sem abrir o CRM';
+      return el('div', 'margin:-2px 0 10px;display:flex;gap:6px;flex-wrap:wrap', b);
+    }
+    const box = el('div', 'margin:-2px 0 10px;padding:9px 10px;border-radius:9px;background:#121113;border:1px solid #3a373f;font-size:12px');
+    box.setAttribute('data-pnx-form', 'etapa');
+    const cancelar = botaoAcao('Cancelar', '#a39e93', () => mudarForm(null));
+    if (form.fase === 'feito') {
+      box.appendChild(el('div', 'color:#3ddc84;font-weight:600', form.texto));
+      return box;
+    }
+    if (form.fase === 'carregando') {
+      box.appendChild(el('div', 'color:#a39e93', 'Lendo as etapas do funil…'));
+      return box;
+    }
+    if (form.fase === 'erro') {
+      box.appendChild(el('div', 'color:#ff6f5c', form.erro));
+      box.appendChild(el('div', 'margin-top:8px', cancelar));
+      return box;
+    }
+    box.appendChild(el('div', 'font-weight:700;color:#f3efe6;margin-bottom:6px', `Mudar a etapa${form.funil ? ' no funil ' + form.funil : ''}:`));
+    const sel = document.createElement('select');
+    sel.style.cssText = 'width:100%;background:#211f24;color:#f3efe6;border:1px solid #3a373f;border-radius:7px;padding:6px;font-size:12px;font-family:inherit';
+    sel.setAttribute('data-pnx-etapa', '1');
+    (form.etapas || []).forEach((e) => {
+      const o = document.createElement('option');
+      o.value = e.id;
+      o.textContent = e.nome + (e.atual ? ' (está aqui agora)' : e.permitida ? '' : ' (pelo botão próprio ou no CRM)');
+      o.disabled = e.atual || !e.permitida;
+      if (e.id === form.etapaId) o.selected = true;
+      sel.appendChild(o);
+    });
+    sel.addEventListener('change', () => { form.etapaId = sel.value; });
+    box.appendChild(sel);
+    if (form.erro) box.appendChild(el('div', 'color:#ff6f5c;margin-top:6px', form.erro));
+    const ok = botaoAcao(form.fase === 'enviando' ? 'Movendo no CRM…' : 'Mover', OURO, () => confirmarEtapa(form, c, d));
+    ok.setAttribute('data-pnx-confirmar', 'etapa');
+    box.appendChild(el('div', 'display:flex;gap:6px;margin-top:8px', ok, cancelar));
+    return box;
+  }
+
+  // ---------------------------------------------------------------- o lead já passou pelos closers?
+  /** Aviso no topo: já comprou, já fez reunião, já teve reunião marcada, já passou pelos closers (todos os cards dele). */
+  function avisoDoHistorico(f) {
+    const h = f && f.historicoComercial;
+    if (!h || !h.resumo) return null;
+    const cor = { comprou: '#3ddc84', reuniao: '#ff9f43', agendada: OURO, closers: '#8aa9ff' }[h.resumo.tipo] || '#ff9f43';
+    const box = el('div', `margin-top:10px;padding:10px 12px;border-radius:10px;background:#211f24;border:2px solid ${cor}`,
+      el('div', `font-weight:800;color:${cor};letter-spacing:.03em`, '⚠ ' + String(h.resumo.texto || '')),
+      (h.eventos || []).map((e) => el('div', 'color:#f3efe6;font-size:12px;margin-top:4px', String(e.texto || ''))));
+    box.setAttribute('data-pnx-historico', String(h.resumo.tipo || ''));
+    return box;
+  }
+
   function acoesDoCard(c, d, fica) {
     if (!d.podeEscrever || !estado.acoes.servidor) return null;
-    const form = estado.form && estado.form.dealId === c.id ? estado.form : null;
+    const form = estado.form && estado.form.dealId === c.id && estado.form.tipo !== 'etapa' ? estado.form : null;
     const caixa = el('div', 'margin:-2px 0 10px;display:flex;flex-wrap:wrap;gap:6px');
     if (form && (form.fase === 'feito' || (c.aberta && fica))) {
       caixa.appendChild(caixaDoForm(form, c, d, fica));
@@ -393,6 +476,8 @@
         b.setAttribute('data-pnx-acao', it.acao.tipo);
         b.addEventListener('click', () => cliqueDoCartao(it.acao));
         linha.appendChild(b);
+      } else if (it.tipo === 'alerta') {
+        // o aviso do histórico já está em destaque logo abaixo do nome (avisoDoHistorico)
       } else if (it.tipo === 'formulario') {
         const doForm = el('div', 'flex-basis:100%;display:flex;flex-wrap:wrap;gap:6px');
         (it.itens || []).forEach((x) => {
@@ -523,6 +608,8 @@
     partes.push(el('div', 'font-size:17px;font-weight:700;color:#f3efe6;margin-top:2px;word-break:break-word', f.nome || 'Lead'));
     const contatos = [].concat(f.telefones || [], f.emails || []).filter(Boolean);
     if (contatos.length) partes.push(el('div', 'color:#a39e93;font-size:12px;margin-top:3px;word-break:break-word', contatos.join(' · ')));
+    const historico = avisoDoHistorico(f);
+    if (historico) partes.push(historico);
     topoDoCartao(d.cartao).forEach((p) => partes.push(p));
 
     const escolhida = (f.negociacoes || []).find((c) => c.escolhida);
@@ -565,6 +652,9 @@
       }
       const acoes = acoesDoCard(c, d, fica);
       if (acoes) partes.push(acoes);
+      // o card desta conversa: mudar a etapa à mão (para todos, se a automação falhar)
+      const manual = c.escolhida ? blocoEtapaManual(c, d) : null;
+      if (manual) partes.push(manual);
     });
 
     const respostas = [].concat((f.formulario && f.formulario.campos) || [], f.campos || []).filter((c) => c && c.rotulo && c.valor);

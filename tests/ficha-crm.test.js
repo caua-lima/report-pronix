@@ -824,3 +824,52 @@ test('painel lateral: "Atualizar" sem resposta da aba pede para recarregar o Wha
   assert.match(painelDe(sp).querySelector('[data-pnx-status]').textContent, /Recarregue o WhatsApp \(F5\)/);
   sp.fechar();
 });
+
+// ---------------------------------------------------------------- o lead já passou pelos closers + mudar a etapa à mão
+const HISTORICO = {
+  resumo: { tipo: 'reuniao', texto: 'JÁ FEZ REUNIÃO em 03/05/26 com Paulo Henrique', titulo: 'Fez reunião em 03/05/26 com Paulo Henrique Pagoti (card "PRXC | Marcos antigo")' },
+  eventos: [{ tipo: 'reuniao', texto: 'Fez reunião em 03/05/26 com Paulo Henrique Pagoti (card "PRXC | Marcos antigo")' }],
+};
+
+test('lead que já fez reunião: o aviso aparece no cartão e em destaque no topo do painel', async () => {
+  const srv = crmFalso(() => ({ ok: true, configurado: true, encontrado: true, ficha: { ...FICHA_PAINEL, historicoComercial: HISTORICO } }));
+  const p = abrir(srv);
+  await esperar(() => p.document.getElementById('cr-historico'), { motivo: 'aviso no cartão' });
+  assert.match(p.document.getElementById('cr-historico').textContent, /⚠ JÁ FEZ REUNIÃO em 03\/05\/26 com Paulo Henrique/);
+  const estado = srv.paineis.filter((e) => e && e.tipo === 'ok').pop();
+  p.fechar();
+  const sp = abrirPainelDoChrome({ estado, tabId: 7 });
+  const aviso = painelDe(sp).querySelector('[data-pnx-historico]');
+  assert.ok(aviso, 'no topo do painel');
+  assert.match(aviso.textContent, /⚠ JÁ FEZ REUNIÃO em 03\/05\/26 com Paulo Henrique/);
+  assert.match(aviso.textContent, /card "PRXC \| Marcos antigo"/);
+  assert.equal(painelDe(sp).querySelectorAll('[data-pnx-historico]').length, 1, 'uma vez só');
+  sp.fechar();
+});
+
+test('mudar a etapa à mão pelo painel: lista as etapas, sugere "Respondeu", move só ao confirmar e busca o lead de novo', async () => {
+  const pedidos = [];
+  // cópia própria, com o card em aberto (outro teste dá perda no d1 do exemplo compartilhado)
+  const ficha = { ...FICHA_PAINEL, negociacoes: FICHA_PAINEL.negociacoes.map((c) => (c.id === 'd1' ? { ...c, aberta: true, perdida: false, ganha: false, escolhida: true } : { ...c })) };
+  const sp = abrirPainelDoChrome({ estado: { tipo: 'ok', ficha, busca: { telefone: '5571999998888' }, podeResponder: true }, tabId: 7 }, (msg) => {
+    pedidos.push(JSON.parse(JSON.stringify(msg)));
+    if (msg.caminho === '/api/crm/etapas') {
+      return { ok: true, funil: 'Funil MQL', atual: 'e1', respondeu: 'e2', etapas: [{ id: 'e1', nome: 'Contato iniciado', atual: true, permitida: true }, { id: 'e2', nome: 'Respondeu', atual: false, permitida: true }, { id: 'e3', nome: 'Reunião agendada', atual: false, permitida: false }] };
+    }
+    if (msg.caminho === '/api/crm/etapa') return { ok: true, movido: true, de: 'Contato iniciado', para: 'Respondeu' };
+    return { ok: false, erro: 'inesperado' };
+  }, { responderAba: () => ({ ok: true }) });
+  const botao = painelDe(sp).querySelector('[data-pnx-mudar-etapa="d1"]');
+  assert.ok(botao, 'o card desta conversa tem o "Mudar etapa à mão" (para todos, sem depender de acesso)');
+  botao.click();
+  await esperar(() => painelDe(sp).querySelector('[data-pnx-etapa]'), { motivo: 'etapas na tela' });
+  const sel = painelDe(sp).querySelector('[data-pnx-etapa]');
+  assert.equal(sel.value, 'e2', '"Respondeu" já vem escolhida');
+  assert.deepEqual([...sel.options].map((o) => [o.textContent, o.disabled]), [['Contato iniciado (está aqui agora)', true], ['Respondeu', false], ['Reunião agendada (pelo botão próprio ou no CRM)', true]]);
+  assert.equal(pedidos.filter((x) => x.caminho === '/api/crm/etapa').length, 0, 'nada muda sem confirmar');
+  painelDe(sp).querySelector('[data-pnx-confirmar="etapa"]').click();
+  await esperar(() => /Movido para "Respondeu" no CRM\./.test(painelDe(sp).textContent), { motivo: 'movido' });
+  assert.deepEqual(pedidos.find((x) => x.caminho === '/api/crm/etapa').corpo, { busca: { telefone: '5571999998888' }, dealId: 'd1', etapaId: 'e2' });
+  assert.ok(sp.enviadas.some((e) => e.msg.action === 'painelConsultar'), 'o lead é buscado de novo');
+  sp.fechar();
+});
