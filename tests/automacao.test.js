@@ -163,8 +163,9 @@ test('a automação começa só com o master; ele liga e desliga para os outros 
   // sem a automação: a ficha vem como sempre, sem etiquetas, e as rotas novas recusam
   const f = await ficha('11110001', E.sdr);
   assert.equal(f.json.encontrado, true);
-  assert.ok(!('automacao' in f.json) && !('marca' in f.json) && !('podeResponder' in f.json));
-  assert.equal((await mover('11110001', {}, E.sdr)).status, 403);
+  assert.ok(!('automacao' in f.json) && !('marca' in f.json), 'sem a automação: nada de etiqueta nem agendamento');
+  assert.equal(f.json.podeResponder, true, 'mas o "Respondeu" automático vale para todos com a ficha');
+  assert.deepEqual((await mover('11110002', {}, E.sdr)).json, { movido: false, motivo: 'ja-adiante', etapa: 'Qualificado' }, 'a rota de mover não pede a automação');
   assert.equal((await marca({ telefone: tel('11110001'), qualificado: true, manual: true }, E.sdr)).status, 403);
   assert.equal((await mover('11110001', {}, null)).status, 401, 'sem chave'); // null: undefined cairia na chave padrão do master
   assert.equal(escritas.length, 0);
@@ -381,7 +382,7 @@ test('etiquetas do formulário: permissão própria (padrão só o master); o ma
   const doSdr = await ficha('11110001', E.sdr);
   assert.equal(doSdr.json.etiquetas, true);
   assert.ok(!('automacao' in doSdr.json) && !('marca' in doSdr.json), 'ligar as etiquetas não liga a automação do RD');
-  assert.equal((await mover('11110006', {}, E.sdr)).status, 403);
+  assert.deepEqual((await mover('11110002', {}, E.sdr)).json, { movido: false, motivo: 'ja-adiante', etapa: 'Qualificado' }, 'o "Respondeu" vale para todos');
   assert.equal((await patch({ etiquetas: false }, E.master)).status, 200);
   assert.equal((await chamar('GET', '/api/eu', undefined, E.sdr)).json.etiquetas, false);
 });

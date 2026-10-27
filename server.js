@@ -38,6 +38,9 @@ const transcricoes = require('./src/transcricoes');
 const driveGoogle = require('./src/driveGoogle');
 const limpezaRd = require('./src/limpezaRd');
 const fluxoReuniao = require('./src/fluxoReuniao');
+const transcricaoCrm = require('./src/transcricaoCrm');
+/** Espera a transcrição ir para o CRM, no máximo 9 s (o CRM tem o próprio limite de 8 s): o report não fica preso. */
+const esperarTranscricao = (p) => (p ? Promise.race([p, new Promise((r) => setTimeout(() => r({ enviada: false, motivo: 'demorou' }), 9000))]) : Promise.resolve(null));
 const { textoDoReportPdf } = require('./src/pdfTexto');
 const sugestaoDesq = require('./src/sugestaoDesq');
 const diagnostico = require('./src/diagnostico');
@@ -1108,6 +1111,8 @@ app.post('/api/crm/lead', auth, async (req, res) => {
         : null,
     ]);
     if (auto) Object.assign(extra, auto);
+    // "Respondeu" automático vale para TODOS com a ficha do CRM (não depende da "Automação RD" de Acessos).
+    else if (r && r.encontrado && r.ficha) extra.podeResponder = await crm.antesDeRespondeu(r.ficha).catch(() => false);
     if (req.usuario.etiquetas) extra.etiquetas = true; // etiquetas do formulário (investimento, já vende) no cartão
     // Reunião do lead no Google Agenda (dia, hora e closer). Falha do Google nunca derruba a ficha.
     if (comAgenda) {
@@ -1283,7 +1288,8 @@ app.post('/api/crm/sugestao-desqualificacao', auth, async (req, res) => {
 /** O lead respondeu no WhatsApp: avança o card para "Respondeu" (só se ainda estiver antes dela). */
 app.post('/api/crm/respondeu', auth, async (req, res) => {
   try {
-    if (semAutomacao(req, res)) return;
+    // Para todos com a ficha do CRM: mover para "Respondeu" não depende da "Automação RD" (o servidor confere o card
+    // e a data da resposta do lead de qualquer jeito).
     if (!req.usuario.fichaCrm) return res.status(403).json({ erro: 'Ficha do lead desligada para este usuário.' });
     // respostaEm: quando o lead respondeu (a data da mensagem dele no WhatsApp). Sem ela, ou de antes desta tentativa
     // de contato (o histórico antigo de uma recuperação), o card não se move.
@@ -1638,7 +1644,7 @@ function comProfissaoDoFormulario(dados, formulario, usuario) {
   dados.resumo = [{ rotulo, valor: profissao.slice(0, 120) }].concat(resto);
 }
 
-async function responderReport(req, res, dados, nome, origem, reportKey, captura, vinculo, formulario) {
+async function responderReport(req, res, dados, nome, origem, reportKey, captura, vinculo, formulario, transcricao) {
   // Quem assina o report é o dono da chave, não uma variável do servidor.
   dados.sdr = req.usuario.nome;
   comProfissaoDoFormulario(dados, formulario, req.usuario);
@@ -1702,7 +1708,9 @@ async function responderReport(req, res, dados, nome, origem, reportKey, captura
   const escolha = usuarios.ehMaster(req.usuario)
     ? await sugestaoDeCloser(leitura.perfil, req.usuario.id).catch(() => semEscolha)
     : semEscolha;
-  res.json({ dados, arquivo, arquivoBase64: base64, id, closers: escolha.closers, sugestaoCloser: escolha.sugestao, motivoSugestao: escolha.motivo });
+  // A conversa foi para o card do lead no CRM (em paralelo com o report): o resultado vai junto, para conferência.
+  const transcricaoCrmFeita = await esperarTranscricao(transcricao);
+  res.json({ dados, arquivo, arquivoBase64: base64, id, closers: escolha.closers, sugestaoCloser: escolha.sugestao, motivoSugestao: escolha.motivo, ...(transcricaoCrmFeita ? { transcricaoCrm: transcricaoCrmFeita } : {}) });
 }
 
 // Report_Nome_Data.pdf — "Nome" é o lead, que é de quem o report fala.
@@ -1723,7 +1731,7 @@ function nomeArquivoPdf(lead) {
  * rede não paga duas vezes pela mesma conversa. Devolve null se já respondeu
  * (duplicata encontrada) ou a reportKey para o chamador usar/destravar.
  */
-async function checarDuplicataETravar(req, res, reportKey) {
+async function checarDuplicataETravar(req, res, reportKey, transcricao) {
   if (!req.body || !req.body.forcarNovo) {
     // Banco fora do ar ou cheio: segue sem a conferência de duplicata — o report é o que importa.
     const existente = await stats.buscarPorChave(reportKey).catch((err) => {
@@ -1731,8 +1739,10 @@ async function checarDuplicataETravar(req, res, reportKey) {
       return null;
     });
     if (existente) {
+      const transcricaoCrmFeita = await esperarTranscricao(transcricao);
       res.json({
         duplicado: true,
+        ...(transcricaoCrmFeita ? { transcricaoCrm: transcricaoCrmFeita } : {}),
         existente: {
           id: existente.id,
           quando: existente.quando,
@@ -1775,11 +1785,19 @@ app.post('/api/report-direto', auth, async (req, res) => {
     const qualidadeFinal = qualidadeValida(qualidade);
     const { historico: normalizadas } = normalizarConversa(Array.isArray(mensagens) ? mensagens : []);
     reportKey = calcularReportKey({ historicoNormalizado: normalizadas, promptVersao: PROMPT_VERSAO, qualidade: qualidadeFinal, contato: nome });
+    // A conversa do WhatsApp (com os áudios transcritos) vai para o card do lead no CRM, junto com o report — também
+    // quando o report já existia (é assim que um lead de antes chega lá: gerar o report de novo). Instagram não vai.
+    const transcricao = captureQuality && captureQuality.plataforma === 'instagram'
+      ? null
+      : vinculoDoReport(vinculo, nome)
+        .catch(() => stats.vinculoLimpo(vinculo))
+        .then((v) => transcricaoCrm.enviar({ dealId: v.dealId, mensagens, sdr: req.usuario.nome, lead: nome, telefone: v.telefone }))
+        .catch((err) => ({ enviada: false, motivo: 'erro', erro: err.message }));
 
-    if (!(await checarDuplicataETravar(req, res, reportKey))) return;
+    if (!(await checarDuplicataETravar(req, res, reportKey, transcricao))) return;
 
     const dados = await dadosDireto({ mensagens, nome, sdr: req.usuario.nome, qualidade: qualidadeFinal });
-    await responderReport(req, res, dados, nome, 'extensao', reportKey, sanitizarCaptura(captureQuality), vinculo, formulario);
+    await responderReport(req, res, dados, nome, 'extensao', reportKey, sanitizarCaptura(captureQuality), vinculo, formulario, transcricao);
   } catch (err) {
     res.status(/Nenhuma mensagem/i.test(err.message) ? 400 : 500).json({ erro: err.message });
   } finally {
