@@ -1890,7 +1890,9 @@
   /** Roda a cada tique do vigia, mas só trabalha quando as mensagens na tela mudaram. */
   function automatizar() {
     const est = ficha.ultimoEstado;
-    if (!ficha.automacao || !agendaLib || !est || est.tipo === 'carregando' || jobEmAndamento) return;
+    // O "Respondeu" roda para todos (só precisa do card poder ir); agendamento e etiquetas, só com a automação.
+    if (!agendaLib || !est || est.tipo === 'carregando' || jobEmAndamento) return;
+    if (!ficha.automacao && !est.podeResponder) return;
     // O contato no topo tem de ser o da ficha: mensagem de outro lead nunca vale para este.
     if (ficha.conversa && ficha.conversa.nome && conversaDaTela() && conversaDaTela() !== ficha.conversa.nome) return;
     // Mover para "Respondeu" espera a conversa nova assentar na tela (as mensagens da anterior podem ainda estar ali);
@@ -1907,7 +1909,7 @@
     if (assentou) avancarParaRespondeu(est, mensagens);
     if (repetida) return; // só voltou para tentar mover: o resto já rodou com estas mensagens
     anotarAgendamento(mensagens, ficha.conversa);
-    anotarAtividade(mensagens, ficha.conversa);
+    if (ficha.automacao) anotarAtividade(mensagens, ficha.conversa);
   }
 
   // ---------------------------------------------------------------------------
@@ -2530,7 +2532,8 @@
     // Automação (mover para "Respondeu", etiqueta e agendamento): o servidor diz se o master ligou para esta chave.
     ficha.automacao = r.automacao === true;
     ficha.etiquetas = r.etiquetas === true; // etiquetas do formulário: permissão própria
-    const extras = ficha.automacao ? { marca: r.marca || null, podeResponder: r.podeResponder === true, reuniao: r.reuniao || null } : {};
+    // podeResponder vem para todos (o "Respondeu" automático não depende da automação); marca e reunião, só com ela.
+    const extras = ficha.automacao ? { marca: r.marca || null, podeResponder: r.podeResponder === true, reuniao: r.reuniao || null } : { podeResponder: r.podeResponder === true };
     // Sem ficha do CRM para este usuário (CRM desligado no servidor ou popup do lead desligado): sem cartão.
     ficha.crmLigado = r.configurado === true;
     if (!r.configurado) publicarPainel(null);
@@ -2629,6 +2632,7 @@
   // ---------------------------------------------------------------------------
   const NOVIDADES_ID = 'pronix-novidades';
   const NOVIDADES = [
+    ['"Respondeu" para todos', 'O card passa para "Respondeu" sozinho para todo mundo que usa a ficha do CRM — não depende mais da "Automação RD" liberada pelo master. E a conversa do WhatsApp (com os áudios transcritos) vai para o card do lead no CRM a cada report.'],
     ['Áudios de volta no report', 'Corrigido: o WhatsApp novo baixa os áudios assim que você abre a conversa, e o report deixava esses áudios de fora ("sem blob de áudio"). Agora eles são lidos — e áudio de outra conversa continua sem entrar no report.'],
     ['"Respondeu" sem depender do cartão', 'No menu da extensão, a opção agora é "Mostrar o cartão flutuante": desmarcada, só o cartão some. A ficha no painel lateral, o "Respondeu" automático e as etiquetas continuam funcionando (antes, desmarcar desligava tudo junto).'],
     ['"Respondeu" só com resposta de verdade', 'Corrigido: cards de recuperação iam para "Respondeu" sozinhos, porque a conversa tinha o lead respondendo meses atrás. Agora só conta a resposta do lead DEPOIS que o card entrou na tentativa de contato atual (a data vem do CRM), e o servidor confere a data antes de mover.'],

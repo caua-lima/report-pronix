@@ -771,3 +771,16 @@ test('com o cartão desmarcado no menu da extensão, o "Respondeu" automático c
   await esperar(() => srv.pedidos.respondeu.length === 1, { motivo: 'moveu sem o cartão na tela' });
   assert.equal(cartao(p), null);
 });
+
+// ---------------------------------------------------------------- "Respondeu" para todos
+test('usuário SEM a "Automação RD": o card vai para "Respondeu" do mesmo jeito (sem etiqueta nem agendamento)', async () => {
+  const base = servidorFalso({ automacao: false });
+  // o servidor manda podeResponder para todo mundo com a ficha do CRM
+  const srv = { ...base, aoEnviar: async (msg) => { const r = await base.aoEnviar(msg); return msg.action === 'crmLead' ? { ...r, podeResponder: true } : r; } };
+  const p = abrir(srv);
+  await esperar(() => base.pedidos.respondeu.length === 1, { motivo: 'moveu sem a automação' });
+  assert.equal(base.pedidos.respondeu[0].respostaEm, RESPOSTA_EM);
+  await dormir(80);
+  assert.equal(base.pedidos.marca.length, 0, 'sem a automação, nada de etiqueta nem agendamento');
+  p.fechar();
+});
