@@ -507,3 +507,30 @@ test('início da tentativa: criação do card; volta ao contato pelo histórico;
   // sem data nenhuma: '' (nada se move)
   assert.equal(crm.inicioDaTentativa({}, onde), '');
 });
+
+// ---------------------------------------------------------------- mudar a etapa à mão (painel lateral)
+test('mudar a etapa à mão: qualquer usuário com a ficha; só etapas do SDR do mesmo funil; card do lead e em aberto', async () => {
+  escritas.length = 0;
+  const etapas = await post('/api/crm/etapas', { busca: { telefone: tel('11110006') }, dealId: 'd6' }, E.sdr);
+  assert.equal(etapas.status, 200, JSON.stringify(etapas.json));
+  assert.equal(etapas.json.atual, 's2');
+  assert.equal(etapas.json.respondeu, 's3');
+  const permitidas = etapas.json.etapas.filter((e) => e.permitida).map((e) => e.nome);
+  assert.deepEqual(permitidas, ['SMQLs Automaticos', 'Contato iniciado', 'Respondeu', 'Qualificado', 'Ultima tentativa'], 'reunião e desqualificados têm botão próprio');
+  // move (SDR sem a "Automação RD")
+  const r = await post('/api/crm/etapa', { busca: { telefone: tel('11110006') }, dealId: 'd6', etapaId: 's5' }, E.sdr);
+  assert.deepEqual(r.json, { ok: true, movido: true, de: 'Contato iniciado', para: 'Ultima tentativa' });
+  assert.deepEqual(escritas.map((e) => [e.card, e.corpo.deal_stage_id]), [['d6', 's5']]);
+  const log = await db.range('crm_movimentos');
+  assert.equal(log[log.length - 1].manual, true);
+  // o que não pode
+  const erro = async (corpo) => (await post('/api/crm/etapa', { busca: { telefone: tel('11110006') }, ...corpo }, E.sdr)).json.erro;
+  assert.match(await erro({ dealId: 'd6', etapaId: 's7' }), /botão próprio/, 'Desqualificados: pelo Desqualificar');
+  assert.match(await erro({ dealId: 'd6', etapaId: 's6' }), /botão próprio/, 'Reunião Realizada: pelo botão');
+  assert.match(await erro({ dealId: 'd6', etapaId: 'k1' }), /não é do funil/);
+  assert.match(await erro({ dealId: 'd2', etapaId: 's3' }), /não é do lead desta conversa/);
+  assert.match((await post('/api/crm/etapa', { busca: { telefone: tel('11110003') }, dealId: 'd3', etapaId: 's3' }, E.sdr)).json.erro, /fechado/);
+  assert.deepEqual((await post('/api/crm/etapa', { busca: { telefone: tel('11110006') }, dealId: 'd6', etapaId: 's5' }, E.sdr)).json, { ok: true, movido: false, motivo: 'ja-esta', etapa: 'Ultima tentativa' });
+  assert.equal(escritas.length, 1, 'só a mudança permitida chegou ao CRM');
+  assert.equal((await post('/api/crm/etapa', { busca: {}, dealId: 'd6', etapaId: 's3' }, null)).status, 401);
+});

@@ -1286,6 +1286,30 @@ app.post('/api/crm/sugestao-desqualificacao', auth, async (req, res) => {
 });
 
 /** O lead respondeu no WhatsApp: avança o card para "Respondeu" (só se ainda estiver antes dela). */
+/**
+ * Mudar a etapa À MÃO pelo painel lateral (quando a automação falha): para todos com a ficha do CRM. O servidor
+ * confere no CRM que o card é do lead da conversa, está em aberto e a etapa é do mesmo funil (perda, venda e as que
+ * pedem o closer têm botão próprio).
+ */
+app.post('/api/crm/etapas', auth, async (req, res) => {
+  if (!req.usuario.fichaCrm) return res.status(403).json({ erro: 'Ficha do lead desligada para este usuário.' });
+  try {
+    const { busca = {}, dealId } = req.body || {};
+    res.json({ ok: true, ...(await crm.etapasParaMover(busca, dealId)) });
+  } catch (err) {
+    res.status(400).json({ erro: err.message });
+  }
+});
+app.post('/api/crm/etapa', auth, async (req, res) => {
+  if (!req.usuario.fichaCrm) return res.status(403).json({ erro: 'Ficha do lead desligada para este usuário.' });
+  try {
+    const { busca = {}, dealId, etapaId } = req.body || {};
+    res.json({ ok: true, ...(await crm.moverParaEtapa(busca, dealId, etapaId, { usuarioNome: req.usuario.nome })) });
+  } catch (err) {
+    res.status(400).json({ erro: err.message });
+  }
+});
+
 app.post('/api/crm/respondeu', auth, async (req, res) => {
   try {
     // Para todos com a ficha do CRM: mover para "Respondeu" não depende da "Automação RD" (o servidor confere o card
