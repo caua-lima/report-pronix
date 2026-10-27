@@ -97,7 +97,11 @@ global.fetch = async (url, opts = {}) => {
   if (recusar && p === recusar.caminho) return ok({ codigo: 'X', mensagem: recusar.mensagem }, 422);
   if (p === '/deal_pipelines') return ok(FUNIS);
   if (p === '/me') return ok({ user: { id: 'u-caua', name: 'Cauã Lima' }, permissions: ['trocar_responsavel', 'mover_de_funil'] });
-  if (p === '/users') return ok({ users: [{ id: 'u-caua', name: 'Cauã Lima', email: 'caua@x.test' }, { id: 'u-ph', name: 'Paulo Henrique Pagoti', email: 'ph@x.test' }, { id: 'u-isa', name: 'Isamara', email: 'isa@x.test' }, { id: 'u-pedro', name: 'Pedro Henrique Melo Palermo', email: '' }, { id: 'u-zoe', name: 'Zoe Closer', email: '' }] });
+  if (p === '/users') {
+    // como o CRM de verdade: em páginas (o Pedro e a Zoe só vêm na 2ª)
+    const todos = [{ id: 'u-caua', name: 'Cauã Lima', email: 'caua@x.test' }, { id: 'u-ph', name: 'Paulo Henrique Pagoti', email: 'ph@x.test' }, { id: 'u-isa', name: 'Isamara', email: 'isa@x.test' }, { id: 'u-pedro', name: 'Pedro Henrique Melo Palermo', email: '' }, { id: 'u-zoe', name: 'Zoe Closer', email: '' }];
+    return u.searchParams.get('cursor') === 'pag2' ? ok({ users: todos.slice(3) }) : ok({ users: todos.slice(0, 3), proximo_cursor: 'pag2' });
+  }
   if (p === '/deal_lost_reasons') return ok({ deal_lost_reasons: [{ id: 'm-sumiu', name: 'Nunca respondeu' }, { id: 'm-dup', name: 'Duplicidade de card' }] });
   if (p === '/deals' && metodo === 'GET') {
     if (semHistorico) return ok({ deals: [] });
@@ -155,13 +159,15 @@ test('o report vira o texto do handoff, nos tópicos que o closer lê', () => {
 test('funil que vai até a reunião: Qualificado → Reunião Agendada (closer + handoff do report) → Reunião Realizada', async () => {
   reiniciar();
   await closers.criar('Paulo Henrique Pagoti', 'ph@x.test');
-  await closers.criar('Pedro Palermo', ''); // no CRM: Pedro Henrique Melo Palermo
+  await closers.criar('Pedro Palermo', ''); // no CRM: Pedro Henrique Melo Palermo — na 2ª página dos usuários
+  await closers.criar('Giovane Romano', 'giovane@x.test'); // cadastrado aqui, mas sem usuário no CRM
   await fluxo.guardarHandoff({ dados: DADOS_REPORT, sdr: 'Cauã Lima', reportId: 'r1', vinculo: { dealId: 'd-mql', contatoId: 'c1' } });
   const plano = await fluxo.planejar({ dealId: 'd-mql', closerNome: 'Paulo Henrique' });
   assert.deepEqual(plano.passos.map((p) => [p.tipo, p.etapaNome, p.exigeCloser]), [['etapa', 'Qualificado', false], ['etapa', 'Reunião Agendada', true], ['etapa', 'Reunião Realizada', false]]);
   assert.equal(plano.closerSugerido, 'u-ph', 'o closer da agenda vem escolhido');
   assert.deepEqual(plano.closers, [{ id: 'u-ph', nome: 'Paulo Henrique Pagoti' }, { id: 'u-pedro', nome: 'Pedro Henrique Melo Palermo' }, { id: 'u-zoe', nome: 'Zoe Closer' }],
     'os cadastrados (pelas palavras do nome) e os donos das reuniões realizadas — nunca um SDR');
+  assert.deepEqual(plano.closersSemCrm, ['Giovane Romano'], 'quem não está no CRM é avisado, não some calado');
   assert.ok(plano.handoff.doReport, 'o report deste card vai como handoff');
   assert.deepEqual(plano.faltando, []);
 

@@ -203,11 +203,38 @@ async function listaEmCache(chave, buscar) {
   return lista || [];
 }
 
+/**
+ * Todos os usuários do CRM, página por página. O PronixCRM devolve as listas em páginas: com uma ida só, quem ficava
+ * depois da 1ª página não existia para o sistema (closers sumiam da lista do "Reunião realizada"; autor de anotação
+ * sem nome). Segue o cursor (proximo_cursor) ou, sem ele, a página seguinte enquanto o total não fecha.
+ */
+async function todosOsUsuarios() {
+  const todos = [];
+  const vistos = new Set();
+  let cursor = '';
+  let pagina = 1;
+  for (let volta = 0; volta < 20; volta++) {
+    const params = { limit: 200, ...(cursor ? { cursor } : pagina > 1 ? { page: pagina } : {}) };
+    const r = await module.exports.rd('/users', params);
+    const lista = (r && r.users) || (Array.isArray(r) ? r : []);
+    let novos = 0;
+    for (const u of lista) {
+      const id = idDe(u);
+      if (id && !vistos.has(id)) { vistos.add(id); todos.push(u); novos++; }
+    }
+    if (!novos || Array.isArray(r)) break;
+    const proximo = String((r && (r.proximo_cursor || r.next_cursor)) || '');
+    const total = Number(r && (r.total || (r.meta && r.meta.total)));
+    const temMais = r && (r.has_more === true || r.tem_mais === true || (Number.isFinite(total) && total > todos.length));
+    if (proximo) cursor = proximo;
+    else if (temMais) { cursor = ''; pagina++; }
+    else break;
+  }
+  return todos;
+}
+
 const usuarios = () =>
-  listaEmCache('crm:usuarios', async () => {
-    const r = await rd('/users');
-    return ((r && r.users) || []).map((u) => ({ id: u.id || u._id, nome: u.name }));
-  });
+  listaEmCache('crm:usuarios2', async () => (await todosOsUsuarios()).map((u) => ({ id: u.id || u._id, nome: u.name })));
 
 const camposDoContato = () =>
   listaEmCache('crm:campos-contato', async () => {
@@ -954,6 +981,7 @@ async function esquecerLead(busca = {}) {
 module.exports = {
   // Para a limpeza do funil (src/limpezaRd.js): a chamada crua ao RD, os funis, os usuários e a chave geral de escrita.
   rd,
+  todosOsUsuarios,
   ehPronix,
   linkDoCard,
   instanteDoDia,

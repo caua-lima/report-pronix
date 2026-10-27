@@ -249,7 +249,7 @@ function caminhoNoFunil(funil, de, ate, fluxos) {
 // ---------------------------------------------------------------- closers e permissões
 
 async function usuariosDoCrm() {
-  const g = await db.cacheGet('crm:usuarios-email').catch(() => null);
+  const g = await db.cacheGet('crm:usuarios-email2').catch(() => null);
   if (g) {
     try {
       return JSON.parse(g);
@@ -257,11 +257,11 @@ async function usuariosDoCrm() {
       /* relê */
     }
   }
-  const r = await crm.rd('/users');
-  const lista = ((r && r.users) || (Array.isArray(r) ? r : []))
+  // Todas as páginas: com só a 1ª, os closers que ficavam depois dela sumiam da lista do "Reunião realizada".
+  const lista = (await crm.todosOsUsuarios())
     .map((u) => ({ id: idDe(u), nome: crm.consertarAcentos(u.name || ''), email: String(u.email || '').trim().toLowerCase() }))
     .filter((u) => u.id && u.nome);
-  await db.cacheSet('crm:usuarios-email', JSON.stringify(lista), 3600).catch(() => {});
+  await db.cacheSet('crm:usuarios-email2', JSON.stringify(lista), 3600).catch(() => {});
   return lista;
 }
 
@@ -277,18 +277,28 @@ const nomeCabe = (curto, longo) => {
  * nome, e os que o CRM mostra como donos dos cards que chegaram na reunião realizada (o histórico). Nenhum: todos.
  */
 async function closersDoCrm(fluxos) {
+  return (await closersParaEscolher(fluxos)).lista;
+}
+/**
+ * A lista do closer e quem da aba Closers NÃO foi achado no CRM (semCrm): esses não dá para pôr como responsável do
+ * card (o CRM precisa do usuário dele), e o painel avisa em vez de sumir com eles calado.
+ */
+async function closersParaEscolher(fluxos) {
   const doCrm = await usuariosDoCrm();
   const nossos = await closers.listar().catch(() => []);
   const achados = [];
+  const semCrm = [];
   const pôr = (u) => { if (u && u.id && !achados.some((a) => a.id === u.id)) achados.push({ id: u.id, nome: u.nome }); };
   for (const c of nossos) {
     const doEmail = c.email && doCrm.find((x) => x.email && x.email === String(c.email).toLowerCase());
     const doNome = doCrm.filter((x) => nomeCabe(c.nome, x.nome));
-    pôr(doEmail || (doNome.length === 1 ? doNome[0] : doNome.find((x) => norm(x.nome) === norm(c.nome))));
+    const achado = doEmail || (doNome.length === 1 ? doNome[0] : doNome.find((x) => norm(x.nome) === norm(c.nome)));
+    if (achado) pôr(achado);
+    else if (c.nome) semCrm.push(c.nome);
   }
   Object.entries((fluxos && fluxos.closers) || {}).sort((x, y) => y[1].n - x[1].n).forEach(([id, c]) => pôr(doCrm.find((u) => u.id === id) || { id, nome: c.nome }));
   achados.sort((x, y) => x.nome.localeCompare(y.nome, 'pt-BR'));
-  return achados.length ? achados : doCrm.map((u) => ({ id: u.id, nome: u.nome }));
+  return { lista: achados.length ? achados : doCrm.map((u) => ({ id: u.id, nome: u.nome })), semCrm: semCrm.sort((x, y) => x.localeCompare(y, 'pt-BR')) };
 }
 
 function sugerirCloser(lista, nome) {
@@ -383,7 +393,7 @@ async function planejar({ dealId, closerNome = '', busca = {}, alvo: qual = 'rea
     throw new Error(`Não consegui montar o caminho até ${ALVOS[qual]} deste card.`);
   }
 
-  const listaClosers = await closersDoCrm(fluxos).catch(() => []);
+  const { lista: listaClosers, semCrm: closersSemCrm } = await closersParaEscolher(fluxos).catch(() => ({ lista: [], semCrm: [] }));
   const dono = { id: idDe(deal.user), nome: crm.consertarAcentos((deal.user && deal.user.name) || '') };
   const precisaCloser = passos.some((p) => p.exigeCloser);
   const perms = await permissoes();
@@ -399,6 +409,7 @@ async function planejar({ dealId, closerNome = '', busca = {}, alvo: qual = 'rea
     assinatura: [qual, onde.etapa.id].concat(passos.map((p) => `${p.tipo}:${p.etapaId}`)).join('>'),
     precisaCloser,
     closers: listaClosers,
+    closersSemCrm, // cadastrados na aba Closers que o CRM não tem (o painel avisa)
     closerSugerido: sugerirCloser(listaClosers, closerNome) || (listaClosers.some((c) => c.id === dono.id) ? dono.id : ''),
     // O texto do report vai junto: o SDR pode editar e complementar com o que veio da ligação.
     handoff: { noCrm: Boolean(deal.handoff && deal.handoff.text), doReport: guardado ? { quando: guardado.quando, sdr: guardado.sdr, texto: guardado.texto } : null },
