@@ -245,6 +245,12 @@
     sel.addEventListener('change', () => { form.closerId = sel.value; desenhar(); });
     box.appendChild(el('div', 'color:#a39e93;margin:4px 0 3px', 'Closer'));
     box.appendChild(sel);
+    // Cadastrado na aba Closers, mas sem usuário no CRM: não dá para pôr como responsável — diz quem, em vez de sumir.
+    if ((p.closersSemCrm || []).length) {
+      const aviso = el('div', 'color:#ff9d8f;font-size:11.5px;margin-top:4px', `Fora da lista (não achei no CRM): ${p.closersSemCrm.join(', ')}. Confira o e-mail deles na aba Closers do site — é pelo e-mail que o sistema acha o usuário no CRM.`);
+      aviso.setAttribute('data-pnx-closers-sem-crm', '1');
+      box.appendChild(aviso);
+    }
 
     const h = p.handoff || {};
     const campo = (rotulo, valor, dica, aoMudar, attr, altura) => {

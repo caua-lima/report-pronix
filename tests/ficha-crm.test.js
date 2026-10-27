@@ -646,6 +646,7 @@ test('painel: com dois cards em aberto, o mais antigo ganha "Perder como duplica
       return {
         ok: true, assinatura: 'a1', precisaCloser: true, faltando: [], closerSugerido: 'u-ph',
         closers: [{ id: 'u-ph', nome: 'Paulo Henrique Pagoti' }, { id: 'u-rap', nome: 'Raphael <b>Ribeiro</b>' }],
+        closersSemCrm: ['Igor Martins'],
         handoff: { noCrm: false, doReport: { quando: '22/10/2026', sdr: 'Cauã Lima' } },
         passos: [{ tipo: 'etapa', funilNome: 'SMQLs Automaticos', etapaNome: 'Qualificado', exigeCloser: false, vistos: 8, amostras: 10 }, { tipo: 'etapa', funilNome: 'SMQLs Automaticos', etapaNome: 'Reunião Agendada', exigeCloser: true }, { tipo: 'etapa', funilNome: 'SMQLs Automaticos', etapaNome: 'Reunião Realizada' }],
       };
@@ -675,6 +676,7 @@ test('painel: com dois cards em aberto, o mais antigo ganha "Perder como duplica
   const t = painelDe(sp).textContent;
   for (const x of ['Qualificado', 'Reunião Agendada', 'define o closer', '8 de 10 cards passaram aqui', 'Reunião Realizada', 'o report de 22/10/2026 (Cauã Lima) (pode editar)', 'Informações da ligação']) assert.ok(t.includes(x), 'faltou: ' + x);
   assert.equal(painelDe(sp).querySelector('[data-pnx-closer]').value, 'u-ph');
+  assert.match(painelDe(sp).querySelector('[data-pnx-closers-sem-crm]').textContent, /não achei no CRM\): Igor Martins/);
   assert.equal(painelDe(sp).querySelector('b'), null, 'nome do CRM não vira HTML');
   assert.equal(pedidos[1].corpo.closerNome, 'Paulo Henrique');
   assert.equal(pedidos[1].corpo.alvo, 'realizada');
