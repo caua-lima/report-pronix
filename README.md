@@ -130,7 +130,7 @@ Além do papel, o master liga quatro recursos **por pessoa** na aba Acessos:
 | Recurso | Padrão | O que libera |
 | --- | --- | --- |
 | **Popup do lead** | ligado para todos | Ficha do CRM, painel lateral e resumo rápido no WhatsApp. |
-| **Automação RD** | só o master | Mover o card para "Respondeu", etiqueta "Qualificado" e agendamento. |
+| **Automação RD** | só o master | Etiqueta "Qualificado" e agendamento. O "Respondeu" automático vale para **todos** com a ficha do lead (desde 27/10/2026). |
 | **Etiquetas** | só o master | No cartão, o investimento do formulário ("R$ 3 a 5k", "R$ 5k+") e se o lead já vende. |
 | **Cor na agenda** | master: Banana; demais: nenhuma | A cor com que as reuniões dos leads da pessoa são pintadas no Google Agenda. O master já começa na Banana sem configurar; "Não pintar" escolhido à mão é respeitado. |
 
@@ -768,7 +768,7 @@ Autenticação por cabeçalho `x-cr-key` (a chave do usuário). `gestor+` = mast
 | Rota | Acesso | Para quê |
 | --- | --- | --- |
 | `POST /api/crm/lead` | chave + popup do lead | Ficha do RD do lead da conversa. |
-| `POST /api/crm/respondeu` | chave + automação | Avança o card para "Respondeu". |
+| `POST /api/crm/respondeu` | chave + ficha do lead | Avança o card para "Respondeu" (todos os usuários; confere a data da resposta). |
 | `GET /api/master/diagnostico` | master | Confere, sem alterar nada, se a automação do "Respondeu" e a cor da agenda têm tudo no lugar, e mostra a última vez que cada uma funcionou. |
 | `POST /api/master/trazer-vendas-rd` | master | Traz as vendas de um closer direto do RD (cards ganhos em que o usuário é o SDR). |
 | `GET /api/report-dia` · `PUT /api/report-dia` | chave | Report automático do dia: contagem, desqualificados, o que foi digitado e o texto pronto. |
@@ -896,6 +896,7 @@ Tudo em `src/db.js` (Redis em produção, `data/*.json` local). **A conversa nã
 | `google_agenda` | Autorização da conta conectada ao Google Agenda (só no servidor). |
 | `lead_marcas` | Etiqueta "Qualificado" e agendamento por lead (até 4.000). |
 | `crm_movimentos` | Registro de cada card movido para "Respondeu" (últimos 500). |
+| `crm_transcricoes` | Registro de cada transcrição mandada ao CRM (últimos 500: card, ok/erro — sem o texto da conversa). |
 | `rd_limpeza_relatorios` | Um relatório por execução da limpeza: quando, funil e quantos cards por motivo (últimos 400). |
 | `rd_limpeza_log` | Cada card desqualificado pela limpeza do funil: de que etapa saiu, o motivo e quando (últimos 8.000). É o que permite desfazer. |
 | `aprendizado_consciencia` | Correções do nível de consciência (até 200). |
@@ -1088,3 +1089,13 @@ com os dois: o token `pcrm_…` decide. O que muda no PronixCRM, e já é tratad
   report do dia) usa `sdr_id`, o funil dos closers e a janela `updated_at_period`, e confere o resto aqui;
 - o detalhe de cada negociação é lido no ritmo do limite (600 consultas por minuto por token), com prazo por
   rodada e guardado por id + `updated_at` (só a que mudou é relida). O token age em nome de quem o gerou.
+
+### Transcrição da conversa no CRM
+
+A cada report do WhatsApp, a conversa inteira (com os áudios já transcritos) vai para o card do lead no PronixCRM:
+`POST /deals/:id/whatsapp_transcripts` com `transcript` ("[21/10/2026 10:05] Nome: …", hora de Brasília), `started_at`,
+`ended_at`, `phone` e `external_id` (a impressão digital do texto: a mesma conversa mandada de novo não duplica).
+Roda em paralelo com o report, sem custo de IA (`src/transcricaoCrm.js`). Vai também quando o report já existia — é
+assim que um lead de antes chega ao CRM: gerar o report de novo. A conversa não fica guardada no servidor, então
+reports antigos só vão quando forem gerados de novo. Instagram não vai; sem card, CRM recusando ou `CRM_TRANSCRICAO=0`,
+o report sai igual.
