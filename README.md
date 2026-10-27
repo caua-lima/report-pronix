@@ -1090,12 +1090,29 @@ com os dois: o token `pcrm_…` decide. O que muda no PronixCRM, e já é tratad
 - o detalhe de cada negociação é lido no ritmo do limite (600 consultas por minuto por token), com prazo por
   rodada e guardado por id + `updated_at` (só a que mudou é relida). O token age em nome de quem o gerou.
 
+### Antes de chamar: o lead já passou pelos closers?
+
+A ficha olha **todos os cards do lead** (os cadastros repetidos também) e o histórico de etapas de cada um
+(`historicoComercial` em `src/crm.js`): **JÁ COMPROU** (card ganho), **JÁ FEZ REUNIÃO** (passou por reunião realizada,
+FUP, negociação ou venda), **JÁ TEVE REUNIÃO MARCADA** e **JÁ PASSOU PELOS CLOSERS** (funil com "closer" no nome) —
+com a data, o closer (dono do card) e o card. Aparece em destaque no topo do painel lateral e no cartão, para todos.
+Do card da conversa só contam fatos passados (a reunião marcada dele já está na ficha).
+
+### Mudar etapa à mão (painel lateral)
+
+No card da conversa, **Mudar etapa à mão**: para quando a automação falha (ex.: não foi para "Respondeu"). Lista as
+etapas do funil do card, sugere "Respondeu" quando o card está antes dela e move só ao confirmar. Para todos com a
+ficha do lead. O servidor confere de novo que o card é do lead da conversa, está em aberto e a etapa é do mesmo
+funil; reunião, FUP, negociação, venda, perda e etapas que pedem closer ficam de fora (têm botão próprio). Registra
+em `crm_movimentos` com `manual: true` (`POST /api/crm/etapas`, `POST /api/crm/etapa`).
+
 ### Transcrição da conversa no CRM
 
 A cada report do WhatsApp, a conversa inteira (com os áudios já transcritos) vai para o card do lead no PronixCRM:
 `POST /deals/:id/whatsapp_transcripts` com `transcript` ("[21/10/2026 10:05] Nome: …", hora de Brasília), `started_at`,
 `ended_at`, `phone` e `external_id` (a impressão digital do texto: a mesma conversa mandada de novo não duplica).
-Roda em paralelo com o report, sem custo de IA (`src/transcricaoCrm.js`). Vai também quando o report já existia — é
+Vai também como **anotação no card** (é o que aparece no Histórico do card; uma vez por conversa, em partes de
+20 mil caracteres se o CRM recusar uma só). Roda em paralelo com o report, sem custo de IA (`src/transcricaoCrm.js`). Vai também quando o report já existia — é
 assim que um lead de antes chega ao CRM: gerar o report de novo. A conversa não fica guardada no servidor, então
 reports antigos só vão quando forem gerados de novo. Instagram não vai; sem card, CRM recusando ou `CRM_TRANSCRICAO=0`,
 o report sai igual.
