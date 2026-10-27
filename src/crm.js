@@ -445,6 +445,8 @@ async function montarFicha(contato, extras = [], preferido = '') {
         }
       : null,
     totalNegociacoes: dealsBrutos.length,
+    // Já comprou, já fez reunião, já teve reunião marcada, já passou pelos closers — o SDR vê antes de chamar.
+    historicoComercial: historicoComercial(detalhes, listaFunis, idNeg),
     negociacoes: cards,
     contatosComEsteTelefone: todosContatos.length,
     formulario,
@@ -748,6 +750,85 @@ function acharEtapa(lista, { etapaId, etapaNome, funilNome }) {
 
 const etapaRespondeu = (funil) => funil.etapas.find((x) => mesmoNome(x.nome, nomeRespondeu())) || null;
 
+// ---------------------------------------------------------------- o lead já passou pelos closers?
+const CATEGORIAS_REUNIAO_FEITA = ['reuniao_realizada', 'fup', 'negociacao_avancada', 'venda'];
+/** Categoria da etapa: a do CRM (PronixCRM); sem ela (RD), pelo nome da etapa. */
+function categoriaDaEtapa(etapa) {
+  if (!etapa) return '';
+  if (etapa.categoria) return etapa.categoria;
+  const n = normalizarNome(etapa.nome);
+  if (etapa.perdido || /desqualific|perdid|perda/.test(n)) return 'perda';
+  if (etapa.ganho || /vend|ganh|fechad/.test(n)) return 'venda';
+  if (/realizad|fup|follow|negocia/.test(n)) return 'reuniao_realizada';
+  if (/agend|marcad/.test(n)) return 'reuniao_agendada';
+  return '';
+}
+const dataCurta = (iso) => {
+  const d = new Date(iso);
+  if (!iso || isNaN(d)) return '';
+  return d.toLocaleDateString('pt-BR', { timeZone: TZ, day: '2-digit', month: '2-digit', year: '2-digit' });
+};
+
+/**
+ * O que o lead JÁ viveu com o time de closers, olhando TODOS os cards dele (os cadastros repetidos também): comprou,
+ * fez reunião (passou por reunião realizada, FUP, negociação ou venda), teve reunião marcada, passou pelo funil dos
+ * closers. É o que o SDR precisa saber ANTES de chamar. Do card atual só contam fatos passados (reunião feita, compra):
+ * a reunião marcada dele já aparece na própria ficha.
+ * @returns {null | { resumo: { tipo, texto, titulo }, eventos: Array<{ tipo, quando, closer, card, cardId, atual }> }}
+ */
+function historicoComercial(detalhes, listaFunis, escolhidoId) {
+  const funisOk = Array.isArray(listaFunis) ? listaFunis : [];
+  const localizar = (id, nome, funilNome) => {
+    const porId = id && funisOk.map((f) => ({ funil: f, etapa: f.etapas.find((e) => e.id === String(id)) })).find((x) => x.etapa);
+    if (porId) return porId;
+    if (!nome) return null;
+    const f = funisOk.find((x) => (!funilNome || mesmoNome(x.nome, funilNome)) && x.etapas.some((e) => mesmoNome(e.nome, nome)));
+    return f ? { funil: f, etapa: f.etapas.find((e) => mesmoNome(e.nome, nome)) } : { funil: { nome: funilNome || '' }, etapa: { nome } };
+  };
+  const eventos = [];
+  for (const d of detalhes || []) {
+    if (!d) continue;
+    const id = idDe(d);
+    const atual = id === String(escolhidoId || '');
+    const card = consertarAcentos(d.name || '');
+    const closer = consertarAcentos((d.user && d.user.name) || '');
+    const hist = (Array.isArray(d.deal_stage_histories) ? d.deal_stage_histories : [])
+      .filter((h) => h && h.deal_stage_id)
+      .sort((a, b) => String(a.start_date || '').localeCompare(String(b.start_date || '')))
+      .map((h) => ({ onde: localizar(typeof h.deal_stage_id === 'object' ? idDe(h.deal_stage_id) : h.deal_stage_id, h.deal_stage_name, h.deal_pipeline_name), quando: h.start_date || '' }));
+    // a etapa de agora também conta (card sem histórico, ou que entrou nela agora)
+    const agora = localizar(idDe(d.deal_stage), d.deal_stage && d.deal_stage.name, d.deal_pipeline && d.deal_pipeline.name);
+    if (agora) hist.push({ onde: agora, quando: d.updated_at || d.created_at || '', agora: true });
+    const passos = hist.filter((h) => h.onde && h.onde.etapa);
+    const primeiro = (f) => passos.find(f);
+    if (d.win === true) eventos.push({ tipo: 'comprou', quando: d.closed_at || d.updated_at || '', closer, card, cardId: id, atual });
+    const feita = primeiro((h) => CATEGORIAS_REUNIAO_FEITA.includes(categoriaDaEtapa(h.onde.etapa)));
+    if (feita && d.win !== true) eventos.push({ tipo: 'reuniao', quando: feita.quando, closer, card, cardId: id, atual });
+    if (atual) continue; // do card de agora, só o que já aconteceu
+    const marcada = !feita && primeiro((h) => categoriaDaEtapa(h.onde.etapa) === 'reuniao_agendada');
+    if (marcada && d.win !== true) eventos.push({ tipo: 'agendada', quando: marcada.quando, closer, card, cardId: id, atual });
+    const nosClosers = !feita && !marcada && d.win !== true && primeiro((h) => /closer/i.test((h.onde.funil && h.onde.funil.nome) || ''));
+    if (nosClosers) eventos.push({ tipo: 'closers', quando: nosClosers.quando, closer, card, cardId: id, atual });
+  }
+  if (!eventos.length) return null;
+  const peso = { comprou: 0, reuniao: 1, agendada: 2, closers: 3 };
+  eventos.sort((a, b) => peso[a.tipo] - peso[b.tipo] || String(b.quando).localeCompare(String(a.quando)));
+  const top = eventos[0];
+  const com = top.closer ? ` com ${top.closer.split(' ').slice(0, 2).join(' ')}` : '';
+  const quando = dataCurta(top.quando) ? ` em ${dataCurta(top.quando)}` : '';
+  const texto = {
+    comprou: `JÁ COMPROU${quando}${com}`,
+    reuniao: `JÁ FEZ REUNIÃO${quando}${com}`,
+    agendada: `JÁ TEVE REUNIÃO MARCADA${quando}${com}`,
+    closers: `JÁ PASSOU PELOS CLOSERS${quando}${com}`,
+  }[top.tipo];
+  const linha = (e) => `${{ comprou: 'Comprou', reuniao: 'Fez reunião', agendada: 'Teve reunião marcada', closers: 'Passou pelos closers' }[e.tipo]}${dataCurta(e.quando) ? ' em ' + dataCurta(e.quando) : ''}${e.closer ? ' com ' + e.closer : ''} (card "${e.card || 'sem nome'}"${e.atual ? ', este' : ''})`;
+  return {
+    resumo: { tipo: top.tipo, texto, titulo: eventos.slice(0, 5).map(linha).join(' · ') },
+    eventos: eventos.slice(0, 5).map((e) => ({ ...e, texto: linha(e) })),
+  };
+}
+
 /**
  * Desde quando o card está na tentativa de contato ATUAL (ISO). Só uma mensagem do lead depois disso é resposta a
  * esta tentativa — numa recuperação, a conversa traz o histórico antigo (o lead respondeu meses atrás) e isso não
@@ -836,6 +917,62 @@ async function moverParaRespondeu(busca = {}, { usuarioNome = '' } = {}) {
   await esquecerLead(busca);
   await db
     .push('crm_movimentos', { quando: new Date().toISOString(), card: card.id, de: onde.etapa.nome, para: alvo.nome, por: usuarioNome }, 500)
+    .catch(() => {});
+  return { movido: true, de: onde.etapa.nome, para: alvo.nome };
+}
+
+// ---------------------------------------------------------------- mudar a etapa à mão (painel lateral)
+/**
+ * Etapa para onde dá para ir à mão: as do SDR (contato, resposta, qualificado...). Perda (Desqualificar), reunião,
+ * FUP, negociação e venda têm botão próprio ou são do closer; as que pedem o closer também ficam de fora.
+ */
+const ETAPAS_DE_BOTAO_PROPRIO = ['perda', 'venda', 'reuniao_agendada', 'reuniao_realizada', 'fup', 'negociacao_avancada'];
+const etapaPermitidaAMao = (e) => Boolean(e) && !e.perdido && !e.ganho && !e.exigeCloser && !ETAPAS_DE_BOTAO_PROPRIO.includes(categoriaDaEtapa(e));
+
+/** O card do lead desta conversa, lido agora no CRM, em aberto, com o funil e a etapa dele. Erro claro se não. */
+async function cardDoLeadParaMover(busca = {}, dealId) {
+  const id = /^[A-Za-z0-9_-]{1,40}$/.test(String(dealId || '')) ? String(dealId) : '';
+  if (!id) throw new Error('Card inválido.');
+  const lead = await consultarLead({ telefone: busca.telefone, nome: busca.nome, contatoId: busca.contatoId });
+  if (!(((lead && lead.ficha && lead.ficha.negociacoes) || []).some((c) => c.id === id))) {
+    throw new Error('Este card não é do lead desta conversa. Abra a conversa de novo e tente outra vez.');
+  }
+  const deal = await module.exports.rd(`/deals/${encodeURIComponent(id)}`);
+  if (!deal) throw new Error('O CRM não achou o card.');
+  if (!estaAberta(deal)) throw new Error('O card está fechado (ganho ou perdido): para mexer nele, use o CRM.');
+  const atual = deal.deal_stage || {};
+  const onde = acharEtapa(await funis(), { etapaId: idDe(atual), etapaNome: atual.name, funilNome: deal.deal_pipeline && deal.deal_pipeline.name });
+  if (!onde) throw new Error('Não achei o funil deste card no CRM.');
+  return { id, deal, onde };
+}
+
+/** As etapas do funil do card, para escolher no painel: a atual, as permitidas e qual é a "Respondeu". */
+async function etapasParaMover(busca, dealId) {
+  const { id, deal, onde } = await cardDoLeadParaMover(busca, dealId);
+  const resp = etapaRespondeu(onde.funil);
+  return {
+    card: { id, nome: consertarAcentos(deal.name || '') },
+    funil: onde.funil.nome,
+    atual: onde.etapa.id,
+    respondeu: resp ? resp.id : '',
+    etapas: onde.funil.etapas.map((e) => ({ id: e.id, nome: e.nome, atual: e.id === onde.etapa.id, permitida: etapaPermitidaAMao(e) })),
+  };
+}
+
+/** Muda o card de etapa à mão (o SDR escolheu no painel): confere tudo de novo no CRM antes. */
+async function moverParaEtapa(busca, dealId, etapaId, { usuarioNome = '' } = {}) {
+  const { id, deal, onde } = await cardDoLeadParaMover(busca, dealId);
+  const alvo = onde.funil.etapas.find((e) => e.id === String(etapaId || ''));
+  if (!alvo) throw new Error('Essa etapa não é do funil deste card.');
+  if (alvo.id === onde.etapa.id) return { movido: false, motivo: 'ja-esta', etapa: alvo.nome };
+  if (!etapaPermitidaAMao(alvo)) throw new Error(`"${alvo.nome}" tem botão próprio (Desqualificar, Reunião realizada) ou é do closer: use ele ou o CRM.`);
+  const resp = await mudarEtapa(deal, alvo.id);
+  if (!resp) throw new Error('O CRM não achou o card para mudar de etapa.');
+  const nova = idDe(resp.deal_stage);
+  if (nova && nova !== alvo.id) throw new Error('O CRM respondeu, mas o card não mudou de etapa.');
+  await esquecerLead(busca);
+  await db
+    .push('crm_movimentos', { quando: new Date().toISOString(), card: id, de: onde.etapa.nome, para: alvo.nome, por: usuarioNome, manual: true }, 500)
     .catch(() => {});
   return { movido: true, de: onde.etapa.nome, para: alvo.nome };
 }
@@ -1002,6 +1139,9 @@ module.exports = {
   antesDeRespondeu,
   moverParaRespondeu,
   inicioDaTentativa,
+  historicoComercial,
+  etapasParaMover,
+  moverParaEtapa,
   ehEtapaQualificado,
   configurado,
   variantesTelefone,
