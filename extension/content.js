@@ -2632,6 +2632,7 @@
   // ---------------------------------------------------------------------------
   const NOVIDADES_ID = 'pronix-novidades';
   const NOVIDADES = [
+    ['Todos os closers no "Reunião realizada"', 'Corrigido: a lista de closers mostrava só parte deles (o CRM manda os usuários em páginas e só a primeira era lida). Agora vêm todos; quem está na aba Closers mas não existe no CRM aparece num aviso logo abaixo da lista.'],
     ['"Respondeu" para todos', 'O card passa para "Respondeu" sozinho para todo mundo que usa a ficha do CRM — não depende mais da "Automação RD" liberada pelo master. E a conversa do WhatsApp (com os áudios transcritos) vai para o card do lead no CRM a cada report.'],
     ['Áudios de volta no report', 'Corrigido: o WhatsApp novo baixa os áudios assim que você abre a conversa, e o report deixava esses áudios de fora ("sem blob de áudio"). Agora eles são lidos — e áudio de outra conversa continua sem entrar no report.'],
     ['"Respondeu" sem depender do cartão', 'No menu da extensão, a opção agora é "Mostrar o cartão flutuante": desmarcada, só o cartão some. A ficha no painel lateral, o "Respondeu" automático e as etiquetas continuam funcionando (antes, desmarcar desligava tudo junto).'],
