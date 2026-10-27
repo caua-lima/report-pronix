@@ -56,6 +56,52 @@ function periodo(mensagens) {
 
 const ID_OK = /^[A-Za-z0-9_-]{1,40}$/;
 
+/** Corta o texto em partes de até `tam` caracteres, sem quebrar linha (linha maior que a parte é cortada). */
+function partes(texto, tam) {
+  const saida = [];
+  let atual = '';
+  for (const linha of String(texto).split('\n')) {
+    const l = linha.length > tam ? linha.slice(0, tam) : linha;
+    if (atual && atual.length + 1 + l.length > tam) {
+      saida.push(atual);
+      atual = l;
+    } else atual = atual ? atual + '\n' + l : l;
+  }
+  if (atual) saida.push(atual);
+  return saida;
+}
+
+/**
+ * A transcrição como ANOTAÇÃO do card: é ela que aparece no Histórico do card (a rota de transcrições não aparece em
+ * lugar nenhum da tela). Uma vez por conversa (a mesma conversa de novo não anota de novo). Texto grande que o CRM
+ * recusar vai em partes ("parte 1 de 3").
+ */
+async function anotar({ dealId, transcript, externalId, sdr }) {
+  const chave = 'crm:transc-nota:' + externalId;
+  if (await db.cacheGet(chave).catch(() => null)) return { anotada: true, repetida: true };
+  const quando = new Date().toLocaleString('pt-BR', { timeZone: TZ, day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }).replace(',', '');
+  const titulo = `Transcrição da conversa no WhatsApp${sdr ? ' — ' + sdr : ''} (report de ${quando})`;
+  const postar = (texto) =>
+    crm.rd(`/deals/${encodeURIComponent(dealId)}/notes`, {}, { metodo: 'POST', corpo: { text: texto } }).then((r) => {
+      if (r === null) throw new Error('o CRM não achou o card');
+    });
+  let erro = '';
+  for (const tam of [Infinity, 20000, 5000]) {
+    const pedacos = tam === Infinity ? [transcript] : partes(transcript, tam);
+    if (tam !== Infinity && pedacos.length < 2) continue; // já tentou inteira
+    try {
+      for (let i = 0; i < pedacos.length; i++) {
+        await postar(`${titulo}${pedacos.length > 1 ? ` — parte ${i + 1} de ${pedacos.length}` : ''}\n\n${pedacos[i]}`);
+      }
+      await db.cacheSet(chave, '1', 60 * 60 * 24 * 120).catch(() => {});
+      return { anotada: true, partes: pedacos.length };
+    } catch (e) {
+      erro = String((e && e.message) || e).slice(0, 200);
+    }
+  }
+  return { anotada: false, erroAnotacao: erro };
+}
+
 /**
  * Manda a transcrição para o card. Nunca lança: devolve { enviada, motivo?, erro? } (e guarda num registro curto
  * para conferência: crm_transcricoes, os últimos 500, sem o texto da conversa).
@@ -71,12 +117,24 @@ async function enviar({ dealId, mensagens, sdr, lead, telefone, reportId } = {})
     const externalId = 'wa-' + crypto.createHash('sha256').update(`${dealId}\n${transcript}`).digest('hex').slice(0, 32);
     const tel = String(telefone || '').replace(/\D/g, '');
     const corpo = { transcript, external_id: externalId, ...periodo(mensagens), ...(tel.length >= 10 ? { phone: tel } : {}) };
+    let enviada = false;
+    let erro = '';
     try {
-      await crm.rd(`/deals/${encodeURIComponent(dealId)}/whatsapp_transcripts`, {}, { metodo: 'POST', corpo });
-      return { enviada: true, externalId, caracteres: transcript.length };
+      const resp = await crm.rd(`/deals/${encodeURIComponent(dealId)}/whatsapp_transcripts`, {}, { metodo: 'POST', corpo });
+      if (resp === null) throw new Error('o CRM não achou o card (ou a rota de transcrições)');
+      enviada = true;
     } catch (e) {
-      return { enviada: false, motivo: 'erro', erro: String((e && e.message) || e).slice(0, 200) };
+      erro = String((e && e.message) || e).slice(0, 200);
     }
+    // A anotação vai de qualquer jeito: é o que aparece no Histórico do card.
+    const nota = await anotar({ dealId, transcript, externalId, sdr });
+    return {
+      enviada,
+      ...nota,
+      ...(enviada ? {} : { motivo: 'erro', erro }),
+      externalId,
+      caracteres: transcript.length,
+    };
   })();
   await db
     .push('crm_transcricoes', { quando: new Date().toISOString(), reportId: reportId || '', dealId: String(dealId || ''), ...r }, 500)
@@ -84,4 +142,4 @@ async function enviar({ dealId, mensagens, sdr, lead, telefone, reportId } = {})
   return r;
 }
 
-module.exports = { enviar, textoDaConversa, periodo, MAX_CARACTERES };
+module.exports = { enviar, textoDaConversa, periodo, partes, MAX_CARACTERES };

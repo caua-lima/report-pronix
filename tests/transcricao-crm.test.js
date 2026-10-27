@@ -34,7 +34,9 @@ const transcricao = require('../src/transcricaoCrm');
 
 // ---------------------------------------------------------------- IA e PronixCRM simulados
 const enviadas = []; // { caminho, auth, corpo }
+const notas = []; // anotações no card (o que aparece no Histórico)
 let crmRecusa = false;
+let notaMaxima = Infinity; // o CRM recusa anotação maior que isto
 const fetchReal = global.fetch;
 const resposta = (corpo, status = 200) => ({ ok: status < 400, status, json: async () => corpo, text: async () => JSON.stringify(corpo) });
 global.fetch = async (url, opts = {}) => {
@@ -51,6 +53,12 @@ global.fetch = async (url, opts = {}) => {
   if (m && (opts.method || 'GET') === 'POST' && /\/whatsapp_transcripts$/.test(m[1])) {
     enviadas.push({ caminho: m[1], auth: opts.headers.Authorization, corpo: JSON.parse(opts.body) });
     return crmRecusa ? resposta({ codigo: 'SEM_PERMISSAO', mensagem: 'O token não pode gravar transcrições.' }, 403) : resposta({ id: 't' + enviadas.length });
+  }
+  if (m && (opts.method || 'GET') === 'POST' && /\/notes$/.test(m[1])) {
+    const corpo = JSON.parse(opts.body);
+    if (corpo.text.length > notaMaxima) return resposta({ codigo: 'TEXTO_GRANDE', mensagem: 'A anotação passou do tamanho.' }, 422);
+    notas.push({ caminho: m[1], texto: corpo.text });
+    return resposta({ id: 'n' + notas.length });
   }
   if (m) return resposta({}, 404); // nada mais do CRM é preciso: o report já traz o card
   throw new Error('chamada externa inesperada nos testes: ' + u);
@@ -116,6 +124,12 @@ test('report gerado: a conversa vai para o card do lead, com o token, o período
   assert.match(e.corpo.external_id, /^wa-[0-9a-f]{32}$/);
   assert.deepEqual([e.corpo.started_at, e.corpo.ended_at, e.corpo.phone], ['2026-10-21T13:00:00.000Z', '2026-10-21T14:10:00.000Z', '5511912345678']);
   assert.equal(r.json.transcricaoCrm.enviada, true);
+  // e como anotação no card: é o que aparece no Histórico
+  assert.equal(notas.length, 1);
+  assert.equal(notas[0].caminho, '/deals/d77/notes');
+  assert.match(notas[0].texto, /^Transcrição da conversa no WhatsApp — Ana SDR \(report de \d{2}\/\d{2}\/\d{4} \d{2}:\d{2}\)\n\n/);
+  assert.ok(notas[0].texto.endsWith(e.corpo.transcript));
+  assert.equal(r.json.transcricaoCrm.anotada, true);
   const log = await db.range('crm_transcricoes');
   assert.equal(log[log.length - 1].dealId, 'd77');
   assert.ok(!JSON.stringify(log).includes('Mercado Livre'), 'o registro não guarda o texto da conversa');
@@ -126,6 +140,8 @@ test('report gerado: a conversa vai para o card do lead, com o token, o período
   assert.equal(enviadas.length, 2, 'report repetido também manda: é assim que um lead de antes chega ao CRM');
   assert.equal(enviadas[1].corpo.external_id, e.corpo.external_id);
   assert.equal(dup.json.transcricaoCrm.enviada, true);
+  assert.equal(notas.length, 1, 'a mesma conversa não vira outra anotação');
+  assert.equal(dup.json.transcricaoCrm.repetida, true);
 });
 
 test('sem card do lead, Instagram, CRM recusando ou desligada: o report sai igual e nada quebra', async () => {
@@ -148,6 +164,7 @@ test('sem card do lead, Instagram, CRM recusando ou desligada: o report sai igua
   assert.ok(r.json.arquivoBase64);
   assert.equal(r.json.transcricaoCrm.enviada, false);
   assert.match(r.json.transcricaoCrm.erro, /não pode gravar transcrições/);
+  assert.equal(r.json.transcricaoCrm.anotada, true, 'a anotação vai mesmo com a rota de transcrições recusando');
   // CRM_TRANSCRICAO=0 desliga
   process.env.CRM_TRANSCRICAO = '0';
   r = await gerar({ mensagens: conversa(4), nome: 'Fulano', captureQuality: { plataforma: 'whatsapp' }, vinculo: { dealId: 'd77' } });
@@ -156,4 +173,18 @@ test('sem card do lead, Instagram, CRM recusando ou desligada: o report sai igua
   assert.equal(enviadas.length, 1, 'só a tentativa recusada chegou ao CRM');
   // id de card estranho nunca vira caminho no CRM
   assert.deepEqual(await transcricao.enviar({ dealId: '../x', mensagens: CONVERSA }), { enviada: false, motivo: 'sem-card' });
+});
+
+test('conversa grande que o CRM não aceita numa anotação só: vai em partes, na ordem', async () => {
+  notas.length = 0;
+  notaMaxima = 30000;
+  const longa = Array.from({ length: 700 }, (_, i) => ({ from: i % 2 ? 'eles' : 'eu', type: 'texto', content: 'linha ' + i + ' ' + 'y'.repeat(80), timestamp: '2026-10-21T13:00:00.000Z' }));
+  const r = await transcricao.enviar({ dealId: 'd88', mensagens: longa, sdr: 'Ana SDR', lead: 'Fulano' });
+  notaMaxima = Infinity;
+  assert.equal(r.anotada, true);
+  assert.ok(r.partes >= 3, 'em partes de até 20 mil caracteres');
+  assert.equal(notas.length, r.partes);
+  notas.forEach((n, i) => assert.ok(n.texto.includes('— parte ' + (i + 1) + ' de ' + r.partes), 'parte ' + (i + 1)));
+  const juntas = notas.map((n) => n.texto.split('\n\n').slice(1).join('\n\n')).join('\n');
+  assert.equal(juntas, transcricao.textoDaConversa(longa, { sdr: 'Ana SDR', lead: 'Fulano' }), 'nada se perde entre as partes');
 });
