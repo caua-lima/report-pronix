@@ -13,8 +13,8 @@
 //  - Data da reunião: um campo de data do card com "reunião"/"call" no nome; sem ele, a criação do card.
 //    O painel mostra de onde veio cada data, para conferir.
 //  - Venda: card ganho, com o valor do card (faturamento) e o dia em que foi ganho (mês da venda).
-//  - Reports do usuário com esse closer e um resultado de reunião (venda, não fechou, follow-up) que não
-//    apareçam no RD também entram — o RD é a fonte, o report cobre o card sem o campo SDR.
+//  - SÓ O CRM conta (desde 29/10/2026): report com resultado de reunião que o CRM não traz não entra — os números
+//    têm de bater com o CRM. Card sem você no campo SDR se acerta no CRM.
 // Conversão do mês = vendas do mês ÷ reuniões realizadas do mês (como no dashboard-pessoal).
 //
 // Escopo: "minhas" (o campo SDR do card é você) ou "time" (é você ou um dos SDRs do time — MATCH_SDRS_TIME,
@@ -83,7 +83,7 @@ const somaDias = (dia, n) => new Date(Date.parse(dia + 'T12:00:00Z') + n * 86400
 const ETAPAS_REALIZADA = /^(reuniao realizada|fup agendado|em contato|fluxo de fup|negociacao avanc|nao compraram|vendido)/;
 const ETAPAS_ANTES = /(agendad|no ?show|reagend|aguardando reuniao|confirmar)/;
 const NO_SHOW = /no ?show|nao (compareceu|apareceu|veio|entrou)|faltou|ausente na reuniao/;
-const RESULTADOS_REUNIAO = new Set(['venda_call', 'venda_fup', 'pix_compromisso', 'sem_venda', 'em_followup']);
+// (os reports não entram mais na conta do Match: só o CRM — ver levantar)
 
 /** "12/10/2026", "2026-10-12" ou "2026-10-12T15:00:00-03:00" -> "2026-10-12" (no fuso do relatório). */
 function diaDoValor(v) {
@@ -295,32 +295,14 @@ async function levantar({ usuario, closer, desde, atualizar = false } = {}) {
     });
   }
 
-  // Reports do usuário com esse closer e resultado de reunião que o RD não trouxe (card sem o campo SDR, p.ex.).
-  const ids = new Set(reunioes.map((r) => r.id));
-  const leads = new Set(reunioes.map((r) => norm(r.lead)).filter(Boolean));
+  // SÓ O CRM: reports com resultado de reunião que o CRM não traz NÃO entram mais na conta (pedido do Cauã em
+  // 29/10/2026: os números têm de bater com o CRM — a coluna "Vendido" do PH mostrava 17, e o Match 18, por causa de uma
+  // venda que só estava num report). Os reports seguem servindo só para o perfil e a consciência do lead (abaixo).
   const todosReports = await stats.listar({}).catch(() => []);
   const meus = todosReports.filter((r) => r.usuarioId === usuario.id);
   // Reports do time: de quem tem o nome de um SDR da lista (o seu já está em "meus").
   const sdrDoReport = (r) => (r.usuarioId === usuario.id ? usuario.nome : time.find((n) => nomeBate(r.usuarioNome || '', n)) || '');
   const doTime = todosReports.filter((r) => r.usuarioId !== usuario.id && sdrDoReport(r));
-  for (const r of meus.concat(doTime)) {
-    if (!RESULTADOS_REUNIAO.has(r.resultado) || !palavrasBatem(r.closerNome || '', nomeCloser)) continue;
-    if ((r.rdDealId && ids.has(String(r.rdDealId))) || ids.has(String(r.id).replace(/^rd/, '')) || leads.has(norm(r.lead))) continue;
-    const venda = stats.ehVenda(r.resultado);
-    const dia = r.dataReuniao || r.dia || '';
-    const diaVenda = venda ? r.dataFechamento || dia : '';
-    const contaReuniao = dia >= inicio && dia <= hoje;
-    const contaVenda = venda && diaVenda >= inicio && diaVenda <= hoje;
-    if (!contaReuniao && !contaVenda) continue;
-    diagnostico.doReport++;
-    reunioes.push({
-      id: 'r_' + r.id, fonte: 'report', lead: r.lead || r.contato || '', dataReuniao: dia, origemData: r.dataReuniao ? 'report' : 'dia-do-report', contaReuniao,
-      sdr: sdrDoReport(r), minha: r.usuarioId === usuario.id,
-      estado: venda ? 'venda' : r.resultado === 'em_followup' ? 'fup' : 'nao_comprou', etapa: '', motivo: '',
-      venda, diaVenda: contaVenda ? diaVenda : '', ticket: contaVenda ? Number(r.ticket) || 0 : 0, produto: r.produto || '',
-      diaVendaReal: diaVenda, ticketTotal: venda ? Number(r.ticket) || 0 : 0, lead_: {},
-    });
-  }
   reunioes.sort((a, b) => String(b.dataReuniao || b.diaVenda).localeCompare(String(a.dataReuniao || a.diaVenda)));
 
   // Perfil e nível de consciência do report desse lead (a correção do master vale mais que a leitura da IA).

@@ -83,17 +83,18 @@ test('reuniões realizadas e vendas do PH com o Cauã de SDR, mês a mês desde 
   assert.deepEqual([meses['2026-07'].reunioes, meses['2026-07'].vendas, meses['2026-07'].faturamento], [2, 1, 18000]);
   assert.equal(meses['2026-07'].conversao, 0.5);
   assert.deepEqual([meses['2026-08'].reunioes, meses['2026-08'].vendas], [1, 0], 'a data da reunião veio do campo do card (05/08), não da criação (30/07)');
-  assert.deepEqual([meses['2026-09'].reunioes, meses['2026-09'].vendas, meses['2026-09'].faturamento], [1, 1, 9000], 'a venda que só está no report entra');
+  assert.deepEqual([meses['2026-09'].reunioes, meses['2026-09'].vendas, meses['2026-09'].faturamento], [0, 0, 0], 'só o CRM: a venda que só está no report NÃO entra (os números batem com o CRM)');
   assert.deepEqual([meses['2026-10'].reunioes, meses['2026-10'].vendas, meses['2026-10'].faturamento], [1, 1, 20000], 'venda de outubro de card antigo conta no mês da venda');
 
   const d = r.diagnostico;
   // c7 é da Samuel Filipe, que é do time: entra nas reuniões (marcada como não sua) e não conta como "outro SDR".
-  assert.deepEqual([d.noShow, d.aindaNaoAconteceu, d.deOutroSdr, d.doTime, d.semSdr, d.deOutroCloser, d.doReport], [1, 1, 0, 1, 1, 1, 1]);
+  assert.deepEqual([d.noShow, d.aindaNaoAconteceu, d.deOutroSdr, d.doTime, d.semSdr, d.deOutroCloser, d.doReport], [1, 1, 0, 1, 1, 1, 0]);
   const c7 = r.reunioes.find((x) => x.id === "c7");
   assert.deepEqual([c7.sdr, c7.minha], ["Samuel Filipe", false]);
   assert.deepEqual(d.etapasSemReuniao, { 'Reunião agendada': 1 });
   assert.equal(d.dataPeloCampo, 1);
   assert.equal(r.reunioes.filter((x) => x.lead === 'Lead c1').length, 1, 'report do mesmo lead de um card não conta duas vezes');
+  assert.ok(!r.reunioes.some((x) => x.fonte === 'report'), 'nenhuma reunião vem de report');
   const c5 = r.reunioes.find((x) => x.id === 'c5');
   assert.deepEqual([c5.dataReuniao, c5.origemData, c5.estado], ['2026-08-05', 'campo', 'fup']);
   assert.equal(r.reunioes.find((x) => x.id === 'c1').produto, 'performance');
