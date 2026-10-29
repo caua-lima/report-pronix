@@ -31,6 +31,7 @@ const { gerarResumoRapido } = require('./src/resumoRapido');
 const perguntasDaConversa = require('./src/perguntasDaConversa');
 const aquecimento = require('./src/aquecimento');
 const matchCloser = require('./src/matchCloser');
+const painelClosers = require('./src/painelClosers');
 const inteligencia = require('./src/inteligencia');
 const afinidadeIa = require('./src/afinidade');
 const casosDoCloser = require('./src/casos');
@@ -546,6 +547,17 @@ app.get('/api/master/match', auth, soMasterComChave, async (req, res) => {
     res.json({ ok: true, ...(await matchCloser.painel({ usuario: req.usuario, closer, desde, escopo, atualizar: atualizar === '1' })) });
   } catch (err) {
     res.status(502).json({ erro: err.message });
+  }
+});
+// Aba "Meus closers": por closer, as reuniões realizadas, as vendas, o ticket médio e a conversão dos leads do SDR no
+// mês (src/painelClosers.js). Só o master; SDR = você, alguém do time ou o time todo.
+app.get('/api/master/closers-do-sdr', auth, soMasterComChave, async (req, res) => {
+  try {
+    const { sdr, mes, atualizar } = req.query || {};
+    res.set('Cache-Control', 'no-store');
+    res.json({ ok: true, ...(await painelClosers.painel({ usuario: req.usuario, sdr, mes, atualizar: atualizar === '1' })) });
+  } catch (err) {
+    res.status(/ainda não começou/.test(err.message) ? 400 : 502).json({ erro: err.message });
   }
 });
 app.put('/api/master/match/meta', auth, soMasterComChave, async (req, res) => {
