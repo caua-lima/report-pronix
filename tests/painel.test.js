@@ -2409,3 +2409,48 @@ test('Match com PH: SDR não vê a aba nem chama a rota', async () => {
   assert.equal(api.contar('GET /api/master/match'), 0);
   p.fechar();
 });
+
+// ---------------------------------------------------------------- aba Meus closers
+test('Meus closers: por closer no mês — reuniões, vendas, conversão, ticket médio; o melhor em destaque; clique mostra os leads; filtro de SDR e mês', async () => {
+  const dados = (sdr) => ({
+    ok: true, mes: '2026-09', inicio: '2026-09-01', fim: '2026-09-30', sdr: sdr || 'Cauã Lima', sdrsDisponiveis: ['Cauã Lima', 'Samuel Filipe'],
+    closers: [
+      { closer: 'Daniel <b>Camargo</b>', reunioes: 3, vendas: 2, faturamento: 12000, ticketMedio: 6000, conversao: 66.7, noShow: 1, leads: [{ id: 'd2', lead: 'Lead Dois', dia: '2026-09-20', estado: 'venda', contaVenda: true, valor: 8000 }, { id: 'n1', lead: 'Lead No Show', dia: '2026-09-24', estado: 'no_show', noShow: true }] },
+      { closer: 'Paulo Henrique Pagoti', reunioes: 2, vendas: 1, faturamento: 5000, ticketMedio: 5000, conversao: 50, noShow: 0, leads: [] },
+    ],
+    total: { reunioes: 5, vendas: 3, faturamento: 17000, ticketMedio: 5667, conversao: 60, noShow: 1 },
+    diagnostico: { cardsLidos: 10, aindaNaoAconteceu: 1, pendentesDoCrm: 0 }, atualizadoEm: '2026-09-30T12:00:00.000Z',
+  });
+  const api = apiMaster()
+    .quando('GET /api/master/google', () => ({ corpo: { configurado: false, conectado: false, agendas: [] } }))
+    .quando('GET /api/master/closers-do-sdr', ({ query }) => ({ corpo: dados(query.get('sdr')) }));
+  const p = abrirPainel(api, { hash: '#meusclosers' });
+  await esperar(() => visivel(p.$('mcConteudo')), { motivo: 'aba carregada' });
+  assert.ok(visivel(p.document.querySelector('.tab[data-aba="meusclosers"]')), 'item no menu (master)');
+  assert.equal(p.$('tituloPagina').textContent, 'Meus closers');
+  const q = api.pedidos.find((x) => x.chave === 'GET /api/master/closers-do-sdr').query;
+  assert.equal(q.get('sdr'), '', 'começa em você');
+  assert.match(q.get('mes'), /^\d{4}-\d{2}$/, 'o mês atual');
+  const kpis = p.$('mcTotal').textContent;
+  for (const x of ['Reuniões realizadas5', 'Vendas3', 'Conversão60%', 'Faturamento']) assert.ok(kpis.includes(x), 'faltou: ' + x);
+  assert.match(p.$('mcDestaque').textContent, /Você converte mais com Daniel <b>Camargo<\/b>: 66,7% \(2 venda\(s\) em 3 reunião\(ões\)\)/);
+  assert.equal(p.$('mcDestaque').querySelectorAll('b').length, 1, 'nome do closer não vira HTML (o único <b> é o nosso)');
+  const linhas = [...p.$('mcTabela').querySelectorAll('tr[data-mc-closer]')];
+  assert.deepEqual(linhas.map((tr) => tr.textContent.replace(/\s+/g, ' ').trim()), [
+    '1Daniel <b>Camargo</b>3266,7%R$ 6.000R$ 12.0001',
+    '2Paulo Henrique Pagoti2150%R$ 5.000R$ 5.0000',
+  ]);
+  assert.equal(linhas[1].style.opacity, '0.6', 'poucas reuniões: apagado');
+  linhas[0].click();
+  assert.match(p.$('mcTabela').textContent, /20\/09\/2026 · Lead Dois · venda R\$\s8\.000/);
+  assert.match(p.$('mcTabela').textContent, /24\/09\/2026 · Lead No Show · no-show/);
+  // trocar o SDR busca de novo
+  p.$('mcSdr').value = 'Samuel Filipe';
+  p.$('mcSdr').dispatchEvent(new p.w.Event('change'));
+  await esperar(() => api.pedidos.filter((x) => x.chave === 'GET /api/master/closers-do-sdr').length === 2, { motivo: 'outro SDR' });
+  assert.equal(api.pedidos.filter((x) => x.chave === 'GET /api/master/closers-do-sdr')[1].query.get('sdr'), 'Samuel Filipe');
+  await esperar(() => /Samuel Filipe converte mais com/.test(p.$('mcDestaque').textContent), { motivo: 'destaque do outro SDR' });
+  await dormir(40);
+  assert.deepEqual(p.erros, []);
+  p.fechar();
+});

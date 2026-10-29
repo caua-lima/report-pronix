@@ -489,6 +489,7 @@
         <button class="tab so-master hidden" data-aba="closers"><i data-ic="users"></i>Closers<span id="nClosersTab" class="conta hidden"></span></button>
         <button class="tab so-master hidden" data-aba="funil"><i data-ic="filter"></i>Limpeza do RD</button>
         <button class="tab so-master hidden" data-aba="match"><i data-ic="chart"></i>Match com PH</button>
+        <button class="tab so-master hidden" data-aba="meusclosers"><i data-ic="users"></i>Meus closers</button>
       </div>
       <div class="grupo">
         <div class="grupo-rotulo">Sistema</div>
@@ -881,6 +882,33 @@
         <div id="dpFeitos" class="hidden" style="margin-top:14px">
           <div class="sec-t" style="margin-top:0">Cards fechados agora como Duplicado — confira no RD</div>
           <div id="dpFeitosLista" style="max-height:300px;overflow:auto;border:1px solid var(--border);border-radius:var(--r-sm);padding:0 10px"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= ABA: MEUS CLOSERS (só o master) ================= -->
+    <section id="aba-meusclosers" class="hidden">
+      <div class="card">
+        <div class="head"><div class="t"><i data-ic="users"></i>Meus closers</div><div class="sub">— com que closer seus leads mais compram: reuniões realizadas, vendas, ticket médio e conversão do mês, lidos do CRM</div></div>
+        <div class="row">
+          <div style="min-width:200px;flex:1"><label for="mcSdr">SDR</label><select id="mcSdr"><option value="">Eu</option></select></div>
+          <div style="min-width:160px"><label for="mcMes">Mês</label><input id="mcMes" type="month" /></div>
+          <button id="mcAtualizar" class="btn sec"><i data-ic="refresh"></i>Atualizar do CRM</button>
+        </div>
+        <div id="statusMc" class="status"></div>
+      </div>
+      <div id="mcConteudo" class="hidden">
+        <div class="kpis kpis-destaque" id="mcTotal"></div>
+        <div class="card" id="mcDestaque"></div>
+        <div class="card">
+          <div class="head"><div class="t"><i data-ic="chart"></i>Por closer</div><div class="sub">— conversão = vendas do mês ÷ reuniões realizadas do mês. Clique num closer para ver os leads.</div></div>
+          <div style="overflow:auto">
+            <table>
+              <thead><tr><th>Closer</th><th class="r">Reuniões</th><th class="r">Vendas</th><th class="r">Conversão</th><th class="r">Ticket médio</th><th class="r">Faturamento</th><th class="r">No-show</th></tr></thead>
+              <tbody id="mcTabela"></tbody>
+            </table>
+          </div>
+          <div class="hint" id="mcNota" style="margin-top:10px"></div>
         </div>
       </div>
     </section>
@@ -1426,8 +1454,8 @@
     }
 
     // ---------- Menu ----------
-    const ABAS = ['report', 'dia', 'acessos', 'numeros', 'resultados', 'closers', 'funil', 'match', 'arquivos', 'base', 'extensao'];
-    const SO_ADMIN = ['acessos', 'numeros', 'resultados', 'closers', 'funil', 'match', 'arquivos', 'base', 'extensao'];
+    const ABAS = ['report', 'dia', 'acessos', 'numeros', 'resultados', 'closers', 'funil', 'match', 'meusclosers', 'arquivos', 'base', 'extensao'];
+    const SO_ADMIN = ['acessos', 'numeros', 'resultados', 'closers', 'funil', 'match', 'meusclosers', 'arquivos', 'base', 'extensao'];
     let souAdmin = false;
     let souGestor = false;
     let souMaster = false;
@@ -1440,7 +1468,7 @@
       ['base', 'Base'], ['extensao', 'Extensão'], ['equipe', 'Reports do dia da equipe'],
     ];
     const podeAba = (a) =>
-      a === 'report' || a === 'dia' || (a === 'acessos' || a === 'funil' || a === 'match' ? podeMexerEmUsuarios() : Boolean(senhaAdmin) || minhasAbas.has(a));
+      a === 'report' || a === 'dia' || (a === 'acessos' || a === 'funil' || a === 'match' || a === 'meusclosers' ? podeMexerEmUsuarios() : Boolean(senhaAdmin) || minhasAbas.has(a));
     const temAbaDeGestao = () => SO_ADMIN.some(podeAba);
     let papelConhecido = false; // a chave já foi conferida (antes disso não dá para saber se é master)
     let validacaoPendente = false; // a chave ainda está sendo conferida (a lista do dia espera: o papel muda o que ela mostra)
@@ -1456,6 +1484,7 @@
       numeros: ['Reports gerados', 'Volume, custo e quem gerou cada report.'],
       closers: ['Closers', 'Quem conduz as reuniões.'],
       match: ['Match com PH', 'Reuniões realizadas, conversão e faturamento com o closer, mês a mês, e quanto falta para a meta.'],
+      meusclosers: ['Meus closers', 'Com que closer seus leads mais compram: reuniões, vendas, ticket médio e conversão do mês, por closer.'],
       funil: ['Limpeza do RD', 'Card parado no começo do funil vira perda em Desqualificados, com o motivo.'],
       acessos: ['Acessos', 'Quem usa a ferramenta e o que cada pessoa vê e faz.'],
       arquivos: ['Arquivos', 'Os PDFs já gerados, para baixar por pessoa ou por período.'],
@@ -1783,6 +1812,97 @@
     // aba continua sozinha (o que já foi lido fica guardado) até ler tudo — sem precisar clicar de novo.
     let rodadaMt = 0;
     let timerMt = null;
+    // ---------- Aba: Meus closers ----------
+    // Por closer: reuniões realizadas, vendas, ticket médio e conversão dos leads do SDR no mês (src/painelClosers.js).
+    let mcDados = null;
+    let rodadaMc = 0;
+    let timerMc = null;
+    let mcAberto = '';
+    const MIN_AMOSTRA_MC = 3; // abaixo disso a conversão de um closer é pouco confiável
+    const brlMc = (v) => (Number(v) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
+    const pctMc = (v) => (Number(v) || 0).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '%';
+    const mesAtualMc = () => new Date().toISOString().slice(0, 7);
+    function desenharMeusClosers(d) {
+      mcDados = d;
+      $('mcConteudo').classList.remove('hidden');
+      // o SDR: você, cada um do time, ou o time todo
+      const sel = $('mcSdr');
+      const atual = d.sdr || '';
+      sel.innerHTML = (d.sdrsDisponiveis || []).map((n, i) => `<option value="${esc(i === 0 ? '' : n)}">${esc(i === 0 ? 'Eu (' + n + ')' : n)}</option>`).join('') + '<option value="time">Time todo</option>';
+      sel.value = atual === 'time' ? 'time' : (d.sdrsDisponiveis || [])[0] && atual === d.sdrsDisponiveis[0] ? '' : atual;
+      const t = d.total || {};
+      $('mcTotal').innerHTML = [
+        ['Reuniões realizadas', t.reunioes || 0],
+        ['Vendas', t.vendas || 0],
+        ['Conversão', pctMc(t.conversao)],
+        ['Ticket médio', brlMc(t.ticketMedio)],
+        ['Faturamento', brlMc(t.faturamento)],
+      ].map(([l, n]) => `<div class="kpi"><div class="l">${esc(l)}</div><div class="n">${esc(String(n))}</div></div>`).join('');
+      // onde você se dá melhor: maior conversão entre os closers com amostra; sem amostra, o melhor que houver
+      const comAmostra = (d.closers || []).filter((c) => c.reunioes >= MIN_AMOSTRA_MC);
+      const base = comAmostra.length ? comAmostra : (d.closers || []).filter((c) => c.reunioes > 0);
+      const melhor = base.slice().sort((a, b) => b.conversao - a.conversao || b.vendas - a.vendas)[0];
+      const maisVende = (d.closers || []).slice().sort((a, b) => b.faturamento - a.faturamento)[0];
+      const quem = d.sdr === 'time' ? 'O time' : (d.sdr && d.sdrsDisponiveis && d.sdr !== d.sdrsDisponiveis[0] ? d.sdr : 'Você');
+      $('mcDestaque').innerHTML = melhor
+        ? `<div class="head"><div class="t"><i data-ic="target"></i>Onde ${esc(quem === 'Você' ? 'você se dá' : quem + ' se dá')} melhor</div></div>` +
+          `<div style="font-size:1.05rem;line-height:1.6">${esc(quem)} converte mais com <b>${esc(melhor.closer)}</b>: ${esc(pctMc(melhor.conversao))} (${melhor.vendas} venda(s) em ${melhor.reunioes} reunião(ões))${comAmostra.length ? '' : ' <span class="hint">— poucas reuniões ainda, olhe com cuidado</span>'}.` +
+          (maisVende && maisVende.faturamento && maisVende.closer !== melhor.closer ? `<br>Quem mais faturou com os seus leads: <b>${esc(maisVende.closer)}</b> (${esc(brlMc(maisVende.faturamento))}).` : '') + '</div>'
+        : '<div class="hint">Nenhuma reunião realizada neste mês ainda.</div>';
+      const maxConv = Math.max(1, ...(d.closers || []).map((c) => c.conversao));
+      const linhas = (d.closers || []).map((c, i) => {
+        const pouca = c.reunioes < MIN_AMOSTRA_MC;
+        const aberto = mcAberto === c.closer;
+        const leads = aberto ? `<tr class="mc-leads"><td colspan="7"><div style="display:grid;gap:4px;padding:6px 0">${c.leads.map((r) => `<div><span class="hint">${esc(r.dia ? r.dia.split('-').reverse().join('/') : '—')}</span> · ${esc(r.lead || 'Lead')} · ${esc(r.contaVenda ? 'venda ' + brlMc(r.valor) : r.noShow ? 'no-show' : r.estado === 'nao_comprou' ? 'não comprou' : r.estado === 'fup' ? 'em follow-up' : r.estado)}${d.sdr === 'time' ? ' · ' + esc(r.sdr || '') : ''}</div>`).join('')}</div></td></tr>` : '';
+        return `<tr data-mc-closer="${esc(c.closer)}" style="cursor:pointer${pouca ? ';opacity:.6' : ''}" title="${pouca ? 'Poucas reuniões: a conversão ainda é pouco confiável. ' : ''}Clique para ver os leads">` +
+          `<td><span class="rank">${i + 1}</span><b>${esc(c.closer)}</b></td><td class="r">${c.reunioes}</td><td class="r">${c.vendas}</td>` +
+          `<td class="r">${esc(pctMc(c.conversao))}<div class="barra" style="margin-left:auto"><i style="width:${Math.round((c.conversao / maxConv) * 100)}%"></i></div></td>` +
+          `<td class="r">${c.vendas ? esc(brlMc(c.ticketMedio)) : '—'}</td><td class="r">${esc(brlMc(c.faturamento))}</td><td class="r">${c.noShow || 0}</td></tr>` + leads;
+      });
+      $('mcTabela').innerHTML = linhas.join('') || '<tr><td colspan="7" class="hint">Nenhuma reunião, venda ou no-show dos seus leads neste mês.</td></tr>';
+      const dg = d.diagnostico || {};
+      $('mcNota').textContent = `Período: ${(d.inicio || '').split('-').reverse().join('/')} a ${(d.fim || '').split('-').reverse().join('/')}. ${dg.cardsLidos || 0} card(s) lidos do CRM${dg.aindaNaoAconteceu ? `; ${dg.aindaNaoAconteceu} com reunião ainda por acontecer (não contam)` : ''}. Linhas apagadas têm menos de ${MIN_AMOSTRA_MC} reuniões.`;
+      aplicarIcones($('mcDestaque'));
+    }
+    async function carregarMeusClosers(atualizar, continuacao = false) {
+      if (!$('mcMes').value) $('mcMes').value = mesAtualMc();
+      if (mcDados && !atualizar) return desenharMeusClosers(mcDados);
+      if (!continuacao) rodadaMc = 0;
+      clearTimeout(timerMc);
+      setStatus('statusMc', atualizar ? 'Lendo os cards no CRM… (pode levar até um minuto)' : 'Carregando…', { loading: true });
+      $('mcAtualizar').disabled = true;
+      try {
+        const q = new URLSearchParams({ sdr: $('mcSdr').value, mes: $('mcMes').value });
+        if (atualizar) q.set('atualizar', '1');
+        const d = await api('GET', '/api/master/closers-do-sdr?' + q.toString());
+        desenharMeusClosers(d);
+        const faltam = (d.diagnostico && d.diagnostico.pendentesDoCrm) || 0;
+        if (faltam && rodadaMc < 20) {
+          rodadaMc++;
+          setStatus('statusMc', `Lendo o CRM em partes: faltam ${faltam} negociações (rodada ${rodadaMc}). Os números já aparecem e vão se completando sozinhos.`, { loading: true });
+          timerMc = setTimeout(() => carregarMeusClosers(true, true), 15000);
+        } else if (faltam) setStatus('statusMc', `Ainda faltam ${faltam} negociações. Clique em "Atualizar do CRM" em 1 minuto — o que já foi lido fica guardado.`, { erro: true });
+        else setStatus('statusMc', `Lido do CRM em ${new Date(d.atualizadoEm).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}${d.cache ? ' (guardado por 20 min; "Atualizar do CRM" lê de novo)' : ''}.`, { ok: true });
+      } catch (e) {
+        if (e.semResposta && e.status >= 500 && rodadaMc < 20) {
+          rodadaMc++;
+          setStatus('statusMc', `O CRM está lento: tentando de novo em 15 s (rodada ${rodadaMc}) — o que já foi lido fica guardado.`, { loading: true });
+          timerMc = setTimeout(() => carregarMeusClosers(true, true), 15000);
+        } else setStatus('statusMc', e.message, { erro: true });
+      } finally {
+        $('mcAtualizar').disabled = false;
+      }
+    }
+    $('mcAtualizar').addEventListener('click', () => carregarMeusClosers(true));
+    $('mcSdr').addEventListener('change', () => { mcDados = null; mcAberto = ''; carregarMeusClosers(false); });
+    $('mcMes').addEventListener('change', () => { mcDados = null; mcAberto = ''; carregarMeusClosers(false); });
+    $('mcTabela').addEventListener('click', (ev) => {
+      const tr = ev.target.closest('[data-mc-closer]');
+      if (!tr || !mcDados) return;
+      mcAberto = mcAberto === tr.dataset.mcCloser ? '' : tr.dataset.mcCloser;
+      desenharMeusClosers(mcDados);
+    });
+
     async function carregarMatch(atualizar, continuacao = false) {
       if (matchDados && !atualizar) return desenharMatch(matchDados);
       if (!continuacao) rodadaMt = 0;
@@ -1919,6 +2039,7 @@
       if (aba === 'acessos') return carregarUsuarios();
       if (aba === 'funil') return prepararLimpeza();
       if (aba === 'match') return carregarMatch(false);
+      if (aba === 'meusclosers') return carregarMeusClosers(false);
       if (aba === 'numeros') {
         await carregarClosers(); // as linhas da tabela oferecem os closers no select
         return carregarStats();

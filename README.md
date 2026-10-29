@@ -219,6 +219,16 @@ novo uma conversa já feita.
 
 ---
 
+## Meus closers (com quem o SDR se dá melhor)
+
+Aba **Meus closers** (só o master): para o mês escolhido (padrão: o atual) e o SDR (você, alguém do time do Match ou o
+time todo), por closer: **reuniões realizadas** no mês, **vendas** no mês, **ticket médio**, **conversão** (vendas ÷
+reuniões) e **no-show**, com o total e o destaque "você converte mais com …" (entre os closers com 3+ reuniões).
+Clique num closer para ver os leads. Lê do CRM os cards em que o SDR é o SDR e que mudaram no mês, nos funis que têm
+reunião realizada e nos dos closers, e fica com os que foram para um closer (o dono do card). As regras de "a reunião
+aconteceu", da data da reunião e da venda são as do Match ( usa ). Lê em
+partes (continua sozinha) e guarda o resultado por 20 min ().
+
 ## Match com PH (meta do mês com o closer)
 
 Aba do master (`src/matchCloser.js`, `GET /api/master/match`, `PUT /api/master/match/meta`). Mostra,
