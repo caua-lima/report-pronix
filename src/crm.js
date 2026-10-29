@@ -44,7 +44,7 @@ function ttlFicha() {
  * Sem `corpo` é leitura (GET); com `corpo` é escrita num card: mudar de etapa (automação do cartão) ou,
  * na limpeza do funil pedida pelo master, desqualificar com perda (src/limpezaRd.js).
  */
-async function rd(caminho, params = {}, { metodo = 'GET', corpo } = {}) {
+async function rd(caminho, params = {}, { metodo = 'GET', corpo, timeoutMs } = {}) {
   const pronix = ehPronix();
   const q = new URLSearchParams(pronix ? {} : { token: token() });
   Object.entries(params).forEach(([k, v]) => {
@@ -59,7 +59,8 @@ async function rd(caminho, params = {}, { metodo = 'GET', corpo } = {}) {
       method: metodo,
       headers: cab,
       ...(escrita ? { body: JSON.stringify(corpo || {}) } : {}),
-      signal: AbortSignal.timeout(Number(process.env.CRM_TIMEOUT_MS) || 8000),
+      // timeoutMs: quem lê uma lista grande (painéis) pode esperar mais que os 8 s padrão
+      signal: AbortSignal.timeout(Number(timeoutMs) || Number(process.env.CRM_TIMEOUT_MS) || 8000),
     });
   } catch (e) {
     if (e && (e.name === 'TimeoutError' || e.name === 'AbortError')) {
@@ -1031,11 +1032,11 @@ async function usuarioDoCrm(nome) {
 }
 
 /** Todas as negociações de um filtro, pelo cursor (até maxPaginas de 200). Formato da lista, sem o detalhe. */
-async function listarNegociacoes(filtros = {}, { maxPaginas = 40 } = {}) {
+async function listarNegociacoes(filtros = {}, { maxPaginas = 40, timeoutMs } = {}) {
   const todas = [];
   let cursor = '';
   for (let i = 0; i < maxPaginas; i++) {
-    const r = await module.exports.rd('/deals', { ...filtros, limit: 200, ...(cursor ? { cursor } : {}) });
+    const r = await module.exports.rd('/deals', { ...filtros, limit: 200, ...(cursor ? { cursor } : {}) }, timeoutMs ? { timeoutMs } : {});
     const pagina = (r && r.deals) || [];
     todas.push(...pagina);
     cursor = (r && r.proximo_cursor) || '';
