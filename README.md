@@ -226,7 +226,9 @@ time todo), por closer: **reuniões realizadas** no mês, **vendas** no mês, **
 reuniões) e **no-show**, com o total e o destaque "você converte mais com …" (entre os closers com 3+ reuniões).
 Clique num closer para ver os leads. Lê do CRM os cards em que o SDR é o SDR e que mudaram no mês, nos funis que têm
 reunião realizada e nos dos closers, e fica com os que foram para um closer (o dono do card). As regras de "a reunião
-aconteceu", da data da reunião e da venda são as do Match (`src/painelClosers.js` usa `src/matchCloser.js`). Lê em
+aconteceu", da data da reunião e da venda são as do Match (`src/painelClosers.js` usa `src/matchCloser.js`), e, como
+no Match, entram os reports com resultado de reunião que o CRM não trouxe (card sem o SDR no campo) — marcados "do
+report" na lista de leads; assim as duas abas mostram os mesmos números para o mesmo closer. Lê em
 partes (continua sozinha) e guarda o resultado por 20 min (`GET /api/master/closers-do-sdr?sdr=&mes=`).
 
 ## Match com PH (meta do mês com o closer)

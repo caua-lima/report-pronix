@@ -1853,7 +1853,7 @@
       const linhas = (d.closers || []).map((c, i) => {
         const pouca = c.reunioes < MIN_AMOSTRA_MC;
         const aberto = mcAberto === c.closer;
-        const leads = aberto ? `<tr class="mc-leads"><td colspan="7"><div style="display:grid;gap:4px;padding:6px 0">${c.leads.map((r) => `<div><span class="hint">${esc(r.dia ? r.dia.split('-').reverse().join('/') : '—')}</span> · ${esc(r.lead || 'Lead')} · ${esc(r.contaVenda ? 'venda ' + brlMc(r.valor) : r.noShow ? 'no-show' : r.estado === 'nao_comprou' ? 'não comprou' : r.estado === 'fup' ? 'em follow-up' : r.estado)}${d.sdr === 'time' ? ' · ' + esc(r.sdr || '') : ''}</div>`).join('')}</div></td></tr>` : '';
+        const leads = aberto ? `<tr class="mc-leads"><td colspan="7"><div style="display:grid;gap:4px;padding:6px 0">${c.leads.map((r) => `<div><span class="hint">${esc(r.dia ? r.dia.split('-').reverse().join('/') : '—')}</span> · ${esc(r.lead || 'Lead')} · ${esc(r.contaVenda ? 'venda ' + brlMc(r.valor) : r.noShow ? 'no-show' : r.estado === 'nao_comprou' ? 'não comprou' : r.estado === 'fup' ? 'em follow-up' : r.estado)}${d.sdr === 'time' ? ' · ' + esc(r.sdr || '') : ''}${r.fonte === 'report' ? ' <span class="hint">· do report (o card no CRM não tem o SDR no campo)</span>' : ''}</div>`).join('')}</div></td></tr>` : '';
         return `<tr data-mc-closer="${esc(c.closer)}" style="cursor:pointer${pouca ? ';opacity:.6' : ''}" title="${pouca ? 'Poucas reuniões: a conversão ainda é pouco confiável. ' : ''}Clique para ver os leads">` +
           `<td><span class="rank">${i + 1}</span><b>${esc(c.closer)}</b></td><td class="r">${c.reunioes}</td><td class="r">${c.vendas}</td>` +
           `<td class="r">${esc(pctMc(c.conversao))}<div class="barra" style="margin-left:auto"><i style="width:${Math.round((c.conversao / maxConv) * 100)}%"></i></div></td>` +
@@ -1861,7 +1861,7 @@
       });
       $('mcTabela').innerHTML = linhas.join('') || '<tr><td colspan="7" class="hint">Nenhuma reunião, venda ou no-show dos seus leads neste mês.</td></tr>';
       const dg = d.diagnostico || {};
-      $('mcNota').textContent = `Período: ${(d.inicio || '').split('-').reverse().join('/')} a ${(d.fim || '').split('-').reverse().join('/')}. ${dg.cardsLidos || 0} card(s) lidos do CRM${dg.aindaNaoAconteceu ? `; ${dg.aindaNaoAconteceu} com reunião ainda por acontecer (não contam)` : ''}. Linhas apagadas têm menos de ${MIN_AMOSTRA_MC} reuniões.` +
+      $('mcNota').textContent = `Período: ${(d.inicio || '').split('-').reverse().join('/')} a ${(d.fim || '').split('-').reverse().join('/')}. ${dg.cardsLidos || 0} card(s) lidos do CRM${dg.aindaNaoAconteceu ? `; ${dg.aindaNaoAconteceu} com reunião ainda por acontecer (não contam)` : ''}${dg.doReport ? `; ${dg.doReport} vieram dos reports (o card no CRM não tem o SDR no campo) — como no Match` : ''}. Linhas apagadas têm menos de ${MIN_AMOSTRA_MC} reuniões.` +
         ((dg.sdrsSemCrm || []).length ? ` Não achei no CRM o usuário de: ${dg.sdrsSemCrm.join(', ')} — os cards dele(s) não entraram.` : '');
       aplicarIcones($('mcDestaque'));
     }
