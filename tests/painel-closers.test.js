@@ -132,3 +132,24 @@ test('SDR que não existe no CRM: avisa (em vez de mostrar tudo zerado sem dizer
   assert.deepEqual(r.diagnostico.sdrsSemCrm, ['Fulano Sem Cadastro']);
   assert.equal(r.total.reunioes, 0);
 });
+
+test('mesmos números do Match: a venda que só está no report (card sem o SDR no campo) entra para o closer certo', async () => {
+  const stats = require('../src/stats');
+  const match = require('../src/matchCloser');
+  const usuario = { id: 'eu4', nome: 'Cauã Lima' };
+  // report do Cauã: venda com o PH que o CRM não traz (o card dele não tem o SDR no campo)
+  await stats.importar({ origem: 'rd', id: 'rp1', quando: '2026-09-18T15:00:00.000Z', usuarioId: 'eu4', usuarioNome: 'Cauã Lima', lead: 'Lead Só no Report', contato: 'Lead Só no Report', closerNome: 'Paulo Henrique', resultado: 'venda_call', ticket: 29892, dataReuniao: '2026-09-18', dataFechamento: '2026-09-18' });
+  // e um report de um lead que o CRM já trouxe: não conta duas vezes
+  await stats.importar({ origem: 'rd', id: 'rp2', quando: '2026-09-10T15:00:00.000Z', usuarioId: 'eu4', usuarioNome: 'Cauã Lima', lead: 'PRXC | Lead p1', contato: 'Lead p1', closerNome: 'Paulo Henrique', resultado: 'venda_call', ticket: 5000, dataReuniao: '2026-09-10', rdDealId: 'p1' });
+  const r = await painelClosers.painel({ usuario, mes: '2026-09', atualizar: true });
+  const ph = r.closers.find((c) => c.closer === 'Paulo Henrique Pagoti');
+  assert.deepEqual([ph.reunioes, ph.vendas, ph.faturamento], [3, 2, 34892]);
+  assert.equal(r.diagnostico.doReport, 1);
+  assert.equal(ph.leads.find((l) => l.id === 'r_rp1').fonte, 'report');
+  // o Match do PH, no mesmo mês, dá o mesmo
+  const m = await match.levantar({ usuario, closer: 'Paulo Henrique', desde: '2026-09-01', atualizar: true });
+  const deSetembro = m.reunioes.filter((x) => x.minha);
+  const reunioes = deSetembro.filter((x) => x.contaReuniao && x.dataReuniao.startsWith('2026-09')).length;
+  const vendas = deSetembro.filter((x) => x.diaVenda && x.diaVenda.startsWith('2026-09'));
+  assert.deepEqual([reunioes, vendas.length, vendas.reduce((s, x) => s + x.ticket, 0)], [ph.reunioes, ph.vendas, ph.faturamento], 'Match e Meus closers batem');
+});

@@ -13,6 +13,8 @@ const match = require('./matchCloser');
 const { leadDoCard } = require('./vendasDoRd');
 
 const ORCAMENTO_MS = () => Number(process.env.CLOSERS_ORCAMENTO_MS) || 45000;
+// Resultados de report que dizem que a reunião aconteceu (os mesmos do Match).
+const RESULTADOS_REUNIAO = new Set(['venda_call', 'venda_fup', 'pix_compromisso', 'sem_venda', 'em_followup']);
 const CACHE_SEG = 20 * 60;
 const LISTA_SEG = 10 * 60;
 
@@ -167,6 +169,37 @@ async function painel({ usuario, sdr, mes, atualizar = false } = {}) {
       id: idDe(d), closer, lead: leadDoCard(d), dia, estado, contaReuniao, noShow, contaVenda,
       valor: contaVenda ? Number(d.amount_total) || 0 : 0, sdr: quem.nome || sdrs[0],
       etapa: (d.deal_stage && d.deal_stage.name) || '',
+    });
+  }
+  // Reports com resultado de reunião que o CRM não trouxe (card sem você no campo SDR, p.ex.) — a mesma regra do Match,
+  // para as duas abas mostrarem os mesmos números. O closer do report vira o nome do closer como está no CRM.
+  const ids = new Set(reunioes.map((r) => r.id));
+  const leads = new Set(reunioes.map((r) => norm(r.lead)).filter(Boolean));
+  const nomesCrm = [...new Set(reunioes.map((r) => r.closer))];
+  const todasPalavras = (curto, longo) => {
+    const p = new Set(norm(longo).split(' ').filter(Boolean));
+    const c = norm(curto).split(' ').filter(Boolean);
+    return c.length > 0 && c.every((x) => p.has(x));
+  };
+  const sdrDoReport = (r) => sdrs.find((n) => (r.usuarioId === usuario.id ? mesmaPessoa(n, usuario.nome) : mesmaPessoa(r.usuarioNome || '', n))) || '';
+  const noMesR = (x) => Boolean(x) && x >= inicio && x <= fim;
+  diagnostico.doReport = 0;
+  for (const r of await stats.listar({}).catch(() => [])) {
+    if (!RESULTADOS_REUNIAO.has(r.resultado) || !String(r.closerNome || '').trim()) continue;
+    const sdrR = sdrDoReport(r);
+    if (!sdrR) continue;
+    if ((r.rdDealId && ids.has(String(r.rdDealId))) || ids.has(String(r.id).replace(/^rd/, '')) || leads.has(norm(r.lead))) continue;
+    const venda = stats.ehVenda(r.resultado);
+    const dia = r.dataReuniao || r.dia || '';
+    const diaVenda = venda ? r.dataFechamento || dia : '';
+    const contaReuniao = noMesR(dia);
+    const contaVenda = venda && noMesR(diaVenda);
+    if (!contaReuniao && !contaVenda) continue;
+    const closer = nomesCrm.find((c) => todasPalavras(r.closerNome, c) || todasPalavras(c, r.closerNome)) || String(r.closerNome).trim();
+    diagnostico.doReport++;
+    reunioes.push({
+      id: 'r_' + r.id, closer, lead: r.lead || r.contato || '', dia, estado: venda ? 'venda' : r.resultado === 'em_followup' ? 'fup' : 'nao_comprou',
+      contaReuniao, noShow: false, contaVenda, valor: contaVenda ? Number(r.ticket) || 0 : 0, sdr: sdrR, etapa: '', fonte: 'report',
     });
   }
   const { closers, total } = porCloser(reunioes);
