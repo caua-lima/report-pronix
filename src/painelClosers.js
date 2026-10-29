@@ -38,7 +38,7 @@ const sdrsDisponiveis = (usuario) => [usuario.nome].concat(match.timeDeSdrs().fi
  * Cada lista SDR × funil fica guardada 10 min; o que não couber no tempo fica para a próxima rodada (pendentes).
  */
 async function buscarCards({ sdrs, inicio, fim, prazoFinal }) {
-  const diag = { listasPendentes: 0, funis: [] };
+  const diag = { listasPendentes: 0, funis: [], sdrsSemCrm: [], erroLista: '' };
   const todos = await crm.funis().catch(() => []);
   const comRealizada = todos.filter((f) => f.etapas.some((e) => e.categoria === 'reuniao_realizada'));
   const funis = [...new Map(comRealizada.concat(await crm.funisDosClosers().catch(() => [])).map((f) => [f.id, f])).values()];
@@ -46,7 +46,7 @@ async function buscarCards({ sdrs, inicio, fim, prazoFinal }) {
   const pares = [];
   for (const nome of sdrs) {
     const u = await crm.usuarioDoCrm(nome).catch(() => null);
-    if (!u) continue;
+    if (!u) { diag.sdrsSemCrm.push(nome); continue; } // a tela avisa (em vez de mostrar tudo zerado)
     for (const funil of funis.length ? funis : [null]) pares.push({ sdrId: String(u.id), funil });
   }
   const ehSdr = (dono) => sdrs.some((n) => mesmaPessoa(dono, n));
@@ -56,7 +56,16 @@ async function buscarCards({ sdrs, inicio, fim, prazoFinal }) {
     const chave = `closers_lista1_${sdrId}_${funil ? funil.id : 'todos'}_${inicio}_${fim}`;
     const guardada = await db.cacheGet(chave).catch(() => null);
     if (guardada) { try { return JSON.parse(guardada); } catch (_) { /* relê */ } }
-    const deals = await crm.listarNegociacoes({ sdr_id: sdrId, ...(funil ? { deal_pipeline_id: funil.id } : {}), updated_at_period: 'true', start_date: crm.instanteDoDia(inicio), end_date: crm.instanteDoDia(fim, true) });
+    // Lista grande demora: espera até 25 s (dentro do tempo da rodada). Se ainda assim o CRM não responder, esta
+    // lista fica para a próxima rodada (pendente) — antes, uma lista lenta derrubava a aba inteira.
+    let deals;
+    try {
+      const espera = Math.max(3000, Math.min(25000, prazoListas - Date.now()));
+      deals = await crm.listarNegociacoes({ sdr_id: sdrId, ...(funil ? { deal_pipeline_id: funil.id } : {}), updated_at_period: 'true', start_date: crm.instanteDoDia(inicio), end_date: crm.instanteDoDia(fim, true) }, { timeoutMs: espera });
+    } catch (e) {
+      diag.erroLista = String((e && e.message) || e).slice(0, 160);
+      return null;
+    }
     const comCloser = deals.filter((d) => (d.user && d.user.name) && !ehSdr(d.user.name)).map((d) => ({ id: idDe(d), updated_at: d.updated_at || '' }));
     await db.cacheSet(chave, JSON.stringify(comCloser), LISTA_SEG).catch(() => {});
     return comCloser;
@@ -132,7 +141,10 @@ async function painel({ usuario, sdr, mes, atualizar = false } = {}) {
   const { cards, diag } = await buscarCards({ sdrs, inicio, fim, prazoFinal });
   const catalogo = new Map();
   (await crm.funis().catch(() => [])).forEach((f) => f.etapas.forEach((e) => e.categoria && catalogo.set(e.id, e.categoria)));
-  const diagnostico = { cardsLidos: cards.length, pendentesDoCrm: diag.pendentes || 0, funis: diag.funis, deOutroSdr: 0, aindaNaoAconteceu: 0, foraDoMes: 0 };
+  const diagnostico = {
+    cardsLidos: cards.length, pendentesDoCrm: diag.pendentes || 0, listasPendentes: diag.listasPendentes || 0, erroLista: diag.erroLista || '',
+    sdrsSemCrm: diag.sdrsSemCrm || [], funis: diag.funis, deOutroSdr: 0, aindaNaoAconteceu: 0, foraDoMes: 0,
+  };
   const reunioes = [];
   for (const d of cards) {
     const closer = String((d.user && d.user.name) || '').trim();

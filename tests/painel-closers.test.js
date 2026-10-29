@@ -58,6 +58,7 @@ const CARDS = {
 };
 const listas = [];
 const detalhes = [];
+let lentasRestantes = 0;
 const fetchReal = global.fetch;
 global.fetch = async (url) => {
   const u = new URL(String(url));
@@ -68,6 +69,13 @@ global.fetch = async (url) => {
   if (p === '/users') return ok({ users: [CAUA, SAMUEL, PH, DANIEL, AMARILDO] });
   if (p === '/deals') {
     listas.push(Object.fromEntries(u.searchParams));
+    // o CRM demora demais nesta lista (o tempo de espera estoura) — uma vez
+    if (lentasRestantes > 0 && u.searchParams.get('deal_pipeline_id') === 'f-clo') {
+      lentasRestantes--;
+      const e = new Error('The operation was aborted due to timeout');
+      e.name = 'TimeoutError';
+      throw e;
+    }
     if (u.searchParams.get('sdr_id') !== 'u-caua' || u.searchParams.get('deal_pipeline_id') !== 'f-clo') return ok({ deals: [] });
     return ok({ deals: Object.values(CARDS).map(({ deal_stage_histories, ...lista }) => lista) });
   }
@@ -104,4 +112,23 @@ test('guardado por 20 min; mês que não começou é recusado; conta de convers�
   await assert.rejects(painelClosers.painel({ usuario: { id: 'eu', nome: 'Cauã Lima' }, mes: '2099-01' }), /ainda não começou/);
   const { closers } = painelClosers.porCloser([{ closer: 'Zé', contaReuniao: false, noShow: true, contaVenda: false, valor: 0, dia: '2026-09-01' }]);
   assert.deepEqual([closers[0].conversao, closers[0].ticketMedio, closers[0].noShow], [0, 0, 1]);
+});
+
+test('CRM lento numa lista: a aba não quebra — a lista fica para a próxima rodada, que completa os números', async () => {
+  lentasRestantes = 1;
+  // agosto: a lista deste mês ainda não foi lida (a de setembro ficou guardada pelo teste de cima)
+  const r = await painelClosers.painel({ usuario: { id: 'eu2', nome: 'Cauã Lima' }, mes: '2026-08', atualizar: true });
+  assert.equal(r.diagnostico.listasPendentes, 1);
+  assert.match(r.diagnostico.erroLista, /demorou/);
+  assert.ok(r.diagnostico.pendentesDoCrm >= 1, 'a tela continua sozinha');
+  assert.equal(r.total.reunioes, 0, 'nada lido ainda desta lista');
+  const depois = await painelClosers.painel({ usuario: { id: 'eu2', nome: 'Cauã Lima' }, mes: '2026-08', atualizar: true });
+  assert.equal(depois.diagnostico.pendentesDoCrm, 0);
+  assert.deepEqual([depois.total.reunioes, depois.closers.map((c) => c.closer)], [1, ['Daniel Camargo']], 'a rodada seguinte completa (em agosto, só a reunião do card de agosto)');
+});
+
+test('SDR que não existe no CRM: avisa (em vez de mostrar tudo zerado sem dizer por quê)', async () => {
+  const r = await painelClosers.painel({ usuario: { id: 'eu3', nome: 'Fulano Sem Cadastro' }, mes: '2026-09', atualizar: true });
+  assert.deepEqual(r.diagnostico.sdrsSemCrm, ['Fulano Sem Cadastro']);
+  assert.equal(r.total.reunioes, 0);
 });
