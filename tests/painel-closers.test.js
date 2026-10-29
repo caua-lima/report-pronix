@@ -133,7 +133,7 @@ test('SDR que não existe no CRM: avisa (em vez de mostrar tudo zerado sem dizer
   assert.equal(r.total.reunioes, 0);
 });
 
-test('mesmos números do Match: a venda que só está no report (card sem o SDR no campo) entra para o closer certo', async () => {
+test('só o CRM, nas duas abas: a venda que só está no report NÃO entra — Meus closers e Match dão o mesmo número do CRM', async () => {
   const stats = require('../src/stats');
   const match = require('../src/matchCloser');
   const usuario = { id: 'eu4', nome: 'Cauã Lima' };
@@ -143,10 +143,9 @@ test('mesmos números do Match: a venda que só está no report (card sem o SDR 
   await stats.importar({ origem: 'rd', id: 'rp2', quando: '2026-09-10T15:00:00.000Z', usuarioId: 'eu4', usuarioNome: 'Cauã Lima', lead: 'PRXC | Lead p1', contato: 'Lead p1', closerNome: 'Paulo Henrique', resultado: 'venda_call', ticket: 5000, dataReuniao: '2026-09-10', rdDealId: 'p1' });
   const r = await painelClosers.painel({ usuario, mes: '2026-09', atualizar: true });
   const ph = r.closers.find((c) => c.closer === 'Paulo Henrique Pagoti');
-  assert.deepEqual([ph.reunioes, ph.vendas, ph.faturamento], [3, 2, 34892]);
-  assert.equal(r.diagnostico.doReport, 1);
-  assert.equal(ph.leads.find((l) => l.id === 'r_rp1').fonte, 'report');
-  // o Match do PH, no mesmo mês, dá o mesmo
+  assert.deepEqual([ph.reunioes, ph.vendas, ph.faturamento], [2, 1, 5000], 'só o que o CRM tem (como a coluna "Vendido" do CRM)');
+  assert.ok(!ph.leads.some((l) => /report/i.test(String(l.id))), 'nada de report na lista');
+  // o Match do PH, no mesmo mês, dá o mesmo (também só o CRM)
   const m = await match.levantar({ usuario, closer: 'Paulo Henrique', desde: '2026-09-01', atualizar: true });
   const deSetembro = m.reunioes.filter((x) => x.minha);
   const reunioes = deSetembro.filter((x) => x.contaReuniao && x.dataReuniao.startsWith('2026-09')).length;
