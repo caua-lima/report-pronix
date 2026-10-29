@@ -891,7 +891,7 @@
       <div class="card">
         <div class="head"><div class="t"><i data-ic="users"></i>Meus closers</div><div class="sub">— com que closer seus leads mais compram: reuniões realizadas, vendas, ticket médio e conversão do mês, lidos do CRM</div></div>
         <div class="row">
-          <div style="min-width:200px;flex:1"><label for="mcSdr">SDR</label><select id="mcSdr"><option value="">Eu</option></select></div>
+          <div style="min-width:200px;flex:1"><label for="mcSdr">SDR</label><select id="mcSdr"><option value="">Você</option></select></div>
           <div style="min-width:160px"><label for="mcMes">Mês</label><input id="mcMes" type="month" /></div>
           <button id="mcAtualizar" class="btn sec"><i data-ic="refresh"></i>Atualizar do CRM</button>
         </div>
@@ -1828,7 +1828,7 @@
       // o SDR: você, cada um do time, ou o time todo
       const sel = $('mcSdr');
       const atual = d.sdr || '';
-      sel.innerHTML = (d.sdrsDisponiveis || []).map((n, i) => `<option value="${esc(i === 0 ? '' : n)}">${esc(i === 0 ? 'Eu (' + n + ')' : n)}</option>`).join('') + '<option value="time">Time todo</option>';
+      sel.innerHTML = (d.sdrsDisponiveis || []).map((n, i) => `<option value="${esc(i === 0 ? '' : n)}">${esc(i === 0 ? n + ' (você)' : n)}</option>`).join('') + '<option value="time">Time todo</option>';
       sel.value = atual === 'time' ? 'time' : (d.sdrsDisponiveis || [])[0] && atual === d.sdrsDisponiveis[0] ? '' : atual;
       const t = d.total || {};
       $('mcTotal').innerHTML = [
@@ -1861,7 +1861,8 @@
       });
       $('mcTabela').innerHTML = linhas.join('') || '<tr><td colspan="7" class="hint">Nenhuma reunião, venda ou no-show dos seus leads neste mês.</td></tr>';
       const dg = d.diagnostico || {};
-      $('mcNota').textContent = `Período: ${(d.inicio || '').split('-').reverse().join('/')} a ${(d.fim || '').split('-').reverse().join('/')}. ${dg.cardsLidos || 0} card(s) lidos do CRM${dg.aindaNaoAconteceu ? `; ${dg.aindaNaoAconteceu} com reunião ainda por acontecer (não contam)` : ''}. Linhas apagadas têm menos de ${MIN_AMOSTRA_MC} reuniões.`;
+      $('mcNota').textContent = `Período: ${(d.inicio || '').split('-').reverse().join('/')} a ${(d.fim || '').split('-').reverse().join('/')}. ${dg.cardsLidos || 0} card(s) lidos do CRM${dg.aindaNaoAconteceu ? `; ${dg.aindaNaoAconteceu} com reunião ainda por acontecer (não contam)` : ''}. Linhas apagadas têm menos de ${MIN_AMOSTRA_MC} reuniões.` +
+        ((dg.sdrsSemCrm || []).length ? ` Não achei no CRM o usuário de: ${dg.sdrsSemCrm.join(', ')} — os cards dele(s) não entraram.` : '');
       aplicarIcones($('mcDestaque'));
     }
     async function carregarMeusClosers(atualizar, continuacao = false) {
@@ -1877,14 +1878,16 @@
         const d = await api('GET', '/api/master/closers-do-sdr?' + q.toString());
         desenharMeusClosers(d);
         const faltam = (d.diagnostico && d.diagnostico.pendentesDoCrm) || 0;
+        const lento = d.diagnostico && d.diagnostico.listasPendentes && d.diagnostico.erroLista ? ' O CRM está lento: as listas que demoraram são lidas de novo na próxima rodada.' : '';
         if (faltam && rodadaMc < 20) {
           rodadaMc++;
-          setStatus('statusMc', `Lendo o CRM em partes: faltam ${faltam} negociações (rodada ${rodadaMc}). Os números já aparecem e vão se completando sozinhos.`, { loading: true });
+          setStatus('statusMc', `Lendo o CRM em partes (rodada ${rodadaMc}): os números já aparecem e vão se completando sozinhos em 15 s.${lento}`, { loading: true });
           timerMc = setTimeout(() => carregarMeusClosers(true, true), 15000);
-        } else if (faltam) setStatus('statusMc', `Ainda faltam ${faltam} negociações. Clique em "Atualizar do CRM" em 1 minuto — o que já foi lido fica guardado.`, { erro: true });
+        } else if (faltam) setStatus('statusMc', `Ainda falta ler parte do CRM.${lento} Clique em "Atualizar do CRM" em 1 minuto — o que já foi lido fica guardado.`, { erro: true });
         else setStatus('statusMc', `Lido do CRM em ${new Date(d.atualizadoEm).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}${d.cache ? ' (guardado por 20 min; "Atualizar do CRM" lê de novo)' : ''}.`, { ok: true });
       } catch (e) {
-        if (e.semResposta && e.status >= 500 && rodadaMc < 20) {
+        // Servidor passou do tempo ou o CRM demorou: o que já foi lido ficou guardado, então tenta de novo sozinho.
+        if (e.status >= 500 && rodadaMc < 20) {
           rodadaMc++;
           setStatus('statusMc', `O CRM está lento: tentando de novo em 15 s (rodada ${rodadaMc}) — o que já foi lido fica guardado.`, { loading: true });
           timerMc = setTimeout(() => carregarMeusClosers(true, true), 15000);
