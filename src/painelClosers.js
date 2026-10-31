@@ -10,6 +10,7 @@ const db = require('./db');
 const crm = require('./crm');
 const stats = require('./stats');
 const match = require('./matchCloser');
+const closersCadastro = require('./closers');
 const { leadDoCard } = require('./vendasDoRd');
 
 const ORCAMENTO_MS = () => Number(process.env.CLOSERS_ORCAMENTO_MS) || 45000;
@@ -133,7 +134,7 @@ async function painel({ usuario, sdr, mes, atualizar = false } = {}) {
   const time = String(sdr || '') === 'time';
   const escolhido = time ? '' : disponiveis.find((n) => mesmaPessoa(n, sdr)) || usuario.nome;
   const sdrs = time ? disponiveis : [escolhido];
-  const chave = `closers1_${usuario.id}_${slug(sdrs.join(' '))}_${mesOk}`;
+  const chave = `closers2_${usuario.id}_${slug(sdrs.join(' '))}_${mesOk}`;
   if (!atualizar) {
     const guardado = await db.cacheGet(chave).catch(() => null);
     if (guardado) { try { return { ...JSON.parse(guardado), cache: true }; } catch (_) { /* refaz */ } }
@@ -145,10 +146,17 @@ async function painel({ usuario, sdr, mes, atualizar = false } = {}) {
     cardsLidos: cards.length, pendentesDoCrm: diag.pendentes || 0, listasPendentes: diag.listasPendentes || 0, erroLista: diag.erroLista || '',
     sdrsSemCrm: diag.sdrsSemCrm || [], funis: diag.funis, deOutroSdr: 0, aindaNaoAconteceu: 0, foraDoMes: 0,
   };
+  // Só quem está na aba Closers é closer (dono de card que não está lá — SDR, gestor... — fica fora da tabela).
+  const cadastrados = await closersCadastro.listar().catch(() => []);
+  const palavras = (s) => norm(s).split(' ').filter(Boolean);
+  const cabe = (curto, longo) => { const p = new Set(palavras(longo)); const c = palavras(curto); return c.length > 0 && c.every((x) => p.has(x)); };
+  const ehCloser = (nome) => !cadastrados.length || cadastrados.some((c) => cabe(c.nome, nome) || cabe(nome, c.nome));
+  const naoCloser = new Set();
   const reunioes = [];
   for (const d of cards) {
     const closer = String((d.user && d.user.name) || '').trim();
     if (!closer) continue;
+    if (!ehCloser(closer)) { naoCloser.add(closer); continue; }
     // o campo SDR do card tem de ser um dos SDRs escolhidos (a lista do CRM já filtra; aqui confere)
     const quem = match.quemEhOSdr(d, { nome: sdrs[0] }, sdrs.slice(1));
     if (quem.tipo === 'outro') { diagnostico.deOutroSdr++; continue; }
@@ -170,6 +178,7 @@ async function painel({ usuario, sdr, mes, atualizar = false } = {}) {
     });
   }
   // Os números são SÓ do CRM (é o que o CRM mostra na coluna "Vendido"): report que o CRM não traz não entra.
+  diagnostico.naoCloser = [...naoCloser].sort((x, y) => x.localeCompare(y, 'pt-BR'));
   const { closers, total } = porCloser(reunioes);
   const saida = { mes: mesOk, inicio, fim, sdr: time ? 'time' : escolhido, sdrsDisponiveis: disponiveis, closers, total, diagnostico, atualizadoEm: new Date().toISOString() };
   // Leitura incompleta não fica guardada: a próxima rodada continua de onde parou (as listas e os detalhes ficam).

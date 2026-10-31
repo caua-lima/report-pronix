@@ -152,3 +152,24 @@ test('só o CRM, nas duas abas: a venda que só está no report NÃO entra — M
   const vendas = deSetembro.filter((x) => x.diaVenda && x.diaVenda.startsWith('2026-09'));
   assert.deepEqual([reunioes, vendas.length, vendas.reduce((s, x) => s + x.ticket, 0)], [ph.reunioes, ph.vendas, ph.faturamento], 'Match e Meus closers batem');
 });
+
+test('só quem está na aba Closers é closer: dono de card que não está lá (SDR, gestor) sai da tabela e é listado à parte', async () => {
+  const closers = require('../src/closers');
+  await closers.criar('Paulo Henrique', 'ph@x.test');
+  await closers.criar('Daniel Camargo', '');
+  // venda num card cujo dono não é closer (uma SDR), em junho
+  CARDS.m1 = card('m1', 'c-vend', { id: 'u-mc', name: 'Maria Clara Soares Zanco' }, { win: true, closed_at: '2026-06-12T18:00:00.000Z', amount_total: 1609, deal_stage_histories: hist(['c-real', '2026-06-10'], ['c-vend', '2026-06-12']) });
+  CARDS.p6 = card('p6', 'c-vend', PH, { win: true, closed_at: '2026-06-15T18:00:00.000Z', amount_total: 7000, deal_stage_histories: hist(['c-real', '2026-06-14'], ['c-vend', '2026-06-15']) });
+  const r = await painelClosers.painel({ usuario: { id: 'eu5', nome: 'Cauã Lima' }, mes: '2026-06', atualizar: true });
+  assert.deepEqual(r.closers.map((c) => c.closer), ['Paulo Henrique Pagoti']);
+  assert.deepEqual(r.diagnostico.naoCloser, ['Amarildo Queiroz', 'Maria Clara Soares Zanco'], 'quem não está na aba Closers (aqui, o Amarildo não foi cadastrado)');
+  assert.deepEqual([r.total.vendas, r.total.faturamento], [1, 7000], 'a venda dela não entra no total');
+  delete CARDS.m1;
+  delete CARDS.p6;
+});
+
+test('Closers do time: o SDR escolhido (Samuel) — os cards dele, não os seus', async () => {
+  const r = await painelClosers.painel({ usuario: { id: 'eu6', nome: 'Cauã Lima' }, sdr: 'Samuel Filipe', mes: '2026-09', atualizar: true });
+  assert.equal(r.sdr, 'Samuel Filipe');
+  assert.ok(listas.some((q) => q.sdr_id === 'u-sam'), 'a lista do CRM é a do Samuel');
+});
