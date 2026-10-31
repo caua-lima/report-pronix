@@ -890,10 +890,12 @@
     <!-- ================= ABA: MEUS CLOSERS (só o master) ================= -->
     <section id="aba-meusclosers" class="hidden">
       <div class="card">
-        <div class="head"><div class="t"><i data-ic="download"></i>Leads em Respondeu (recontato)</div><div class="sub">— do mês: Aplicação Direta (todos) e SMQLs Automáticos (só os seus). O .txt traz nome, telefone e a data de inscrição.</div></div>
+        <div class="head"><div class="t"><i data-ic="download"></i>Leads em Respondeu (recontato)</div><div class="sub">— do mês. Você: Aplicação Direta (todos) e SMQLs Automáticos (só os seus). Outro SDR: só os cards dele nos dois funis. O .txt traz nome, telefone e inscrição; o CSV é o da lista de transmissão do WhatsApp (Nome, Telefone).</div></div>
         <div class="row">
           <div style="min-width:160px"><label for="lrMes">Mês</label><input id="lrMes" type="month" /></div>
+          <div style="min-width:200px"><label for="lrSdr">SDR</label><select id="lrSdr"><option value="">Eu</option><option value="Juliana Ferreira">Juliana Ferreira</option><option value="Luiza Lemes">Luiza Lemes</option><option value="Nicoly Beatriz">Nicoly Beatriz</option><option value="Isamara">Isamara</option><option value="Reinaldo Junior">Reinaldo Junior</option><option value="Samuel Filipe">Samuel Filipe</option></select></div>
           <button id="lrGerar" class="btn"><i data-ic="download"></i>Gerar .txt</button>
+          <button id="lrCsv" class="btn"><i data-ic="download"></i>CSV do WhatsApp</button>
         </div>
         <div id="statusLr" class="status"></div>
       </div>
@@ -1852,21 +1854,26 @@
     let timerMt = null;
     // ---------- Leads em Respondeu (.txt para recontato) ----------
     let rodadaLr = 0;
-    async function gerarRespondeu(continuacao = false) {
+    let formatoLr = 'txt';
+    async function gerarRespondeu(continuacao = false, formato) {
+      if (formato) formatoLr = formato;
       if (!$('lrMes').value) $('lrMes').value = new Date().toISOString().slice(0, 7);
       if (!continuacao) rodadaLr = 0;
       $('lrGerar').disabled = true;
+      $('lrCsv').disabled = true;
       setStatus('statusLr', 'Lendo os leads no CRM… (pode levar até um minuto)', { loading: true });
       try {
-        const d = await api('GET', '/api/master/leads-respondeu?mes=' + encodeURIComponent($('lrMes').value));
+        const d = await api('GET', '/api/master/leads-respondeu?mes=' + encodeURIComponent($('lrMes').value) + ($('lrSdr').value ? '&sdr=' + encodeURIComponent($('lrSdr').value) : ''));
         if (d.pendentes && rodadaLr < 20) {
           rodadaLr++;
           setStatus('statusLr', `Lendo em partes (rodada ${rodadaLr}): ${d.linhas.length} prontos, faltam ${d.pendentes}. Continua sozinho…`, { loading: true });
           return void setTimeout(() => gerarRespondeu(true), 4000);
         }
         const a = document.createElement('a');
-        a.href = URL.createObjectURL(new Blob([d.texto], { type: 'text/plain;charset=utf-8' }));
-        a.download = `respondeu-${d.mes}.txt`;
+        const csv = formatoLr === 'csv';
+        const quem = $('lrSdr').value ? '-' + $('lrSdr').value.split(' ')[0].toLowerCase() : '';
+        a.href = URL.createObjectURL(new Blob([csv ? d.csv : d.texto], { type: csv ? 'text/csv;charset=utf-8' : 'text/plain;charset=utf-8' }));
+        a.download = csv ? `recontato-whatsapp${quem}-${d.mes}.csv` : `respondeu${quem}-${d.mes}.txt`;
         document.body.appendChild(a);
         a.click();
         a.remove();
@@ -1883,9 +1890,11 @@
         setStatus('statusLr', e.message, { erro: true });
       } finally {
         $('lrGerar').disabled = false;
+        $('lrCsv').disabled = false;
       }
     }
-    $('lrGerar').addEventListener('click', () => gerarRespondeu(false));
+    $('lrGerar').addEventListener('click', () => gerarRespondeu(false, 'txt'));
+    $('lrCsv').addEventListener('click', () => gerarRespondeu(false, 'csv'));
 
     // ---------- Abas: Meus closers / Closers do time ----------
     // Por closer: reuniões realizadas, vendas, ticket médio e conversão dos leads do SDR no mês (src/painelClosers.js).

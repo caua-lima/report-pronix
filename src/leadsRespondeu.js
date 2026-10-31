@@ -3,6 +3,7 @@
 // Lista para recontato (.txt): os leads do mês (padrão: o atual) que estão na etapa "Respondeu" de
 //  - Aplicação Direta: todos;
 //  - SMQLs Automáticos: só os do SDR (o campo SDR do card é você).
+// Com `sdr` (outro SDR do time): só os cards com aquele SDR, nos dois funis.
 // Cada linha: nome, telefone e a data em que se inscreveu (criação do card). Só leitura no CRM. Lê em partes (a Vercel
 // corta em 60 s): o que não couber fica para a próxima rodada (pendentes) e o que já foi lido fica guardado.
 
@@ -26,6 +27,20 @@ function telefoneBonito(bruto) {
   if (d.length === 11) return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
   if (d.length === 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
   return d;
+}
+
+/** CSV para "Importe seu público" (lista de transmissão do WhatsApp Business): Nome,Telefone (+55DDDnúmero). */
+function csvWhatsapp(linhas) {
+  const q = (s) => '"' + String(s).replace(/"/g, '""') + '"';
+  const vistos = new Set();
+  const out = ['Nome,Telefone'];
+  for (const l of linhas) {
+    const d = String(l.telefone || '').replace(/\D/g, '');
+    if (d.length < 10 || d.length > 11 || vistos.has(d)) continue;
+    vistos.add(d);
+    out.push(q(l.nome) + ',' + q('+55' + d));
+  }
+  return '﻿' + out.join('\r\n') + '\r\n';
 }
 
 /** O funil pelo nome e a etapa "Respondeu" dele (pela categoria "resposta" ou pelo nome). */
@@ -54,10 +69,10 @@ async function telefoneDoCard(d) {
 }
 
 /**
- * @param {{ usuario: {id, nome}, mes?: string }} p
- * @returns {Promise<{ mes, linhas: Array<{funil, nome, telefone, inscricao}>, texto, pendentes, avisos }>}
+ * @param {{ usuario: {id, nome}, mes?: string, sdr?: string }} p
+ * @returns {Promise<{ mes, sdr, linhas: Array<{funil, nome, telefone, inscricao}>, texto, csv, pendentes, avisos }>}
  */
-async function gerar({ usuario, mes } = {}) {
+async function gerar({ usuario, mes, sdr } = {}) {
   if (!crm.configurado()) throw new Error('O CRM não está configurado no servidor.');
   const prazoFinal = Date.now() + ORCAMENTO_MS();
   const hoje = stats.emDiaLocal(new Date().toISOString());
@@ -70,11 +85,14 @@ async function gerar({ usuario, mes } = {}) {
   const smql = acharFunil(funis, /smql/);
   if (!aplicacao) avisos.push('Não achei o funil "Aplicação Direta" (com a etapa Respondeu) no CRM.');
   if (!smql) avisos.push('Não achei o funil "SMQLs Automáticos" (com a etapa Respondeu) no CRM.');
-  const eu = smql ? await crm.usuarioDoCrm(usuario.nome).catch(() => null) : null;
-  if (smql && !eu) avisos.push(`Não achei o usuário "${usuario.nome}" no CRM: os SMQLs ficaram de fora.`);
+  const outro = String(sdr || '').trim() && norm(sdr) !== norm(usuario.nome) ? String(sdr).trim() : '';
+  const nomeSdr = outro || usuario.nome;
+  const eu = (smql || outro) ? await crm.usuarioDoCrm(nomeSdr).catch(() => null) : null;
+  if ((smql || outro) && !eu) avisos.push(`Não achei o usuário "${nomeSdr}" no CRM: ${outro ? 'a lista ficou vazia' : 'os SMQLs ficaram de fora'}.`);
 
   const pedidos = [];
-  if (aplicacao) pedidos.push({ rotulo: 'Aplicação Direta', alvo: aplicacao, filtro: {} });
+  if (aplicacao && !outro) pedidos.push({ rotulo: 'Aplicação Direta', alvo: aplicacao, filtro: {} });
+  if (aplicacao && outro && eu) pedidos.push({ rotulo: 'Aplicação Direta', alvo: aplicacao, filtro: { sdr_id: String(eu.id) } });
   if (smql && eu) pedidos.push({ rotulo: 'SMQLs Automáticos', alvo: smql, filtro: { sdr_id: String(eu.id) } });
   const cards = [];
   for (const p of pedidos) {
@@ -119,7 +137,7 @@ async function gerar({ usuario, mes } = {}) {
   }
   linhas.sort((a, b) => a.funil.localeCompare(b.funil) || String(a.inscricao.split('/').reverse().join('')).localeCompare(String(b.inscricao.split('/').reverse().join(''))) || a.nome.localeCompare(b.nome, 'pt-BR'));
   const texto = linhas.map((l) => `${l.nome} - ${l.telefone || 'sem telefone no CRM'} - inscrito em ${l.inscricao || '?'}`).join('\r\n') + (linhas.length ? '\r\n' : '');
-  return { mes: mesOk, inicio, fim, linhas, texto, pendentes, avisos };
+  return { mes: mesOk, sdr: nomeSdr, inicio, fim, linhas, texto, csv: csvWhatsapp(linhas), pendentes, avisos };
 }
 
-module.exports = { gerar, telefoneBonito, acharFunil };
+module.exports = { gerar, telefoneBonito, acharFunil, csvWhatsapp };

@@ -552,11 +552,11 @@ app.get('/api/master/match', auth, soMasterComChave, async (req, res) => {
 });
 // Aba "Meus closers": por closer, as reuniões realizadas, as vendas, o ticket médio e a conversão dos leads do SDR no
 // mês (src/painelClosers.js). Só o master; SDR = você, alguém do time ou o time todo.
-// Lista para recontato: leads do mês em "Respondeu" (Aplicação Direta: todos; SMQLs: os seus) — nome, telefone e inscrição.
+// Lista para recontato: leads do mês em "Respondeu" (Aplicação Direta: todos; SMQLs: os seus; ?sdr= outro SDR: só os dele) — nome, telefone e inscrição.
 app.get('/api/master/leads-respondeu', auth, soMasterComChave, async (req, res) => {
   try {
     res.set('Cache-Control', 'no-store');
-    res.json({ ok: true, ...(await leadsRespondeu.gerar({ usuario: req.usuario, mes: (req.query || {}).mes })) });
+    res.json({ ok: true, ...(await leadsRespondeu.gerar({ usuario: req.usuario, mes: (req.query || {}).mes, sdr: (req.query || {}).sdr })) });
   } catch (err) {
     res.status(502).json({ erro: err.message });
   }

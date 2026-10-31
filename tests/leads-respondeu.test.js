@@ -64,6 +64,22 @@ test('Respondeu de outubro: Aplicação Direta (todos) e SMQLs (só os seus) —
   assert.deepEqual(r.linhas.map((l) => l.funil), ['Aplicação Direta', 'Aplicação Direta', 'SMQLs Automáticos']);
 });
 
+test('CSV do WhatsApp: Nome,Telefone com +55, sem a data', async () => {
+  const r = await respondeu.gerar({ usuario: { id: 'eu', nome: 'Cauã Lima' }, mes: '2026-10' });
+  assert.equal(r.csv, '﻿Nome,Telefone\r\n"Lead A2","+5521998765432"\r\n"Lead A1","+5511987654321"\r\n"Lead S1","+5511912340000"\r\n');
+});
+
+test('outro SDR: só os cards dele, nos dois funis', async () => {
+  DEALS.push(deal('a6', 'f-ap', 'a-resp', { sdr: 'u-outro' }));
+  try {
+    const r = await respondeu.gerar({ usuario: { id: 'eu', nome: 'Cauã Lima' }, mes: '2026-10', sdr: 'Outra SDR' });
+    assert.equal(r.sdr, 'Outra SDR');
+    assert.deepEqual(r.linhas.map((l) => [l.funil, l.nome]), [['Aplicação Direta', 'Lead A6'], ['SMQLs Automáticos', 'Lead S2']]);
+  } finally {
+    DEALS.pop();
+  }
+});
+
 test('telefone em qualquer formato vira (DD) 9XXXX-XXXX', () => {
   assert.equal(respondeu.telefoneBonito('+55 (47) 99900-6343'), '(47) 99900-6343');
   assert.equal(respondeu.telefoneBonito('4733221100'), '(47) 3322-1100');
