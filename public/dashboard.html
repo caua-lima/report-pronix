@@ -1898,7 +1898,7 @@
         el('Tabela').innerHTML = linhas.join('') || '<tr><td colspan="7" class="hint">Nenhuma reunião, venda ou no-show dos leads neste mês.</td></tr>';
         const dg = d.diagnostico || {};
         el('Nota').textContent = `Período: ${(d.inicio || '').split('-').reverse().join('/')} a ${(d.fim || '').split('-').reverse().join('/')}. ${dg.cardsLidos || 0} card(s) lidos do CRM${dg.aindaNaoAconteceu ? `; ${dg.aindaNaoAconteceu} com reunião ainda por acontecer (não contam)` : ''}. Os números são só do CRM. Linhas apagadas têm menos de ${MIN_AMOSTRA_MC} reuniões.` +
-          ((dg.naoCloser || []).length ? ` Fora da tabela (não estão na aba Closers): ${dg.naoCloser.join(', ')} — se algum for closer, cadastre na aba Closers.` : '') +
+          ((dg.naoCloser || []).length ? ` Fora da tabela (donos de card que não estão na lista de closers): ${dg.naoCloser.join(', ')}${dg.foraDaTabela ? ` — somam ${dg.foraDaTabela.reunioes} reunião(ões), ${dg.foraDaTabela.vendas} venda(s), ${brlMc(dg.foraDaTabela.faturamento)}` : ''}. Se algum for closer, cadastre na aba Closers.` : '') +
           ((dg.sdrsSemCrm || []).length ? ` Não achei no CRM o usuário de: ${dg.sdrsSemCrm.join(', ')} — os cards dele(s) não entraram.` : '');
         aplicarIcones(el('Destaque'));
       }

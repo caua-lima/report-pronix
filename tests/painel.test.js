@@ -2476,7 +2476,7 @@ test('Closers do time: escolhe o SDR, clica em Carregar e vê os números dele p
   await esperar(() => visivel(p.$('scConteudo')), { motivo: 'carregou' });
   assert.equal(api.pedidos.find((x) => x.chave === 'GET /api/master/closers-do-sdr').query.get('sdr'), 'Samuel Filipe');
   assert.match(p.$('scDestaque').textContent, /Samuel Filipe converte mais com Paulo Henrique Pagoti: 50%/);
-  assert.match(p.$('scNota').textContent, /Fora da tabela \(não estão na aba Closers\): Maria Clara Soares Zanco/);
+  assert.match(p.$('scNota').textContent, /Fora da tabela \(donos de card que não estão na lista de closers\): Maria Clara Soares Zanco/);
   await dormir(40);
   assert.deepEqual(p.erros, []);
   p.fechar();
