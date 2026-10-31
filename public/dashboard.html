@@ -490,6 +490,7 @@
         <button class="tab so-master hidden" data-aba="funil"><i data-ic="filter"></i>Limpeza do RD</button>
         <button class="tab so-master hidden" data-aba="match"><i data-ic="chart"></i>Match com PH</button>
         <button class="tab so-master hidden" data-aba="meusclosers"><i data-ic="users"></i>Meus closers</button>
+        <button class="tab so-master hidden" data-aba="closerstime"><i data-ic="users"></i>Closers do time</button>
       </div>
       <div class="grupo">
         <div class="grupo-rotulo">Sistema</div>
@@ -909,6 +910,34 @@
             </table>
           </div>
           <div class="hint" id="mcNota" style="margin-top:10px"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= ABA: CLOSERS DO TIME (só o master) ================= -->
+    <section id="aba-closerstime" class="hidden">
+      <div class="card">
+        <div class="head"><div class="t"><i data-ic="users"></i>Closers do time</div><div class="sub">— os mesmos números da aba Meus closers, de cada SDR do time: escolha o SDR e clique em Carregar</div></div>
+        <div class="row">
+          <div style="min-width:200px;flex:1"><label for="scSdr">SDR</label><select id="scSdr"><option value="">Escolha o SDR…</option><option value="Juliana Ferreira">Juliana Ferreira</option><option value="Luiza Lemes">Luiza Lemes</option><option value="Nicoly Beatriz">Nicoly Beatriz</option><option value="Isamara">Isamara</option><option value="Reinaldo Junior">Reinaldo Junior</option><option value="Samuel Filipe">Samuel Filipe</option></select></div>
+          <div style="min-width:160px"><label for="scMes">Mês</label><input id="scMes" type="month" /></div>
+          <button id="scCarregar" class="btn">Carregar</button>
+          <button id="scAtualizar" class="btn sec"><i data-ic="refresh"></i>Atualizar do CRM</button>
+        </div>
+        <div id="statusSc" class="status"></div>
+      </div>
+      <div id="scConteudo" class="hidden">
+        <div class="kpis kpis-destaque" id="scTotal"></div>
+        <div class="card" id="scDestaque"></div>
+        <div class="card">
+          <div class="head"><div class="t"><i data-ic="chart"></i>Por closer</div><div class="sub">— conversão = vendas do mês ÷ reuniões realizadas do mês. Clique num closer para ver os leads.</div></div>
+          <div style="overflow:auto">
+            <table>
+              <thead><tr><th>Closer</th><th class="r">Reuniões</th><th class="r">Vendas</th><th class="r">Conversão</th><th class="r">Ticket médio</th><th class="r">Faturamento</th><th class="r">No-show</th></tr></thead>
+              <tbody id="scTabela"></tbody>
+            </table>
+          </div>
+          <div class="hint" id="scNota" style="margin-top:10px"></div>
         </div>
       </div>
     </section>
@@ -1454,8 +1483,8 @@
     }
 
     // ---------- Menu ----------
-    const ABAS = ['report', 'dia', 'acessos', 'numeros', 'resultados', 'closers', 'funil', 'match', 'meusclosers', 'arquivos', 'base', 'extensao'];
-    const SO_ADMIN = ['acessos', 'numeros', 'resultados', 'closers', 'funil', 'match', 'meusclosers', 'arquivos', 'base', 'extensao'];
+    const ABAS = ['report', 'dia', 'acessos', 'numeros', 'resultados', 'closers', 'funil', 'match', 'meusclosers', 'closerstime', 'arquivos', 'base', 'extensao'];
+    const SO_ADMIN = ['acessos', 'numeros', 'resultados', 'closers', 'funil', 'match', 'meusclosers', 'closerstime', 'arquivos', 'base', 'extensao'];
     let souAdmin = false;
     let souGestor = false;
     let souMaster = false;
@@ -1468,7 +1497,7 @@
       ['base', 'Base'], ['extensao', 'Extensão'], ['equipe', 'Reports do dia da equipe'],
     ];
     const podeAba = (a) =>
-      a === 'report' || a === 'dia' || (a === 'acessos' || a === 'funil' || a === 'match' || a === 'meusclosers' ? podeMexerEmUsuarios() : Boolean(senhaAdmin) || minhasAbas.has(a));
+      a === 'report' || a === 'dia' || (a === 'acessos' || a === 'funil' || a === 'match' || a === 'meusclosers' || a === 'closerstime' ? podeMexerEmUsuarios() : Boolean(senhaAdmin) || minhasAbas.has(a));
     const temAbaDeGestao = () => SO_ADMIN.some(podeAba);
     let papelConhecido = false; // a chave já foi conferida (antes disso não dá para saber se é master)
     let validacaoPendente = false; // a chave ainda está sendo conferida (a lista do dia espera: o papel muda o que ela mostra)
@@ -1484,6 +1513,7 @@
       numeros: ['Reports gerados', 'Volume, custo e quem gerou cada report.'],
       closers: ['Closers', 'Quem conduz as reuniões.'],
       match: ['Match com PH', 'Reuniões realizadas, conversão e faturamento com o closer, mês a mês, e quanto falta para a meta.'],
+      closerstime: ['Closers do time', 'Os números por closer de cada SDR do time: escolha o SDR e carregue.'],
       meusclosers: ['Meus closers', 'Com que closer seus leads mais compram: reuniões, vendas, ticket médio e conversão do mês, por closer.'],
       funil: ['Limpeza do RD', 'Card parado no começo do funil vira perda em Desqualificados, com o motivo.'],
       acessos: ['Acessos', 'Quem usa a ferramenta e o que cada pessoa vê e faz.'],
@@ -1812,99 +1842,115 @@
     // aba continua sozinha (o que já foi lido fica guardado) até ler tudo — sem precisar clicar de novo.
     let rodadaMt = 0;
     let timerMt = null;
-    // ---------- Aba: Meus closers ----------
+    // ---------- Abas: Meus closers / Closers do time ----------
     // Por closer: reuniões realizadas, vendas, ticket médio e conversão dos leads do SDR no mês (src/painelClosers.js).
-    let mcDados = null;
-    let rodadaMc = 0;
-    let timerMc = null;
-    let mcAberto = '';
+    // A mesma tela serve às duas abas (ids com o prefixo p): "Meus closers" (você, alguém do time ou o time todo) e
+    // "Closers do time" (escolhe o SDR e clica em Carregar).
     const MIN_AMOSTRA_MC = 3; // abaixo disso a conversão de um closer é pouco confiável
     const brlMc = (v) => (Number(v) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
     const pctMc = (v) => (Number(v) || 0).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '%';
     const mesAtualMc = () => new Date().toISOString().slice(0, 7);
-    function desenharMeusClosers(d) {
-      mcDados = d;
-      $('mcConteudo').classList.remove('hidden');
-      // o SDR: você, cada um do time, ou o time todo
-      const sel = $('mcSdr');
-      const atual = d.sdr || '';
-      sel.innerHTML = (d.sdrsDisponiveis || []).map((n, i) => `<option value="${esc(i === 0 ? '' : n)}">${esc(i === 0 ? n + ' (você)' : n)}</option>`).join('') + '<option value="time">Time todo</option>';
-      sel.value = atual === 'time' ? 'time' : (d.sdrsDisponiveis || [])[0] && atual === d.sdrsDisponiveis[0] ? '' : atual;
-      const t = d.total || {};
-      $('mcTotal').innerHTML = [
-        ['Reuniões realizadas', t.reunioes || 0],
-        ['Vendas', t.vendas || 0],
-        ['Conversão', pctMc(t.conversao)],
-        ['Ticket médio', brlMc(t.ticketMedio)],
-        ['Faturamento', brlMc(t.faturamento)],
-      ].map(([l, n]) => `<div class="kpi"><div class="l">${esc(l)}</div><div class="n">${esc(String(n))}</div></div>`).join('');
-      // onde você se dá melhor: maior conversão entre os closers com amostra; sem amostra, o melhor que houver
-      const comAmostra = (d.closers || []).filter((c) => c.reunioes >= MIN_AMOSTRA_MC);
-      const base = comAmostra.length ? comAmostra : (d.closers || []).filter((c) => c.reunioes > 0);
-      const melhor = base.slice().sort((a, b) => b.conversao - a.conversao || b.vendas - a.vendas)[0];
-      const maisVende = (d.closers || []).slice().sort((a, b) => b.faturamento - a.faturamento)[0];
-      const quem = d.sdr === 'time' ? 'O time' : (d.sdr && d.sdrsDisponiveis && d.sdr !== d.sdrsDisponiveis[0] ? d.sdr : 'Você');
-      $('mcDestaque').innerHTML = melhor
-        ? `<div class="head"><div class="t"><i data-ic="target"></i>Onde ${esc(quem === 'Você' ? 'você se dá' : quem + ' se dá')} melhor</div></div>` +
-          `<div style="font-size:1.05rem;line-height:1.6">${esc(quem)} converte mais com <b>${esc(melhor.closer)}</b>: ${esc(pctMc(melhor.conversao))} (${melhor.vendas} venda(s) em ${melhor.reunioes} reunião(ões))${comAmostra.length ? '' : ' <span class="hint">— poucas reuniões ainda, olhe com cuidado</span>'}.` +
-          (maisVende && maisVende.faturamento && maisVende.closer !== melhor.closer ? `<br>Quem mais faturou com os seus leads: <b>${esc(maisVende.closer)}</b> (${esc(brlMc(maisVende.faturamento))}).` : '') + '</div>'
-        : '<div class="hint">Nenhuma reunião realizada neste mês ainda.</div>';
-      const maxConv = Math.max(1, ...(d.closers || []).map((c) => c.conversao));
-      const linhas = (d.closers || []).map((c, i) => {
-        const pouca = c.reunioes < MIN_AMOSTRA_MC;
-        const aberto = mcAberto === c.closer;
-        const leads = aberto ? `<tr class="mc-leads"><td colspan="7"><div style="display:grid;gap:4px;padding:6px 0">${c.leads.map((r) => `<div><span class="hint">${esc(r.dia ? r.dia.split('-').reverse().join('/') : '—')}</span> · ${esc(r.lead || 'Lead')} · ${esc(r.contaVenda ? 'venda ' + brlMc(r.valor) : r.noShow ? 'no-show' : r.estado === 'nao_comprou' ? 'não comprou' : r.estado === 'fup' ? 'em follow-up' : r.estado)}${d.sdr === 'time' ? ' · ' + esc(r.sdr || '') : ''}</div>`).join('')}</div></td></tr>` : '';
-        return `<tr data-mc-closer="${esc(c.closer)}" style="cursor:pointer${pouca ? ';opacity:.6' : ''}" title="${pouca ? 'Poucas reuniões: a conversão ainda é pouco confiável. ' : ''}Clique para ver os leads">` +
-          `<td><span class="rank">${i + 1}</span><b>${esc(c.closer)}</b></td><td class="r">${c.reunioes}</td><td class="r">${c.vendas}</td>` +
-          `<td class="r">${esc(pctMc(c.conversao))}<div class="barra" style="margin-left:auto"><i style="width:${Math.round((c.conversao / maxConv) * 100)}%"></i></div></td>` +
-          `<td class="r">${c.vendas ? esc(brlMc(c.ticketMedio)) : '—'}</td><td class="r">${esc(brlMc(c.faturamento))}</td><td class="r">${c.noShow || 0}</td></tr>` + leads;
-      });
-      $('mcTabela').innerHTML = linhas.join('') || '<tr><td colspan="7" class="hint">Nenhuma reunião, venda ou no-show dos seus leads neste mês.</td></tr>';
-      const dg = d.diagnostico || {};
-      $('mcNota').textContent = `Período: ${(d.inicio || '').split('-').reverse().join('/')} a ${(d.fim || '').split('-').reverse().join('/')}. ${dg.cardsLidos || 0} card(s) lidos do CRM${dg.aindaNaoAconteceu ? `; ${dg.aindaNaoAconteceu} com reunião ainda por acontecer (não contam)` : ''}. Os números são só do CRM. Linhas apagadas têm menos de ${MIN_AMOSTRA_MC} reuniões.` +
-        ((dg.sdrsSemCrm || []).length ? ` Não achei no CRM o usuário de: ${dg.sdrsSemCrm.join(', ')} — os cards dele(s) não entraram.` : '');
-      aplicarIcones($('mcDestaque'));
-    }
-    async function carregarMeusClosers(atualizar, continuacao = false) {
-      if (!$('mcMes').value) $('mcMes').value = mesAtualMc();
-      if (mcDados && !atualizar) return desenharMeusClosers(mcDados);
-      if (!continuacao) rodadaMc = 0;
-      clearTimeout(timerMc);
-      setStatus('statusMc', atualizar ? 'Lendo os cards no CRM… (pode levar até um minuto)' : 'Carregando…', { loading: true });
-      $('mcAtualizar').disabled = true;
-      try {
-        const q = new URLSearchParams({ sdr: $('mcSdr').value, mes: $('mcMes').value });
-        if (atualizar) q.set('atualizar', '1');
-        const d = await api('GET', '/api/master/closers-do-sdr?' + q.toString());
-        desenharMeusClosers(d);
-        const faltam = (d.diagnostico && d.diagnostico.pendentesDoCrm) || 0;
-        const lento = d.diagnostico && d.diagnostico.listasPendentes && d.diagnostico.erroLista ? ' O CRM está lento: as listas que demoraram são lidas de novo na próxima rodada.' : '';
-        if (faltam && rodadaMc < 20) {
-          rodadaMc++;
-          setStatus('statusMc', `Lendo o CRM em partes (rodada ${rodadaMc}): os números já aparecem e vão se completando sozinhos em 15 s.${lento}`, { loading: true });
-          timerMc = setTimeout(() => carregarMeusClosers(true, true), 15000);
-        } else if (faltam) setStatus('statusMc', `Ainda falta ler parte do CRM.${lento} Clique em "Atualizar do CRM" em 1 minuto — o que já foi lido fica guardado.`, { erro: true });
-        else setStatus('statusMc', `Lido do CRM em ${new Date(d.atualizadoEm).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}${d.cache ? ' (guardado por 20 min; "Atualizar do CRM" lê de novo)' : ''}.`, { ok: true });
-      } catch (e) {
-        // Servidor passou do tempo ou o CRM demorou: o que já foi lido ficou guardado, então tenta de novo sozinho.
-        if (e.status >= 500 && rodadaMc < 20) {
-          rodadaMc++;
-          setStatus('statusMc', `O CRM está lento: tentando de novo em 15 s (rodada ${rodadaMc}) — o que já foi lido fica guardado.`, { loading: true });
-          timerMc = setTimeout(() => carregarMeusClosers(true, true), 15000);
-        } else setStatus('statusMc', e.message, { erro: true });
-      } finally {
-        $('mcAtualizar').disabled = false;
+    function painelDeClosers(p, { doTime = false } = {}) {
+      const P = p.charAt(0).toUpperCase() + p.slice(1);
+      const el = (s) => $(p + s);
+      let dados = null;
+      let rodada = 0;
+      let timer = null;
+      let aberto = '';
+      function desenhar(d) {
+        dados = d;
+        el('Conteudo').classList.remove('hidden');
+        const sel = el('Sdr');
+        if (!doTime) {
+          // você, cada um do time, ou o time todo
+          const atual = d.sdr || '';
+          sel.innerHTML = (d.sdrsDisponiveis || []).map((n, i) => `<option value="${esc(i === 0 ? '' : n)}">${esc(i === 0 ? n + ' (você)' : n)}</option>`).join('') + '<option value="time">Time todo</option>';
+          sel.value = atual === 'time' ? 'time' : (d.sdrsDisponiveis || [])[0] && atual === d.sdrsDisponiveis[0] ? '' : atual;
+        }
+        const t = d.total || {};
+        el('Total').innerHTML = [
+          ['Reuniões realizadas', t.reunioes || 0],
+          ['Vendas', t.vendas || 0],
+          ['Conversão', pctMc(t.conversao)],
+          ['Ticket médio', brlMc(t.ticketMedio)],
+          ['Faturamento', brlMc(t.faturamento)],
+        ].map(([l, n]) => `<div class="kpi"><div class="l">${esc(l)}</div><div class="n">${esc(String(n))}</div></div>`).join('');
+        // onde o SDR se dá melhor: maior conversão entre os closers com amostra; sem amostra, o melhor que houver
+        const comAmostra = (d.closers || []).filter((c) => c.reunioes >= MIN_AMOSTRA_MC);
+        const base = comAmostra.length ? comAmostra : (d.closers || []).filter((c) => c.reunioes > 0);
+        const melhor = base.slice().sort((a, b) => b.conversao - a.conversao || b.vendas - a.vendas)[0];
+        const maisVende = (d.closers || []).slice().sort((a, b) => b.faturamento - a.faturamento)[0];
+        const quem = d.sdr === 'time' ? 'O time' : (d.sdr && d.sdrsDisponiveis && d.sdr !== d.sdrsDisponiveis[0] ? d.sdr : 'Você');
+        el('Destaque').innerHTML = melhor
+          ? `<div class="head"><div class="t"><i data-ic="target"></i>Onde ${esc(quem === 'Você' ? 'você se dá' : quem + ' se dá')} melhor</div></div>` +
+            `<div style="font-size:1.05rem;line-height:1.6">${esc(quem)} converte mais com <b>${esc(melhor.closer)}</b>: ${esc(pctMc(melhor.conversao))} (${melhor.vendas} venda(s) em ${melhor.reunioes} reunião(ões))${comAmostra.length ? '' : ' <span class="hint">— poucas reuniões ainda, olhe com cuidado</span>'}.` +
+            (maisVende && maisVende.faturamento && maisVende.closer !== melhor.closer ? `<br>Quem mais faturou com os leads: <b>${esc(maisVende.closer)}</b> (${esc(brlMc(maisVende.faturamento))}).` : '') + '</div>'
+          : '<div class="hint">Nenhuma reunião realizada neste mês ainda.</div>';
+        const maxConv = Math.max(1, ...(d.closers || []).map((c) => c.conversao));
+        const linhas = (d.closers || []).map((c, i) => {
+          const pouca = c.reunioes < MIN_AMOSTRA_MC;
+          const leads = aberto === c.closer ? `<tr class="mc-leads"><td colspan="7"><div style="display:grid;gap:4px;padding:6px 0">${c.leads.map((r) => `<div><span class="hint">${esc(r.dia ? r.dia.split('-').reverse().join('/') : '—')}</span> · ${esc(r.lead || 'Lead')} · ${esc(r.contaVenda ? 'venda ' + brlMc(r.valor) : r.noShow ? 'no-show' : r.estado === 'nao_comprou' ? 'não comprou' : r.estado === 'fup' ? 'em follow-up' : r.estado)}${d.sdr === 'time' ? ' · ' + esc(r.sdr || '') : ''}</div>`).join('')}</div></td></tr>` : '';
+          return `<tr data-mc-closer="${esc(c.closer)}" style="cursor:pointer${pouca ? ';opacity:.6' : ''}" title="${pouca ? 'Poucas reuniões: a conversão ainda é pouco confiável. ' : ''}Clique para ver os leads">` +
+            `<td><span class="rank">${i + 1}</span><b>${esc(c.closer)}</b></td><td class="r">${c.reunioes}</td><td class="r">${c.vendas}</td>` +
+            `<td class="r">${esc(pctMc(c.conversao))}<div class="barra" style="margin-left:auto"><i style="width:${Math.round((c.conversao / maxConv) * 100)}%"></i></div></td>` +
+            `<td class="r">${c.vendas ? esc(brlMc(c.ticketMedio)) : '—'}</td><td class="r">${esc(brlMc(c.faturamento))}</td><td class="r">${c.noShow || 0}</td></tr>` + leads;
+        });
+        el('Tabela').innerHTML = linhas.join('') || '<tr><td colspan="7" class="hint">Nenhuma reunião, venda ou no-show dos leads neste mês.</td></tr>';
+        const dg = d.diagnostico || {};
+        el('Nota').textContent = `Período: ${(d.inicio || '').split('-').reverse().join('/')} a ${(d.fim || '').split('-').reverse().join('/')}. ${dg.cardsLidos || 0} card(s) lidos do CRM${dg.aindaNaoAconteceu ? `; ${dg.aindaNaoAconteceu} com reunião ainda por acontecer (não contam)` : ''}. Os números são só do CRM. Linhas apagadas têm menos de ${MIN_AMOSTRA_MC} reuniões.` +
+          ((dg.naoCloser || []).length ? ` Fora da tabela (não estão na aba Closers): ${dg.naoCloser.join(', ')} — se algum for closer, cadastre na aba Closers.` : '') +
+          ((dg.sdrsSemCrm || []).length ? ` Não achei no CRM o usuário de: ${dg.sdrsSemCrm.join(', ')} — os cards dele(s) não entraram.` : '');
+        aplicarIcones(el('Destaque'));
       }
+      async function carregar(atualizar, continuacao = false) {
+        if (!el('Mes').value) el('Mes').value = mesAtualMc();
+        if (doTime && !el('Sdr').value) return setStatus('status' + P, 'Escolha o SDR e clique em "Carregar".', {});
+        if (dados && !atualizar) return desenhar(dados);
+        if (!continuacao) rodada = 0;
+        clearTimeout(timer);
+        setStatus('status' + P, atualizar ? 'Lendo os cards no CRM… (pode levar até um minuto)' : 'Carregando…', { loading: true });
+        el('Atualizar').disabled = true;
+        try {
+          const q = new URLSearchParams({ sdr: el('Sdr').value, mes: el('Mes').value });
+          if (atualizar) q.set('atualizar', '1');
+          const d = await api('GET', '/api/master/closers-do-sdr?' + q.toString());
+          desenhar(d);
+          const faltam = (d.diagnostico && d.diagnostico.pendentesDoCrm) || 0;
+          const lento = d.diagnostico && d.diagnostico.listasPendentes && d.diagnostico.erroLista ? ' O CRM está lento: as listas que demoraram são lidas de novo na próxima rodada.' : '';
+          if (faltam && rodada < 20) {
+            rodada++;
+            setStatus('status' + P, `Lendo o CRM em partes (rodada ${rodada}): os números já aparecem e vão se completando sozinhos em 15 s.${lento}`, { loading: true });
+            timer = setTimeout(() => carregar(true, true), 15000);
+          } else if (faltam) setStatus('status' + P, `Ainda falta ler parte do CRM.${lento} Clique em "Atualizar do CRM" em 1 minuto — o que já foi lido fica guardado.`, { erro: true });
+          else setStatus('status' + P, `Lido do CRM em ${new Date(d.atualizadoEm).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}${d.cache ? ' (guardado por 20 min; "Atualizar do CRM" lê de novo)' : ''}.`, { ok: true });
+        } catch (e) {
+          // Servidor passou do tempo ou o CRM demorou: o que já foi lido ficou guardado, então tenta de novo sozinho.
+          if (e.status >= 500 && rodada < 20) {
+            rodada++;
+            setStatus('status' + P, `O CRM está lento: tentando de novo em 15 s (rodada ${rodada}) — o que já foi lido fica guardado.`, { loading: true });
+            timer = setTimeout(() => carregar(true, true), 15000);
+          } else setStatus('status' + P, e.message, { erro: true });
+        } finally {
+          el('Atualizar').disabled = false;
+        }
+      }
+      const trocou = () => { dados = null; aberto = ''; if (!doTime) carregar(false); };
+      el('Atualizar').addEventListener('click', () => carregar(true));
+      if (el('Carregar')) el('Carregar').addEventListener('click', () => { dados = null; aberto = ''; carregar(false); });
+      el('Sdr').addEventListener('change', trocou);
+      el('Mes').addEventListener('change', trocou);
+      el('Tabela').addEventListener('click', (ev) => {
+        const tr = ev.target.closest('[data-mc-closer]');
+        if (!tr || !dados) return;
+        aberto = aberto === tr.dataset.mcCloser ? '' : tr.dataset.mcCloser;
+        desenhar(dados);
+      });
+      return { carregar };
     }
-    $('mcAtualizar').addEventListener('click', () => carregarMeusClosers(true));
-    $('mcSdr').addEventListener('change', () => { mcDados = null; mcAberto = ''; carregarMeusClosers(false); });
-    $('mcMes').addEventListener('change', () => { mcDados = null; mcAberto = ''; carregarMeusClosers(false); });
-    $('mcTabela').addEventListener('click', (ev) => {
-      const tr = ev.target.closest('[data-mc-closer]');
-      if (!tr || !mcDados) return;
-      mcAberto = mcAberto === tr.dataset.mcCloser ? '' : tr.dataset.mcCloser;
-      desenharMeusClosers(mcDados);
-    });
+    const meusClosers = painelDeClosers('mc');
+    const closersDoTime = painelDeClosers('sc', { doTime: true });
+    const carregarMeusClosers = (a) => meusClosers.carregar(a);
+    const carregarClosersDoTime = () => closersDoTime.carregar(false);
 
     async function carregarMatch(atualizar, continuacao = false) {
       if (matchDados && !atualizar) return desenharMatch(matchDados);
@@ -2043,6 +2089,7 @@
       if (aba === 'funil') return prepararLimpeza();
       if (aba === 'match') return carregarMatch(false);
       if (aba === 'meusclosers') return carregarMeusClosers(false);
+      if (aba === 'closerstime') return carregarClosersDoTime();
       if (aba === 'numeros') {
         await carregarClosers(); // as linhas da tabela oferecem os closers no select
         return carregarStats();

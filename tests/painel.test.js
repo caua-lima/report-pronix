@@ -2454,3 +2454,30 @@ test('Meus closers: por closer no mês — reuniões, vendas, conversão, ticket
   assert.deepEqual(p.erros, []);
   p.fechar();
 });
+
+test('Closers do time: escolhe o SDR, clica em Carregar e vê os números dele por closer; sem SDR, nada é pedido', async () => {
+  const api = apiMaster()
+    .quando('GET /api/master/google', () => ({ corpo: { configurado: false, conectado: false, agendas: [] } }))
+    .quando('GET /api/master/closers-do-sdr', ({ query }) => ({ corpo: {
+      ok: true, mes: '2026-10', inicio: '2026-10-01', fim: '2026-10-31', sdr: query.get('sdr'), sdrsDisponiveis: ['Cauã Lima', 'Samuel Filipe'],
+      closers: [{ closer: 'Paulo Henrique Pagoti', reunioes: 4, vendas: 2, faturamento: 30000, ticketMedio: 15000, conversao: 50, noShow: 1, leads: [] }],
+      total: { reunioes: 4, vendas: 2, faturamento: 30000, ticketMedio: 15000, conversao: 50, noShow: 1 },
+      diagnostico: { cardsLidos: 8, pendentesDoCrm: 0, naoCloser: ['Maria Clara Soares Zanco'] }, atualizadoEm: '2026-10-31T12:00:00.000Z',
+    } }));
+  const p = abrirPainel(api, { hash: '#closerstime' });
+  await esperar(() => /Escolha o SDR/.test(p.$('statusSc').textContent), { motivo: 'pede o SDR' });
+  assert.ok(visivel(p.document.querySelector('.tab[data-aba="closerstime"]')));
+  assert.equal(p.$('tituloPagina').textContent, 'Closers do time');
+  assert.deepEqual([...p.$('scSdr').options].map((o) => o.value).slice(1), ['Juliana Ferreira', 'Luiza Lemes', 'Nicoly Beatriz', 'Isamara', 'Reinaldo Junior', 'Samuel Filipe']);
+  assert.equal(api.contar('GET /api/master/closers-do-sdr'), 0, 'nada antes de escolher');
+  p.$('scSdr').value = 'Samuel Filipe';
+  p.$('scSdr').dispatchEvent(new p.w.Event('change'));
+  p.$('scCarregar').click();
+  await esperar(() => visivel(p.$('scConteudo')), { motivo: 'carregou' });
+  assert.equal(api.pedidos.find((x) => x.chave === 'GET /api/master/closers-do-sdr').query.get('sdr'), 'Samuel Filipe');
+  assert.match(p.$('scDestaque').textContent, /Samuel Filipe converte mais com Paulo Henrique Pagoti: 50%/);
+  assert.match(p.$('scNota').textContent, /Fora da tabela \(não estão na aba Closers\): Maria Clara Soares Zanco/);
+  await dormir(40);
+  assert.deepEqual(p.erros, []);
+  p.fechar();
+});
