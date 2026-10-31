@@ -890,6 +890,14 @@
     <!-- ================= ABA: MEUS CLOSERS (só o master) ================= -->
     <section id="aba-meusclosers" class="hidden">
       <div class="card">
+        <div class="head"><div class="t"><i data-ic="download"></i>Leads em Respondeu (recontato)</div><div class="sub">— do mês: Aplicação Direta (todos) e SMQLs Automáticos (só os seus). O .txt traz nome, telefone e a data de inscrição.</div></div>
+        <div class="row">
+          <div style="min-width:160px"><label for="lrMes">Mês</label><input id="lrMes" type="month" /></div>
+          <button id="lrGerar" class="btn"><i data-ic="download"></i>Gerar .txt</button>
+        </div>
+        <div id="statusLr" class="status"></div>
+      </div>
+      <div class="card">
         <div class="head"><div class="t"><i data-ic="users"></i>Meus closers</div><div class="sub">— com que closer seus leads mais compram: reuniões realizadas, vendas, ticket médio e conversão do mês, lidos do CRM</div></div>
         <div class="row">
           <div style="min-width:200px;flex:1"><label for="mcSdr">SDR</label><select id="mcSdr"><option value="">Você</option></select></div>
@@ -1842,6 +1850,43 @@
     // aba continua sozinha (o que já foi lido fica guardado) até ler tudo — sem precisar clicar de novo.
     let rodadaMt = 0;
     let timerMt = null;
+    // ---------- Leads em Respondeu (.txt para recontato) ----------
+    let rodadaLr = 0;
+    async function gerarRespondeu(continuacao = false) {
+      if (!$('lrMes').value) $('lrMes').value = new Date().toISOString().slice(0, 7);
+      if (!continuacao) rodadaLr = 0;
+      $('lrGerar').disabled = true;
+      setStatus('statusLr', 'Lendo os leads no CRM… (pode levar até um minuto)', { loading: true });
+      try {
+        const d = await api('GET', '/api/master/leads-respondeu?mes=' + encodeURIComponent($('lrMes').value));
+        if (d.pendentes && rodadaLr < 20) {
+          rodadaLr++;
+          setStatus('statusLr', `Lendo em partes (rodada ${rodadaLr}): ${d.linhas.length} prontos, faltam ${d.pendentes}. Continua sozinho…`, { loading: true });
+          return void setTimeout(() => gerarRespondeu(true), 4000);
+        }
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([d.texto], { type: 'text/plain;charset=utf-8' }));
+        a.download = `respondeu-${d.mes}.txt`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        const porFunil = {};
+        d.linhas.forEach((l) => { porFunil[l.funil] = (porFunil[l.funil] || 0) + 1; });
+        const resumo = Object.entries(porFunil).map(([f, n]) => `${n} de ${f}`).join(', ') || 'nenhum lead';
+        setStatus('statusLr', `Baixado: ${d.linhas.length} lead(s) — ${resumo}.${d.pendentes ? ` Faltaram ${d.pendentes} (CRM lento): gere de novo em 1 minuto.` : ''}${(d.avisos || []).length ? ' ' + d.avisos.join(' ') : ''}`, { ok: !d.pendentes && !(d.avisos || []).length, erro: Boolean(d.pendentes || (d.avisos || []).length) });
+      } catch (e) {
+        if (e.status >= 500 && rodadaLr < 20) {
+          rodadaLr++;
+          setStatus('statusLr', `O CRM está lento: tentando de novo (rodada ${rodadaLr})…`, { loading: true });
+          return void setTimeout(() => gerarRespondeu(true), 8000);
+        }
+        setStatus('statusLr', e.message, { erro: true });
+      } finally {
+        $('lrGerar').disabled = false;
+      }
+    }
+    $('lrGerar').addEventListener('click', () => gerarRespondeu(false));
+
     // ---------- Abas: Meus closers / Closers do time ----------
     // Por closer: reuniões realizadas, vendas, ticket médio e conversão dos leads do SDR no mês (src/painelClosers.js).
     // A mesma tela serve às duas abas (ids com o prefixo p): "Meus closers" (você, alguém do time ou o time todo) e
