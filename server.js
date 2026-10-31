@@ -32,6 +32,7 @@ const perguntasDaConversa = require('./src/perguntasDaConversa');
 const aquecimento = require('./src/aquecimento');
 const matchCloser = require('./src/matchCloser');
 const painelClosers = require('./src/painelClosers');
+const leadsRespondeu = require('./src/leadsRespondeu');
 const inteligencia = require('./src/inteligencia');
 const afinidadeIa = require('./src/afinidade');
 const casosDoCloser = require('./src/casos');
@@ -551,6 +552,15 @@ app.get('/api/master/match', auth, soMasterComChave, async (req, res) => {
 });
 // Aba "Meus closers": por closer, as reuniões realizadas, as vendas, o ticket médio e a conversão dos leads do SDR no
 // mês (src/painelClosers.js). Só o master; SDR = você, alguém do time ou o time todo.
+// Lista para recontato: leads do mês em "Respondeu" (Aplicação Direta: todos; SMQLs: os seus) — nome, telefone e inscrição.
+app.get('/api/master/leads-respondeu', auth, soMasterComChave, async (req, res) => {
+  try {
+    res.set('Cache-Control', 'no-store');
+    res.json({ ok: true, ...(await leadsRespondeu.gerar({ usuario: req.usuario, mes: (req.query || {}).mes })) });
+  } catch (err) {
+    res.status(502).json({ erro: err.message });
+  }
+});
 app.get('/api/master/closers-do-sdr', auth, soMasterComChave, async (req, res) => {
   try {
     const { sdr, mes, atualizar } = req.query || {};
