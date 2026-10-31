@@ -162,7 +162,8 @@ test('só quem está na aba Closers é closer: dono de card que não está lá (
   CARDS.p6 = card('p6', 'c-vend', PH, { win: true, closed_at: '2026-06-15T18:00:00.000Z', amount_total: 7000, deal_stage_histories: hist(['c-real', '2026-06-14'], ['c-vend', '2026-06-15']) });
   const r = await painelClosers.painel({ usuario: { id: 'eu5', nome: 'Cauã Lima' }, mes: '2026-06', atualizar: true });
   assert.deepEqual(r.closers.map((c) => c.closer), ['Paulo Henrique Pagoti']);
-  assert.deepEqual(r.diagnostico.naoCloser, ['Amarildo Queiroz', 'Maria Clara Soares Zanco'], 'quem não está na aba Closers (aqui, o Amarildo não foi cadastrado)');
+  assert.deepEqual(r.diagnostico.naoCloser, ['Maria Clara Soares Zanco'], 'os closers do time já vêm na lista; ela não é closer');
+  assert.deepEqual([r.diagnostico.foraDaTabela.vendas, r.diagnostico.foraDaTabela.faturamento], [1, 1609], 'o que ela soma aparece à parte');
   assert.deepEqual([r.total.vendas, r.total.faturamento], [1, 7000], 'a venda dela não entra no total');
   delete CARDS.m1;
   delete CARDS.p6;

@@ -15,6 +15,10 @@ const { leadDoCard } = require('./vendasDoRd');
 
 const ORCAMENTO_MS = () => Number(process.env.CLOSERS_ORCAMENTO_MS) || 45000;
 const CACHE_SEG = 20 * 60;
+// Os closers do time (o calendário dos closers, 31/10/2026), como o CRM os chama. Somam-se aos da aba Closers;
+// CLOSERS_PADRAO (nomes separados por vírgula) troca a lista sem mexer no código.
+const CLOSERS_PADRAO = 'Paulo Henrique Pagoti, Amarildo Queiroz, Giovane Ribeiro Romano, Raphael Cassiano Ribeiro, Daniel Camargo de Andrade, Gabrielle Machado Silveira, Igor Martins, Jenniffer Lauany Barros, Pedro Henrique Melo Palermo, Pedro Pasin, Roselaynne Lima Costa Cabral, Vitor Santos, Zayra';
+const closersPadrao = () => String(process.env.CLOSERS_PADRAO || CLOSERS_PADRAO).split(',').map((x) => x.trim()).filter(Boolean);
 const LISTA_SEG = 10 * 60;
 
 const norm = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
@@ -134,7 +138,7 @@ async function painel({ usuario, sdr, mes, atualizar = false } = {}) {
   const time = String(sdr || '') === 'time';
   const escolhido = time ? '' : disponiveis.find((n) => mesmaPessoa(n, sdr)) || usuario.nome;
   const sdrs = time ? disponiveis : [escolhido];
-  const chave = `closers2_${usuario.id}_${slug(sdrs.join(' '))}_${mesOk}`;
+  const chave = `closers4_${usuario.id}_${slug(sdrs.join(' '))}_${mesOk}`;
   if (!atualizar) {
     const guardado = await db.cacheGet(chave).catch(() => null);
     if (guardado) { try { return { ...JSON.parse(guardado), cache: true }; } catch (_) { /* refaz */ } }
@@ -146,17 +150,19 @@ async function painel({ usuario, sdr, mes, atualizar = false } = {}) {
     cardsLidos: cards.length, pendentesDoCrm: diag.pendentes || 0, listasPendentes: diag.listasPendentes || 0, erroLista: diag.erroLista || '',
     sdrsSemCrm: diag.sdrsSemCrm || [], funis: diag.funis, deOutroSdr: 0, aindaNaoAconteceu: 0, foraDoMes: 0,
   };
-  // Só quem está na aba Closers é closer (dono de card que não está lá — SDR, gestor... — fica fora da tabela).
-  const cadastrados = await closersCadastro.listar().catch(() => []);
+  // Quem é closer: a lista dos closers do time (CLOSERS_PADRAO) mais os cadastrados na aba Closers. Dono de card que
+  // não está nela (SDR, gestor...) fica fora da tabela, e o que ele soma aparece à parte (foraDaTabela).
+  const cadastrados = (await closersCadastro.listar().catch(() => [])).map((c) => c.nome).concat(closersPadrao());
   const palavras = (s) => norm(s).split(' ').filter(Boolean);
   const cabe = (curto, longo) => { const p = new Set(palavras(longo)); const c = palavras(curto); return c.length > 0 && c.every((x) => p.has(x)); };
-  const ehCloser = (nome) => !cadastrados.length || cadastrados.some((c) => cabe(c.nome, nome) || cabe(nome, c.nome));
+  // o nome do CRM e o da lista: todas as palavras de um estão no outro, ou o mesmo primeiro e último nome
+  const pontas = (s) => { const p = palavras(s); return p.length > 1 ? p[0] + ' ' + p[p.length - 1] : ''; };
+  const ehCloser = (nome) => cadastrados.some((c) => cabe(c, nome) || cabe(nome, c) || (pontas(c) && pontas(c) === pontas(nome)));
   const naoCloser = new Set();
   const reunioes = [];
   for (const d of cards) {
     const closer = String((d.user && d.user.name) || '').trim();
     if (!closer) continue;
-    if (!ehCloser(closer)) { naoCloser.add(closer); continue; }
     // o campo SDR do card tem de ser um dos SDRs escolhidos (a lista do CRM já filtra; aqui confere)
     const quem = match.quemEhOSdr(d, { nome: sdrs[0] }, sdrs.slice(1));
     if (quem.tipo === 'outro') { diagnostico.deOutroSdr++; continue; }
@@ -171,15 +177,19 @@ async function painel({ usuario, sdr, mes, atualizar = false } = {}) {
     const noShow = estado === 'no_show' && noMes(dia);
     const contaVenda = venda && noMes(diaVenda);
     if (!contaReuniao && !noShow && !contaVenda) { diagnostico.foraDoMes++; continue; }
+    if (!ehCloser(closer)) naoCloser.add(closer);
     reunioes.push({
-      id: idDe(d), closer, lead: leadDoCard(d), dia, estado, contaReuniao, noShow, contaVenda,
+      id: idDe(d), closer, ehCloser: ehCloser(closer), lead: leadDoCard(d), dia, estado, contaReuniao, noShow, contaVenda,
       valor: contaVenda ? Number(d.amount_total) || 0 : 0, sdr: quem.nome || sdrs[0],
       etapa: (d.deal_stage && d.deal_stage.name) || '',
     });
   }
   // Os números são SÓ do CRM (é o que o CRM mostra na coluna "Vendido"): report que o CRM não traz não entra.
   diagnostico.naoCloser = [...naoCloser].sort((x, y) => x.localeCompare(y, 'pt-BR'));
-  const { closers, total } = porCloser(reunioes);
+  const { closers, total } = porCloser(reunioes.filter((r) => r.ehCloser));
+  // o que os donos que não são closers somam: para o total da tela + isto bater com o CRM
+  const fora = porCloser(reunioes.filter((r) => !r.ehCloser)).total;
+  diagnostico.foraDaTabela = { nomes: diagnostico.naoCloser, reunioes: fora.reunioes, vendas: fora.vendas, faturamento: fora.faturamento };
   const saida = { mes: mesOk, inicio, fim, sdr: time ? 'time' : escolhido, sdrsDisponiveis: disponiveis, closers, total, diagnostico, atualizadoEm: new Date().toISOString() };
   // Leitura incompleta não fica guardada: a próxima rodada continua de onde parou (as listas e os detalhes ficam).
   if (!diagnostico.pendentesDoCrm) await db.cacheSet(chave, JSON.stringify(saida), CACHE_SEG).catch(() => {});
