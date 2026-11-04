@@ -1441,7 +1441,10 @@ const retornoDoGoogle = (req) => enderecoDoServidor(req) + '/api/google/retorno'
 const linkPronixClub = (req) => enderecoDoServidor(req) + '/#pronixclub';
 app.all('/api/pronix-club/verificar/:segredo', async (req, res) => {
   res.set('Cache-Control', 'no-store');
-  if (!(await pronixClub.segredoConfere(req.params.segredo).catch(() => false))) return res.status(404).json({ erro: 'Não encontrado.' });
+  if (!(await pronixClub.segredoConfere(req.params.segredo).catch(() => false))) {
+    const ligado = await pronixClub.config().catch(() => null);
+    return res.status(404).json({ erro: ligado ? 'Endereço errado: copie de novo o endereço inteiro da aba Pronix Club.' : 'O aviso ainda não foi ligado: clique em "Ligar o aviso" na aba Pronix Club.' });
+  }
   const r = await pronixClub.verificar({ link: linkPronixClub(req) });
   res.status(r.ok || r.motivo === 'desligado' ? 200 : 502).json(r);
 });

@@ -73,6 +73,9 @@ test('lead novo no Pronix Club: guarda nome e telefone, avisa uma vez e o push n
   // segredo errado: nada
   assert.equal((await fetchReal(base + '/api/pronix-club/verificar/errado')).status, 404);
 
+  // colado com espaço e ponto no fim: ainda vale
+  assert.equal((await fetchReal(base + '/api/pronix-club/verificar/' + segredo + '%20.')).status, 200);
+
   // nada novo ainda: sem push (o antigo não avisa)
   let r = await (await fetchReal(base + '/api/pronix-club/verificar/' + segredo)).json();
   assert.equal(r.avisados, 0);

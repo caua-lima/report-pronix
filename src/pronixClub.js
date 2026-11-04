@@ -106,7 +106,8 @@ async function telefoneDoCard(d) {
 async function segredoConfere(segredo) {
   const cfg = await config();
   if (!cfg || !cfg.segredo) return false;
-  const a = Buffer.from(String(segredo || ''));
+  // copiar e colar às vezes traz espaço, ponto ou quebra de linha junto: o segredo é só hexadecimal
+  const a = Buffer.from(String(segredo || '').replace(/[^0-9a-f]/gi, '').toLowerCase());
   const b = Buffer.from(cfg.segredo);
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
