@@ -4,7 +4,8 @@
 // Como funciona, sem custo:
 //  - um agendador grátis de fora (ex.: cron-job.org) chama GET /api/pronix-club/verificar/<segredo> a cada minuto
 //    (o agendador da Vercel no plano grátis só roda uma vez por dia); um webhook do CRM pode chamar a mesma rota;
-//  - aqui o servidor lista os cards do funil criados de ontem para cá, tira os já avisados e manda um push pelo
+//  - aqui o servidor compara os cards do funil com os da conferência anterior (o que apareceu entrou: criado ali ou
+//    movido de outro funil) e manda um push pelo
 //    ntfy (app grátis no celular, sem conta: basta assinar o tópico).
 // O push NÃO leva dado do lead (o ntfy é um servidor de terceiros): só "Novo lead no Pronix Club". Tocar nele abre a
 // aba Pronix Club do dashboard (com login), onde estão nome, telefone e o botão do WhatsApp — guardados no nosso banco.
@@ -13,12 +14,12 @@
 const crypto = require('crypto');
 const db = require('./db');
 const crm = require('./crm');
-const stats = require('./stats');
 const { leadDoCard } = require('./vendasDoRd');
 
 const CHAVE_CONFIG = 'pronixclub_config';
 const CHAVE_STATUS = 'pronixclub_status';
 const CHAVE_VISTOS = 'pronixclub_vistos';
+const CHAVE_RETRATO = 'pronixclub_retrato';
 const CHAVE_LEADS = 'pronixclub_leads';
 const NTFY = () => (process.env.NTFY_URL || 'https://ntfy.sh').replace(/\/+$/, '');
 const FUNIL = () => new RegExp(process.env.PRONIX_CLUB_FUNIL || 'pronix ?club');
@@ -50,6 +51,8 @@ async function ativar() {
     desde: atual.ativo && atual.desde ? atual.desde : new Date().toISOString(),
   };
   await db.setJson(CHAVE_CONFIG, cfg);
+  // estava desligado: o retrato antigo faria avisar tudo o que entrou enquanto estava desligado
+  if (!atual.ativo) await db.setJson(CHAVE_RETRATO, null);
   return cfg;
 }
 
@@ -102,26 +105,6 @@ async function telefoneDoCard(d) {
   return String((((ct && ct.phones) || [])[0] || {}).phone || '');
 }
 
-/**
- * Quando o card entrou no funil (ms): o começo da última sequência de etapas do funil no histórico de etapas.
- * Card criado direto no funil: a criação. Movido de outro funil: o dia em que chegou aqui.
- */
-function entradaNoFunil(deal, funil) {
-  const ids = new Set((funil.etapas || []).map((e) => String(e.id)));
-  const hist = (Array.isArray(deal.deal_stage_histories) ? deal.deal_stage_histories : [])
-    .map((h) => {
-      const v = h && (h.deal_stage_id || h.deal_stage);
-      return { id: v && typeof v === 'object' ? idDe(v) : String(v || ''), t: Date.parse((h && h.start_date) || '') };
-    })
-    .filter((h) => h.id && Number.isFinite(h.t))
-    .sort((a, b) => a.t - b.t);
-  let entrada = 0;
-  for (const h of hist) {
-    if (ids.has(h.id)) { if (!entrada) entrada = h.t; } else entrada = 0;
-  }
-  return entrada || Date.parse(deal.created_at) || 0;
-}
-
 /** O segredo da URL confere? (comparação de tempo constante) */
 async function segredoConfere(segredo) {
   const cfg = await config();
@@ -155,36 +138,33 @@ async function verificar({ agora = new Date(), link } = {}) {
   try {
     const funil = (await crm.funis()).find((f) => FUNIL().test(norm(f.nome)));
     if (!funil) throw new Error('Não achei o funil "Pronix Club" no CRM.');
-    const hoje = stats.emDiaLocal(agora.toISOString());
-    const ontem = stats.emDiaLocal(new Date(agora.getTime() - 24 * 3600 * 1000).toISOString());
-    // Os cards do funil mexidos de ontem para cá: criar o card ou movê-lo de outro funil para cá muda o updated_at.
-    const deals = (await crm.listarNegociacoes(
-      { deal_pipeline_id: funil.id, updated_at_period: 'true', start_date: crm.instanteDoDia(ontem), end_date: crm.instanteDoDia(hoje, true) },
-      { maxPaginas: 2, timeoutMs: 20000 }
-    )).filter((d) => idDe(d) && (!d.deal_pipeline || !idDe(d.deal_pipeline) || idDe(d.deal_pipeline) === funil.id));
+    // Retrato do funil: os cards que estão nele agora. Todo card que não estava no retrato anterior ENTROU — criado ali
+    // ou movido de outro funil (não depende de data nem de histórico). Poucas leituras: 1 a cada 200 cards do funil.
+    const PAGINAS = 10;
+    const deals = (await crm.listarNegociacoes({ deal_pipeline_id: funil.id }, { maxPaginas: PAGINAS, timeoutMs: 20000 }))
+      .filter((d) => idDe(d) && (!d.deal_pipeline || !idDe(d.deal_pipeline) || idDe(d.deal_pipeline) === funil.id));
+    const ids = deals.map(idDe);
     const desde = Date.parse(cfg.desde) || 0;
     const vistos = new Set(await db.getJson(CHAVE_VISTOS, []));
-    const naoVistos = deals.filter((d) => !vistos.has(idDe(d)));
-    // Leve para o CRM (o token é o mesmo da extensão de todo mundo): só olha de perto o card mexido nos últimos 15 min
-    // (a conferência roda a cada minuto) e no máximo 5 detalhes por rodada. O resto já estava lá: fica marcado e
-    // nunca mais é lido. Antes, card sem detalhe voltava toda rodada e a conferência lia centenas de cards por minuto.
-    const recente = Math.max(desde, agora.getTime() - 15 * 60 * 1000);
-    const mexidoEm = (d) => Math.max(Date.parse(d.updated_at) || 0, Date.parse(d.created_at) || 0);
-    const antigos = naoVistos.filter((d) => mexidoEm(d) < recente);
-    antigos.forEach((d) => vistos.add(idDe(d)));
-    // os outros: quando ENTROU no funil, pelo histórico de etapas (o lead movido de outro funil foi criado antes)
-    const candidatos = naoVistos.filter((d) => !antigos.includes(d)).slice(0, 5);
-    const detalhes = candidatos.length ? await crm.detalhesDe(candidatos, { prazoMs: 8000, porSegundo: 2 }).catch(() => []) : [];
-    const porId = new Map(detalhes.map((d) => [idDe(d), d]));
-    const entrou = (d) => entradaNoFunil(porId.get(idDe(d)) || d, funil);
-    const novos = [];
-    for (const d of candidatos) {
-      if (!porId.has(idDe(d)) && !(Date.parse(d.created_at) >= desde)) continue; // sem o detalhe agora: tenta na próxima
-      if (entrou(d) >= desde) novos.push({ ...d, ...(porId.get(idDe(d)) || {}), _entrou: entrou(d) });
-      else vistos.add(idDe(d)); // já estava no funil antes de ligar o aviso
+    const retrato = await db.getJson(CHAVE_RETRATO, null);
+    registro.noFunil = ids.length;
+    registro.funil = funil.nome;
+    let novos = [];
+    if (!Array.isArray(retrato)) {
+      // primeira conferência: só tira o retrato (o que já está no funil não avisa)
+      await db.setJson(CHAVE_RETRATO, ids);
+    } else if (retrato.length > 10 && ids.length < retrato.length / 2) {
+      // a lista veio bem menor que a anterior: resposta incompleta do CRM. Não avisa nem troca o retrato.
+      throw new Error(`O CRM devolveu ${ids.length} cards do funil (antes eram ${retrato.length}): conferência ignorada.`);
+    } else {
+      const antes = new Set(retrato);
+      const truncado = deals.length >= PAGINAS * 200; // funil maior que a leitura: só confia no card criado depois
+      novos = deals
+        .filter((d) => !antes.has(idDe(d)) && !vistos.has(idDe(d)))
+        .filter((d) => !truncado || (Date.parse(d.created_at) || 0) >= desde)
+        .slice(0, MAX_POR_RODADA);
+      await db.setJson(CHAVE_RETRATO, truncado ? [...new Set([...retrato, ...ids])].slice(-5000) : ids);
     }
-    novos.sort((a, b) => a._entrou - b._entrou).splice(MAX_POR_RODADA);
-    registro.noFunilMexidos = deals.length;
     // primeiro guarda os leads (nome e telefone ficam no nosso banco), depois um push só, sem dado do lead
     for (const d of novos) {
       const tel = telefoneDe(await telefoneDoCard(d));
@@ -194,7 +174,7 @@ async function verificar({ agora = new Date(), link } = {}) {
         telefone: tel.bonito,
         whatsapp: tel.whatsapp,
         etapa: (d.deal_stage && d.deal_stage.name) || '',
-        criadoEm: d._entrou ? new Date(d._entrou).toISOString() : d.created_at || '',
+        criadoEm: d.created_at || '',
         avisadoEm: agora.toISOString(),
       }, 100);
     }

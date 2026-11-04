@@ -67,7 +67,9 @@ test.after(async () => {
 });
 
 test('lead novo no Pronix Club: guarda nome e telefone, avisa uma vez e o push não leva dado do lead', async () => {
+  const antes = new Date(Date.now() - 5 * 24 * 3600e3).toISOString();
   DEALS.push(deal('velho', new Date(Date.now() - 3600e3).toISOString(), 'Lead Antigo')); // já estava antes de ligar
+  DEALS.push({ ...deal('p1', antes, 'Lead Parado'), updated_at: new Date().toISOString() }); // estava no funil e só foi editado
   const ligado = await acao('ativar');
   assert.equal(ligado.ativo, true);
   assert.match(ligado.topico, /^pronix-club-[0-9a-f]{18}$/);
@@ -95,12 +97,8 @@ test('lead novo no Pronix Club: guarda nome e telefone, avisa uma vez e o push n
   const corpo = JSON.stringify(pushes[0]);
   for (const proibido of ['Lead Novo', '98765', '99876', 'Antigo']) assert.ok(!corpo.includes(proibido), 'o push não leva ' + proibido);
 
-  // lead MOVIDO de outro funil para o Pronix Club: criado há dias, entrou no funil agora (histórico de etapas) — avisa
-  const antes = new Date(Date.now() - 5 * 24 * 3600e3).toISOString();
-  const movido = { ...deal('m1', antes, 'Lead Movido'), updated_at: agora, deal_stage_histories: [{ deal_stage_id: 'o1', start_date: antes }, { deal_stage_id: 'c1', start_date: agora }] };
-  // e um que já estava no funil e só mudou um campo agora: não avisa
-  const parado = { ...deal('p1', antes, 'Lead Parado'), updated_at: agora, deal_stage_histories: [{ deal_stage_id: 'c1', start_date: antes }] };
-  DEALS.push(movido, parado);
+  // lead MOVIDO de outro funil para o Pronix Club: criado há dias, aparece no funil agora — avisa (o parado, não)
+  DEALS.push(deal('m1', antes, 'Lead Movido'));
   r = await (await fetchReal(base + '/api/pronix-club/verificar/' + segredo)).json();
   assert.equal(r.avisados, 1);
   assert.equal(pushes.length, 2);

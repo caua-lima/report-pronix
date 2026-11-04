@@ -1923,7 +1923,7 @@
       const quando = (iso) => (iso ? new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—');
       $('pcLeads').innerHTML = (d.leads || []).length
         ? d.leads.map((l) => `<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 12px;border:1px solid var(--border);border-radius:var(--r-sm)">` +
-            `<div style="flex:1;min-width:180px"><b>${esc(l.nome)}</b><div class="hint" style="margin:2px 0 0">${esc(l.telefone || 'sem telefone no CRM')}${l.etapa ? ' · ' + esc(l.etapa) : ''} · entrou ${esc(quando(l.criadoEm || l.avisadoEm))}</div></div>` +
+            `<div style="flex:1;min-width:180px"><b>${esc(l.nome)}</b><div class="hint" style="margin:2px 0 0">${esc(l.telefone || 'sem telefone no CRM')}${l.etapa ? ' · ' + esc(l.etapa) : ''} · entrou no funil ${esc(quando(l.avisadoEm))}</div></div>` +
             (l.whatsapp ? `<a class="btn" href="https://wa.me/${esc(l.whatsapp)}" target="_blank" rel="noopener noreferrer">Chamar no WhatsApp</a>` : '') +
             '</div>').join('')
         : '<div class="hint" style="margin:0">Nenhum lead avisado ainda. Os que entrarem no funil depois de ligar o aviso aparecem aqui.</div>';
@@ -1936,7 +1936,7 @@
           `<li>Crie uma conta grátis no <b>cron-job.org</b> e um "cronjob" a cada <b>1 minuto</b> com este endereço (é segredo, não compartilhe):<br><span class="chave" style="word-break:break-all">${esc(d.urlVerificar)}</span></li>` +
           '<li>Faça login no Report PRONIX também no navegador do celular: tocar no aviso abre esta aba com o lead.</li>' +
           '</ol>' +
-          `<div class="hint" style="margin:0">Ligado desde ${esc(quando(d.desde))}. Última conferência: ${esc(quando(s.ultimaVerificacao))}${s.ultimoAviso ? ' · último aviso: ' + esc(quando(s.ultimoAviso)) : ''}${s.ultimoErro ? ' · <b style="color:var(--danger)">erro: ' + esc(s.ultimoErro) + '</b>' : ''}</div>`
+          `<div class="hint" style="margin:0">Ligado desde ${esc(quando(d.desde))}. Última conferência: ${esc(quando(s.ultimaVerificacao))}${s.funil ? ' · funil ' + esc(s.funil) + ' com ' + esc(String(s.noFunil ?? '?')) + ' card(s)' : ''}${s.pausaAte && Date.parse(s.pausaAte) > Date.now() ? ' · <b style="color:var(--danger)">pausado até ' + esc(quando(s.pausaAte)) + ' (o CRM recusou)</b>' : ''}${s.ultimoAviso ? ' · último aviso: ' + esc(quando(s.ultimoAviso)) : ''}${s.ultimoErro ? ' · <b style="color:var(--danger)">erro: ' + esc(s.ultimoErro) + '</b>' : ''}</div>`
         : '<div class="hint" style="margin:0">O aviso está desligado. Ligue para gerar o seu tópico e o endereço do agendador. Só os leads que entrarem depois de ligar avisam.</div>';
       $('pcAtivar').classList.toggle('hidden', Boolean(d.ativo));
       $('pcTeste').classList.toggle('hidden', !d.ativo);
