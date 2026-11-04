@@ -1159,6 +1159,47 @@
     afinidadeUi.anexar({ aviso: document.getElementById(BADGE_ID), closer, resp, mensagens, nome });
   }
 
+  /** A caixa "Visão do <nome> pro lead" é só do master (o servidor diz). Guardado por 10 min. */
+  let quemSou = { quando: 0, dados: null };
+  async function visaoLiberada() {
+    if (quemSou.dados && Date.now() - quemSou.quando < 10 * 60 * 1000) return quemSou.dados;
+    const r = await new Promise((res) => {
+      try {
+        chrome.runtime.sendMessage({ action: 'quemSouEu' }, (x) => res(chrome.runtime.lastError ? null : x));
+      } catch (_) {
+        res(null);
+      }
+    });
+    quemSou = { quando: Date.now(), dados: r && r.ok ? r : { visaoNoReport: false, nome: '' } };
+    return quemSou.dados;
+  }
+
+  /** Pergunta a visão do master sobre o lead antes de gerar. Devolve o texto ('' = sem visão) ou null (cancelou). */
+  function pedirVisao(nomeSdr) {
+    return new Promise((resolve) => {
+      const primeiro = String(nomeSdr || '').trim().split(/\s+/)[0] || 'SDR';
+      mostrarBadge({
+        texto:
+          `<b>Visão do ${escHtml(primeiro)} pro lead</b> <span style="color:#a39e93">(opcional — vai para o closer, a IA só arruma a escrita)</span>` +
+          '<textarea id="cr-visao" rows="5" placeholder="Ex.: lead quente, já vende no ML, quer escalar; tem dinheiro mas o sócio decide…" ' +
+          'style="display:block;width:100%;box-sizing:border-box;margin-top:8px;background:#1a191c;color:#f3f0e8;border:1px solid #3a3740;border-radius:7px;padding:8px;font:13px/1.4 inherit;resize:vertical"></textarea>',
+        cor: '#ffc233',
+        botoes: [{ acao: 'gerar', rotulo: 'Gerar report', primario: true }, { acao: 'sem', rotulo: 'Gerar sem visão' }],
+        aoEscolher: (acao) => {
+          const caixa = document.getElementById('cr-visao');
+          resolve(acao === 'gerar' ? String((caixa && caixa.value) || '').trim() : '');
+        },
+        aoFechar: () => resolve(null),
+      });
+      const caixa = document.getElementById('cr-visao');
+      if (caixa) {
+        // As teclas ficam na caixa: o WhatsApp não pode tratar o que é digitado aqui como atalho.
+        ['keydown', 'keyup', 'keypress', 'paste'].forEach((ev) => caixa.addEventListener(ev, (e) => e.stopPropagation()));
+        setTimeout(() => caixa.focus(), 50);
+      }
+    });
+  }
+
   async function gerarReportEmBackground(server, opcoes = {}) {
     const closerDaAnalise = closerPedido(opcoes.afinidade);
     if (jobEmAndamento) {
@@ -1175,6 +1216,19 @@
       const fichaDoJob = conversaDoJob && ficha.ultimoEstado && ficha.ultimoEstado.tipo === 'ok' && ficha.chave === chaveDaConversa(conversaDoJob) ? ficha.ultimoEstado : null;
       const vinculoDoJob = fichaDoJob ? vinculoDoLead(fichaDoJob) : conversaDoJob && conversaDoJob.telefone ? { telefone: String(conversaDoJob.telefone), email: '', contatoId: '', dealId: '' } : null;
       const formularioDoJob = fichaDoJob ? formularioDoLead(fichaDoJob) : null;
+      // Só o master: a visão dele sobre o lead, escrita agora (antes da leitura, que demora).
+      let visaoDoJob = '';
+      if (!closerDaAnalise) {
+        const eu = await visaoLiberada();
+        if (eu.visaoNoReport) {
+          const v = await pedirVisao(eu.nome);
+          if (v === null) {
+            mostrarBadge({ texto: 'Geração cancelada.', cor: '#f2a93b' });
+            return;
+          }
+          visaoDoJob = v;
+        }
+      }
       mostrarBadge({
         texto:
           '<b>Lendo a conversa…</b><br>Capturando e transcrevendo áudios pode demorar um pouco. ' +
@@ -1225,7 +1279,7 @@
         mensagensLead: stats.doLead,
       };
       let resp = await new Promise((resolve) =>
-        chrome.runtime.sendMessage({ action: 'reportFetch', server, mensagens, nome, captureQuality, vinculo: vinculoDoJob, formulario: formularioDoJob }, resolve)
+        chrome.runtime.sendMessage({ action: 'reportFetch', server, mensagens, nome, captureQuality, vinculo: vinculoDoJob, formulario: formularioDoJob, visao: visaoDoJob }, resolve)
       );
 
       if (!resp || !resp.ok) {
@@ -1253,7 +1307,7 @@
         }
         mostrarBadge({ texto: '<b>Gerando de novo…</b>', loading: true });
         resp = await new Promise((resolve) =>
-          chrome.runtime.sendMessage({ action: 'reportFetch', server, mensagens, nome, captureQuality, forcarNovo: true, vinculo: vinculoDoJob, formulario: formularioDoJob }, resolve)
+          chrome.runtime.sendMessage({ action: 'reportFetch', server, mensagens, nome, captureQuality, forcarNovo: true, vinculo: vinculoDoJob, formulario: formularioDoJob, visao: visaoDoJob }, resolve)
         );
         if (!resp || !resp.ok) {
           mostrarBadge({ texto: escHtml((resp && resp.erro) || 'Falha ao gerar o report.'), cor: '#ff6f5c' });
@@ -1342,7 +1396,7 @@
     return achados.size === 1 ? [...achados.values()][0] : '';
   }
   const ficha = {
-    ligada: true, cartaoLocal: true, minimizada: false, chave: null, fechadaPara: null, seq: 0, timer: null, vigia: null, ultimoEstado: null,
+    ligada: true, cartaoLocal: false, minimizada: false, chave: null, fechadaPara: null, seq: 0, timer: null, vigia: null, ultimoEstado: null,
     pos: null, // { left, top } quando o usuário arrastou o cartão; null = lugar padrão
     automacao: false, // o master ligou a automação para esta chave (mover para "Respondeu", etiqueta e agendamento)
     etiquetas: false, // o master ligou as etiquetas do formulário (investimento e se já vende)
@@ -2609,11 +2663,11 @@
   }
 
   try {
-    chrome.storage.local.get({ fichaCrm: true, fichaCrmMinimizada: false, fichaPos: null }, (c) => {
+    chrome.storage.local.get({ cartaoNaConversa: false, fichaCrmMinimizada: false, fichaPos: null }, (c) => {
       const lugar = (p) => (p && Number.isFinite(p.left) && Number.isFinite(p.top) ? { left: p.left, top: p.top } : null);
       // A opção do menu da extensão esconde só o cartão flutuante: a ficha, o painel lateral, o "Respondeu" automático
       // e a contagem de recontatos rodam sempre (antes, desmarcar para tirar o cartão desligava tudo isso junto).
-      ficha.cartaoLocal = c.fichaCrm !== false;
+      ficha.cartaoLocal = c.cartaoNaConversa === true; // desde a 1.6.23 o cartão vem desligado: tudo fica no painel lateral
       ficha.minimizada = !!c.fichaCrmMinimizada;
       ficha.pos = lugar(c.fichaPos);
       ficha.vigia = setInterval(() => {
@@ -2626,8 +2680,8 @@
     });
     if (chrome.storage.onChanged) {
       chrome.storage.onChanged.addListener((mud) => {
-        if (!mud.fichaCrm) return;
-        ficha.cartaoLocal = mud.fichaCrm.newValue !== false;
+        if (!mud.cartaoNaConversa) return;
+        ficha.cartaoLocal = mud.cartaoNaConversa.newValue === true;
         if (!ficha.cartaoLocal) esconderFicha();
         else if (ficha.ultimoEstado) renderFicha(ficha.ultimoEstado); // religou: o cartão volta com o lead da tela
       });

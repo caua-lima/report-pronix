@@ -235,17 +235,17 @@ test('popup: clicar no .zip enquanto a chave ainda valida não perde a mensagem 
   await fechar(p);
 });
 
-test('popup: liga/desliga da ficha do RD Station fica salvo (ligado por padrão)', async () => {
+test('popup: liga/desliga do cartão flutuante fica salvo (desligado por padrão: tudo no painel lateral)', async () => {
   const p = await abrirPopup({ chave: 'pnx_ana', server: SERVER }, { nomePorChave: { pnx_ana: 'Ana' } });
   const caixa = p.document.getElementById('fichaCrm');
-  assert.equal(caixa.checked, true);
-  caixa.checked = false;
+  assert.equal(caixa.checked, false);
+  caixa.checked = true;
   caixa.dispatchEvent(new p.w.Event('change', { bubbles: true }));
-  assert.equal(p.storage.fichaCrm, false);
+  assert.equal(p.storage.cartaoNaConversa, true);
   await fechar(p);
 
   const reaberto = await abrirPopup(p.storage, { nomePorChave: { pnx_ana: 'Ana' } });
-  assert.equal(reaberto.document.getElementById('fichaCrm').checked, false);
+  assert.equal(reaberto.document.getElementById('fichaCrm').checked, true);
   await fechar(reaberto);
 });
 

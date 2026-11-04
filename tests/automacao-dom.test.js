@@ -56,7 +56,7 @@ const abertas = [];
 test.afterEach(() => abertas.splice(0).forEach((p) => p.fechar()));
 
 function abrir(srv, conversa = RESPONDEU, { contato = '+55 71 99999-8888', storage = {} } = {}) {
-  const p = abrirPagina({ arquivo: 'extension/content.js', url: 'https://web.whatsapp.com/', aoEnviar: srv.aoEnviar, intervaloRapido: true, storage });
+  const p = abrirPagina({ arquivo: 'extension/content.js', url: 'https://web.whatsapp.com/', aoEnviar: srv.aoEnviar, intervaloRapido: true, storage: { cartaoNaConversa: true, ...storage } }); // estes testes são do cartão flutuante (desligado por padrão desde a 1.6.23)
   montarWhatsApp(p, conversa, { contato, idsSimples: true });
   abertas.push(p);
   return p;
@@ -767,7 +767,7 @@ test('ficha sem a data da tentativa (servidor antigo): nunca move, mesmo com o l
 // ---------------------------------------------------------------- o "Respondeu" não depende do cartão
 test('com o cartão desmarcado no menu da extensão, o "Respondeu" automático continua', async () => {
   const srv = servidorFalso();
-  const p = abrir(srv, RESPONDEU, { storage: { fichaCrm: false } });
+  const p = abrir(srv, RESPONDEU, { storage: { cartaoNaConversa: false } });
   await esperar(() => srv.pedidos.respondeu.length === 1, { motivo: 'moveu sem o cartão na tela' });
   assert.equal(cartao(p), null);
 });
