@@ -40,6 +40,8 @@ global.fetch = async (url, opts = {}) => {
   const p = url2.pathname.replace('/api/v1', '');
   if (p === '/deal_pipelines') return ok(FUNIS);
   if (p === '/deals') return ok({ deals: DEALS.filter((d) => d.deal_pipeline.id === url2.searchParams.get('deal_pipeline_id')) });
+  const det = p.match(/^\/deals\/([^/]+)$/);
+  if (det) return DEALS.find((d) => d.id === det[1]) ? ok(DEALS.find((d) => d.id === det[1])) : ok({}, 404);
   const m = p.match(/^\/contacts\/(.+)$/);
   if (m) return ok({ id: m[1], phones: TELEFONES[m[1]] ? [{ phone: TELEFONES[m[1]] }] : [] });
   return ok({}, 404);
@@ -92,14 +94,26 @@ test('lead novo no Pronix Club: guarda nome e telefone, avisa uma vez e o push n
   const corpo = JSON.stringify(pushes[0]);
   for (const proibido of ['Lead Novo', '98765', '99876', 'Antigo']) assert.ok(!corpo.includes(proibido), 'o push não leva ' + proibido);
 
+  // lead MOVIDO de outro funil para o Pronix Club: criado há dias, entrou no funil agora (histórico de etapas) — avisa
+  const antes = new Date(Date.now() - 5 * 24 * 3600e3).toISOString();
+  const movido = { ...deal('m1', antes, 'Lead Movido'), updated_at: agora, deal_stage_histories: [{ deal_stage_id: 'o1', start_date: antes }, { deal_stage_id: 'c1', start_date: agora }] };
+  // e um que já estava no funil e só mudou um campo agora: não avisa
+  const parado = { ...deal('p1', antes, 'Lead Parado'), updated_at: agora, deal_stage_histories: [{ deal_stage_id: 'c1', start_date: antes }] };
+  DEALS.push(movido, parado);
+  r = await (await fetchReal(base + '/api/pronix-club/verificar/' + segredo)).json();
+  assert.equal(r.avisados, 1);
+  assert.equal(pushes.length, 2);
+  assert.equal(pushes[1].title, 'Novo lead no Pronix Club');
+
   // de novo: já avisados, sem push novo
   r = await (await fetchReal(base + '/api/pronix-club/verificar/' + segredo)).json();
   assert.equal(r.avisados, 0);
-  assert.equal(pushes.length, 1);
+  assert.equal(pushes.length, 2);
 
   // a aba do dashboard tem os leads com telefone e o link do WhatsApp
   const painel = await (await fetchReal(base + '/api/master/pronix-club', { headers: master })).json();
   assert.deepEqual(painel.leads.map((l) => [l.nome, l.telefone, l.whatsapp]).sort(), [
+    ['Lead Movido', '', ''],
     ['Lead Novo Dois', '(21) 99876-5432', '5521998765432'],
     ['Lead Novo Um', '(11) 98765-4321', '5511987654321'],
   ]);

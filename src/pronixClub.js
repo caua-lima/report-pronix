@@ -102,6 +102,26 @@ async function telefoneDoCard(d) {
   return String((((ct && ct.phones) || [])[0] || {}).phone || '');
 }
 
+/**
+ * Quando o card entrou no funil (ms): o começo da última sequência de etapas do funil no histórico de etapas.
+ * Card criado direto no funil: a criação. Movido de outro funil: o dia em que chegou aqui.
+ */
+function entradaNoFunil(deal, funil) {
+  const ids = new Set((funil.etapas || []).map((e) => String(e.id)));
+  const hist = (Array.isArray(deal.deal_stage_histories) ? deal.deal_stage_histories : [])
+    .map((h) => {
+      const v = h && (h.deal_stage_id || h.deal_stage);
+      return { id: v && typeof v === 'object' ? idDe(v) : String(v || ''), t: Date.parse((h && h.start_date) || '') };
+    })
+    .filter((h) => h.id && Number.isFinite(h.t))
+    .sort((a, b) => a.t - b.t);
+  let entrada = 0;
+  for (const h of hist) {
+    if (ids.has(h.id)) { if (!entrada) entrada = h.t; } else entrada = 0;
+  }
+  return entrada || Date.parse(deal.created_at) || 0;
+}
+
 /** O segredo da URL confere? (comparação de tempo constante) */
 async function segredoConfere(segredo) {
   const cfg = await config();
@@ -128,17 +148,30 @@ async function verificar({ agora = new Date(), link } = {}) {
     if (!funil) throw new Error('Não achei o funil "Pronix Club" no CRM.');
     const hoje = stats.emDiaLocal(agora.toISOString());
     const ontem = stats.emDiaLocal(new Date(agora.getTime() - 24 * 3600 * 1000).toISOString());
-    const deals = await crm.listarNegociacoes(
-      { deal_pipeline_id: funil.id, created_at_period: 'true', start_date: crm.instanteDoDia(ontem), end_date: crm.instanteDoDia(hoje, true) },
+    // Os cards do funil mexidos de ontem para cá: criar o card ou movê-lo de outro funil para cá muda o updated_at.
+    const deals = (await crm.listarNegociacoes(
+      { deal_pipeline_id: funil.id, updated_at_period: 'true', start_date: crm.instanteDoDia(ontem), end_date: crm.instanteDoDia(hoje, true) },
       { maxPaginas: 3, timeoutMs: 20000 }
-    );
+    )).filter((d) => idDe(d) && (!d.deal_pipeline || !idDe(d.deal_pipeline) || idDe(d.deal_pipeline) === funil.id));
     const desde = Date.parse(cfg.desde) || 0;
     const vistos = new Set(await db.getJson(CHAVE_VISTOS, []));
-    const novos = deals
-      .filter((d) => idDe(d) && !vistos.has(idDe(d)))
-      .filter((d) => (Date.parse(d.created_at) || 0) >= desde)
-      .sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)))
-      .slice(0, MAX_POR_RODADA);
+    const naoVistos = deals.filter((d) => !vistos.has(idDe(d)));
+    // não mexido desde que o aviso foi ligado: já estava no funil antes (não avisa)
+    const antigos = naoVistos.filter((d) => Math.max(Date.parse(d.updated_at) || 0, Date.parse(d.created_at) || 0) < desde);
+    antigos.forEach((d) => vistos.add(idDe(d)));
+    // os outros: quando ENTROU no funil, pelo histórico de etapas (o lead movido de outro funil foi criado antes)
+    const candidatos = naoVistos.filter((d) => !antigos.includes(d));
+    const detalhes = candidatos.length ? await crm.detalhesDe(candidatos, { prazoMs: 25000 }).catch(() => []) : [];
+    const porId = new Map(detalhes.map((d) => [idDe(d), d]));
+    const entrou = (d) => entradaNoFunil(porId.get(idDe(d)) || d, funil);
+    const novos = [];
+    for (const d of candidatos) {
+      if (!porId.has(idDe(d)) && !(Date.parse(d.created_at) >= desde)) continue; // sem o detalhe agora: tenta na próxima
+      if (entrou(d) >= desde) novos.push({ ...d, ...(porId.get(idDe(d)) || {}), _entrou: entrou(d) });
+      else vistos.add(idDe(d)); // já estava no funil antes de ligar o aviso
+    }
+    novos.sort((a, b) => a._entrou - b._entrou).splice(MAX_POR_RODADA);
+    registro.noFunilMexidos = deals.length;
     // primeiro guarda os leads (nome e telefone ficam no nosso banco), depois um push só, sem dado do lead
     for (const d of novos) {
       const tel = telefoneDe(await telefoneDoCard(d));
@@ -148,7 +181,7 @@ async function verificar({ agora = new Date(), link } = {}) {
         telefone: tel.bonito,
         whatsapp: tel.whatsapp,
         etapa: (d.deal_stage && d.deal_stage.name) || '',
-        criadoEm: d.created_at || '',
+        criadoEm: d._entrou ? new Date(d._entrou).toISOString() : d.created_at || '',
         avisadoEm: agora.toISOString(),
       }, 100);
     }
@@ -160,8 +193,6 @@ async function verificar({ agora = new Date(), link } = {}) {
       });
     }
     novos.forEach((d) => vistos.add(idDe(d)));
-    // os da lista que já existiam antes de ligar o aviso também ficam marcados (não reaparecem)
-    deals.filter((d) => (Date.parse(d.created_at) || 0) < desde).forEach((d) => vistos.add(idDe(d)));
     await db.setJson(CHAVE_VISTOS, [...vistos].slice(-1000));
     Object.assign(registro, { ultimoErro: '', ultimosNovos: novos.length });
     if (novos.length) registro.ultimoAviso = agora.toISOString();
