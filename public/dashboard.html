@@ -491,6 +491,7 @@
         <button class="tab so-master hidden" data-aba="match"><i data-ic="chart"></i>Match com PH</button>
         <button class="tab so-master hidden" data-aba="meusclosers"><i data-ic="users"></i>Meus closers</button>
         <button class="tab so-master hidden" data-aba="closerstime"><i data-ic="users"></i>Closers do time</button>
+        <button class="tab so-master hidden" data-aba="pronixclub"><i data-ic="zap"></i>Pronix Club</button>
       </div>
       <div class="grupo">
         <div class="grupo-rotulo">Sistema</div>
@@ -921,6 +922,26 @@
           </div>
           <div class="hint" id="mcNota" style="margin-top:10px"></div>
         </div>
+      </div>
+    </section>
+
+    <!-- ================= ABA: PRONIX CLUB (só o master) ================= -->
+    <section id="aba-pronixclub" class="hidden">
+      <div class="card">
+        <div class="head"><div class="t"><i data-ic="zap"></i>Leads novos no Pronix Club</div><div class="sub">— cada lead que entra no funil aparece aqui e avisa no seu celular</div></div>
+        <div class="row"><button id="pcAtualizar" class="btn sec"><i data-ic="refresh"></i>Conferir agora</button></div>
+        <div id="statusPc" class="status"></div>
+        <div id="pcLeads" style="display:grid;gap:8px;margin-top:10px"></div>
+      </div>
+      <div class="card">
+        <div class="head"><div class="t"><i data-ic="settings"></i>Aviso no celular</div><div class="sub">— grátis: app ntfy no celular + um agendador que confere o funil a cada minuto</div></div>
+        <div id="pcConfig"></div>
+        <div class="row" style="margin-top:10px">
+          <button id="pcAtivar" class="btn">Ligar o aviso</button>
+          <button id="pcTeste" class="btn sec">Mandar notificação de teste</button>
+          <button id="pcDesativar" class="btn sec">Desligar</button>
+        </div>
+        <div id="statusPcCfg" class="status"></div>
       </div>
     </section>
 
@@ -1493,8 +1514,8 @@
     }
 
     // ---------- Menu ----------
-    const ABAS = ['report', 'dia', 'acessos', 'numeros', 'resultados', 'closers', 'funil', 'match', 'meusclosers', 'closerstime', 'arquivos', 'base', 'extensao'];
-    const SO_ADMIN = ['acessos', 'numeros', 'resultados', 'closers', 'funil', 'match', 'meusclosers', 'closerstime', 'arquivos', 'base', 'extensao'];
+    const ABAS = ['report', 'dia', 'acessos', 'numeros', 'resultados', 'closers', 'funil', 'match', 'meusclosers', 'closerstime', 'pronixclub', 'arquivos', 'base', 'extensao'];
+    const SO_ADMIN = ['acessos', 'numeros', 'resultados', 'closers', 'funil', 'match', 'meusclosers', 'closerstime', 'pronixclub', 'arquivos', 'base', 'extensao'];
     let souAdmin = false;
     let souGestor = false;
     let souMaster = false;
@@ -1507,7 +1528,7 @@
       ['base', 'Base'], ['extensao', 'Extensão'], ['equipe', 'Reports do dia da equipe'],
     ];
     const podeAba = (a) =>
-      a === 'report' || a === 'dia' || (a === 'acessos' || a === 'funil' || a === 'match' || a === 'meusclosers' || a === 'closerstime' ? podeMexerEmUsuarios() : Boolean(senhaAdmin) || minhasAbas.has(a));
+      a === 'report' || a === 'dia' || (a === 'acessos' || a === 'funil' || a === 'match' || a === 'meusclosers' || a === 'closerstime' || a === 'pronixclub' ? podeMexerEmUsuarios() : Boolean(senhaAdmin) || minhasAbas.has(a));
     const temAbaDeGestao = () => SO_ADMIN.some(podeAba);
     let papelConhecido = false; // a chave já foi conferida (antes disso não dá para saber se é master)
     let validacaoPendente = false; // a chave ainda está sendo conferida (a lista do dia espera: o papel muda o que ela mostra)
@@ -1523,6 +1544,7 @@
       numeros: ['Reports gerados', 'Volume, custo e quem gerou cada report.'],
       closers: ['Closers', 'Quem conduz as reuniões.'],
       match: ['Match com PH', 'Reuniões realizadas, conversão e faturamento com o closer, mês a mês, e quanto falta para a meta.'],
+      pronixclub: ['Pronix Club', 'Cada lead novo no funil Pronix Club: nome, telefone, WhatsApp e o aviso no seu celular.'],
       closerstime: ['Closers do time', 'Os números por closer de cada SDR do time: escolha o SDR e carregue.'],
       meusclosers: ['Meus closers', 'Com que closer seus leads mais compram: reuniões, vendas, ticket médio e conversão do mês, por closer.'],
       funil: ['Limpeza do RD', 'Card parado no começo do funil vira perda em Desqualificados, com o motivo.'],
@@ -1896,6 +1918,47 @@
     $('lrGerar').addEventListener('click', () => gerarRespondeu(false, 'txt'));
     $('lrCsv').addEventListener('click', () => gerarRespondeu(false, 'csv'));
 
+    // ---------- Aba Pronix Club: leads novos do funil e o aviso no celular ----------
+    function desenharPronixClub(d) {
+      const quando = (iso) => (iso ? new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—');
+      $('pcLeads').innerHTML = (d.leads || []).length
+        ? d.leads.map((l) => `<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 12px;border:1px solid var(--border);border-radius:var(--r-sm)">` +
+            `<div style="flex:1;min-width:180px"><b>${esc(l.nome)}</b><div class="hint" style="margin:2px 0 0">${esc(l.telefone || 'sem telefone no CRM')}${l.etapa ? ' · ' + esc(l.etapa) : ''} · entrou ${esc(quando(l.criadoEm || l.avisadoEm))}</div></div>` +
+            (l.whatsapp ? `<a class="btn" href="https://wa.me/${esc(l.whatsapp)}" target="_blank" rel="noopener noreferrer">Chamar no WhatsApp</a>` : '') +
+            '</div>').join('')
+        : '<div class="hint" style="margin:0">Nenhum lead avisado ainda. Os que entrarem no funil depois de ligar o aviso aparecem aqui.</div>';
+      const s = d.status || {};
+      $('pcConfig').innerHTML = d.ativo
+        ? '<ol style="padding-left:20px;margin:0 0 6px">' +
+          '<li>Instale o app <b>ntfy</b> no celular (Play Store ou App Store, grátis, sem conta).</li>' +
+          `<li>No app, toque em <b>+</b> e assine o tópico <span class="chave">${esc(d.topico)}</span> (servidor padrão ntfy.sh). Não passe esse nome para ninguém.</li>` +
+          '<li>Toque em <b>Mandar notificação de teste</b> aqui embaixo e confira se chegou.</li>' +
+          `<li>Crie uma conta grátis no <b>cron-job.org</b> e um "cronjob" a cada <b>1 minuto</b> com este endereço (é segredo, não compartilhe):<br><span class="chave" style="word-break:break-all">${esc(d.urlVerificar)}</span></li>` +
+          '<li>Faça login no Report PRONIX também no navegador do celular: tocar no aviso abre esta aba com o lead.</li>' +
+          '</ol>' +
+          `<div class="hint" style="margin:0">Ligado desde ${esc(quando(d.desde))}. Última conferência: ${esc(quando(s.ultimaVerificacao))}${s.ultimoAviso ? ' · último aviso: ' + esc(quando(s.ultimoAviso)) : ''}${s.ultimoErro ? ' · <b style="color:var(--danger)">erro: ' + esc(s.ultimoErro) + '</b>' : ''}</div>`
+        : '<div class="hint" style="margin:0">O aviso está desligado. Ligue para gerar o seu tópico e o endereço do agendador. Só os leads que entrarem depois de ligar avisam.</div>';
+      $('pcAtivar').classList.toggle('hidden', Boolean(d.ativo));
+      $('pcTeste').classList.toggle('hidden', !d.ativo);
+      $('pcDesativar').classList.toggle('hidden', !d.ativo);
+    }
+    async function carregarPronixClub(acao) {
+      const st = !acao || acao === 'verificar' ? 'statusPc' : 'statusPcCfg';
+      setStatus(st, acao === 'verificar' ? 'Conferindo o funil no CRM…' : 'Carregando…', { loading: true });
+      try {
+        const d = acao ? await api('POST', '/api/master/pronix-club/' + acao, {}) : await api('GET', '/api/master/pronix-club');
+        desenharPronixClub(d);
+        const msg = { teste: 'Notificação de teste enviada: confira o celular.', ativar: 'Aviso ligado. Siga os passos acima.', desativar: 'Aviso desligado.' }[acao];
+        setStatus(st, msg || `${(d.leads || []).length} lead(s) na lista.`, { ok: true });
+      } catch (e) {
+        setStatus(st, e.message, { erro: true });
+      }
+    }
+    $('pcAtualizar').addEventListener('click', () => carregarPronixClub('verificar'));
+    $('pcAtivar').addEventListener('click', () => carregarPronixClub('ativar'));
+    $('pcTeste').addEventListener('click', () => carregarPronixClub('teste'));
+    $('pcDesativar').addEventListener('click', () => carregarPronixClub('desativar'));
+
     // ---------- Abas: Meus closers / Closers do time ----------
     // Por closer: reuniões realizadas, vendas, ticket médio e conversão dos leads do SDR no mês (src/painelClosers.js).
     // A mesma tela serve às duas abas (ids com o prefixo p): "Meus closers" (você, alguém do time ou o time todo) e
@@ -2144,6 +2207,7 @@
       if (aba === 'match') return carregarMatch(false);
       if (aba === 'meusclosers') return carregarMeusClosers(false);
       if (aba === 'closerstime') return carregarClosersDoTime();
+      if (aba === 'pronixclub') return carregarPronixClub();
       if (aba === 'numeros') {
         await carregarClosers(); // as linhas da tabela oferecem os closers no select
         return carregarStats();

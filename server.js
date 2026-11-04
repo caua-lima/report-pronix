@@ -33,6 +33,7 @@ const aquecimento = require('./src/aquecimento');
 const matchCloser = require('./src/matchCloser');
 const painelClosers = require('./src/painelClosers');
 const leadsRespondeu = require('./src/leadsRespondeu');
+const pronixClub = require('./src/pronixClub');
 const inteligencia = require('./src/inteligencia');
 const afinidadeIa = require('./src/afinidade');
 const casosDoCloser = require('./src/casos');
@@ -1432,6 +1433,51 @@ app.post('/api/admin/crm/teste', acesso(['extensao']), async (req, res) => {
 // ---------------------------------------------------------------------------
 const enderecoDoServidor = (req) => `${req.get('x-forwarded-proto') || req.protocol}://${req.get('host')}`;
 const retornoDoGoogle = (req) => enderecoDoServidor(req) + '/api/google/retorno';
+
+// ---------------------------------------------------------------------------
+// Pronix Club: aviso no celular a cada lead novo no funil (src/pronixClub.js). Um agendador grátis de fora chama a
+// rota do segredo a cada minuto (ou um webhook do CRM); o push vai pelo ntfy sem dado do lead e abre a aba #pronixclub.
+// ---------------------------------------------------------------------------
+const linkPronixClub = (req) => enderecoDoServidor(req) + '/#pronixclub';
+app.all('/api/pronix-club/verificar/:segredo', async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  if (!(await pronixClub.segredoConfere(req.params.segredo).catch(() => false))) return res.status(404).json({ erro: 'Não encontrado.' });
+  const r = await pronixClub.verificar({ link: linkPronixClub(req) });
+  res.status(r.ok || r.motivo === 'desligado' ? 200 : 502).json(r);
+});
+async function painelPronixClub(req) {
+  const cfg = (await pronixClub.config()) || {};
+  return {
+    ativo: Boolean(cfg.ativo),
+    topico: cfg.topico || '',
+    desde: cfg.desde || '',
+    urlVerificar: cfg.segredo ? enderecoDoServidor(req) + '/api/pronix-club/verificar/' + cfg.segredo : '',
+    status: await pronixClub.status(),
+    leads: await pronixClub.leads(),
+  };
+}
+app.get('/api/master/pronix-club', auth, soMasterComChave, async (req, res) => {
+  try {
+    res.set('Cache-Control', 'no-store');
+    res.json({ ok: true, ...(await painelPronixClub(req)) });
+  } catch (err) {
+    res.status(500).json({ erro: err.message });
+  }
+});
+app.post('/api/master/pronix-club/:acao', auth, soMasterComChave, async (req, res) => {
+  try {
+    const acao = req.params.acao;
+    if (acao === 'ativar') await pronixClub.ativar();
+    else if (acao === 'desativar') await pronixClub.desativar();
+    else if (acao === 'teste') await pronixClub.testar({ link: linkPronixClub(req) });
+    else if (acao === 'verificar') await pronixClub.verificar({ link: linkPronixClub(req) });
+    else return res.status(404).json({ erro: 'Ação desconhecida.' });
+    res.set('Cache-Control', 'no-store');
+    res.json({ ok: true, ...(await painelPronixClub(req)) });
+  } catch (err) {
+    res.status(502).json({ erro: err.message });
+  }
+});
 
 app.get('/api/master/google', master, async (req, res) => {
   try {
