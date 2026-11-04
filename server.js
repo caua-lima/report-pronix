@@ -55,6 +55,7 @@ const vendasDoRd = require('./src/vendasDoRd');
 const aprendizado = require('./src/aprendizado');
 const { normalizarConsciencia } = require('./src/consciencia');
 const { normalizarDores } = require('./src/dores');
+const visaoSdr = require('./src/visaoSdr');
 
 const QUALIDADES_VALIDAS = new Set(['eco', 'standard', 'premium']);
 const qualidadeValida = (q) => (QUALIDADES_VALIDAS.has(q) ? q : 'standard');
@@ -203,6 +204,8 @@ app.get('/api/eu', auth, async (req, res) => {
     fichaCrm: Boolean(req.usuario.fichaCrm), automacao: Boolean(req.usuario.automacao),
     abas: usuarios.abasDe(req.usuario), // abas do painel liberadas para esta chave
     etiquetas: Boolean(req.usuario.etiquetas),
+    // Só o master: a caixa "Visão do <nome> pro lead" na hora de gerar o report (vira a 1ª seção do PDF).
+    visaoNoReport: usuarios.ehMaster(req.usuario),
     analises,
     analisesFaltando,
   });
@@ -1891,8 +1894,10 @@ app.post('/api/report-direto', auth, async (req, res) => {
   try {
     const { mensagens, nome, qualidade, captureQuality, vinculo, formulario } = req.body || {};
     const qualidadeFinal = qualidadeValida(qualidade);
+    // A visão do SDR sobre o lead (só o master escreve): muda o report, então entra na chave de "report igual".
+    const visao = usuarios.ehMaster(req.usuario) ? String((req.body || {}).visao || '').trim().slice(0, 3000) : '';
     const { historico: normalizadas } = normalizarConversa(Array.isArray(mensagens) ? mensagens : []);
-    reportKey = calcularReportKey({ historicoNormalizado: normalizadas, promptVersao: PROMPT_VERSAO, qualidade: qualidadeFinal, contato: nome });
+    reportKey = calcularReportKey({ historicoNormalizado: normalizadas, promptVersao: PROMPT_VERSAO, qualidade: qualidadeFinal + (visao ? '|visao:' + visao : ''), contato: nome });
     // A conversa do WhatsApp (com os áudios transcritos) vai para o card do lead no CRM, junto com o report — também
     // quando o report já existia (é assim que um lead de antes chega lá: gerar o report de novo). Instagram não vai.
     const transcricao = captureQuality && captureQuality.plataforma === 'instagram'
@@ -1905,6 +1910,7 @@ app.post('/api/report-direto', auth, async (req, res) => {
     if (!(await checarDuplicataETravar(req, res, reportKey, transcricao))) return;
 
     const dados = await dadosDireto({ mensagens, nome, sdr: req.usuario.nome, qualidade: qualidadeFinal });
+    if (visao) await visaoSdr.aplicar(dados, { texto: visao, sdr: req.usuario.nome });
     await responderReport(req, res, dados, nome, 'extensao', reportKey, sanitizarCaptura(captureQuality), vinculo, formulario, transcricao);
   } catch (err) {
     res.status(/Nenhuma mensagem/i.test(err.message) ? 400 : 500).json({ erro: err.message });
