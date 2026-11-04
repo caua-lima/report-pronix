@@ -144,6 +144,12 @@ async function verificar({ agora = new Date(), link } = {}) {
   // o CRM recusou (403, token, limite): não insiste a cada minuto — espera 15 min antes de consultar de novo
   const st = await status().catch(() => ({}));
   if (st.pausaAte && Date.parse(st.pausaAte) > agora.getTime()) return { ok: true, motivo: 'pausado: o CRM recusou há pouco', novos: 0, avisados: 0 };
+  // webhook do CRM + agendador: no máximo uma conferência a cada 20 s (uma rajada de eventos não vira rajada no CRM;
+  // o que chegar nesse meio cai na conferência seguinte)
+  const intervaloMs = Number(process.env.PRONIX_CLUB_INTERVALO_MS) || 20000;
+  if (st.ultimaVerificacao && agora.getTime() - Date.parse(st.ultimaVerificacao) < intervaloMs && agora.getTime() >= Date.parse(st.ultimaVerificacao)) {
+    return { ok: true, motivo: 'conferido há pouco', novos: 0, avisados: 0 };
+  }
   if (!(await db.travar('pronixclub_trava', 50).catch(() => false))) return { ok: true, motivo: 'outra rodada em andamento', novos: 0, avisados: 0 };
   const registro = { ultimaVerificacao: agora.toISOString() };
   try {

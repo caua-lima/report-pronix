@@ -13,6 +13,7 @@ Object.assign(process.env, {
   CR_DATA_DIR: DADOS,
   ADMIN_PASSWORD: 'senha-de-teste',
   RDSTATION_CRM_TOKEN: 'pcrm_token_de_teste',
+  PRONIX_CLUB_INTERVALO_MS: '1', // o intervalo mínimo entre conferências atrapalharia as chamadas seguidas do teste
   KV_REST_API_URL: '', KV_REST_API_TOKEN: '', UPSTASH_REDIS_REST_URL: '', UPSTASH_REDIS_REST_TOKEN: '',
 });
 delete process.env.VERCEL;
