@@ -154,17 +154,21 @@ async function verificar({ agora = new Date(), link } = {}) {
     // Os cards do funil mexidos de ontem para cá: criar o card ou movê-lo de outro funil para cá muda o updated_at.
     const deals = (await crm.listarNegociacoes(
       { deal_pipeline_id: funil.id, updated_at_period: 'true', start_date: crm.instanteDoDia(ontem), end_date: crm.instanteDoDia(hoje, true) },
-      { maxPaginas: 3, timeoutMs: 20000 }
+      { maxPaginas: 2, timeoutMs: 20000 }
     )).filter((d) => idDe(d) && (!d.deal_pipeline || !idDe(d.deal_pipeline) || idDe(d.deal_pipeline) === funil.id));
     const desde = Date.parse(cfg.desde) || 0;
     const vistos = new Set(await db.getJson(CHAVE_VISTOS, []));
     const naoVistos = deals.filter((d) => !vistos.has(idDe(d)));
-    // não mexido desde que o aviso foi ligado: já estava no funil antes (não avisa)
-    const antigos = naoVistos.filter((d) => Math.max(Date.parse(d.updated_at) || 0, Date.parse(d.created_at) || 0) < desde);
+    // Leve para o CRM (o token é o mesmo da extensão de todo mundo): só olha de perto o card mexido nos últimos 15 min
+    // (a conferência roda a cada minuto) e no máximo 5 detalhes por rodada. O resto já estava lá: fica marcado e
+    // nunca mais é lido. Antes, card sem detalhe voltava toda rodada e a conferência lia centenas de cards por minuto.
+    const recente = Math.max(desde, agora.getTime() - 15 * 60 * 1000);
+    const mexidoEm = (d) => Math.max(Date.parse(d.updated_at) || 0, Date.parse(d.created_at) || 0);
+    const antigos = naoVistos.filter((d) => mexidoEm(d) < recente);
     antigos.forEach((d) => vistos.add(idDe(d)));
     // os outros: quando ENTROU no funil, pelo histórico de etapas (o lead movido de outro funil foi criado antes)
-    const candidatos = naoVistos.filter((d) => !antigos.includes(d));
-    const detalhes = candidatos.length ? await crm.detalhesDe(candidatos, { prazoMs: 25000 }).catch(() => []) : [];
+    const candidatos = naoVistos.filter((d) => !antigos.includes(d)).slice(0, 5);
+    const detalhes = candidatos.length ? await crm.detalhesDe(candidatos, { prazoMs: 8000, porSegundo: 2 }).catch(() => []) : [];
     const porId = new Map(detalhes.map((d) => [idDe(d), d]));
     const entrou = (d) => entradaNoFunil(porId.get(idDe(d)) || d, funil);
     const novos = [];
