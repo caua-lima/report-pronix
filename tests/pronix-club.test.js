@@ -130,3 +130,28 @@ test('teste manda push; desligado não confere; SDR não vê a aba', async () =>
   const semChave = await fetchReal(base + '/api/master/pronix-club');
   assert.ok(semChave.status === 401 || semChave.status === 403);
 });
+
+test('webhook do CRM: aceita a chamada assinada com o segredo do TI (no cabeçalho ou HMAC do corpo) e recusa o resto', async () => {
+  const crypto = require('crypto');
+  await acao('ativar');
+  const SEGREDO = 'segredo-de-teste-do-webhook-123456';
+  const salvo = await (await fetchReal(base + '/api/master/pronix-club/webhook', { method: 'POST', headers: master, body: JSON.stringify({ segredo: SEGREDO }) })).json();
+  assert.equal(salvo.temSegredoWebhook, true);
+  assert.match(salvo.urlWebhook, /\/api\/pronix-club\/webhook$/);
+  const corpo = JSON.stringify({ evento: 'deal.created', deal: { id: 'x' } });
+  const chamar = (headers) => fetchReal(base + '/api/pronix-club/webhook', { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: corpo });
+
+  assert.equal((await chamar({})).status, 401);
+  assert.equal((await chamar({ 'X-Webhook-Signature': 'sha256=' + 'a'.repeat(64) })).status, 401);
+  let painel = await (await fetchReal(base + '/api/master/pronix-club', { headers: master })).json();
+  assert.equal(painel.status.ultimoWebhook.ok, false);
+  assert.match(painel.status.ultimoWebhook.motivo, /x-webhook-signature/);
+
+  assert.equal((await chamar({ 'X-Webhook-Secret': SEGREDO })).status, 200);
+  assert.equal((await chamar({ Authorization: 'Bearer ' + SEGREDO })).status, 200);
+  const hmac = crypto.createHmac('sha256', SEGREDO).update(corpo).digest('hex');
+  assert.equal((await chamar({ 'X-Signature': 'sha256=' + hmac })).status, 200);
+  painel = await (await fetchReal(base + '/api/master/pronix-club', { headers: master })).json();
+  assert.equal(painel.status.ultimoWebhook.ok, true);
+  assert.ok(!JSON.stringify(painel).includes(SEGREDO), 'o segredo não volta para a tela');
+});

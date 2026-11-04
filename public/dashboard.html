@@ -943,6 +943,15 @@
         </div>
         <div id="statusPcCfg" class="status"></div>
       </div>
+      <div class="card">
+        <div class="head"><div class="t"><i data-ic="zap"></i>Webhook do CRM</div><div class="sub">— o aviso chega na hora em que o lead entra (o agendador fica de reserva)</div></div>
+        <div id="pcWebhook" class="hint" style="margin:0 0 10px"></div>
+        <div class="row">
+          <div style="flex:1;min-width:220px"><label for="pcSegredoWh">Segredo do webhook (o TI manda)</label><input id="pcSegredoWh" type="password" autocomplete="off" placeholder="Cole aqui o segredo do webhook" /></div>
+          <button id="pcSalvarWh" class="btn">Salvar segredo</button>
+        </div>
+        <div id="statusPcWh" class="status"></div>
+      </div>
     </section>
 
     <!-- ================= ABA: CLOSERS DO TIME (só o master) ================= -->
@@ -1938,6 +1947,10 @@
           '</ol>' +
           `<div class="hint" style="margin:0">Ligado desde ${esc(quando(d.desde))}. Última conferência: ${esc(quando(s.ultimaVerificacao))}${s.funil ? ' · funil ' + esc(s.funil) + ' com ' + esc(String(s.noFunil ?? '?')) + ' card(s)' : ''}${s.pausaAte && Date.parse(s.pausaAte) > Date.now() ? ' · <b style="color:var(--danger)">pausado até ' + esc(quando(s.pausaAte)) + ' (o CRM recusou)</b>' : ''}${s.ultimoAviso ? ' · último aviso: ' + esc(quando(s.ultimoAviso)) : ''}${s.ultimoErro ? ' · <b style="color:var(--danger)">erro: ' + esc(s.ultimoErro) + '</b>' : ''}</div>`
         : '<div class="hint" style="margin:0">O aviso está desligado. Ligue para gerar o seu tópico e o endereço do agendador. Só os leads que entrarem depois de ligar avisam.</div>';
+      const w = s.ultimoWebhook;
+      $('pcWebhook').innerHTML = `Endereço para o TI cadastrar no webhook: <span class="chave" style="word-break:break-all">${esc(d.urlWebhook || '')}</span><br>` +
+        (d.temSegredoWebhook ? 'Segredo salvo.' : '<b>Falta salvar o segredo</b> que o TI mandou.') +
+        (w ? ` Última chamada do CRM: ${esc(quando(w.quando))} — ${w.ok ? '<b style="color:var(--ok)">aceita</b>' : '<b style="color:var(--danger)">recusada</b>'} (${esc(w.motivo || '')})` : ' O CRM ainda não chamou o webhook.');
       $('pcAtivar').classList.toggle('hidden', Boolean(d.ativo));
       $('pcTeste').classList.toggle('hidden', !d.ativo);
       $('pcDesativar').classList.toggle('hidden', !d.ativo);
@@ -1954,6 +1967,17 @@
         setStatus(st, e.message, { erro: true });
       }
     }
+    $('pcSalvarWh').addEventListener('click', async () => {
+      setStatus('statusPcWh', 'Salvando…', { loading: true });
+      try {
+        const d = await api('POST', '/api/master/pronix-club/webhook', { segredo: $('pcSegredoWh').value });
+        $('pcSegredoWh').value = '';
+        desenharPronixClub(d);
+        setStatus('statusPcWh', 'Segredo salvo. Agora o webhook do CRM é aceito.', { ok: true });
+      } catch (e) {
+        setStatus('statusPcWh', e.message, { erro: true });
+      }
+    });
     $('pcAtualizar').addEventListener('click', () => carregarPronixClub('verificar'));
     $('pcAtivar').addEventListener('click', () => carregarPronixClub('ativar'));
     $('pcTeste').addEventListener('click', () => carregarPronixClub('teste'));

@@ -63,7 +63,8 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Conversas longas + áudio em base64 geram payloads grandes.
-app.use(express.json({ limit: '25mb' }));
+// O corpo cru fica guardado só para o webhook do CRM (a assinatura é calculada sobre os bytes exatos).
+app.use(express.json({ limit: '25mb', verify: (req, _res, buf) => { if (req.originalUrl && req.originalUrl.startsWith('/api/pronix-club/webhook')) req.rawBody = buf; } }));
 
 // CORS — a extensão (chrome-extension://) chama este servidor.
 app.use((req, res, next) => {
@@ -1448,6 +1449,15 @@ app.all('/api/pronix-club/verificar/:segredo', async (req, res) => {
   const r = await pronixClub.verificar({ link: linkPronixClub(req) });
   res.status(r.ok || r.motivo === 'desligado' ? 200 : 502).json(r);
 });
+// Webhook do CRM (configurado pelo TI): a chamada é assinada com o segredo do CRM, salvo na aba Pronix Club.
+app.post('/api/pronix-club/webhook', express.raw({ type: '*/*', limit: '1mb' }), async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const conf = await pronixClub.webhookConfere(req.headers, req.rawBody || (Buffer.isBuffer(req.body) ? req.body : Buffer.from(JSON.stringify(req.body || {})))).catch((e) => ({ ok: false, motivo: e.message }));
+  await pronixClub.anotarWebhook({ ok: conf.ok, motivo: conf.motivo });
+  if (!conf.ok) return res.status(401).json({ erro: 'Assinatura do webhook não confere.' });
+  const r = await pronixClub.verificar({ link: linkPronixClub(req) });
+  res.json({ ok: true, ...r });
+});
 async function painelPronixClub(req) {
   const cfg = (await pronixClub.config()) || {};
   return {
@@ -1455,6 +1465,8 @@ async function painelPronixClub(req) {
     topico: cfg.topico || '',
     desde: cfg.desde || '',
     urlVerificar: cfg.segredo ? enderecoDoServidor(req) + '/api/pronix-club/verificar/' + cfg.segredo : '',
+    urlWebhook: enderecoDoServidor(req) + '/api/pronix-club/webhook',
+    temSegredoWebhook: Boolean(cfg.segredoWebhook),
     status: await pronixClub.status(),
     leads: await pronixClub.leads(),
   };
@@ -1474,6 +1486,7 @@ app.post('/api/master/pronix-club/:acao', auth, soMasterComChave, async (req, re
     else if (acao === 'desativar') await pronixClub.desativar();
     else if (acao === 'teste') await pronixClub.testar({ link: linkPronixClub(req) });
     else if (acao === 'verificar') await pronixClub.verificar({ link: linkPronixClub(req) });
+    else if (acao === 'webhook') await pronixClub.salvarSegredoWebhook((req.body || {}).segredo);
     else return res.status(404).json({ erro: 'Ação desconhecida.' });
     res.set('Cache-Control', 'no-store');
     res.json({ ok: true, ...(await painelPronixClub(req)) });

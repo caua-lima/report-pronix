@@ -105,6 +105,53 @@ async function telefoneDoCard(d) {
   return String((((ct && ct.phones) || [])[0] || {}).phone || '');
 }
 
+const iguais = (a, b) => {
+  const x = Buffer.from(String(a || ''));
+  const y = Buffer.from(String(b || ''));
+  return x.length > 0 && x.length === y.length && crypto.timingSafeEqual(x, y);
+};
+
+/** Guarda o segredo que o CRM usa para assinar o webhook (colado no dashboard; nunca vai para o código). */
+async function salvarSegredoWebhook(segredo) {
+  const s = String(segredo || '').trim();
+  if (s.length < 16) throw new Error('Cole o segredo inteiro que o TI mandou.');
+  const atual = await config();
+  if (!atual) throw new Error('Ligue o aviso primeiro.');
+  await db.setJson(CHAVE_CONFIG, { ...atual, segredoWebhook: s });
+}
+
+/**
+ * A chamada do webhook veio mesmo do CRM? Aceita os jeitos comuns de mandar o segredo: o próprio segredo num
+ * cabeçalho (x-webhook-secret, x-secret, authorization: Bearer …) ou a assinatura HMAC-SHA256 do corpo
+ * (hex ou base64, com ou sem "sha256=", com ou sem carimbo de tempo "t=…,v1=…").
+ * @returns {Promise<{ok: boolean, motivo: string}>}
+ */
+async function webhookConfere(headers = {}, corpoBruto = Buffer.alloc(0)) {
+  const cfg = await config();
+  if (!cfg || !cfg.segredoWebhook) return { ok: false, motivo: 'o segredo do webhook ainda não foi salvo no dashboard' };
+  const segredo = cfg.segredoWebhook;
+  const valores = Object.entries(headers)
+    .filter(([k]) => !/^(host|content-length|content-type|user-agent|accept|accept-encoding|connection|x-forwarded-.*|x-real-ip|x-vercel-.*|forwarded)$/i.test(k))
+    .map(([k, v]) => [k.toLowerCase(), String(Array.isArray(v) ? v[0] : v || '').trim()]);
+  for (const [k, v] of valores) {
+    if (iguais(v, segredo) || iguais(v.replace(/^(bearer|token)\s+/i, ''), segredo)) return { ok: true, motivo: `segredo no cabeçalho ${k}` };
+  }
+  const corpo = Buffer.isBuffer(corpoBruto) ? corpoBruto : Buffer.from(String(corpoBruto || ''));
+  for (const [k, v] of valores) {
+    const partes = v.split(',').map((p) => p.trim());
+    const t = (partes.find((p) => /^t=/.test(p)) || '').slice(2);
+    const assinaturas = partes.map((p) => p.replace(/^(sha256|v1|s)=/i, '')).filter((p) => !/^t=/.test(p));
+    const conteudos = [corpo, ...(t ? [Buffer.concat([Buffer.from(t + '.'), corpo])] : [])];
+    for (const c of conteudos) {
+      const mac = crypto.createHmac('sha256', segredo).update(c).digest();
+      if (assinaturas.some((a) => iguais(a.toLowerCase(), mac.toString('hex')) || iguais(a, mac.toString('base64')) || iguais(a, mac.toString('base64url')))) {
+        return { ok: true, motivo: `assinatura no cabeçalho ${k}` };
+      }
+    }
+  }
+  return { ok: false, motivo: 'a assinatura não confere (cabeçalhos recebidos: ' + valores.map(([k]) => k).join(', ') + ')' };
+}
+
 /** O segredo da URL confere? (comparação de tempo constante) */
 async function segredoConfere(segredo) {
   const cfg = await config();
@@ -200,4 +247,11 @@ async function verificar({ agora = new Date(), link } = {}) {
   }
 }
 
-module.exports = { ativar, desativar, config, status, leads, testar, verificar, segredoConfere, telefoneDe };
+module.exports = { ativar, desativar, config, status, leads, testar, verificar, segredoConfere, salvarSegredoWebhook, webhookConfere, telefoneDe };
+
+/** Anota a última chamada do webhook (aparece na aba: chegou? a assinatura conferiu?). */
+async function anotarWebhook(info) {
+  const st = await status().catch(() => ({}));
+  await db.setJson(CHAVE_STATUS, { ...st, ultimoWebhook: { quando: new Date().toISOString(), ...info } }).catch(() => {});
+}
+module.exports.anotarWebhook = anotarWebhook;
