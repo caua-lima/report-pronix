@@ -141,6 +141,9 @@ async function verificar({ agora = new Date(), link } = {}) {
   const cfg = await config();
   if (!cfg || !cfg.ativo) return { ok: false, motivo: 'desligado' };
   if (!crm.configurado()) return { ok: false, motivo: 'O CRM não está configurado no servidor.' };
+  // o CRM recusou (403, token, limite): não insiste a cada minuto — espera 15 min antes de consultar de novo
+  const st = await status().catch(() => ({}));
+  if (st.pausaAte && Date.parse(st.pausaAte) > agora.getTime()) return { ok: true, motivo: 'pausado: o CRM recusou há pouco', novos: 0, avisados: 0 };
   if (!(await db.travar('pronixclub_trava', 50).catch(() => false))) return { ok: true, motivo: 'outra rodada em andamento', novos: 0, avisados: 0 };
   const registro = { ultimaVerificacao: agora.toISOString() };
   try {
@@ -194,11 +197,12 @@ async function verificar({ agora = new Date(), link } = {}) {
     }
     novos.forEach((d) => vistos.add(idDe(d)));
     await db.setJson(CHAVE_VISTOS, [...vistos].slice(-1000));
-    Object.assign(registro, { ultimoErro: '', ultimosNovos: novos.length });
+    Object.assign(registro, { ultimoErro: '', pausaAte: '', ultimosNovos: novos.length });
     if (novos.length) registro.ultimoAviso = agora.toISOString();
     return { ok: true, novos: novos.length, avisados: novos.length };
   } catch (err) {
     registro.ultimoErro = err.message;
+    if (/não aceitou|recusou|limitou/i.test(err.message)) registro.pausaAte = new Date(agora.getTime() + 15 * 60 * 1000).toISOString();
     return { ok: false, motivo: err.message };
   } finally {
     await db.setJson(CHAVE_STATUS, { ...(await status().catch(() => ({}))), ...registro }).catch(() => {});
