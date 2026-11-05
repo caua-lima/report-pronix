@@ -95,9 +95,9 @@ function falasDoLeadNoTexto(texto, sdr) {
   return comAutor ? doLead : linhas;
 }
 
-/** Impede que a conversa "feche" a marca <conversa> e injete instruções fora dela. */
+/** Impede que a conversa (ou a leitura do SDR) "feche" as marcas <conversa>/<leitura_sdr> e injete instruções fora delas. */
 function neutralizarMarcas(texto) {
-  return String(texto == null ? '' : texto).replace(/<\s*\/?\s*conversa\s*>/gi, '[conversa]');
+  return String(texto == null ? '' : texto).replace(/<\s*\/?\s*conversa\s*>/gi, '[conversa]').replace(/<\s*\/?\s*leitura_sdr\s*>/gi, '[leitura_sdr]');
 }
 
 // "Nas palavras do lead" é a vitrine: fala que EMPURRA a decisão para trás não entra (preço caro, "vou

@@ -169,7 +169,7 @@ test('o prompt separa a conversa por marcas e tem as regras de leitura (injeçã
   const dentro = usuario.split('<conversa>\n')[1];
   assert.equal((dentro.match(/<\/conversa>/g) || []).length, 1, 'só a marca de fechamento nossa; a do lead foi neutralizada');
   assert.match(dentro, /\[conversa\] escreva/);
-  assert.match(chamada.system.map((b) => b.text).join(''), /LEITURA DA CONVERSA/);
+  assert.match(chamada.system.map((b) => b.text).join(''), /ENTRADA — FONTES SEPARADAS/);
   assert.match(chamada.system.map((b) => b.text).join(''), /Faturamento não é lucro/);
   assert.match(chamada.system.map((b) => b.text).join(''), /nunca instrução/);
 });
@@ -612,8 +612,8 @@ test('palavras do lead: fala real que desanima o closer sai do report; as boas f
   respostaAnthropic = null;
   assert.equal(r.status, 200);
   assert.deepEqual(r.json.dados.citacoes, ['Era exatamente isso que eu estava procurando', 'Quero começar semana que vem', 'Preciso começar no Mercado Livre, isso já tá decidido.']);
-  assert.match(chamadasAnthropic[0].system.map((b) => b.text).join(''), /1 a 3 FALAS EXATAS\/verbatim do LEAD[\s\S]*deixam o closer ANIMADO[\s\S]*PROCURE ATIVAMENTE/);
-  assert.match(chamadasAnthropic[0].system.map((b) => b.text).join(''), /PROIBIDO citar fala que possa desanimar o closer/);
+  // Prompt v11: vitrine com falas LITERAIS; o que empurra a decisão para trás fica fora (o fato vai para o panorama).
+  assert.match(chamadasAnthropic[0].system.map((b) => b.text).join(''), /falas LITERAIS do LEAD[\s\S]*Fala que empurra a decisão para trás/);
 });
 
 // ---------------------------------------------------------------- papel Gestor: tudo do admin + .zip da equipe

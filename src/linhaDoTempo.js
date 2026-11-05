@@ -83,9 +83,11 @@ function linhasDoResumo(lt) {
 function aplicarNoReport(dados, mensagens, opcoes) {
   const linhas = linhasDoResumo(linhaDoTempo(mensagens, opcoes));
   if (!linhas.length || !dados) return dados;
-  const atuais = Array.isArray(dados.resumo) ? dados.resumo : [];
+  // Report editorial (schemaVersion 2): as datas vão para a ficha (o resumo é derivado do formato novo).
+  const campo = Number(dados.schemaVersion) >= 2 ? 'ficha' : 'resumo';
+  const atuais = Array.isArray(dados[campo]) ? dados[campo] : [];
   const ja = new Set(atuais.map((r) => normalizar(r && r.rotulo)));
-  dados.resumo = linhas.filter((l) => !ja.has(normalizar(l.rotulo))).concat(atuais);
+  dados[campo] = linhas.filter((l) => !ja.has(normalizar(l.rotulo))).concat(atuais);
   return dados;
 }
 

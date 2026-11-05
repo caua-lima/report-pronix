@@ -170,7 +170,13 @@ test('PDF: report enorme continua em até 2 páginas, sem perder o resumo nem a 
   assert.ok(t.includes('Como foi a conversa'), 'a conversa encolhe, mas não some');
 });
 
-test('PDF apertado: as falas do lead não são as primeiras a cair — pelo menos uma fica', async () => {
+// Auditoria de 04/11/2026: o PDF não corta mais nada para caber em 2 páginas (antes tirava bullets, falas e seções
+// sem a tela mostrar). Report grande ganha página; nenhum conteúdo some e não sobra página em branco.
+// O extrator real do sistema (separa páginas e lê o travessão em WinAnsi).
+const { textoDoPdf: textoReal } = require('../src/textoDoPdf');
+const paginasComTexto = (buf) => textoReal(buf).split('\n\n').filter((p) => p.trim().length > 40).length;
+
+test('PDF cheio: nenhuma fala, seção ou item some para caber em 2 páginas', async () => {
   const frase = (n, t) => Array.from({ length: n }, (_, i) => `${t} ${i + 1} — ` + 'texto comprido para ocupar bastante espaço na página do relatório '.repeat(3));
   const cheio = {
     lead: 'Marcos Pereira', sdr: 'Cauã Lima',
@@ -182,8 +188,12 @@ test('PDF apertado: as falas do lead não são as primeiras a cair — pelo meno
     frase_impacto: 'Lead decidido.', abertura: 'Marcos, o Cauã me passou o seu cenário.',
   };
   const buf = await gerarPdfBuffer(cheio);
-  assert.ok(paginas(buf) <= 2, `continua em até 2 páginas (${paginas(buf)})`);
-  assert.match(textoDoPdf(buf), /Nas palavras do lead/, 'a seção sobrevive ao aperto');
+  const t = textoReal(buf).replace(/\s+/g, ' ');
+  cheio.citacoes.forEach((c) => assert.ok(t.includes(c), 'fala sumiu: ' + c));
+  for (let i = 1; i <= 4; i++) assert.ok(t.includes('Seção ' + i), 'seção sumiu: ' + i);
+  assert.ok(t.includes('Item 5 —'), 'o último item de cada seção continua');
+  assert.ok(t.includes('Conversa 6 —') && t.includes('Sinal 4 —'));
+  assert.equal(paginasComTexto(buf), paginas(buf), 'nenhuma página em branco');
 });
 
 // ---------------------------------------------------------------- termômetro de dores
@@ -242,7 +252,7 @@ test('PDF: sem dor de fato o termômetro não aparece; só com dores, o cartão 
   assert.ok(!soDores.includes('MOMENTO DO LEAD') && !soDores.includes('SINAIS DE COMPRA'));
 });
 
-test('PDF enorme com dores: continua em até 2 páginas e pelo menos uma dor fica', async () => {
+test('PDF enorme com dores: todas as dores e a abertura ficam, sem página em branco', async () => {
   const longo = (n, base) => Array.from({ length: n }, (_, i) => `${base} ${i + 1}: ` + 'detalhe importante da conversa com o lead '.repeat(3));
   const buf = await gerarPdfBuffer({
     ...BASE,
@@ -252,10 +262,10 @@ test('PDF enorme com dores: continua em até 2 páginas e pelo menos uma dor fic
     secoes: [1, 2, 3, 4].map((i) => ({ titulo: 'Seção ' + i, itens: longo(5, 'Item') })),
     citacoes: ['Quero começar o quanto antes', 'O investimento eu tenho'],
   });
-  assert.ok(paginas(buf) <= 2, `saiu com ${paginas(buf)} páginas`);
-  const t = textoDoPdf(buf);
-  assert.ok(t.includes('TERMÔMETRO DE DORES') && t.includes('ocupa bastante'), 'a dor mais forte sobrevive ao aperto');
+  const t = textoReal(buf).replace(/\s+/g, ' ');
+  [5, 4, 3].forEach((n) => assert.ok(t.includes('termômetro ' + n), 'dor sumiu: ' + n));
   assert.ok(t.includes('COMO INICIAR A REUNIÃO'));
+  assert.equal(paginasComTexto(buf), paginas(buf), 'nenhuma página em branco');
 });
 
 test('o prompt pede as dores do LEAD com prova, e manda ficar com a intensidade menor na dúvida', () => {
