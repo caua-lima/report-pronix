@@ -41,6 +41,8 @@ const transcricoes = require('./src/transcricoes');
 const driveGoogle = require('./src/driveGoogle');
 const limpezaRd = require('./src/limpezaRd');
 const fluxoReuniao = require('./src/fluxoReuniao');
+const handoff = require('./src/handoff');
+const reportsSalvos = require('./src/reportsSalvos');
 const transcricaoCrm = require('./src/transcricaoCrm');
 /** Espera a transcrição ir para o CRM, no máximo 9 s (o CRM tem o próprio limite de 8 s): o report não fica preso. */
 const esperarTranscricao = (p) => (p ? Promise.race([p, new Promise((r) => setTimeout(() => r({ enviada: false, motivo: 'demorou' }), 9000))]) : Promise.resolve(null));
@@ -1751,8 +1753,11 @@ function comProfissaoDoFormulario(dados, formulario, usuario) {
   const profissao = String(formulario.profissao || '').replace(/\s+/g, ' ').trim();
   if (!profissao || /\{\{/.test(profissao)) return; // "{{data.…}}" é campo de integração não preenchido
   const rotulo = 'Profissão (formulário)';
-  const resto = (Array.isArray(dados.resumo) ? dados.resumo : []).filter((r) => !r || r.rotulo !== rotulo);
-  dados.resumo = [{ rotulo, valor: profissao.slice(0, 120) }].concat(resto);
+  // Report editorial: a linha vai para a ficha (dado sem IA) e o resumo antigo é derivado de novo.
+  const campo = Number(dados.schemaVersion) >= 2 ? 'ficha' : 'resumo';
+  const resto = (Array.isArray(dados[campo]) ? dados[campo] : []).filter((r) => !r || r.rotulo !== rotulo);
+  dados[campo] = [{ rotulo, valor: profissao.slice(0, 120) }].concat(resto);
+  handoff.sincronizarLegado(dados);
 }
 
 async function responderReport(req, res, dados, nome, origem, reportKey, captura, vinculo, formulario, transcricao) {
@@ -1803,6 +1808,11 @@ async function responderReport(req, res, dados, nome, origem, reportKey, captura
       vinculo: vinculoLido,
     })
     .catch((err) => console.error('Falha ao registrar o report:', err.message));
+  // O report (JSON, sem consumo nem análise interna) fica guardado 60 dias: reabrir, revisar a leitura do SDR e
+  // regerar o PDF não chamam a IA.
+  dados.reportId = id;
+  dados.revisao = 1;
+  await reportsSalvos.salvar(id, dados).catch((err) => console.error('Falha ao guardar o report:', err.message));
   // O texto do report fica guardado pelo card do lead: é o handoff que o botão "Reunião realizada" grava no CRM.
   await fluxoReuniao
     .guardarHandoff({ dados, sdr: req.usuario.nome, reportId: id, vinculo: vinculoLido })
@@ -1840,7 +1850,7 @@ function nomeArquivoPdf(lead) {
  * normalizada), confere se já existe um report idêntico (a não ser que o
  * pedido mande forcarNovo) e trava a chave enquanto gera — assim um retry de
  * rede não paga duas vezes pela mesma conversa. Devolve null se já respondeu
- * (duplicata encontrada) ou a reportKey para o chamador usar/destravar.
+ * (duplicata encontrada) ou o token da trava (só quem tem o token destrava; 'sem-trava' quando o banco caiu).
  */
 async function checarDuplicataETravar(req, res, reportKey, transcricao) {
   if (!req.body || !req.body.forcarNovo) {
@@ -1868,13 +1878,18 @@ async function checarDuplicataETravar(req, res, reportKey, transcricao) {
   }
   const travou = await db.travar(reportKey).catch((err) => {
     console.error('[report] sem trava (banco):', err.message);
-    return true;
+    return 'sem-trava';
   });
   if (!travou) {
     res.status(409).json({ erro: 'Já existe uma geração em andamento para esta conversa.' });
     return false;
   }
-  return true;
+  return travou;
+}
+
+/** Solta a trava do report só se foi esta requisição que a pegou. */
+async function soltarTrava(reportKey, token) {
+  if (reportKey && token && token !== 'sem-trava') await db.destravar(reportKey, token).catch(() => {});
 }
 
 // Batida da extensão ~55min depois de um report: renova o cache do prompt se ele está para vencer e
@@ -1891,11 +1906,13 @@ app.post('/api/cache/aquecer', auth, async (req, res) => {
 
 app.post('/api/report-direto', auth, async (req, res) => {
   let reportKey = null;
+  let trava = null;
   try {
     const { mensagens, nome, qualidade, captureQuality, vinculo, formulario } = req.body || {};
     const qualidadeFinal = qualidadeValida(qualidade);
-    // A visão do SDR sobre o lead (só o master escreve): muda o report, então entra na chave de "report igual".
-    const visao = usuarios.ehMaster(req.usuario) ? String((req.body || {}).visao || '').trim().slice(0, 3000) : '';
+    // A leitura do SDR sobre o lead (só o master escreve): é fonte da geração e entra na chave de "report igual".
+    // Acima do limite responde 400 com o motivo — nada é cortado calado.
+    const visao = usuarios.ehMaster(req.usuario) ? visaoSdr.textoRecebido((req.body || {}).visao) : '';
     const { historico: normalizadas } = normalizarConversa(Array.isArray(mensagens) ? mensagens : []);
     reportKey = calcularReportKey({ historicoNormalizado: normalizadas, promptVersao: PROMPT_VERSAO, qualidade: qualidadeFinal + (visao ? '|visao:' + visao : ''), contato: nome });
     // A conversa do WhatsApp (com os áudios transcritos) vai para o card do lead no CRM, junto com o report — também
@@ -1907,15 +1924,15 @@ app.post('/api/report-direto', auth, async (req, res) => {
         .then((v) => transcricaoCrm.enviar({ dealId: v.dealId, mensagens, sdr: req.usuario.nome, lead: nome, telefone: v.telefone }))
         .catch((err) => ({ enviada: false, motivo: 'erro', erro: err.message }));
 
-    if (!(await checarDuplicataETravar(req, res, reportKey, transcricao))) return;
+    trava = await checarDuplicataETravar(req, res, reportKey, transcricao);
+    if (!trava) return;
 
-    const dados = await dadosDireto({ mensagens, nome, sdr: req.usuario.nome, qualidade: qualidadeFinal });
-    if (visao) await visaoSdr.aplicar(dados, { texto: visao, sdr: req.usuario.nome });
+    const dados = await dadosDireto({ mensagens, nome, sdr: req.usuario.nome, qualidade: qualidadeFinal, visao });
     await responderReport(req, res, dados, nome, 'extensao', reportKey, sanitizarCaptura(captureQuality), vinculo, formulario, transcricao);
   } catch (err) {
-    res.status(/Nenhuma mensagem/i.test(err.message) ? 400 : 500).json({ erro: err.message });
+    res.status(err.status === 400 || /Nenhuma mensagem/i.test(err.message) ? 400 : 500).json({ erro: err.message });
   } finally {
-    if (reportKey) await db.destravar(reportKey).catch(() => {});
+    await soltarTrava(reportKey, trava);
   }
 });
 
@@ -1952,15 +1969,19 @@ app.get('/api/report-base/:id', auth, async (req, res) => {
 
 app.post('/api/report-texto', auth, async (req, res) => {
   let reportKey = null;
+  let trava = null;
   try {
     const { texto, nome, qualidade, baseId } = req.body || {};
     const qualidadeFinal = qualidadeValida(qualidade);
+    // Mesma leitura do SDR da extensão (só o master), com o mesmo limite e a mesma chave de "report igual".
+    const visao = usuarios.ehMaster(req.usuario) ? visaoSdr.textoRecebido((req.body || {}).visao) : '';
     const { texto: textoNormalizado } = normalizarTextoLivre(String(texto || ''));
-    reportKey = calcularReportKey({ historicoNormalizado: textoNormalizado, promptVersao: PROMPT_VERSAO, qualidade: qualidadeFinal, contato: nome });
+    reportKey = calcularReportKey({ historicoNormalizado: textoNormalizado, promptVersao: PROMPT_VERSAO, qualidade: qualidadeFinal + (visao ? '|visao:' + visao : ''), contato: nome });
 
-    if (!(await checarDuplicataETravar(req, res, reportKey))) return;
+    trava = await checarDuplicataETravar(req, res, reportKey);
+    if (!trava) return;
 
-    const dados = await dadosDeTexto({ texto, nome, sdr: req.usuario.nome, qualidade: qualidadeFinal });
+    const dados = await dadosDeTexto({ texto, nome, sdr: req.usuario.nome, qualidade: qualidadeFinal, visao });
     // Complemento de um report do WhatsApp: o report novo fica preso ao mesmo lead (card, contato, telefone).
     let vinculo;
     if (baseId) {
@@ -1969,9 +1990,51 @@ app.post('/api/report-texto', auth, async (req, res) => {
     }
     await responderReport(req, res, dados, nome, 'manual', reportKey, undefined, vinculo);
   } catch (err) {
-    res.status(/Cole a conversa/i.test(err.message) ? 400 : 500).json({ erro: err.message });
+    res.status(err.status === 400 || /Cole a conversa/i.test(err.message) ? 400 : 500).json({ erro: err.message });
   } finally {
-    if (reportKey) await db.destravar(reportKey).catch(() => {});
+    await soltarTrava(reportKey, trava);
+  }
+});
+
+// Reabre o report (JSON) para ver/editar/exportar sem IA. Só o dono (admin vê qualquer um).
+app.get('/api/reports/:id/dados', auth, async (req, res) => {
+  try {
+    const r = await stats.buscarPorId(String(req.params.id || ''));
+    const permitido = r && (usuarios.ehAdmin(req.usuario) || r.usuarioId === req.usuario.id);
+    if (!permitido) return res.status(404).json({ erro: 'Report não encontrado.' });
+    const dados = await reportsSalvos.ler(r.id);
+    if (!dados) return res.status(404).json({ erro: 'Este report é de antes de o sistema guardar o conteúdo (ou passou de 60 dias).' });
+    res.set('Cache-Control', 'no-store');
+    res.json({ ok: true, dados });
+  } catch (err) {
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+/**
+ * Salva a revisão do report feita no painel (edição de texto, leitura do SDR aprovada/editada). Sem IA. O original
+ * da leitura do SDR é o guardado (o cliente não troca); revisão desatualizada responde 409 para não sobrescrever.
+ * O texto do handoff para o CRM é refeito com a revisão.
+ */
+app.put('/api/reports/:id/revisao', auth, async (req, res) => {
+  try {
+    const r = await stats.buscarPorId(String(req.params.id || ''));
+    if (!r || r.usuarioId !== req.usuario.id) return res.status(404).json({ erro: 'Report não encontrado.' });
+    const guardado = await reportsSalvos.ler(r.id);
+    if (!guardado) return res.status(404).json({ erro: 'Este report não está mais guardado para revisão.' });
+    const novo = saneadorDeReport(req.body && req.body.dados);
+    if (!novo) return res.status(400).json({ erro: 'Report inválido.' });
+    const base = Number(req.body && req.body.revisao);
+    if (Number.isInteger(base) && base !== (guardado.revisao || 1)) {
+      return res.status(409).json({ erro: 'O report foi salvo em outro lugar depois que você abriu. Recarregue antes de salvar.', revisao: guardado.revisao || 1 });
+    }
+    const salvo = reportsSalvos.aplicarRevisao(guardado, novo, req.usuario.nome);
+    await reportsSalvos.salvar(r.id, salvo);
+    const vinculoLido = r.rdDealId || r.telefone ? { dealId: r.rdDealId, contatoId: r.rdContatoId, telefone: r.telefone } : null;
+    await fluxoReuniao.guardarHandoff({ dados: salvo, sdr: req.usuario.nome, reportId: r.id, vinculo: vinculoLido }).catch(() => {});
+    res.json({ ok: true, revisao: salvo.revisao, dados: salvo });
+  } catch (err) {
+    res.status(500).json({ erro: err.message });
   }
 });
 
@@ -1994,7 +2057,7 @@ function saneadorDeReport(d) {
   if (!d || typeof d !== 'object') return null;
   const txt = (v) => (typeof v === 'string' ? v : '');
   const arr = (v) => (Array.isArray(v) ? v : []);
-  return {
+  const base = {
     lead: txt(d.lead).trim(),
     resumo: arr(d.resumo)
       .map((r) => ({ rotulo: txt(r && r.rotulo).trim(), valor: txt(r && r.valor).trim() }))
@@ -2014,6 +2077,23 @@ function saneadorDeReport(d) {
     abertura: txt(d.abertura).trim(),
     frase_impacto: txt(d.frase_impacto).trim(),
   };
+  if (handoff.ehEditorial(d)) {
+    Object.assign(base, handoff.normalizarEditorial(d), { schemaVersion: handoff.SCHEMA_VERSAO });
+    const v = d.visaoSdr && typeof d.visaoSdr === 'object' ? d.visaoSdr : null;
+    if (v && txt(v.original).trim()) {
+      base.visaoSdr = {
+        original: txt(v.original).trim().slice(0, visaoSdr.MAX_CARACTERES),
+        sintese: arr(v.sintese).map(txt).map((t) => t.trim()).filter(Boolean).slice(0, 30),
+        autor: txt(v.autor).trim().slice(0, 80),
+        atualizadoEm: txt(v.atualizadoEm).slice(0, 40),
+        statusRevisao: ['original', 'sintese_conferida', 'aprovada'].includes(v.statusRevisao) ? v.statusRevisao : 'original',
+      };
+    }
+    ['promptVersao', 'templateVersao', 'reportId'].forEach((k) => { if (txt(d[k])) base[k] = txt(d[k]).slice(0, 40); });
+    if (Number.isInteger(d.revisao)) base.revisao = d.revisao;
+    handoff.sincronizarLegado(base);
+  }
+  return base;
 }
 
 // ---------------------------------------------------------------------------

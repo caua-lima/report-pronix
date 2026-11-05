@@ -421,6 +421,15 @@
     .termo i.on.n4 { background: color-mix(in srgb, var(--ouro) 50%, var(--danger)); }
     .termo i.on.n5 { background: var(--danger); }
     .frase { font-style: italic; color: var(--text-2); background: var(--card-2); border-left: 3px solid var(--ouro); padding: 11px 15px; border-radius: 0 var(--r-sm) var(--r-sm) 0; margin: 8px 0; }
+    /* Handoff editorial: um destaque (a leitura do SDR), origem discreta, comparação lado a lado */
+    .leitura-box { background: var(--card-2); border-left: 3px solid var(--ouro); padding: 12px 15px; border-radius: 0 var(--r-sm) var(--r-sm) 0; margin: 14px 0; }
+    .st { font-family: var(--f-titulo); font-size: .68rem; text-transform: uppercase; letter-spacing: .03em; border: 1px solid var(--border-forte); border-radius: 4px; padding: 1px 6px; color: var(--text-2); margin-left: 6px; vertical-align: middle; white-space: nowrap; }
+    .st.alinhar { border-color: var(--ouro-tinta); color: var(--ouro-tinta); }
+    .report .tese-t { font-size: 1.15rem; margin-top: 14px; }
+    .report .lead-t { font-size: 1.4rem; margin: 4px 0 2px; }
+    .report .etapa { font-family: var(--f-titulo); color: var(--ouro-tinta); }
+    .report details.internos { margin-top: 18px; border-top: 1px solid var(--border); padding-top: 10px; }
+    .report details.internos summary { cursor: pointer; color: var(--text-2); font-size: .85rem; }
     /* Campos editáveis do report gerado */
     .editavel [data-edit] { border-radius: 3px; transition: background .12s, box-shadow .12s; outline: none; }
     .editavel [data-edit]:hover { background: color-mix(in srgb, var(--ouro) 16%, transparent); }
@@ -569,6 +578,13 @@
         <div id="estimativaCusto" class="hint" style="margin-top:6px"></div>
       </div>
 
+      <div id="leituraBox" class="card hidden" style="margin-top:12px">
+        <div class="head"><div class="t"><i data-ic="quote"></i>Minha leitura sobre este lead</div><div class="sub">— opcional; orienta a estratégia do report e aparece com o seu nome</div></div>
+        <div class="hint" style="margin:0 0 8px">Se ajudar, responda o que quiser: o que vejo de mais promissor? O que ele quer alcançar de verdade? Por onde eu conduziria a reunião? O que o closer precisa saber para não perder contexto? Pode trazer o que veio por ligação.</div>
+        <textarea id="leitura" rows="5" maxlength="3000" placeholder="Ex.: parece que quer mais segurança de como começar do que aula de ferramenta; já sabe produzir…"></textarea>
+        <div id="leituraConta" class="hint" style="margin-top:4px">0 de 3000 caracteres</div>
+      </div>
+
       <details id="compBox" class="card" style="margin-top:12px">
         <summary style="cursor:pointer;font-weight:700"><i data-ic="plus"></i> Complementar um report do WhatsApp com a ligação</summary>
         <div class="hint" style="margin:10px 0">Qualificou pelo WhatsApp e depois ligou? Escolha o report (ou cole o texto do PDF), escreva o que veio da ligação e gere o <b>report completo</b>. Ele fica preso ao mesmo lead e é o que vai como handoff para o closer.</div>
@@ -600,9 +616,13 @@
       <div id="resultado" class="card hidden" style="margin-top:18px">
         <div class="result-head">
           <div style="font-weight:700;font-size:1.05rem"><i data-ic="check"></i>Report gerado</div>
-          <button id="dl" class="dl"><i data-ic="download"></i>Baixar PDF</button>
+          <div class="acoes" style="margin:0">
+            <button id="salvarRev" type="button" class="btn sec hidden">Salvar revisão</button>
+            <button id="dl" class="dl"><i data-ic="download"></i>Baixar PDF</button>
+          </div>
         </div>
-        <div class="hint" style="margin:0 0 10px">Clique em qualquer trecho para editar. O PDF é gerado com as suas alterações.</div>
+        <div class="hint" style="margin:0 0 10px">Clique em qualquer trecho para editar. O PDF é gerado com as suas alterações; "Salvar revisão" guarda para reabrir depois (sem IA).</div>
+        <div id="statusRev" class="status" style="margin-top:0"></div>
         <div id="report" class="report editavel"></div>
       </div>
 
@@ -4022,6 +4042,7 @@
 
     // Report gerado, mantido em memória para poder ser editado e regerar o PDF.
     let reportAtual = null;
+    let leituraLiberada = false; // o campo "Minha leitura" aparece para quem o servidor libera (hoje, o master)
 
     // Trecho editável: contenteditable ligado a um caminho no objeto (ex.: "secoes.0.itens.1").
     const ed = (caminho, texto) => `<span data-edit="${caminho}" contenteditable="true">${esc(texto || '')}</span>`;
@@ -4033,7 +4054,66 @@
     // Nível de consciência: o report só mostra quando é bom (de "consciente da solução" para cima).
     const NIVEIS_VISIVEIS = { solucao: 'Consciente da solução', produto: 'Consciente da nossa entrega', pronto: 'Pronto para decidir' };
 
+    // ---- Handoff editorial (schemaVersion 2): tese, leitura do SDR, oportunidade, panorama, condução, abertura.
+    const STATUS_PAN = { declarado: 'dito pelo lead', indicado: 'deduzido da conversa', informado_sdr: 'dito pelo SDR', leitura_sdr: 'leitura do SDR', a_alinhar: 'a alinhar' };
+    const CAMPOS_PAN = [['objetivo', 'Objetivo'], ['capital_operacao', 'Capital para a operação'], ['capacidade_acompanhamento', 'Investimento no acompanhamento'], ['timing', 'Momento'], ['decisao', 'Decisão'], ['combinado', 'Combinado']];
+    const STATUS_LEITURA = { original: 'seu texto', sintese_conferida: 'síntese conferida — falta você aprovar', aprovada: 'aprovada por você' };
+    /** O texto do SDR em tópicos (igual ao servidor): uma linha ou frase por tópico, sem cortar nenhum. */
+    function topicosDoTexto(texto) {
+      const linhas = String(texto || '').split(/\n+/).map((l) => l.replace(/^[-•*\d.)\s]+/, '').replace(/\s+/g, ' ').trim()).filter(Boolean);
+      if (linhas.length > 1) return linhas;
+      return (String(texto || '').match(/[^.!?]+[.!?]*/g) || []).map((s) => s.replace(/\s+/g, ' ').trim()).filter(Boolean);
+    }
+    let leituraAnterior = null; // um passo de "desfazer" na leitura
+
+    function renderEditorial(d) {
+      const p = [];
+      p.push(`<h2 class="lead-t">${ed('lead', d.lead)}</h2>`);
+      if (d.negocio) p.push(`<p style="color:var(--text-2);margin:0 0 6px">${ed('negocio', d.negocio)}</p>`);
+      (d.ficha || []).forEach((r) => p.push(`<div class="hint" style="margin:0">${esc(r.rotulo)}: ${esc(r.valor)}</div>`));
+      if (d.tese && (d.tese.titulo || d.tese.texto)) p.push(`<h2 class="tese-t">${ed('tese.titulo', d.tese.titulo)}</h2><p>${ed('tese.texto', d.tese.texto)}</p>`);
+      const v = d.visaoSdr;
+      if (v && v.original) {
+        const primeiro = String(v.autor || 'SDR').trim().split(/\s+/)[0] || 'SDR';
+        p.push(`<div class="leitura-box"><h2 style="margin-top:0">Leitura de ${esc(primeiro)}<span class="st">${esc(STATUS_LEITURA[v.statusRevisao] || '')}</span></h2>` +
+          listaEditavel(v.sintese || [], false, 'visaoSdr.sintese') +
+          (v.motivos && v.motivos.length ? `<div class="hint">A síntese da IA não foi usada (${esc(v.motivos.join('; '))}): vai o seu texto.</div>` : '') +
+          `<details style="margin-top:6px"><summary class="hint" style="cursor:pointer">Comparar com o que você escreveu</summary><div class="frase" style="font-style:normal;white-space:pre-wrap">${esc(v.original)}</div></details>` +
+          `<div class="acoes" style="margin-top:8px"><button type="button" class="btn sec" data-leitura="aprovar">Aprovar esta versão</button>` +
+          `<button type="button" class="btn sec" data-leitura="original">Usar o meu texto original</button>` +
+          (leituraAnterior ? '<button type="button" class="btn sec" data-leitura="desfazer">Desfazer</button>' : '') + '</div></div>');
+      }
+      if ((d.oportunidade || []).length) {
+        p.push('<h2><i data-ic="target"></i>Oportunidade em foco</h2><ul>' + d.oportunidade.map((o, i) =>
+          `<li><b>${ed('oportunidade.' + i + '.fato', o.fato)}</b> ${ed('oportunidade.' + i + '.relevancia', o.relevancia)}${o.origem === 'leitura_sdr' ? '<span class="st">leitura do SDR</span>' : ''}</li>`).join('') + '</ul>');
+      }
+      const pan = d.panorama || {};
+      const linhasPan = CAMPOS_PAN.filter(([k]) => pan[k] && pan[k].valor).map(([k, rot]) =>
+        `<tr><td class="rot">${esc(rot)}</td><td>${ed('panorama.' + k + '.valor', pan[k].valor)}<span class="st${pan[k].status === 'a_alinhar' ? ' alinhar' : ''}">${esc(STATUS_PAN[pan[k].status] || '')}</span></td></tr>`);
+      if (linhasPan.length) p.push('<h2><i data-ic="users"></i>Panorama comercial</h2><table>' + linhasPan.join('') + '</table>');
+      if ((d.conducao || []).length) {
+        p.push('<h2><i data-ic="check"></i>Condução da reunião</h2><ol>' + d.conducao.map((c, i) =>
+          `<li><span class="etapa">${esc(c.etapa || '')}</span> — ${ed('conducao.' + i + '.acao', c.acao)}` +
+          (c.pergunta ? `<br><span class="hint">Pergunta:</span> ${ed('conducao.' + i + '.pergunta', c.pergunta)}` : '') +
+          (c.objetivo ? `<br><span class="hint">Objetivo: ${ed('conducao.' + i + '.objetivo', c.objetivo)}</span>` : '') + '</li>').join('') + '</ol>');
+      }
+      if (d.abertura) p.push(`<h2><i data-ic="message"></i>Abertura sugerida</h2><p class="frase" style="font-style:normal">${ed('abertura', d.abertura)}</p>`);
+      if ((d.contexto || []).length) p.push('<h2>Contexto</h2>' + listaEditavel(d.contexto, false, 'contexto'));
+      if ((d.citacoes || []).length) p.push('<h2><i data-ic="quote"></i>Nas palavras do lead</h2>' + d.citacoes.map((c, i) => `<p class="frase">“${ed('citacoes.' + i, c)}”</p>`).join(''));
+      if ((d.conversa || []).length) p.push('<h2><i data-ic="message"></i>Como foi a conversa</h2>' + listaEditavel(d.conversa, false, 'conversa'));
+      // O que é leitura interna (momento, perfil, sinais, dores) fica recolhido e não vai para o PDF do closer.
+      const nivel = d.consciencia && (d.consciencia.titulo || NIVEIS_VISIVEIS[d.consciencia.nivel]);
+      const internos = [];
+      if (nivel) internos.push(`<p><b>Momento do lead:</b> ${esc(nivel)}${d.consciencia.porque ? ' — ' + esc(d.consciencia.porque) : ''}</p>`);
+      if (d.perfil && d.perfil.tipo) internos.push(`<p><b>Perfil:</b> ${esc(d.perfil.tipo)}${d.perfil.evidencia ? ' — ' + esc(d.perfil.evidencia) : ''}</p>`);
+      if ((d.sinais_compra || []).length) internos.push('<p><b>Sinais de compra</b></p><ul>' + d.sinais_compra.map((s) => `<li>${esc(s)}</li>`).join('') + '</ul>');
+      if ((d.dores || []).length) internos.push('<p><b>Dores</b></p><ul>' + d.dores.map((x) => `<li>${esc(x.dor)} (${esc(String(x.intensidade))}/5)</li>`).join('') + '</ul>');
+      if (internos.length) p.push('<details class="internos"><summary>Leitura interna (não vai para o PDF)</summary>' + internos.join('') + '</details>');
+      return p.join('');
+    }
+
     function renderReport(d) {
+      if (Number(d && d.schemaVersion) >= 2) return renderEditorial(d);
       const linhas = [];
       if (d.lead) linhas.push(`<tr><td class="rot">Lead</td><td>${ed('lead', d.lead)}</td></tr>`);
       (d.resumo || []).forEach((r, i) =>
@@ -4103,6 +4183,7 @@
         const r = JSON.parse(bruto);
         if (!r || !r.dados || r.dono !== donoDaChave()) return;
         reportAtual = r.dados;
+        $('salvarRev').classList.toggle('hidden', !reportAtual.reportId);
         $('report').innerHTML = renderReport(reportAtual);
         aplicarIcones($('report'));
         $('resultado').classList.remove('hidden');
@@ -4115,7 +4196,61 @@
       const el = ev.target.closest('[data-edit]');
       if (!el || !reportAtual) return;
       gravarNoCaminho(reportAtual, el.dataset.edit, el.innerText.trim());
+      if (el.dataset.edit.startsWith('visaoSdr.sintese') && reportAtual.visaoSdr) reportAtual.visaoSdr.statusRevisao = 'aprovada';
       guardarRascunho();
+    });
+
+    // Leitura do SDR: aprovar a versão, voltar ao texto original ou desfazer. Sem IA.
+    $('report').addEventListener('click', (ev) => {
+      const b = ev.target.closest('[data-leitura]');
+      if (!b || !reportAtual || !reportAtual.visaoSdr) return;
+      const v = reportAtual.visaoSdr;
+      const acao = b.dataset.leitura;
+      if (acao === 'desfazer') {
+        if (leituraAnterior) reportAtual.visaoSdr = leituraAnterior;
+        leituraAnterior = null;
+      } else {
+        leituraAnterior = JSON.parse(JSON.stringify(v));
+        if (acao === 'aprovar') v.statusRevisao = 'aprovada';
+        if (acao === 'original') { v.sintese = topicosDoTexto(v.original); v.statusRevisao = 'original'; }
+        delete v.motivos;
+      }
+      $('report').innerHTML = renderReport(reportAtual);
+      aplicarIcones($('report'));
+      guardarRascunho();
+      setStatus('statusRev', acao === 'desfazer' ? 'Leitura de volta como estava.' : 'Leitura atualizada. Salve a revisão para guardar.', { ok: true });
+    });
+
+    // Salvar revisão: guarda o report editado no servidor (60 dias), para reabrir e para o texto do CRM. Sem IA.
+    $('salvarRev').addEventListener('click', async () => {
+      if (!reportAtual || !reportAtual.reportId) return;
+      const btn = $('salvarRev');
+      btn.disabled = true;
+      setStatus('statusRev', 'Salvando a revisão…', { loading: true });
+      try {
+        const r = await fetchComTempo('/api/reports/' + encodeURIComponent(reportAtual.reportId) + '/revisao', {
+          method: 'PUT', headers: hdr({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ dados: reportAtual, revisao: reportAtual.revisao || 1 }),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.erro || 'Não consegui salvar a revisão.');
+        reportAtual = j.dados;
+        leituraAnterior = null;
+        $('report').innerHTML = renderReport(reportAtual);
+        aplicarIcones($('report'));
+        guardarRascunho();
+        setStatus('statusRev', `Revisão ${j.revisao} salva. O texto do handoff para o CRM já usa esta versão.`, { ok: true });
+      } catch (e) {
+        setStatus('statusRev', e.message + ' A sua edição continua na tela.', { erro: true });
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    // Contador da leitura: o limite é avisado antes de enviar (o servidor recusa acima, não corta calado).
+    $('leitura').addEventListener('input', () => {
+      const n = $('leitura').value.length;
+      $('leituraConta').textContent = `${n} de 3000 caracteres`;
     });
 
     // Baixar PDF: regera a partir do objeto editado (não chama a IA, é só desenho).
@@ -4197,7 +4332,7 @@
       try {
         const r = await fetchComTempo('/api/report-texto', {
           method: 'POST', headers: hdr({ 'Content-Type': 'application/json' }),
-          body: JSON.stringify({ texto: textoFinal, nome: $('nomeLead').value.trim(), forcarNovo: !!forcarNovo, ...(compBaseId ? { baseId: compBaseId } : {}) }),
+          body: JSON.stringify({ texto: textoFinal, nome: $('nomeLead').value.trim(), forcarNovo: !!forcarNovo, ...(compBaseId ? { baseId: compBaseId } : {}), ...(leituraLiberada && $('leitura').value.trim() ? { visao: $('leitura').value.trim() } : {}) }),
         });
         const data = await r.json();
         if (!r.ok) throw new Error(data.erro || 'Erro ao gerar o report.');
@@ -4209,6 +4344,8 @@
           return;
         }
         reportAtual = data.dados; // fonte da verdade; edições atualizam este objeto
+        leituraAnterior = null;
+        $('salvarRev').classList.toggle('hidden', !reportAtual.reportId);
         guardarRascunho();
         $('report').innerHTML = renderReport(reportAtual);
         aplicarIcones($('report'));
@@ -4340,6 +4477,8 @@
           throw new Error(j.erro || 'Chave inválida.');
         }
         souMaster = j.papel === 'master';
+        leituraLiberada = j.visaoNoReport === true;
+        $('leituraBox').classList.toggle('hidden', !leituraLiberada);
         meuId = String(j.id || '');
         prepararMatchDoHandoff(j.analises);
         papelConhecido = true;

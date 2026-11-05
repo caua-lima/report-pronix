@@ -2481,3 +2481,76 @@ test('Closers do time: escolhe o SDR, clica em Carregar e vê os números dele p
   assert.deepEqual(p.erros, []);
   p.fechar();
 });
+
+// ---------------------------------------------------------------- handoff editorial (auditoria de 04/11/2026)
+const { FIXTURES: HANDOFFS } = require('./fixtures/handoffs');
+
+test('editorial: a leitura vai junto do texto colado; a tela mostra tese, leitura, panorama com origem e condução', async () => {
+  const dados = JSON.parse(JSON.stringify(HANDOFFS.outro_decisor));
+  dados.reportId = 'rep1';
+  dados.revisao = 1;
+  const api = criarApi({
+    'GET /api/eu': () => ({ corpo: { ok: true, nome: 'Cauã Lima', id: '1', papel: 'sdr', visaoNoReport: true } }),
+    'POST /api/estimar-custo': () => ({ corpo: { custoUsdEstimado: 0.01, custoBrlEstimado: 0.05 } }),
+    'POST /api/report-texto': () => ({ corpo: { dados, id: 'rep1' } }),
+  });
+  const p = await painelSdrComTexto(api);
+  assert.ok(visivel(p.$('leituraBox')), 'o servidor libera o campo da leitura');
+  p.$('leitura').value = 'Ela tá decidida, mas o Bruno segura o dinheiro.';
+  p.$('leitura').dispatchEvent(new p.w.Event('input', { bubbles: true }));
+  assert.match(p.$('leituraConta').textContent, /^47 de 3000/);
+  p.$('gerar').click();
+  await esperar(() => visivel(p.$('resultado')), { motivo: 'report na tela' });
+  assert.equal(api.corpos('POST /api/report-texto')[0].visao, 'Ela tá decidida, mas o Bruno segura o dinheiro.');
+  const tela = p.$('report').textContent;
+  for (const x of ['Já vende e quer escalar com o sócio junto', 'Leitura de Cauã', 'Oportunidade em foco', 'Panorama comercial', 'Condução da reunião', 'Aprofundar', 'Abertura sugerida', 'leitura do SDR', 'dito pelo lead']) {
+    assert.ok(tela.includes(x), 'faltou na tela: ' + x);
+  }
+  assert.ok(!tela.includes('Frase de Impacto'));
+  assert.ok(visivel(p.$('salvarRev')));
+  assert.deepEqual(p.erros, []);
+  p.fechar();
+});
+
+test('editorial: SDR sem liberação não vê o campo e nada de leitura é enviado', async () => {
+  const api = apiBase({ papel: 'sdr', nome: 'Ana' }).quando('POST /api/report-texto', () => ({ corpo: { dados: RELATORIO } }));
+  const p = await painelSdrComTexto(api);
+  assert.equal(visivel(p.$('leituraBox')), false);
+  p.$('gerar').click();
+  await esperar(() => visivel(p.$('resultado')), { motivo: 'report na tela' });
+  assert.equal(api.corpos('POST /api/report-texto')[0].visao, undefined);
+  p.fechar();
+});
+
+test('editorial: aprovar, voltar ao original, desfazer e salvar a revisão (sem IA)', async () => {
+  const dados = JSON.parse(JSON.stringify(HANDOFFS.geraldo));
+  dados.reportId = 'rep9';
+  dados.revisao = 1;
+  let salvo = null;
+  const api = criarApi({
+    'GET /api/eu': () => ({ corpo: { ok: true, nome: 'Cauã Lima', id: '1', papel: 'sdr', visaoNoReport: true } }),
+    'POST /api/estimar-custo': () => ({ corpo: { custoUsdEstimado: 0.01, custoBrlEstimado: 0.05 } }),
+    'POST /api/report-texto': () => ({ corpo: { dados } }),
+    'PUT /api/reports/rep9/revisao': ({ corpo }) => { salvo = corpo; return { corpo: { ok: true, revisao: 2, dados: { ...corpo.dados, revisao: 2 } } }; },
+  });
+  const p = await painelSdrComTexto(api);
+  p.$('gerar').click();
+  await esperar(() => visivel(p.$('resultado')), { motivo: 'report na tela' });
+  assert.match(p.$('report').textContent, /síntese conferida — falta você aprovar/);
+
+  p.$('report').querySelector('[data-leitura="original"]').click();
+  assert.match(p.$('report').textContent, /seu texto/);
+  assert.match(p.$('report').textContent, /já sabe produzir/);
+  p.$('report').querySelector('[data-leitura="desfazer"]').click();
+  assert.match(p.$('report').textContent, /síntese conferida/);
+  p.$('report').querySelector('[data-leitura="aprovar"]').click();
+  assert.match(p.$('report').textContent, /aprovada por você/);
+
+  p.$('salvarRev').click();
+  await esperar(() => /Revisão 2 salva/.test(p.$('statusRev').textContent), { motivo: 'revisão salva' });
+  assert.equal(salvo.revisao, 1, 'manda a revisão de base para o servidor recusar se outra pessoa salvou antes');
+  assert.equal(salvo.dados.visaoSdr.statusRevisao, 'aprovada');
+  assert.equal(api.contar('POST /api/report-texto'), 1, 'salvar não gera de novo');
+  assert.deepEqual(p.erros, []);
+  p.fechar();
+});
