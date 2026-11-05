@@ -1840,7 +1840,7 @@ function nomeArquivoPdf(lead) {
  * normalizada), confere se já existe um report idêntico (a não ser que o
  * pedido mande forcarNovo) e trava a chave enquanto gera — assim um retry de
  * rede não paga duas vezes pela mesma conversa. Devolve null se já respondeu
- * (duplicata encontrada) ou a reportKey para o chamador usar/destravar.
+ * (duplicata encontrada) ou o token da trava (só quem tem o token destrava; 'sem-trava' quando o banco caiu).
  */
 async function checarDuplicataETravar(req, res, reportKey, transcricao) {
   if (!req.body || !req.body.forcarNovo) {
@@ -1868,13 +1868,18 @@ async function checarDuplicataETravar(req, res, reportKey, transcricao) {
   }
   const travou = await db.travar(reportKey).catch((err) => {
     console.error('[report] sem trava (banco):', err.message);
-    return true;
+    return 'sem-trava';
   });
   if (!travou) {
     res.status(409).json({ erro: 'Já existe uma geração em andamento para esta conversa.' });
     return false;
   }
-  return true;
+  return travou;
+}
+
+/** Solta a trava do report só se foi esta requisição que a pegou. */
+async function soltarTrava(reportKey, token) {
+  if (reportKey && token && token !== 'sem-trava') await db.destravar(reportKey, token).catch(() => {});
 }
 
 // Batida da extensão ~55min depois de um report: renova o cache do prompt se ele está para vencer e
@@ -1891,6 +1896,7 @@ app.post('/api/cache/aquecer', auth, async (req, res) => {
 
 app.post('/api/report-direto', auth, async (req, res) => {
   let reportKey = null;
+  let trava = null;
   try {
     const { mensagens, nome, qualidade, captureQuality, vinculo, formulario } = req.body || {};
     const qualidadeFinal = qualidadeValida(qualidade);
@@ -1907,7 +1913,8 @@ app.post('/api/report-direto', auth, async (req, res) => {
         .then((v) => transcricaoCrm.enviar({ dealId: v.dealId, mensagens, sdr: req.usuario.nome, lead: nome, telefone: v.telefone }))
         .catch((err) => ({ enviada: false, motivo: 'erro', erro: err.message }));
 
-    if (!(await checarDuplicataETravar(req, res, reportKey, transcricao))) return;
+    trava = await checarDuplicataETravar(req, res, reportKey, transcricao);
+    if (!trava) return;
 
     const dados = await dadosDireto({ mensagens, nome, sdr: req.usuario.nome, qualidade: qualidadeFinal });
     if (visao) await visaoSdr.aplicar(dados, { texto: visao, sdr: req.usuario.nome });
@@ -1915,7 +1922,7 @@ app.post('/api/report-direto', auth, async (req, res) => {
   } catch (err) {
     res.status(/Nenhuma mensagem/i.test(err.message) ? 400 : 500).json({ erro: err.message });
   } finally {
-    if (reportKey) await db.destravar(reportKey).catch(() => {});
+    await soltarTrava(reportKey, trava);
   }
 });
 
@@ -1952,13 +1959,15 @@ app.get('/api/report-base/:id', auth, async (req, res) => {
 
 app.post('/api/report-texto', auth, async (req, res) => {
   let reportKey = null;
+  let trava = null;
   try {
     const { texto, nome, qualidade, baseId } = req.body || {};
     const qualidadeFinal = qualidadeValida(qualidade);
     const { texto: textoNormalizado } = normalizarTextoLivre(String(texto || ''));
     reportKey = calcularReportKey({ historicoNormalizado: textoNormalizado, promptVersao: PROMPT_VERSAO, qualidade: qualidadeFinal, contato: nome });
 
-    if (!(await checarDuplicataETravar(req, res, reportKey))) return;
+    trava = await checarDuplicataETravar(req, res, reportKey);
+    if (!trava) return;
 
     const dados = await dadosDeTexto({ texto, nome, sdr: req.usuario.nome, qualidade: qualidadeFinal });
     // Complemento de um report do WhatsApp: o report novo fica preso ao mesmo lead (card, contato, telefone).
@@ -1971,7 +1980,7 @@ app.post('/api/report-texto', auth, async (req, res) => {
   } catch (err) {
     res.status(/Cole a conversa/i.test(err.message) ? 400 : 500).json({ erro: err.message });
   } finally {
-    if (reportKey) await db.destravar(reportKey).catch(() => {});
+    await soltarTrava(reportKey, trava);
   }
 });
 
