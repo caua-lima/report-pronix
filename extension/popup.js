@@ -64,7 +64,31 @@ function listaEditavel(itens, ordenada, base) {
 // Nível de consciência: o report só mostra quando é bom (de "consciente da solução" para cima).
 const NIVEIS_VISIVEIS = { solucao: 'Consciente da solução', produto: 'Consciente da nossa entrega', pronto: 'Pronto para decidir' };
 
+// Handoff editorial (schemaVersion 2): mesma ordem do PDF — tese, leitura do SDR, oportunidade, panorama, condução.
+const CAMPOS_PAN = [['objetivo', 'Objetivo'], ['capital_operacao', 'Capital para a operação'], ['capacidade_acompanhamento', 'Investimento no acompanhamento'], ['timing', 'Momento'], ['decisao', 'Decisão'], ['combinado', 'Combinado']];
+function renderEditorial(d) {
+  const p = [];
+  if (d.lead) p.push(`<h2 style="font-size:1.05rem">${ed('lead', d.lead)}</h2>`);
+  if (d.negocio) p.push(`<p>${ed('negocio', d.negocio)}</p>`);
+  if (d.tese && (d.tese.titulo || d.tese.texto)) p.push(`<h2>${ed('tese.titulo', d.tese.titulo)}</h2><p>${ed('tese.texto', d.tese.texto)}</p>`);
+  const v = d.visaoSdr;
+  if (v && v.original && (v.sintese || []).length) {
+    const primeiro = String(v.autor || 'SDR').trim().split(/\s+/)[0] || 'SDR';
+    p.push(`<h2>Leitura de ${escapeHtml(primeiro)}</h2>${listaEditavel(v.sintese, false, 'visaoSdr.sintese')}`);
+  }
+  if ((d.oportunidade || []).length) p.push('<h2>Oportunidade em foco</h2><ul>' + d.oportunidade.map((o, i) => `<li><b>${ed('oportunidade.' + i + '.fato', o.fato)}</b> ${ed('oportunidade.' + i + '.relevancia', o.relevancia)}</li>`).join('') + '</ul>');
+  const pan = d.panorama || {};
+  const linhas = CAMPOS_PAN.filter(([k]) => pan[k] && pan[k].valor).map(([k, rot]) => `<tr><td class="rot">${escapeHtml(rot)}</td><td>${ed('panorama.' + k + '.valor', pan[k].valor)}</td></tr>`);
+  if (linhas.length) p.push('<h2>Panorama comercial</h2><table>' + linhas.join('') + '</table>');
+  if ((d.conducao || []).length) p.push('<h2>Condução da reunião</h2><ol>' + d.conducao.map((c, i) => `<li><b>${escapeHtml(c.etapa || '')}</b> — ${ed('conducao.' + i + '.acao', c.acao)}${c.objetivo ? `<br><small>Objetivo: ${ed('conducao.' + i + '.objetivo', c.objetivo)}</small>` : ''}</li>`).join('') + '</ol>');
+  if (d.abertura) p.push(`<h2>Abertura sugerida</h2><p class="frase">${ed('abertura', d.abertura)}</p>`);
+  if ((d.contexto || []).length) p.push('<h2>Contexto</h2>' + listaEditavel(d.contexto, false, 'contexto'));
+  if ((d.citacoes || []).length) p.push('<h2>Nas palavras do lead</h2>' + d.citacoes.map((c, i) => `<p class="frase">“${ed('citacoes.' + i, c)}”</p>`).join(''));
+  return p.join('');
+}
+
 function renderReport(d) {
+  if (Number(d && d.schemaVersion) >= 2) return renderEditorial(d);
   const linhas = [];
   if (d.lead) linhas.push(`<tr><td class="rot">Lead</td><td>${ed('lead', d.lead)}</td></tr>`);
   (d.resumo || []).forEach((r, i) =>

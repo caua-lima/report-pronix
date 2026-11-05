@@ -743,3 +743,28 @@ test('mistura de leads: áudio ouvido na conversa anterior, ANTES do clique nest
   assert.equal(envio.captureQuality.audiosTranscritos, 0);
   pagina.fechar();
 });
+
+// ---------------------------------------------------------------- leitura do SDR no Instagram (auditoria de 04/11/2026)
+test('Instagram: a caixa "Minha leitura sobre este lead" aparece para quem o servidor libera e a leitura vai no reportFetch', async () => {
+  const base = servidorFalso();
+  const aoEnviar = async (msg) => (msg.action === 'quemSouEu' ? { ok: true, visaoNoReport: true, nome: 'Cauã Lima' } : base.aoEnviar(msg));
+  const pagina = abrirPagina({ arquivo: 'extension/content-instagram.js', url: 'https://www.instagram.com/direct/t/111/', aoEnviar });
+  montarInstagram(pagina, CONVERSA, { visiveis: 6 });
+  pagina.iniciar();
+  await esperar(() => !!pagina.document.getElementById('cr-visao'), { motivo: 'caixa da leitura' });
+  assert.match(pagina.badge(), /Minha leitura sobre este lead/);
+  const caixa = pagina.document.getElementById('cr-visao');
+  assert.equal(caixa.getAttribute('maxlength'), '3000');
+  caixa.value = 'Quer segurança para começar; o sócio decide junto.';
+  pagina.document.querySelector('[data-cr-acao="gerar"]').click();
+  await esperar(() => terminou(pagina), { motivo: 'fim do job' });
+  assert.equal(base.chamadas.reports[0].visao, 'Quer segurança para começar; o sócio decide junto.');
+  pagina.fechar();
+});
+
+test('Instagram: quem não tem a leitura liberada gera direto, sem caixa e sem leitura', async () => {
+  const { pagina, envio } = await rodarInstagram(CONVERSA);
+  assert.equal(pagina.document.getElementById('cr-visao'), null);
+  assert.equal(envio.visao, '');
+  pagina.fechar();
+});
