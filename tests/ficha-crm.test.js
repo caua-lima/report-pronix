@@ -873,3 +873,60 @@ test('mudar a etapa à mão pelo painel: lista as etapas, sugere "Respondeu", mo
   assert.ok(sp.enviadas.some((e) => e.msg.action === 'painelConsultar'), 'o lead é buscado de novo');
   sp.fechar();
 });
+
+// ---------------------------------------------------------------- cartão desligado: tudo no painel lateral (05/11/2026)
+// O cartão flutuante saiu por padrão na 1.6.23, mas o painel lateral não recebia as etiquetas nem o Desqualificar.
+const LEAD_PAINEL = JSON.stringify(['5571999998888', '', '']);
+const ultimoOkDe = (srv) => srv.paineis.filter((e) => e && e.tipo === 'ok').pop();
+const textosDosItens = (itens) => itens.flatMap((it) => (it.tipo === 'formulario' ? it.itens.map((x) => x.texto) : [it.texto]));
+const abrirSemCartao = (srv) => {
+  const pagina = abrirPagina({ arquivo: 'extension/content.js', url: 'https://web.whatsapp.com/', aoEnviar: srv.aoEnviar, intervaloRapido: true });
+  montarWhatsApp(pagina, CONVERSA, { contato: '+55 71 99999-8888', idsSimples: true });
+  return pagina;
+};
+
+test('cartão desligado: o painel lateral recebe as etiquetas e o botão Desqualificar', async () => {
+  const srv = crmFalso(() => ({ ok: true, configurado: true, encontrado: true, ficha: FICHA_PAINEL, automacao: true, etiquetas: true }));
+  const p = abrirSemCartao(srv);
+  await esperar(() => ultimoOkDe(srv) && ultimoOkDe(srv).cartao, { motivo: 'lead com o modelo do cartão no painel' });
+  assert.equal(cartao(p), null, 'sem cartão flutuante na conversa');
+  const itens = textosDosItens(ultimoOkDe(srv).cartao.itens);
+  assert.ok(itens.includes('Desqualificar'), 'faltou o Desqualificar no painel: ' + itens.join(', '));
+  assert.ok(itens.includes('+ Qualificado'));
+  p.fechar();
+});
+
+test('cartão desligado: Desqualificar pelo painel — motivos, anotação e a perda no CRM', async () => {
+  const base = crmFalso(() => ({ ok: true, configurado: true, encontrado: true, ficha: FICHA_PAINEL, automacao: true, etiquetas: true }));
+  const pedidos = [];
+  const srv = {
+    ...base,
+    aoEnviar: async (msg) => {
+      if (msg.action === 'crmMotivosPerda') return { ok: true, motivos: [{ id: 'm1', nome: 'Sem investimento', tipo: 'desqualificacao' }, { id: 'm2', nome: 'Parou de responder' }] };
+      if (msg.action === 'crmDesqualificar') { pedidos.push(JSON.parse(JSON.stringify(msg))); return { ok: true, motivo: 'Sem investimento', etapa: 'Desqualificados' }; }
+      return base.aoEnviar(msg);
+    },
+  };
+  const p = abrirSemCartao(srv);
+  await esperar(() => ultimoOkDe(base) && ultimoOkDe(base).cartao, { motivo: 'lead' });
+  const acao = (a) => p.mensagem({ action: 'painelCartao', lead: LEAD_PAINEL, acao: a });
+  acao({ tipo: 'desqAbrir' });
+  await esperar(() => { const d = ultimoOkDe(base).cartao.desq; return d && d.motivos && d.motivos.length === 2; }, { motivo: 'motivos no painel' });
+  acao({ tipo: 'desqMotivo', id: 'm1' });
+  await esperar(() => { const d = ultimoOkDe(base).cartao.desq; return d && d.escolhido && d.comNota; }, { motivo: 'motivo escolhido pede anotação' });
+  // anotação curta: não manda e avisa
+  acao({ tipo: 'desqConfirmar', nota: 'curta' });
+  await esperar(() => /pelo menos 50/.test(ultimoOkDe(base).cartao.desq.erro), { motivo: 'aviso de anotação curta' });
+  assert.equal(pedidos.length, 0);
+  acao({ tipo: 'desqConfirmar', nota: 'O lead disse que não tem o investimento agora e que só pensa nisso no ano que vem.' });
+  await esperar(() => pedidos.length === 1, { motivo: 'perda enviada' });
+  assert.equal(pedidos[0].dealId, 'd1');
+  assert.equal(pedidos[0].motivoId, 'm1');
+  await esperar(() => !ultimoOkDe(base).cartao.desq && /perdido/.test((ultimoOkDe(base).cartao.aviso || {}).texto || ''), { motivo: 'painel mostra a perda' });
+  // clique de outro lead (painel atrasado) não faz nada
+  const antes = base.paineis.length;
+  p.mensagem({ action: 'painelCartao', lead: JSON.stringify(['5511900000000', '', '']), acao: { tipo: 'desqAbrir' } });
+  await dormir(40);
+  assert.equal(base.paineis.length, antes);
+  p.fechar();
+});

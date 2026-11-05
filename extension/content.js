@@ -1433,14 +1433,23 @@
   const agendaLib = (typeof globalThis !== 'undefined' && globalThis.__crAgenda) || null;
   // Painel lateral do Chrome (sidepanel.html): recebe o mesmo estado do cartão do lead, via service worker.
   const PAINEL_SEM_CONVERSA = { tipo: 'sem-conversa' };
-  let painelEnviado; // o último estado mandado (o cartão se redesenha muito com o MESMO estado)
-  let painelPodia = false; // os botões que escrevem no CRM (o mesmo acesso do Desqualificar: a automação do cartão)
+  // O que já foi mandado (em texto): o cartão se redesenha muito com o mesmo conteúdo, e só o que mudou vai de novo.
+  // As etiquetas, o Desqualificar e o resumo rápido vão junto ("cartao"): sem o cartão flutuante, o painel lateral
+  // tem TODOS os recursos que o cartão tinha.
+  let painelEnviado; // undefined = mandar de novo na próxima vez
   function publicarPainel(estado) {
-    if (estado === painelEnviado && painelPodia === (ficha.automacao === true)) return;
-    painelEnviado = estado;
-    painelPodia = ficha.automacao === true; // no Report PRONIX, os botões que escrevem no CRM vêm com a automação do cartão
+    // No Report PRONIX, os botões que escrevem no CRM vêm com a automação do cartão.
+    const carga = estado ? { ...estado, podeEscrever: ficha.automacao === true, cartao: modeloDoCartao(estado) } : null;
+    let json;
     try {
-      chrome.runtime.sendMessage({ action: 'painelEstado', estado: estado ? { ...estado, podeEscrever: painelPodia } : null }, () => void chrome.runtime.lastError);
+      json = JSON.stringify(carga);
+    } catch (_) {
+      json = '';
+    }
+    if (json && json === painelEnviado) return;
+    painelEnviado = json;
+    try {
+      chrome.runtime.sendMessage({ action: 'painelEstado', estado: carga }, () => void chrome.runtime.lastError);
     } catch (_) {
       /* extensão recarregada: este script ficou órfão */
     }
@@ -1578,8 +1587,13 @@
     return elem('div', 'display:flex;gap:6px;margin-top:10px', input, botaoFicha('Buscar', buscar));
   }
 
+  // Com o cartão na conversa, redesenha o cartão (que atualiza o painel); sem ele, atualiza só o painel lateral —
+  // antes, com o cartão desligado, nenhum clique do painel (Desqualificar, motivos, + Qualificado) aparecia.
   const redesenharFicha = () => {
-    if (ficha.ultimoEstado && document.getElementById(FICHA_ID)) renderFicha(ficha.ultimoEstado);
+    const est = ficha.ultimoEstado;
+    if (!est) return;
+    if (ficha.cartaoLocal && document.getElementById(FICHA_ID)) renderFicha(est);
+    else atualizarPainel(est);
   };
 
   /**
@@ -2290,121 +2304,196 @@
     return caixa;
   }
 
-  /** Linha de etiquetas no topo do cartão: perda no RD, "Qualificado" (liga/desliga à mão), o agendamento e o formulário. */
-  function blocoEtiquetas(estado) {
-    if (estado.tipo === 'carregando') return null;
+  /**
+   * O que a linha de etiquetas mostra — no cartão e no painel lateral (o painel desenha esta mesma lista).
+   * Itens: chip (etiqueta, com "×" para tirar), botao (ação), alerta (aviso cheio) e formulario (respostas do RD).
+   */
+  function itensDasEtiquetas(estado) {
+    if (!estado || estado.tipo === 'carregando') return null;
     // A perda vem da própria ficha do RD: aparece para quem vê o cartão, com ou sem as outras etiquetas ligadas.
     const perda = perdaNoRd(estado.ficha);
     const historico = estado.ficha && estado.ficha.historicoComercial;
     if (!ficha.automacao && !ficha.etiquetas && !perda && !historico) return null;
-    const marca = estado.marca || {};
-    const conversa = ficha.conversa;
-    const linha = elem('div', 'display:flex;flex-wrap:wrap;align-items:center;gap:5px;margin-top:7px');
-    linha.id = 'cr-etiquetas';
+    const itens = [];
     // O lead JÁ passou pelos closers (comprou, fez reunião, teve reunião marcada): é a 1ª coisa que se vê, para todos.
     if (historico && historico.resumo) {
       const cores = { comprou: ['#3ddc84', '#05130c'], reuniao: ['#ff9f43', '#2a1500'], agendada: ['#ffc233', '#121214'], closers: ['#8aa9ff', '#0d1730'] };
       const [fundo, cor] = cores[historico.resumo.tipo] || cores.reuniao;
-      const aviso = elem('div', 'flex-basis:100%;box-sizing:border-box;border-radius:8px;padding:4px 10px;font-size:12px;font-weight:800;line-height:1.5;text-align:center;background:' + fundo + ';color:' + cor, '⚠ ' + historico.resumo.texto);
-      aviso.id = 'cr-historico';
-      aviso.title = historico.resumo.titulo || '';
-      linha.appendChild(aviso);
+      itens.push({ tipo: 'alerta', id: 'cr-historico', texto: '⚠ ' + historico.resumo.texto, fundo, cor, titulo: historico.resumo.titulo || '' });
     }
-    const base = 'border-radius:5px;padding:2px 8px;font-size:11px;font-weight:600;line-height:1.5;letter-spacing:.07em;font-family:Bahnschrift,DIN Alternate,Roboto Condensed,Arial Narrow,sans-serif';
-    const tirar = (titulo, aoClicar) => {
-      const b = elem('button', 'cursor:pointer;border:0;background:transparent;color:#a39e93;font-size:13px;line-height:1;padding:0 2px;font-family:inherit', '×');
-      b.type = 'button';
-      b.title = titulo;
-      b.setAttribute('aria-label', titulo);
-      b.addEventListener('click', aoClicar);
-      return b;
-    };
-    // Mostra na hora e guarda no servidor (que devolve a marca final).
-    const mudar = (campos, local) => {
-      estado.marca = { ...marca, ...local };
-      redesenharFicha();
-      enviarMarca(conversa, campos);
-    };
-    if (perda) {
-      const chip = elem('span', `${base};border:1px solid #ff6f5c;background:rgba(255,111,92,.14);color:#ff6f5c`, perda.rotulo + (perda.motivo ? ' · ' + perda.motivo : ''));
-      chip.id = 'cr-etiqueta-perda';
-      chip.title = perda.titulo;
-      linha.appendChild(chip);
-    }
+    if (perda) itens.push({ tipo: 'chip', id: 'cr-etiqueta-perda', texto: perda.rotulo + (perda.motivo ? ' · ' + perda.motivo : ''), cor: '#ff6f5c', fundo: 'rgba(255,111,92,.14)', titulo: perda.titulo });
+    const marca = estado.marca || {};
     if (ficha.automacao && marca.qualificado) {
-      const chip = elem('span', `${base};border:1px solid #3ddc84;background:rgba(61,220,132,.14);color:#3ddc84`, 'QUALIFICADO');
       // De onde a etiqueta veio (passe o mouse): assim dá para confiar nela sem reabrir a conversa.
       const porque = { rd: 'o card esteve na etapa Qualificado do RD', report: 'você gerou o report deste lead', manual: 'você marcou à mão' }[marca.origem];
-      chip.title = porque ? 'Qualificado: ' + porque + '.' : 'Lead qualificado.';
-      linha.appendChild(chip);
-      linha.appendChild(tirar('Tirar a etiqueta Qualificado', () => mudar({ qualificado: false, manual: true }, { qualificado: false })));
+      itens.push({ tipo: 'chip', texto: 'QUALIFICADO', cor: '#3ddc84', fundo: 'rgba(61,220,132,.14)', titulo: porque ? 'Qualificado: ' + porque + '.' : 'Lead qualificado.', tirar: { titulo: 'Tirar a etiqueta Qualificado', acao: { tipo: 'qualificado', valor: false } } });
     } else if (ficha.automacao && !perda) {
       // Card perdido não ganha a sugestão de marcar como qualificado.
-      const b = elem('button', `${base};cursor:pointer;border:1px dashed #55515b;background:transparent;color:#a39e93`, '+ Qualificado');
-      b.type = 'button';
-      b.title = 'Marcar este lead como qualificado';
-      b.addEventListener('click', () => mudar({ qualificado: true, manual: true }, { qualificado: true, origem: 'manual' }));
-      linha.appendChild(b);
+      itens.push({ tipo: 'botao', texto: '+ Qualificado', cor: '#a39e93', borda: '#55515b', titulo: 'Marcar este lead como qualificado', acao: { tipo: 'qualificado', valor: true } });
     }
     // A reunião que está no Google Agenda vale mais que o que foi lido na conversa: é o compromisso de fato.
     const daAgenda = ficha.automacao && estado.reuniao && agendaLib ? agendaLib.descrever(estado.reuniao.quando, new Date()) : null;
     if (daAgenda) {
       const cor = daAgenda.passou ? '#f2a93b' : '#ffc233';
-      const texto = (daAgenda.passou ? 'Estava agendado: ' : 'Agendado: ') + daAgenda.texto + (estado.reuniao.closer ? ' · ' + estado.reuniao.closer : '');
-      const c = elem('span', `${base};border:1px solid ${cor};background:rgba(255,194,51,.12);color:${cor}`, texto);
-      c.title = 'Do Google Agenda' + (estado.reuniao.titulo ? ': ' + estado.reuniao.titulo : '');
-      linha.appendChild(c);
+      itens.push({ tipo: 'chip', texto: (daAgenda.passou ? 'Estava agendado: ' : 'Agendado: ') + daAgenda.texto + (estado.reuniao.closer ? ' · ' + estado.reuniao.closer : ''), cor, fundo: 'rgba(255,194,51,.12)', titulo: 'Do Google Agenda' + (estado.reuniao.titulo ? ': ' + estado.reuniao.titulo : '') });
     }
     const ag = !daAgenda && ficha.automacao && marca.agendadoPara && agendaLib ? agendaLib.descrever(marca.agendadoPara, new Date()) : null;
     if (ag) {
       const cor = ag.passou ? '#f2a93b' : '#ffc233';
-      linha.appendChild(elem('span', `${base};border:1px solid ${cor};background:rgba(255,194,51,.12);color:${cor}`, (ag.passou ? 'Estava agendado: ' : 'Agendado: ') + ag.texto));
-      linha.appendChild(tirar('Apagar este agendamento', () => mudar({ limparAgenda: true }, { agendadoPara: '' })));
+      itens.push({ tipo: 'chip', texto: (ag.passou ? 'Estava agendado: ' : 'Agendado: ') + ag.texto, cor, fundo: 'rgba(255,194,51,.12)', titulo: 'Lido na conversa', tirar: { titulo: 'Apagar este agendamento', acao: { tipo: 'limparAgenda' } } });
     }
     // Do formulário do RD, para ver de relance: quanto o lead disse que investe, se já vende e a profissão.
-    // Cheias e maiores que as outras: são o que se bate o olho primeiro, mesmo com o cartão minimizado.
-    const doFormulario = ficha.etiquetas ? etiquetasDoFormulario(estado.ficha) : { investimento: '', faturamento: '', vende: '', profissao: '', busca: '' };
-    const cheia = (fundo, cor) => `border-radius:5px;padding:3px 10px;font-size:12px;font-weight:800;line-height:1.5;letter-spacing:.01em;border:1px solid ${fundo};background:${fundo};color:${cor}`;
-    if (doFormulario.investimento || doFormulario.faturamento || doFormulario.vende || doFormulario.profissao || doFormulario.busca) {
-      const doForm = elem('div', 'flex-basis:100%;display:flex;flex-wrap:wrap;gap:6px');
-      if (doFormulario.investimento) {
-        const c = elem('span', cheia('#ffc233', '#18171b'), 'R$ ' + doFormulario.investimento);
-        c.title = 'Investimento informado no formulário';
-        doForm.appendChild(c);
-      }
-      if (doFormulario.faturamento) {
-        const c = elem('span', cheia('#ff9f43', '#2a1500'), 'Fat. R$ ' + doFormulario.faturamento);
-        c.title = 'Faturamento informado no formulário';
-        doForm.appendChild(c);
-      }
-      if (doFormulario.vende) {
-        const jaVende = doFormulario.vende === 'Já vende';
-        const c = elem('span', cheia(jaVende ? '#3ddc84' : '#8aa9ff', jaVende ? '#06180e' : '#0e1730'), doFormulario.vende);
-        c.title = 'Resposta do formulário sobre vender online';
-        doForm.appendChild(c);
-      }
-      if (doFormulario.profissao) {
-        const c = elem('span', cheia('#b79cff', '#17102b'), doFormulario.profissao);
-        c.title = 'Profissão informada no formulário';
-        doForm.appendChild(c);
-      }
-      if (doFormulario.busca) {
-        const c = elem('span', cheia('#5ad1d1', '#06201f'), doFormulario.busca);
-        c.title = 'O que o lead busca (modalidade)';
-        doForm.appendChild(c);
-      }
-      linha.appendChild(doForm);
+    const doFormulario = ficha.etiquetas ? etiquetasDoFormulario(estado.ficha) : {};
+    const form = [];
+    if (doFormulario.investimento) form.push({ texto: 'R$ ' + doFormulario.investimento, fundo: '#ffc233', cor: '#18171b', titulo: 'Investimento informado no formulário' });
+    if (doFormulario.faturamento) form.push({ texto: 'Fat. R$ ' + doFormulario.faturamento, fundo: '#ff9f43', cor: '#2a1500', titulo: 'Faturamento informado no formulário' });
+    if (doFormulario.vende) {
+      const jaVende = doFormulario.vende === 'Já vende';
+      form.push({ texto: doFormulario.vende, fundo: jaVende ? '#3ddc84' : '#8aa9ff', cor: jaVende ? '#06180e' : '#0e1730', titulo: 'Resposta do formulário sobre vender online' });
     }
+    if (doFormulario.profissao) form.push({ texto: doFormulario.profissao, fundo: '#b79cff', cor: '#17102b', titulo: 'Profissão informada no formulário' });
+    if (doFormulario.busca) form.push({ texto: doFormulario.busca, fundo: '#5ad1d1', cor: '#06201f', titulo: 'O que o lead busca (modalidade)' });
+    if (form.length) itens.push({ tipo: 'formulario', itens: form });
     // Desqualificar: só no card em aberto do lead, para quem tem a automação do cartão.
     const paraPerder = ficha.automacao && !perda ? cardParaDesqualificar(estado) : null;
-    if (paraPerder && !estado.desq) {
-      const b = elem('button', `${base};cursor:pointer;border:1px dashed #ff6f5c;background:transparent;color:#ff6f5c`, 'Desqualificar');
-      b.type = 'button';
-      b.id = 'cr-desqualificar-btn';
-      b.title = 'Dar perda no RD com um motivo, sem abrir o card';
-      b.addEventListener('click', () => abrirDesqualificar(estado));
-      linha.appendChild(b);
+    if (paraPerder && !estado.desq) itens.push({ tipo: 'botao', id: 'cr-desqualificar-btn', texto: 'Desqualificar', cor: '#ff6f5c', borda: '#ff6f5c', titulo: 'Dar perda no RD com um motivo, sem abrir o card', acao: { tipo: 'desqAbrir' } });
+    return itens;
+  }
+
+  /** Um clique numa etiqueta ou botão — no cartão ou no painel lateral (que manda pela mensagem "painelCartao"). */
+  function executarAcao(estado, acao) {
+    if (!estado || !acao) return;
+    const marca = estado.marca || {};
+    // Mostra na hora e guarda no servidor (que devolve a marca final).
+    const mudar = (campos, local) => {
+      estado.marca = { ...marca, ...local };
+      redesenharFicha();
+      enviarMarca(ficha.conversa, campos);
+    };
+    const perda = perdaNoRd(estado.ficha);
+    const card = ficha.automacao && !perda ? cardParaDesqualificar(estado) : null;
+    const d = estado.desq;
+    switch (acao.tipo) {
+      case 'qualificado':
+        if (!ficha.automacao) return;
+        if (acao.valor) mudar({ qualificado: true, manual: true }, { qualificado: true, origem: 'manual' });
+        else mudar({ qualificado: false, manual: true }, { qualificado: false });
+        return;
+      case 'limparAgenda':
+        if (ficha.automacao) mudar({ limparAgenda: true }, { agendadoPara: '' });
+        return;
+      case 'desqAbrir':
+        if (card && !d) abrirDesqualificar(estado);
+        return;
+      case 'desqMotivo': {
+        const m = d && d.motivos ? d.motivos.find((x) => String(x.id) === String(acao.id)) : null;
+        if (m) { d.escolhido = m; d.erro = ''; redesenharFicha(); }
+        return;
+      }
+      case 'desqVoltar':
+        if (d) { Object.assign(d, { escolhido: null, erro: '', pedirNota: false, focoNota: false, sugerida: false, porque: '' }); redesenharFicha(); }
+        return;
+      case 'desqCancelar':
+        estado.desq = null;
+        redesenharFicha();
+        return;
+      case 'desqSugerir':
+        if (d) sugerirDesqualificacao(estado);
+        return;
+      case 'desqConfirmar':
+        if (!d || !card) return;
+        if (typeof acao.nota === 'string') d.nota = acao.nota.slice(0, 2000);
+        confirmarDesqualificar(estado, card);
+        return;
+      case 'resumo':
+        pedirResumoRapido();
+        return;
+      case 'escolherCard':
+        // O lead tem mais de um card: o escolhido no painel passa a ser o da conversa (o servidor lembra).
+        if (acao.dealId && (((estado.ficha && estado.ficha.negociacoes) || []).some((c) => String(c.id) === String(acao.dealId)))) {
+          consultarFicha({ ...(estado.busca || {}), dealId: String(acao.dealId), lembrar: true });
+        }
+        return;
+      default:
     }
+  }
+
+  /** O que o painel lateral precisa para mostrar o mesmo que o cartão: etiquetas, Desqualificar, aviso e resumo. */
+  function modeloDoCartao(estado) {
+    if (!estado || !estado.tipo || ['carregando', 'sem-conversa', 'outra-extensao'].includes(estado.tipo)) return null;
+    const perda = perdaNoRd(estado.ficha);
+    const paraPerder = ficha.automacao && !perda ? cardParaDesqualificar(estado) : null;
+    const d = paraPerder && estado.desq ? estado.desq : null;
+    const r = resumos.get(ficha.chave) || null;
+    return {
+      itens: itensDasEtiquetas(estado) || [],
+      desq: d
+        ? {
+          motivos: d.motivos ? d.motivos.map((m) => ({ id: m.id, nome: m.nome })) : null,
+          escolhido: d.escolhido ? { id: d.escolhido.id, nome: d.escolhido.nome } : null,
+          comNota: precisaNota(d) || Boolean(d.sugerida),
+          minimo: NOTA_DESQ,
+          nota: d.nota || '',
+          notaVersao: d.notaVersao || 0,
+          enviando: Boolean(d.enviando),
+          sugerindo: Boolean(d.sugerindo),
+          porque: d.porque || '',
+          erro: d.erro || '',
+        }
+        : null,
+      aviso: estado.aviso ? { texto: String(estado.aviso.texto || ''), erro: Boolean(estado.aviso.erro) } : null,
+      resumo: r ? { tipo: r.tipo, erro: r.erro || '', dados: r.dados || null } : null,
+      escolherCard: ((estado.ficha && estado.ficha.negociacoes) || []).length > 1,
+    };
+  }
+
+  /** Linha de etiquetas no topo do cartão: desenha os itens de itensDasEtiquetas (os mesmos do painel lateral). */
+  function blocoEtiquetas(estado) {
+    const itens = itensDasEtiquetas(estado);
+    if (!itens) return null;
+    const linha = elem('div', 'display:flex;flex-wrap:wrap;align-items:center;gap:5px;margin-top:7px');
+    linha.id = 'cr-etiquetas';
+    const base = 'border-radius:5px;padding:2px 8px;font-size:11px;font-weight:600;line-height:1.5;letter-spacing:.07em;font-family:Bahnschrift,DIN Alternate,Roboto Condensed,Arial Narrow,sans-serif';
+    const cheia = (fundo, cor) => `border-radius:5px;padding:3px 10px;font-size:12px;font-weight:800;line-height:1.5;letter-spacing:.01em;border:1px solid ${fundo};background:${fundo};color:${cor}`;
+    const tirar = (t) => {
+      const b = elem('button', 'cursor:pointer;border:0;background:transparent;color:#a39e93;font-size:13px;line-height:1;padding:0 2px;font-family:inherit', '×');
+      b.type = 'button';
+      b.title = t.titulo;
+      b.setAttribute('aria-label', t.titulo);
+      b.addEventListener('click', () => executarAcao(estado, t.acao));
+      return b;
+    };
+    for (const it of itens) {
+      if (it.tipo === 'chip') {
+        const c = elem('span', `${base};border:1px solid ${it.cor};background:${it.fundo};color:${it.cor}`, it.texto);
+        if (it.id) c.id = it.id;
+        if (it.titulo) c.title = it.titulo;
+        linha.appendChild(c);
+        if (it.tirar) linha.appendChild(tirar(it.tirar));
+      } else if (it.tipo === 'botao') {
+        const b = elem('button', `${base};cursor:pointer;border:1px dashed ${it.borda};background:transparent;color:${it.cor}`, it.texto);
+        b.type = 'button';
+        if (it.id) b.id = it.id;
+        b.title = it.titulo || '';
+        b.addEventListener('click', () => executarAcao(estado, it.acao));
+        linha.appendChild(b);
+      } else if (it.tipo === 'alerta') {
+        const c = elem('div', 'flex-basis:100%;box-sizing:border-box;border-radius:8px;padding:4px 10px;font-size:12px;font-weight:800;line-height:1.5;text-align:center;background:' + it.fundo + ';color:' + it.cor, it.texto);
+        c.id = it.id;
+        c.title = it.titulo || '';
+        linha.appendChild(c);
+      } else if (it.tipo === 'formulario') {
+        const doForm = elem('div', 'flex-basis:100%;display:flex;flex-wrap:wrap;gap:6px');
+        it.itens.forEach((x) => {
+          const c = elem('span', cheia(x.fundo, x.cor), x.texto);
+          c.title = x.titulo;
+          doForm.appendChild(c);
+        });
+        linha.appendChild(doForm);
+      }
+    }
+    const perda = perdaNoRd(estado.ficha);
+    const paraPerder = ficha.automacao && !perda ? cardParaDesqualificar(estado) : null;
     if (paraPerder && estado.desq) linha.appendChild(caixaDesqualificar(estado, paraPerder));
     if (estado.aviso) linha.appendChild(elem('div', `flex-basis:100%;font-size:11px;color:${estado.aviso.erro ? '#ff6f5c' : '#3ddc84'}`, estado.aviso.texto));
     return linha;
@@ -2795,6 +2884,20 @@
       } catch (_) {
         /* o próximo tique do vigia tenta */
       }
+      sendResponse({ ok: true });
+      return false;
+    }
+    if (msg && msg.action === 'painelCartao') {
+      // Clique numa etiqueta ou botão do painel lateral (Desqualificar, Qualificado, resumo…): vale só para o lead
+      // que está na tela agora.
+      const est = ficha.ultimoEstado;
+      const b = (est && est.busca) || {};
+      const chave = JSON.stringify([b.telefone || '', b.nome || '', b.contatoId || '']);
+      if (!est || msg.lead !== chave) {
+        sendResponse({ ok: false, erro: 'A conversa mudou. Clique em Atualizar.' });
+        return false;
+      }
+      executarAcao(est, msg.acao || {});
       sendResponse({ ok: true });
       return false;
     }
