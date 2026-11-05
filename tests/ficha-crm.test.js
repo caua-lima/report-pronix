@@ -80,7 +80,7 @@ const CONVERSA = [
 ];
 
 function abrir(servidor, { contato = '+55 71 99999-8888', storage = {} } = {}) {
-  const pagina = abrirPagina({ arquivo: 'extension/content.js', url: 'https://web.whatsapp.com/', aoEnviar: servidor.aoEnviar, intervaloRapido: true, storage: { cartaoNaConversa: true, ...storage } }); // estes testes são do cartão flutuante (desligado por padrão desde a 1.6.23)
+  const pagina = abrirPagina({ arquivo: 'extension/content.js', url: 'https://web.whatsapp.com/', aoEnviar: servidor.aoEnviar, intervaloRapido: true, storage });
   montarWhatsApp(pagina, CONVERSA, { contato, idsSimples: true });
   return pagina;
 }
@@ -184,13 +184,13 @@ test('erro do servidor: mostra a mensagem e "Tentar de novo" consulta outra vez'
 
 test('cartão desmarcado no menu da extensão: sem cartão, mas a ficha vai para o painel; religar mostra o cartão', async () => {
   const srv = crmFalso(() => ({ ok: true, configurado: true, encontrado: true, ficha: FICHA_MARCOS }));
-  const p = abrir(srv, { storage: { cartaoNaConversa: false } });
+  const p = abrir(srv, { storage: { fichaCrm: false } });
   await esperar(() => srv.paineis.some((e) => e && e.tipo === 'ok'), { motivo: 'lead no painel lateral' });
   assert.equal(srv.consultas.length, 1, 'consulta o CRM mesmo sem o cartão (o painel e a automação precisam)');
   assert.equal(cartao(p), null);
-  p.w.chrome.storage.local.set({ cartaoNaConversa: true });
+  p.w.chrome.storage.local.set({ fichaCrm: true });
   await esperar(() => /Investimento/.test(textoCartao(p)), { motivo: 'religado' });
-  p.w.chrome.storage.local.set({ cartaoNaConversa: false });
+  p.w.chrome.storage.local.set({ fichaCrm: false });
   assert.equal(cartao(p), null, 'desligar esconde na hora');
   p.fechar();
 });
@@ -875,12 +875,12 @@ test('mudar a etapa à mão pelo painel: lista as etapas, sugere "Respondeu", mo
 });
 
 // ---------------------------------------------------------------- cartão desligado: tudo no painel lateral (05/11/2026)
-// O cartão flutuante saiu por padrão na 1.6.23, mas o painel lateral não recebia as etiquetas nem o Desqualificar.
+// Com o cartão desmarcado no menu da extensão, o painel lateral tem de ter as etiquetas e o Desqualificar.
 const LEAD_PAINEL = JSON.stringify(['5571999998888', '', '']);
 const ultimoOkDe = (srv) => srv.paineis.filter((e) => e && e.tipo === 'ok').pop();
 const textosDosItens = (itens) => itens.flatMap((it) => (it.tipo === 'formulario' ? it.itens.map((x) => x.texto) : [it.texto]));
 const abrirSemCartao = (srv) => {
-  const pagina = abrirPagina({ arquivo: 'extension/content.js', url: 'https://web.whatsapp.com/', aoEnviar: srv.aoEnviar, intervaloRapido: true });
+  const pagina = abrirPagina({ arquivo: 'extension/content.js', url: 'https://web.whatsapp.com/', aoEnviar: srv.aoEnviar, intervaloRapido: true, storage: { fichaCrm: false } });
   montarWhatsApp(pagina, CONVERSA, { contato: '+55 71 99999-8888', idsSimples: true });
   return pagina;
 };

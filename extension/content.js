@@ -1405,7 +1405,7 @@
     return achados.size === 1 ? [...achados.values()][0] : '';
   }
   const ficha = {
-    ligada: true, cartaoLocal: false, minimizada: false, chave: null, fechadaPara: null, seq: 0, timer: null, vigia: null, ultimoEstado: null,
+    ligada: true, cartaoLocal: true, minimizada: false, chave: null, fechadaPara: null, seq: 0, timer: null, vigia: null, ultimoEstado: null,
     pos: null, // { left, top } quando o usuário arrastou o cartão; null = lugar padrão
     automacao: false, // o master ligou a automação para esta chave (mover para "Respondeu", etiqueta e agendamento)
     etiquetas: false, // o master ligou as etiquetas do formulário (investimento e se já vende)
@@ -2761,11 +2761,11 @@
   }
 
   try {
-    chrome.storage.local.get({ cartaoNaConversa: false, fichaCrmMinimizada: false, fichaPos: null }, (c) => {
+    chrome.storage.local.get({ fichaCrm: true, fichaCrmMinimizada: false, fichaPos: null }, (c) => {
       const lugar = (p) => (p && Number.isFinite(p.left) && Number.isFinite(p.top) ? { left: p.left, top: p.top } : null);
       // A opção do menu da extensão esconde só o cartão flutuante: a ficha, o painel lateral, o "Respondeu" automático
       // e a contagem de recontatos rodam sempre (antes, desmarcar para tirar o cartão desligava tudo isso junto).
-      ficha.cartaoLocal = c.cartaoNaConversa === true; // desde a 1.6.23 o cartão vem desligado: tudo fica no painel lateral
+      ficha.cartaoLocal = c.fichaCrm !== false;
       ficha.minimizada = !!c.fichaCrmMinimizada;
       ficha.pos = lugar(c.fichaPos);
       ficha.vigia = setInterval(() => {
@@ -2778,8 +2778,8 @@
     });
     if (chrome.storage.onChanged) {
       chrome.storage.onChanged.addListener((mud) => {
-        if (!mud.cartaoNaConversa) return;
-        ficha.cartaoLocal = mud.cartaoNaConversa.newValue === true;
+        if (!mud.fichaCrm) return;
+        ficha.cartaoLocal = mud.fichaCrm.newValue !== false;
         if (!ficha.cartaoLocal) esconderFicha();
         else if (ficha.ultimoEstado) renderFicha(ficha.ultimoEstado); // religou: o cartão volta com o lead da tela
       });
