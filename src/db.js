@@ -186,35 +186,24 @@ const travasLocais = new Map(); // chave -> timestamp de expiração (só o proc
  * porque o modo local é sempre um processo só.
  */
 async function travar(chave, ttlSeg = 120) {
-  // A trava guarda um TOKEN de quem a pegou: só quem tem o token solta (destravar com token). Antes o valor era
-  // sempre "1" e o DEL soltava a trava de outra requisição (auditoria de 04/11).
-  const token = `${Date.now().toString(36)}.${Math.random().toString(36).slice(2, 10)}`;
   if (usandoRedis) {
-    const ok = await redis(['SET', `lock:${chave}`, token, 'NX', 'EX', String(ttlSeg)]);
-    return ok === 'OK' ? token : false;
+    const ok = await redis(['SET', `lock:${chave}`, '1', 'NX', 'EX', String(ttlSeg)]);
+    return ok === 'OK';
   }
   const agora = Date.now();
-  const atual = travasLocais.get(chave);
-  if (atual && atual.expiraEm > agora) return false;
-  travasLocais.set(chave, { token, expiraEm: agora + ttlSeg * 1000 });
-  return token;
+  const expiraEm = travasLocais.get(chave);
+  if (expiraEm && expiraEm > agora) return false;
+  travasLocais.set(chave, agora + ttlSeg * 1000);
+  return true;
 }
 
-// Solta só se a trava ainda é de quem tem o token (GET + DEL atômico no Redis).
-const SOLTAR_SE_DONO = "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end";
-
-/**
- * Libera a trava antes do TTL — chamar no finally de quem travou, com o token que travar() devolveu.
- * Sem token (rotinas antigas de agendador, que sempre têm uma execução só): solta incondicionalmente, como antes.
- */
-async function destravar(chave, token) {
+/** Libera a trava antes do TTL — chamar sempre no finally de quem travou. */
+async function destravar(chave) {
   if (usandoRedis) {
-    if (token) await redis(['EVAL', SOLTAR_SE_DONO, '1', `lock:${chave}`, String(token)]).catch(() => {});
-    else await redis(['DEL', `lock:${chave}`]).catch(() => {});
+    await redis(['DEL', `lock:${chave}`]).catch(() => {});
     return;
   }
-  const atual = travasLocais.get(chave);
-  if (!token || (atual && atual.token === token)) travasLocais.delete(chave);
+  travasLocais.delete(chave);
 }
 
 // --- Cache com validade ---------------------------------------------------

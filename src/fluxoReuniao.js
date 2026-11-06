@@ -11,7 +11,6 @@ const db = require('./db');
 const crm = require('./crm');
 const limpezaRd = require('./limpezaRd');
 const closers = require('./closers');
-const handoff = require('./handoff');
 
 const idOk = (v) => (/^[A-Za-z0-9_-]{1,40}$/.test(String(v || '')) ? String(v) : '');
 const idDe = (d) => String((d && (d.id || d._id)) || '');
@@ -64,7 +63,6 @@ function localizar(cat, etapaId) {
 /** O report em texto, nos tópicos que o closer lê no CRM. */
 function textoDoHandoff(dados, { sdr = '', quando = '' } = {}) {
   const d = dados || {};
-  if (handoff.ehEditorial(d)) return textoEditorial(d, { sdr, quando });
   const linhas = [];
   if (d.lead) linhas.push(`Nome: ${d.lead}`);
   (Array.isArray(d.resumo) ? d.resumo : []).forEach((r) => {
@@ -84,46 +82,6 @@ function textoDoHandoff(dados, { sdr = '', quando = '' } = {}) {
   if (d.abertura) linhas.push('', 'ABERTURA SUGERIDA', d.abertura);
   linhas.push('', `Report PRONIX${sdr ? ` de ${sdr}` : ''}${quando ? ` em ${quando}` : ''}.`);
   return linhas.join('\n').replace(/\n{3,}/g, '\n\n').trim().slice(0, 6000);
-}
-
-/**
- * O handoff editorial em texto para o CRM: mesma ordem e mesmos fatos da tela e do PDF (vista única), sem rótulos
- * técnicos. Valores e condições do panorama vão inteiros; o que é do SDR fica marcado como dele.
- */
-function textoEditorial(d, { sdr = '', quando = '' } = {}) {
-  const v = handoff.vistaEditorial(d);
-  const linhas = [];
-  if (v.lead) linhas.push(`Nome: ${v.lead}`);
-  v.ficha.forEach((r) => linhas.push(`${r.rotulo}: ${r.valor}`));
-  if (v.negocio) linhas.push(`Negócio: ${v.negocio}`);
-  if (v.tese.titulo || v.tese.texto) linhas.push('', 'TESE DA OPORTUNIDADE', [v.tese.titulo, v.tese.texto].filter(Boolean).join(' — '));
-  if (v.leitura && v.leitura.itens.length) {
-    linhas.push('', v.leitura.titulo.toUpperCase());
-    v.leitura.itens.forEach((x) => linhas.push(`- ${x}`));
-  }
-  if (v.oportunidade.length) {
-    linhas.push('', 'OPORTUNIDADE EM FOCO');
-    v.oportunidade.forEach((o) => linhas.push(`- ${o.fato}${o.relevancia ? ` — ${o.relevancia}` : ''}${o.origem === 'leitura_sdr' ? ' (leitura do SDR)' : ''}`));
-  }
-  if (v.panorama.length) {
-    linhas.push('', 'PANORAMA COMERCIAL');
-    v.panorama.forEach((p) => linhas.push(`${p.rotulo}: ${p.valor}`));
-  }
-  if (v.conducao.length) {
-    linhas.push('', 'CONDUÇÃO DA REUNIÃO');
-    v.conducao.forEach((p, i) => linhas.push(`${i + 1}. ${p.etapa ? p.etapa + ': ' : ''}${p.acao}${p.objetivo ? ` Objetivo: ${p.objetivo}` : ''}${p.pergunta ? ` Pergunta: ${p.pergunta}` : ''}`));
-  }
-  if (v.abertura) linhas.push('', 'ABERTURA SUGERIDA', v.abertura);
-  if (v.contexto.length) {
-    linhas.push('', 'CONTEXTO');
-    v.contexto.forEach((x) => linhas.push(`- ${x}`));
-  }
-  if (v.evidencias.length) {
-    linhas.push('', 'NAS PALAVRAS DO LEAD');
-    v.evidencias.forEach((x) => linhas.push(`"${x}"`));
-  }
-  linhas.push('', `Report PRONIX${sdr ? ` de ${sdr}` : ''}${quando ? ` em ${quando}` : ''}.`);
-  return linhas.join('\n').replace(/\n{3,}/g, '\n\n').trim().slice(0, 8000);
 }
 
 const chavesDoHandoff = ({ dealId, contatoId, telefone }) =>

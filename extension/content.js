@@ -1159,7 +1159,7 @@
     afinidadeUi.anexar({ aviso: document.getElementById(BADGE_ID), closer, resp, mensagens, nome });
   }
 
-  /** A caixa "Minha leitura sobre este lead" é só para quem o servidor libera. Guardado por 10 min. */
+  /** A caixa "Visão do <nome> pro lead" é só do master (o servidor diz). Guardado por 10 min. */
   let quemSou = { quando: 0, dados: null };
   async function visaoLiberada() {
     if (quemSou.dados && Date.now() - quemSou.quando < 10 * 60 * 1000) return quemSou.dados;
@@ -1174,22 +1174,17 @@
     return quemSou.dados;
   }
 
-  /**
-   * "Minha leitura sobre este lead" (só para quem o servidor libera — hoje, o master). Escrita ANTES da leitura da
-   * conversa, que demora. Vai para a geração principal como fonte da estratégia, com o nome dele. Devolve o texto
-   * ('' = gerar sem a leitura) ou null (cancelou). O limite de 3000 caracteres aparece antes de enviar.
-   */
-  function pedirVisao() {
+  /** Pergunta a visão do master sobre o lead antes de gerar. Devolve o texto ('' = sem visão) ou null (cancelou). */
+  function pedirVisao(nomeSdr) {
     return new Promise((resolve) => {
+      const primeiro = String(nomeSdr || '').trim().split(/\s+/)[0] || 'SDR';
       mostrarBadge({
         texto:
-          '<b>Minha leitura sobre este lead</b> <span style="color:#a39e93">(opcional — orienta a estratégia do report e vai com o seu nome)</span>' +
-          '<div style="color:#a39e93;font-size:12px;margin-top:4px">Se ajudar: o que vejo de mais promissor? O que ele quer de verdade? Por onde eu conduziria? O que o closer não pode perder? Pode trazer o que veio por ligação.</div>' +
-          '<textarea id="cr-visao" rows="5" maxlength="3000" placeholder="Ex.: quer mais segurança de como começar do que aula de ferramenta; já sabe produzir…" ' +
-          'style="display:block;width:100%;box-sizing:border-box;margin-top:8px;background:#1a191c;color:#f3efe6;border:1px solid #3a373f;border-radius:7px;padding:8px;font:13px/1.4 inherit;resize:vertical"></textarea>' +
-          '<div id="cr-visao-conta" style="color:#a39e93;font-size:11px;margin-top:3px">0 de 3000 caracteres</div>',
+          `<b>Visão do ${escHtml(primeiro)} pro lead</b> <span style="color:#a39e93">(opcional — vai para o closer, a IA só arruma a escrita)</span>` +
+          '<textarea id="cr-visao" rows="5" placeholder="Ex.: lead quente, já vende no ML, quer escalar; tem dinheiro mas o sócio decide…" ' +
+          'style="display:block;width:100%;box-sizing:border-box;margin-top:8px;background:#1a191c;color:#f3f0e8;border:1px solid #3a3740;border-radius:7px;padding:8px;font:13px/1.4 inherit;resize:vertical"></textarea>',
         cor: '#ffc233',
-        botoes: [{ acao: 'gerar', rotulo: 'Gerar report', primario: true }, { acao: 'sem', rotulo: 'Gerar sem a leitura' }],
+        botoes: [{ acao: 'gerar', rotulo: 'Gerar report', primario: true }, { acao: 'sem', rotulo: 'Gerar sem visão' }],
         aoEscolher: (acao) => {
           const caixa = document.getElementById('cr-visao');
           resolve(acao === 'gerar' ? String((caixa && caixa.value) || '').trim() : '');
@@ -1198,12 +1193,8 @@
       });
       const caixa = document.getElementById('cr-visao');
       if (caixa) {
-        // As teclas ficam na caixa: o site não pode tratar o que é digitado aqui como atalho.
+        // As teclas ficam na caixa: o WhatsApp não pode tratar o que é digitado aqui como atalho.
         ['keydown', 'keyup', 'keypress', 'paste'].forEach((ev) => caixa.addEventListener(ev, (e) => e.stopPropagation()));
-        caixa.addEventListener('input', () => {
-          const conta = document.getElementById('cr-visao-conta');
-          if (conta) conta.textContent = `${caixa.value.length} de 3000 caracteres`;
-        });
         setTimeout(() => caixa.focus(), 50);
       }
     });
@@ -1230,7 +1221,7 @@
       if (!closerDaAnalise) {
         const eu = await visaoLiberada();
         if (eu.visaoNoReport) {
-          const v = await pedirVisao();
+          const v = await pedirVisao(eu.nome);
           if (v === null) {
             mostrarBadge({ texto: 'Geração cancelada.', cor: '#f2a93b' });
             return;

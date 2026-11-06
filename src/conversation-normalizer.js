@@ -83,62 +83,27 @@ function agruparConsecutivas(historico) {
   return out;
 }
 
-// Resposta curta que só faz sentido junto da pergunta ("Não.", "sim", "ok, consigo", "2 mil").
-const RESPOSTA_CURTA = 60;
-// Correção do próprio lead: o que vem antes tem de ficar junto, senão o número errado vira o número dele.
-const CORRECAO = /(na verdade|corrigindo|corrijo|quis dizer|errei|me enganei|digo|aliás|alias|retificando)/i;
-
 /**
  * Aplica o teto de caracteres só quando a conversa excede. NUNCA corta
  * cegamente pelo início ou fim: percorre da mensagem mais recente para a mais
  * antiga, mantendo tudo que couber no orçamento — e, fora do orçamento, só o
  * que tiver sinal comercial (nunca descarta dor/orçamento/decisor/objeção).
- *
- * Pergunta e resposta andam juntas (auditoria de 04/11): se a pergunta "consegue investir R$ 5 mil?" fica por ter
- * sinal comercial, a resposta seguinte do outro lado ("Não.") fica também — sem isso o corte criava um lead mais
- * qualificado do que o real. Do mesmo jeito, uma resposta curta mantida leva a pergunta de antes, e uma correção
- * ("na verdade são 2 mil") leva a mensagem que ela corrige.
  */
 function aplicarLimite(historico, limite) {
   const total = totalCaracteres(historico);
   if (total <= limite) return { historico, resumida: false };
 
-  const manter = new Set();
+  const mantidas = [];
   let usado = 0;
   for (let i = historico.length - 1; i >= 0; i--) {
     const m = historico[i];
     const tam = String(m.content || '').length;
     if (usado + tam <= limite || contemSinalComercial(m.content)) {
-      manter.add(i);
+      mantidas.push(m);
       usado += tam;
     }
   }
-  // Fecha os pares: repete até não entrar mais nada (uma resposta puxada pode puxar a correção dela).
-  let mudou = true;
-  while (mudou) {
-    mudou = false;
-    const incluir = (j) => {
-      if (j >= 0 && j < historico.length && !manter.has(j)) {
-        manter.add(j);
-        mudou = true;
-      }
-    };
-    for (const i of [...manter]) {
-      const m = historico[i];
-      const texto = String(m.content || '');
-      const prox = historico[i + 1];
-      const ant = historico[i - 1];
-      // Mensagem com sinal comercial: a resposta do outro lado vem junto.
-      if (contemSinalComercial(texto) && prox && prox.from !== m.from) incluir(i + 1);
-      // Resposta curta: a pergunta (do outro lado) vem junto.
-      if (texto.trim().length <= RESPOSTA_CURTA && ant && ant.from !== m.from) incluir(i - 1);
-      // Correção: o que foi corrigido vem junto.
-      if (CORRECAO.test(texto) && ant) incluir(i - 1);
-      // Mensagem seguinte que corrige esta: vem junto.
-      if (prox && prox.from === m.from && CORRECAO.test(String(prox.content || ''))) incluir(i + 1);
-    }
-  }
-  const mantidas = historico.filter((_, i) => manter.has(i));
+  mantidas.reverse();
   return { historico: mantidas, resumida: mantidas.length < historico.length };
 }
 

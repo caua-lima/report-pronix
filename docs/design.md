@@ -4,9 +4,7 @@
 documento: fundo de papel, texto em tinta e um risco de âmbar — o marca-texto — só onde importa.
 
 `tests/design.test.js` trava o que está aqui: tokens iguais nas quatro páginas, nenhuma cor solta,
-a marca nova em todo lugar e a paleta dos cartões da extensão. O PDF do handoff editorial é travado
-por conteúdo (`tests/handoff-editorial.test.js`): todos os fatos presentes, sem repetição da ficha,
-sem página em branco.
+a marca nova em todo lugar e a paleta dos cartões da extensão.
 
 ## Onde vale
 
@@ -64,26 +62,9 @@ Ao mexer neles, mantenha esses valores.
 
 ## PDF
 
-Desde a auditoria de 04/11/2026 há dois desenhos, escolhidos pelo `schemaVersion` do report:
-
-**Handoff editorial (`schemaVersion: 2`, `src/pdfEditorial.js`)** — relatório editorial, não painel decorativo.
-- Ordem: nome do lead e negócio → tese → **Leitura de <SDR>** → Oportunidade em foco → Panorama comercial →
-  Condução da reunião (Conectar, Aprofundar, Avançar) → Abertura sugerida → Contexto → Nas palavras do lead →
-  Como foi a conversa.
-- O nome do lead é a âncora (24 pt). "Handoff de pré-vendas" é subtítulo discreto ao lado da marca pequena.
-- **Um único destaque:** a leitura do SDR, com fundo `#fbf6ea` e filete âmbar. Nada de caixa preta, faixa
-  âmbar em cartão, marca-texto em todo título, termômetro ou frase de impacto.
-- Corpo 11 pt regular, títulos 13,5 pt, margem de ~17 mm. Nada relevante abaixo de 9,5 pt (só o rodapé).
-  Itálico só em fala curta do lead. Negrito no fato que o closer procura ao bater o olho.
-- Paginação: título nunca fica sozinho no pé da página; panorama curto não quebra; bloco longo continua na
-  página seguinte (o fundo da leitura acompanha). **Nada é cortado para caber em 2 páginas** — antes o
-  `enxugar` tirava bullets, falas e até a visão do SDR sem a tela mostrar.
-- Fontes padrão do PDF (Helvetica): o texto continua extraível (`src/textoDoPdf.js`, importações, match).
-- Régua visual: `node scripts/renderizar-fixtures.js` gera os PDFs das fixtures sintéticas em
-  `output/fixtures/` (nome longo, leitura com 9 pontos, conversa curta, etc.).
-
-**Reports antigos (sem `schemaVersion`)** — continuam com o desenho de antes (`renderLegado` em
-`src/generatePdf.js`), para o histórico abrir igual; também sem cortes.
+Mesma identidade, sem mudar medidas: a marca no cabeçalho, título de seção com o marca-texto
+atrás (`tituloSecao`), faixa âmbar no topo dos cartões (`faixaNoTopo`). Mexer em tamanho de letra ou
+espaçamento muda o que cabe em 2 páginas — rode `tests/report-rico.test.js`.
 
 ## Marca
 

@@ -842,56 +842,6 @@
     afinidadeUi.anexar({ aviso: document.getElementById(BADGE_ID), closer, resp, mensagens, nome });
   }
 
-  /** A caixa "Minha leitura sobre este lead" é só para quem o servidor libera. Guardado por 10 min. */
-  let quemSou = { quando: 0, dados: null };
-  async function visaoLiberada() {
-    if (quemSou.dados && Date.now() - quemSou.quando < 10 * 60 * 1000) return quemSou.dados;
-    const r = await new Promise((res) => {
-      try {
-        chrome.runtime.sendMessage({ action: 'quemSouEu' }, (x) => res(chrome.runtime.lastError ? null : x));
-      } catch (_) {
-        res(null);
-      }
-    });
-    quemSou = { quando: Date.now(), dados: r && r.ok ? r : { visaoNoReport: false, nome: '' } };
-    return quemSou.dados;
-  }
-
-  /**
-   * "Minha leitura sobre este lead" (só para quem o servidor libera — hoje, o master). Escrita ANTES da leitura da
-   * conversa, que demora. Vai para a geração principal como fonte da estratégia, com o nome dele. Devolve o texto
-   * ('' = gerar sem a leitura) ou null (cancelou). O limite de 3000 caracteres aparece antes de enviar.
-   */
-  function pedirVisao() {
-    return new Promise((resolve) => {
-      mostrarBadge({
-        texto:
-          '<b>Minha leitura sobre este lead</b> <span style="color:#a39e93">(opcional — orienta a estratégia do report e vai com o seu nome)</span>' +
-          '<div style="color:#a39e93;font-size:12px;margin-top:4px">Se ajudar: o que vejo de mais promissor? O que ele quer de verdade? Por onde eu conduziria? O que o closer não pode perder? Pode trazer o que veio por ligação.</div>' +
-          '<textarea id="cr-visao" rows="5" maxlength="3000" placeholder="Ex.: quer mais segurança de como começar do que aula de ferramenta; já sabe produzir…" ' +
-          'style="display:block;width:100%;box-sizing:border-box;margin-top:8px;background:#1a191c;color:#f3efe6;border:1px solid #3a373f;border-radius:7px;padding:8px;font:13px/1.4 inherit;resize:vertical"></textarea>' +
-          '<div id="cr-visao-conta" style="color:#a39e93;font-size:11px;margin-top:3px">0 de 3000 caracteres</div>',
-        cor: '#ffc233',
-        botoes: [{ acao: 'gerar', rotulo: 'Gerar report', primario: true }, { acao: 'sem', rotulo: 'Gerar sem a leitura' }],
-        aoEscolher: (acao) => {
-          const caixa = document.getElementById('cr-visao');
-          resolve(acao === 'gerar' ? String((caixa && caixa.value) || '').trim() : '');
-        },
-        aoFechar: () => resolve(null),
-      });
-      const caixa = document.getElementById('cr-visao');
-      if (caixa) {
-        // As teclas ficam na caixa: o site não pode tratar o que é digitado aqui como atalho.
-        ['keydown', 'keyup', 'keypress', 'paste'].forEach((ev) => caixa.addEventListener(ev, (e) => e.stopPropagation()));
-        caixa.addEventListener('input', () => {
-          const conta = document.getElementById('cr-visao-conta');
-          if (conta) conta.textContent = `${caixa.value.length} de 3000 caracteres`;
-        });
-        setTimeout(() => caixa.focus(), 50);
-      }
-    });
-  }
-
   async function gerarReportEmBackground(server, opcoes = {}) {
     const closerDaAnalise = closerPedido(opcoes.afinidade);
     if (jobEmAndamento) {
@@ -901,21 +851,6 @@
     jobEmAndamento = true;
     capturaAtiva = true;
     try {
-      // Só quem o servidor libera: a leitura do lead, escrita agora (antes da leitura da conversa, que demora).
-      let visaoDoJob = '';
-      if (!closerDaAnalise) {
-        const eu = await visaoLiberada();
-        if (eu.visaoNoReport) {
-          const v = await pedirVisao();
-          if (v === null) {
-            capturaAtiva = false;
-            jobEmAndamento = false;
-            mostrarBadge({ texto: 'Geração cancelada.', cor: '#f2a93b' });
-            return;
-          }
-          visaoDoJob = v;
-        }
-      }
       mostrarBadge({
         texto:
           '<b>Lendo a conversa…</b><br>Os áudios são tocados no mudo pra transcrever. ' +
@@ -957,7 +892,7 @@
         mensagensLead: stats.doLead,
       };
       const resp = await new Promise((resolve) =>
-        chrome.runtime.sendMessage({ action: 'reportFetch', server, mensagens, nome, captureQuality, visao: visaoDoJob }, resolve)
+        chrome.runtime.sendMessage({ action: 'reportFetch', server, mensagens, nome, captureQuality }, resolve)
       );
 
       if (!resp || !resp.ok) {
@@ -983,7 +918,7 @@
         }
         mostrarBadge({ texto: '<b>Gerando de novo…</b>', loading: true });
         const resp2 = await new Promise((resolve) =>
-          chrome.runtime.sendMessage({ action: 'reportFetch', server, mensagens, nome, captureQuality, forcarNovo: true, visao: visaoDoJob }, resolve)
+          chrome.runtime.sendMessage({ action: 'reportFetch', server, mensagens, nome, captureQuality, forcarNovo: true }, resolve)
         );
         if (!resp2 || !resp2.ok) {
           mostrarBadge({ texto: escHtml((resp2 && resp2.erro) || 'Falha ao gerar o report.'), cor: '#ff6f5c' });

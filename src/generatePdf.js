@@ -8,8 +8,6 @@ const PDFDocument = require('pdfkit');
 const { slugify } = require('./generateDoc');
 const { infoDoNivel, mostrarConsciencia, mostrarBarra, tituloDoMomento, NIVEIS } = require('./consciencia');
 const { doresVisiveis } = require('./dores');
-const handoff = require('./handoff');
-const { renderEditorial } = require('./pdfEditorial');
 
 const OUTPUT_DIR = path.join(__dirname, '..', 'output');
 
@@ -94,8 +92,7 @@ function bullet(doc, marcador, texto, x, largura) {
 // Quem gerou vem da chave usada (dados.sdr). SDR_NAME é só o padrão de quem roda local.
 const nomeSdr = (dados) => (dados && dados.sdr) || process.env.SDR_NAME || 'Cauã Lima';
 
-/** Desenho dos reports ANTIGOS (sem schemaVersion): o mesmo de antes, para o histórico abrir igual. */
-function renderLegado(doc, dados) {
+function render(doc, dados) {
   const company = process.env.COMPANY_NAME || 'PRONIX';
   const sdr = nomeSdr(dados);
   const dataStr = new Date().toLocaleDateString('pt-BR');
@@ -382,13 +379,43 @@ function renderLegado(doc, dados) {
   }
 }
 
+const MAX_PAGINAS = 2;
+
+// Cortes progressivos para caber no limite, do menos essencial para o mais.
+// O RESUMO (a qualificação) nunca é tocado — é o motivo do relatório existir.
+const CORTES = [
+  (d) => { d.conversa = (d.conversa || []).slice(0, 4); },
+  (d) => { d.secoes = (d.secoes || []).map((s) => ({ ...s, itens: (s.itens || []).slice(0, 3) })); },
+  (d) => { d.citacoes = (d.citacoes || []).slice(0, 2); },
+  (d) => { d.dores = (d.dores || []).slice(0, 2); },
+  (d) => { d.conversa = (d.conversa || []).slice(0, 3); d.sinais_compra = (d.sinais_compra || []).slice(0, 3); },
+  (d) => { d.secoes = (d.secoes || []).map((s) => ({ ...s, itens: (s.itens || []).slice(0, 2) })); },
+  (d) => { d.conversa = (d.conversa || []).slice(0, 2); d.sinais_compra = (d.sinais_compra || []).slice(0, 2); },
+  (d) => { d.secoes = (d.secoes || []).slice(0, 3); },
+  // As falas do lead são o que mais anima o closer: ficam até quase o fim, e uma sobrevive sempre que couber.
+  (d) => { d.citacoes = (d.citacoes || []).slice(0, 1); },
+  (d) => { d.secoes = (d.secoes || []).slice(0, 2); },
+  (d) => { d.dores = (d.dores || []).slice(0, 1); },
+  (d) => { d.citacoes = []; },
+];
+
+/** Aplica os cortes 0..n numa CÓPIA (a tela continua mostrando o relatório inteiro). */
+function enxugar(dados, ate) {
+  const d = JSON.parse(JSON.stringify(dados));
+  for (let i = 0; i <= ate && i < CORTES.length; i++) CORTES[i](d);
+  return d;
+}
+
 /**
- * Gera o PDF. Report editorial (schemaVersion 2) usa o modelo novo; report antigo, o desenho de antes.
- * Nada é cortado para caber num número de páginas (auditoria de 04/11/2026): antes o "enxugar" tirava bullets,
- * seções, citações e até a visão do SDR do PDF, sem a tela mostrar. A paginação é que se ajusta ao conteúdo.
+ * Gera o PDF respeitando o teto de páginas. Renderiza, mede e, se passou,
+ * enxuga o conteúdo menos essencial e tenta de novo (render em memória é barato).
  */
 async function gerarPdfBuffer(dados) {
-  return (await renderizarPdf(dados)).buffer;
+  let ultimo = await renderizarPdf(dados);
+  for (let n = 0; ultimo.paginas > MAX_PAGINAS && n < CORTES.length; n++) {
+    ultimo = await renderizarPdf(enxugar(dados, n));
+  }
+  return ultimo.buffer;
 }
 
 function renderizarPdf(dados) {
@@ -401,8 +428,7 @@ function renderizarPdf(dados) {
       doc.on('end', () => resolve({ buffer: Buffer.concat(chunks), paginas }));
       doc.on('error', reject);
 
-      if (handoff.ehEditorial(dados)) renderEditorial(doc, handoff.vistaEditorial(dados), { sdr: nomeSdr(dados) });
-      else renderLegado(doc, dados);
+      render(doc, dados);
 
       // Rodapé com a marca em todas as páginas.
       const company = process.env.COMPANY_NAME || 'PRONIX';
