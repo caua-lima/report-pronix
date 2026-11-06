@@ -930,3 +930,15 @@ test('cartão desligado: Desqualificar pelo painel — motivos, anotação e a p
   assert.equal(base.paineis.length, antes);
   p.fechar();
 });
+
+test('cartão apagado por fora (outra extensão, WhatsApp redesenhando) volta sozinho; fechado pelo ×, não', async () => {
+  const srv = crmFalso(() => ({ ok: true, configurado: true, encontrado: true, ficha: FICHA_MARCOS }));
+  const p = abrir(srv);
+  await esperar(() => /Investimento/.test(textoCartao(p)), { motivo: 'cartão na tela' });
+  cartao(p).remove();
+  await esperar(() => /Investimento/.test(textoCartao(p)), { motivo: 'cartão voltou' });
+  [...cartao(p).querySelectorAll('button')].find((b) => b.textContent === '×').click();
+  await dormir(1200);
+  assert.equal(cartao(p), null, 'fechado pela pessoa continua fechado nesta conversa');
+  p.fechar();
+});

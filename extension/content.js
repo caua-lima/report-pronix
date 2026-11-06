@@ -2745,6 +2745,8 @@
     const chave = telefone || nome;
     if (!chave) return;
     if (chave === ficha.chave) {
+      // O cartão sumiu sem a pessoa fechar (outra extensão apagou, o WhatsApp redesenhou): volta na hora.
+      if (ficha.crmLigado === true && ficha.cartaoLocal && ficha.ultimoEstado && ficha.fechadaPara !== ficha.chave && !document.getElementById(FICHA_ID)) renderFicha(ficha.ultimoEstado);
       // A cada volta do vigia (0,4 s): a automação (Respondeu, etiqueta) é leve — só trabalha quando a tela mudou.
       automatizar();
       return;
