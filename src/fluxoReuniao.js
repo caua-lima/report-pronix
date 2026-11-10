@@ -134,15 +134,47 @@ const VAZIO = { porFunil: {}, transicoes: {}, amostras: 0 };
  * funil, de que etapa saíram e em qual entraram. Lê os cards mais recentes de cada funil que tem etapa de reunião
  * realizada (o detalhe fica guardado por card). Cache de 12 h; leitura incompleta fica só 15 min.
  */
-async function fluxosAprendidos() {
-  const guardado = await db.cacheGet('crm:fluxos2').catch(() => null);
-  if (guardado) {
-    try {
-      return JSON.parse(guardado);
-    } catch (_) {
-      /* refaz */
-    }
+// O caminho aprendido vale 12 h ("fresco"), mas a última versão fica guardada 14 dias: o clique em "Qualificado" ou
+// "Reunião realizada" usa a guardada na hora, e a renovação (que lê dezenas de cards e levava até 35 s) roda por fora —
+// na batida de hora em hora da extensão ou logo depois de um clique com o cache vencido.
+const CHAVE_FLUXOS = 'crm:fluxos2';
+const CHAVE_FLUXOS_ULTIMO = 'crm:fluxos2:ultimo';
+const lerJson = async (chave) => {
+  const g = await db.cacheGet(chave).catch(() => null);
+  if (!g) return null;
+  try {
+    return JSON.parse(g);
+  } catch (_) {
+    return null;
   }
+};
+
+/** Renova o caminho aprendido se ele venceu (uma renovação por vez). Devolve true se renovou. */
+async function manterFluxos({ forcar = false } = {}) {
+  if (!forcar && (await lerJson(CHAVE_FLUXOS))) return false;
+  const trava = await db.travar('crm-fluxos-recalculo', 120).catch(() => false);
+  if (!trava) return false;
+  try {
+    await calcularFluxos();
+    return true;
+  } finally {
+    await db.destravar('crm-fluxos-recalculo', trava).catch(() => {});
+  }
+}
+
+async function fluxosAprendidos() {
+  const fresco = await lerJson(CHAVE_FLUXOS);
+  if (fresco) return fresco;
+  const ultimo = await lerJson(CHAVE_FLUXOS_ULTIMO);
+  if (ultimo) {
+    // Vencido: usa a última versão agora e renova por fora (sem segurar a resposta).
+    manterFluxos().catch((err) => console.error('[fluxos] renovação:', err.message));
+    return ultimo;
+  }
+  return calcularFluxos(); // primeira vez de todas: não há o que usar
+}
+
+async function calcularFluxos() {
   const cat = await crm.funis();
   const funilDaEtapa = new Map();
   cat.forEach((f) => f.etapas.forEach((e) => funilDaEtapa.set(e.id, f.id)));
@@ -199,7 +231,9 @@ async function fluxosAprendidos() {
     }
   }
   // as visitas contam uma vez por card (um card que voltou para a mesma etapa não pesa dobrado)
-  await db.cacheSet('crm:fluxos2', JSON.stringify(saida), incompleto ? 900 : 12 * 3600).catch(() => {});
+  await db.cacheSet(CHAVE_FLUXOS, JSON.stringify(saida), incompleto ? 900 : 12 * 3600).catch(() => {});
+  // A cópia longa só é trocada por uma leitura que tenha amostras (uma leitura vazia não apaga o que se aprendeu).
+  if (saida.amostras > 0) await db.cacheSet(CHAVE_FLUXOS_ULTIMO, JSON.stringify(saida), 14 * 86400).catch(() => {});
   return saida;
 }
 
@@ -321,7 +355,7 @@ async function permissoes() {
   }
   const me = await crm.rd('/me').catch(() => null);
   const lista = me && Array.isArray(me.permissions) ? me.permissions.map(String) : null;
-  if (lista) await db.cacheSet('crm:me', JSON.stringify(lista), 600).catch(() => {});
+  if (lista) await db.cacheSet('crm:me', JSON.stringify(lista), 6 * 3600).catch(() => {}); // mudam raramente
   return lista; // null = não deu para saber (o CRM responde na hora, se faltar)
 }
 
@@ -337,9 +371,14 @@ async function planejar({ dealId, closerNome = '', busca = {}, alvo: qual = 'rea
   const paraQualificado = qual === 'qualificado';
   const id = idOk(dealId);
   if (!id) throw new Error('Não sei qual é o card. Abra a conversa de novo.');
-  const deal = await lerCard(id);
+  // Tudo o que não depende de outra coisa vai junto (antes era uma consulta depois da outra).
+  const [deal, cat, fluxos, perms] = await Promise.all([
+    lerCard(id),
+    crm.funis(),
+    fluxosAprendidos().catch(() => VAZIO),
+    permissoes().catch(() => null),
+  ]);
   if (!aberto(deal)) throw new Error('Este card já está fechado (ganho ou perdido) no CRM.');
-  const cat = await crm.funis();
   if (!cat.some((f) => f.etapas.some((e) => e.categoria))) {
     throw new Error('O CRM não disse a categoria das etapas, e sem ela não dá para saber qual é a de reunião realizada. Tente de novo em 1 hora.');
   }
@@ -354,8 +393,6 @@ async function planejar({ dealId, closerNome = '', busca = {}, alvo: qual = 'rea
       throw new Error(`Este card já está em "${onde.etapa.nome}": qualificado ou adiante.`);
     }
   }
-  const fluxos = await fluxosAprendidos().catch(() => VAZIO);
-
   const passos = [];
   let destino = null;
   // Destino dentro do próprio funil: a etapa de qualificado (ou de reunião agendada) / a de reunião realizada.
@@ -393,15 +430,16 @@ async function planejar({ dealId, closerNome = '', busca = {}, alvo: qual = 'rea
     throw new Error(`Não consegui montar o caminho até ${ALVOS[qual]} deste card.`);
   }
 
-  const { lista: listaClosers, semCrm: closersSemCrm } = await closersParaEscolher(fluxos).catch(() => ({ lista: [], semCrm: [] }));
+  const contatoId = idDe((deal.contacts || [])[0]) || busca.contatoId || '';
+  const [{ lista: listaClosers, semCrm: closersSemCrm }, guardado] = await Promise.all([
+    closersParaEscolher(fluxos).catch(() => ({ lista: [], semCrm: [] })),
+    handoffGuardado({ dealId: id, contatoId, telefone: busca.telefone }),
+  ]);
   const dono = { id: idDe(deal.user), nome: crm.consertarAcentos((deal.user && deal.user.name) || '') };
   const precisaCloser = passos.some((p) => p.exigeCloser);
-  const perms = await permissoes();
   const faltando = [];
   if (perms && passos.some((p) => p.tipo === 'funil') && !perms.includes('mover_de_funil')) faltando.push('mover de funil (mover_de_funil)');
   if (perms && (!paraQualificado || precisaCloser) && !perms.includes('trocar_responsavel')) faltando.push('trocar o responsável para o closer (trocar_responsavel)');
-  const contatoId = idDe((deal.contacts || [])[0]) || busca.contatoId || '';
-  const guardado = await handoffGuardado({ dealId: id, contatoId, telefone: busca.telefone });
   return {
     card: { id, nome: crm.consertarAcentos(deal.name || ''), funil: onde.funil.nome, etapa: onde.etapa.nome, dono: dono.nome },
     alvo: qual,
@@ -518,4 +556,4 @@ async function perderDuplicado({ usuario = {}, dealId, manterId }) {
   return { ok: true, motivo: motivo.nome };
 }
 
-module.exports = { planejar, executar, perderDuplicado, guardarHandoff, handoffGuardado, textoDoReport, textoDoHandoff, fluxosAprendidos, closersDoCrm };
+module.exports = { planejar, executar, perderDuplicado, guardarHandoff, handoffGuardado, textoDoReport, textoDoHandoff, fluxosAprendidos, manterFluxos, closersDoCrm };

@@ -64,6 +64,7 @@ const HISTORICOS = {
 
 let cards = {};
 let semHistorico = false;
+let listaLenta = false; // a lista de cards do CRM demorando (como no CRM de verdade, com dezenas de cards)
 let recusar = null; // { caminho, mensagem }
 const escritas = [];
 const novoCard = (id, stageId, extra = {}) => ({
@@ -104,6 +105,7 @@ global.fetch = async (url, opts = {}) => {
   }
   if (p === '/deal_lost_reasons') return ok({ deal_lost_reasons: [{ id: 'm-sumiu', name: 'Nunca respondeu' }, { id: 'm-dup', name: 'Duplicidade de card' }] });
   if (p === '/deals' && metodo === 'GET') {
+    if (listaLenta) await new Promise((r) => setTimeout(r, 3000));
     if (semHistorico) return ok({ deals: [] });
     const f = u.searchParams.get('deal_pipeline_id');
     const ids = f === 'f-clo' ? ['h1', 'h2', 'h3'] : f === 'f-mql' ? ['m1'] : [];
@@ -218,11 +220,13 @@ test('funil sem caminho conhecido (nenhum card dele chegou na reunião e há doi
   reiniciar();
   semHistorico = true;
   await db.cacheDel('crm:fluxos2');
+  await db.cacheDel('crm:fluxos2:ultimo'); // a cópia longa (o clique usa a última versão quando a fresca venceu)
   try {
     await assert.rejects(fluxo.planejar({ dealId: 'd-ad' }), /Não sei para qual funil os cards de "Aplicação Direta" vão/);
   } finally {
     semHistorico = false;
     await db.cacheDel('crm:fluxos2');
+    await db.cacheDel('crm:fluxos2:ultimo');
   }
 });
 
@@ -316,4 +320,19 @@ test('PDF do report anexado: vira o texto do handoff (sem o rodapé); arquivo qu
   assert.doesNotMatch(texto, /Handoff de pré-vendas · SDR/, 'sem o rodapé da página');
   assert.throws(() => textoDoReportPdf(Buffer.from('não sou pdf').toString('base64')), /não é um PDF/);
   assert.throws(() => textoDoReportPdf(''), /Anexe o PDF/);
+});
+
+test('caminho com o aprendizado vencido: o clique usa a última versão na hora (não espera reler os cards do CRM)', async () => {
+  reiniciar();
+  await fluxo.planejar({ dealId: 'd-ad' }); // aprende o caminho (fresco + cópia longa)
+  await db.cacheDel('crm:fluxos2'); // a versão fresca venceu
+  listaLenta = true;
+  try {
+    const t0 = Date.now();
+    const plano = await fluxo.planejar({ dealId: 'd-ad' });
+    assert.ok(Date.now() - t0 < 1500, `levou ${Date.now() - t0} ms`);
+    assert.ok(plano.passos.some((p) => p.tipo === 'funil'), 'o caminho aprendido continua valendo');
+  } finally {
+    listaLenta = false;
+  }
 });

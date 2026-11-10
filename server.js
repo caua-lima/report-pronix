@@ -326,6 +326,8 @@ app.post('/api/rd/atualizar', auth, async (_req, res) => {
     const [r, lidas] = await Promise.all([
       conferirDesfechosNoRd({ porVez: 10 }),
       lerTranscricoesNovas().catch((err) => { console.error('Falha ao ler as transcrições do Drive:', err.message); return null; }),
+      // O caminho do "Qualificado"/"Reunião realizada" fica pronto (o clique não espera o CRM ler dezenas de cards).
+      fluxoReuniao.manterFluxos().catch((err) => { console.error('Falha ao renovar o caminho do CRM:', err.message); return false; }),
     ]);
     const transc = lidas ? { transcricoes: { lidos: lidas.lidos, casos: lidas.casos } } : {};
     res.json(r ? { ok: true, ...r, ...transc } : { ok: true, emDia: true, ...transc });
@@ -1264,11 +1266,16 @@ app.post('/api/crm/realizada/plano', auth, async (req, res) => {
     if (semAutomacao(req, res)) return; // no Report PRONIX, o Desqualificar e os botões do painel vêm com a automação do cartão
     if (!req.usuario.fichaCrm) return res.status(403).json({ erro: 'Ficha do lead desligada para este usuário.' });
     const { busca = {}, dealId, closerNome, alvo } = req.body || {};
-    const lead = await crm.consultarLead({ telefone: busca.telefone, nome: busca.nome, contatoId: busca.contatoId });
+    // Conferir que o card é do lead e montar o caminho vão juntos (o plano não escreve nada no CRM).
+    const [lead, plano] = await Promise.all([
+      crm.consultarLead({ telefone: busca.telefone, nome: busca.nome, contatoId: busca.contatoId }),
+      fluxoReuniao.planejar({ dealId, closerNome, busca, alvo: alvo === 'qualificado' ? 'qualificado' : 'realizada' }).then((p) => ({ p }), (e) => ({ e })),
+    ]);
     if (!((lead && lead.ficha && lead.ficha.negociacoes) || []).some((c) => String(c.id) === String(dealId || ''))) {
       return res.status(400).json({ erro: 'Este card não é do lead desta conversa. Abra a conversa de novo e tente outra vez.' });
     }
-    res.json({ ok: true, ...(await fluxoReuniao.planejar({ dealId, closerNome, busca, alvo: alvo === 'qualificado' ? 'qualificado' : 'realizada' })) });
+    if (plano.e) throw plano.e;
+    res.json({ ok: true, ...plano.p });
   } catch (err) {
     res.status(502).json({ erro: err.message });
   }
