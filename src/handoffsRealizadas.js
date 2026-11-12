@@ -13,6 +13,7 @@ const db = require('./db');
 const { emDiaLocal } = require('./stats');
 const { handoffGuardado } = require('./fluxoReuniao');
 const { textoDoPdf } = require('./textoDoPdf');
+const { ehDoTime } = require('./timeComercial');
 
 const DEPOIS_DA_REUNIAO = new Set(['reuniao_realizada', 'fup', 'negociacao_avancada', 'venda']);
 const idDe = (x) => String((x && (x.id || x._id)) || '');
@@ -131,11 +132,12 @@ async function levantar({ desde, ate, prazoMs = 40000 } = {}) {
 
   // Listas por funil (4 de cada vez), guardadas 30 min: pedir de novo só lê o detalhe que faltou.
   const listas = await Promise.all(comRealizada.map(async (f) => {
-    const chave = `hr_lista1_${f.id}_${ini}_${fim}`;
+    const chave = `hr_lista2_${f.id}_${ini}_${fim}`; // v2: só os closers do nosso time
     const g = await db.cacheGet(chave).catch(() => null);
     if (g) { try { return JSON.parse(g); } catch (_) { /* relê */ } }
     const deals = await crm.listarNegociacoes({ deal_pipeline_id: f.id, updated_at_period: 'true', start_date: crm.instanteDoDia(ini), end_date: crm.instanteDoDia(fim, true) });
-    const candidatos = deals.filter((d) => podeTerPassado(d, catalogo)).map((d) => ({ id: idDe(d), updated_at: d.updated_at || '' }));
+    // Só cards de closers do NOSSO time (o CRM tem também o outro time comercial).
+    const candidatos = deals.filter((d) => podeTerPassado(d, catalogo) && ehDoTime(d.user && d.user.name)).map((d) => ({ id: idDe(d), updated_at: d.updated_at || '' }));
     await db.cacheSet(chave, JSON.stringify(candidatos), LISTA_SEG).catch(() => {});
     return candidatos;
   }));
@@ -166,6 +168,7 @@ async function levantar({ desde, ate, prazoMs = 40000 } = {}) {
     if (!d) continue;
     const quando = diaDaRealizada(d, catalogo);
     if (!quando || quando < ini || quando > fim) continue;
+    if (!ehDoTime(d.user && d.user.name)) continue; // o card pode ter trocado de dono depois da lista
     const id = idDe(d);
     // O handoff, na ordem: texto do card, texto da passagem de etapa, arquivo anexado (PDF vira texto), report guardado.
     let handoff = crm.textoDoHandoff(d) || handoffDoHistorico(d);

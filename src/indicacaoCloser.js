@@ -13,7 +13,7 @@
 
 const db = require('./db');
 
-const CHAVE_BASE = 'ic_base1';
+const CHAVE_BASE = 'ic_base2'; // v2: só os closers do nosso time (src/timeComercial.js)
 const DIAS_BASE = 120;
 
 const ROTULOS = {
