@@ -59,14 +59,33 @@ function handoffDoHistorico(deal) {
   return textos.length ? textos[textos.length - 1] : '';
 }
 
-/** O arquivo do handoff anexado ao card: baixa e, se for PDF com texto, tira o texto. */
+/**
+ * O arquivo do handoff anexado ao card (desde 22/10/2026 o CRM aceita o arquivo no lugar do texto: PDF, JPG, PNG ou
+ * WebP). A API pública não diz no detalhe se há arquivo: a rota oficial é GET /deals/:id/handoff/file (404 = não há).
+ * PDF com texto legível (o PDF do report) vira o texto do handoff; o arquivo vai sempre junto no .zip.
+ */
 async function lerArquivoDoHandoff(dealId) {
-  const a = await crm.baixarArquivo(`/deals/${encodeURIComponent(dealId)}/handoff/arquivo`).catch(() => null);
+  const id = encodeURIComponent(dealId);
+  const a = (await crm.baixarArquivo(`/deals/${id}/handoff/file`).catch(() => null)) || (await crm.baixarArquivo(`/deals/${id}/handoff/arquivo`).catch(() => null));
   if (!a || !a.buffer || !a.buffer.length) return null;
   const ehPdf = /pdf/i.test(a.tipo) || a.buffer.subarray(0, 5).toString('latin1') === '%PDF-';
   let texto = '';
   if (ehPdf) { try { texto = textoDoPdf(a.buffer); } catch (_) { texto = ''; } }
-  return { ...a, ehPdf, texto: String(texto || '').trim() };
+  texto = String(texto || '').trim();
+  // PDF de outra origem (fonte embutida) pode sair sem texto legível: aí fica só o arquivo.
+  if ((texto.match(/[A-Za-zÀ-ÿ]/g) || []).length < 80) texto = '';
+  return { ...a, ehPdf, texto };
+}
+
+/** Há arquivo do handoff neste card? Guardado por versão do card (30 dias): pedir de novo não baixa outra vez. */
+async function arquivoDoCard(deal) {
+  const chave = `hr_arq1_${idDe(deal)}_${String(deal.updated_at || '')}`;
+  const g = await db.cacheGet(chave).catch(() => null);
+  if (g) { try { return JSON.parse(g); } catch (_) { /* relê */ } }
+  const a = await lerArquivoDoHandoff(idDe(deal));
+  const r = a ? { tem: true, ext: extensaoDe(a, crm.arquivoDoHandoff(deal)), nome: a.nome || '', texto: a.texto } : { tem: false };
+  await db.cacheSet(chave, JSON.stringify(r), 30 * 86400).catch(() => {});
+  return r;
 }
 
 function extensaoDe(arq, info) {
@@ -114,7 +133,24 @@ async function levantar({ desde, ate, prazoMs = 40000 } = {}) {
 
   const sobra = Math.max(2000, prazoMs - (Date.now() - t0));
   const detalhes = await crm.detalhesDe(candidatos, { prazoMs: sobra });
+  // Os arquivos de handoff dos cards do período sem texto: 6 downloads por vez, até o tempo acabar.
+  const precisamArquivo = detalhes.filter((d) => {
+    if (!d || crm.textoDoHandoff(d) || handoffDoHistorico(d)) return false;
+    const q = diaDaRealizada(d, catalogo);
+    return q && q >= ini && q <= fim;
+  });
+  const arquivos = new Map();
+  let proximo = 0;
+  const limiteArquivos = t0 + prazoMs + 8000;
+  await Promise.all(Array.from({ length: Math.min(6, precisamArquivo.length) }, async () => {
+    while (proximo < precisamArquivo.length && Date.now() < limiteArquivos) {
+      const d = precisamArquivo[proximo++];
+      arquivos.set(idDe(d), await arquivoDoCard(d).catch(() => ({ tem: false })));
+    }
+  }));
+
   const reunioes = [];
+  let pendentesDeArquivo = 0;
   for (const d of detalhes) {
     if (!d) continue;
     const quando = diaDaRealizada(d, catalogo);
@@ -123,17 +159,16 @@ async function levantar({ desde, ate, prazoMs = 40000 } = {}) {
     // O handoff, na ordem: texto do card, texto da passagem de etapa, arquivo anexado (PDF vira texto), report guardado.
     let handoff = crm.textoDoHandoff(d) || handoffDoHistorico(d);
     let origem = handoff ? 'crm' : '';
-    const infoArquivo = crm.arquivoDoHandoff(d);
+    // Sem texto no card: o handoff pode ser só o arquivo anexado (a maioria dos cards desde 22/10).
     let arquivo = null;
-    if (infoArquivo) {
-      arquivo = { nome: String(infoArquivo.nome || ''), ext: 'pdf' };
-      if (!handoff) {
-        const a = await lerArquivoDoHandoff(id);
-        if (a) {
-          arquivo.ext = extensaoDe(a, infoArquivo);
-          if (a.texto) { handoff = a.texto; origem = 'arquivo'; } else origem = 'arquivo-sem-texto';
-        }
+    if (!handoff && arquivos.has(id)) {
+      const a = arquivos.get(id);
+      if (a.tem) {
+        arquivo = { nome: a.nome, ext: a.ext };
+        if (a.texto) { handoff = a.texto; origem = 'arquivo'; } else origem = 'arquivo-sem-texto';
       }
+    } else if (!handoff) {
+      pendentesDeArquivo++;
     }
     if (!handoff && !arquivo) {
       const contato = (d.contacts || [])[0];
@@ -155,7 +190,8 @@ async function levantar({ desde, ate, prazoMs = 40000 } = {}) {
     });
   }
   reunioes.sort((a, b) => a.closer.localeCompare(b.closer, 'pt-BR') || a.dia.localeCompare(b.dia) || a.lead.localeCompare(b.lead, 'pt-BR'));
-  return { desde: ini, ate: fim, reunioes, pendentes: detalhes.pendentes || 0, candidatos: candidatos.length };
+  // Arquivo que não deu tempo de conferir conta como pendente: a tela pede de novo e continua (o que já foi visto fica guardado).
+  return { desde: ini, ate: fim, reunioes, pendentes: (detalhes.pendentes || 0) + pendentesDeArquivo, candidatos: candidatos.length };
 }
 
 /** Resumo por closer para a tela (sem o texto dos handoffs). */

@@ -47,7 +47,7 @@ CARDS.f = card('f', 'e-fup', 'f-mql', { closer: 'Zoe Closer', historico: [h('e-r
 CARDS.f.handoff = { texto: 'Handoff da Fabi escrito na tela do CRM.', por: 'Isamara', em: '2026-11-07T12:00:00Z' };
 CARDS.g = card('g', 'e-fup', 'f-mql', { closer: 'Zoe Closer', historico: [h('e-agend', '2026-11-01T12:00:00Z'), { deal_stage_id: 'e-real', start_date: '2026-11-08T12:00:00Z', handoff: { texto: 'Handoff do Gil escrito ao mover para a reunião realizada.' } }], contato: 'Gil' });
 CARDS.i = card('i', 'e-fup', 'f-mql', { closer: 'Zoe Closer', historico: [h('e-real', '2026-11-09T12:00:00Z')], contato: 'Iara' });
-CARDS.i.handoff_arquivo = { nome: 'Report_Iara.pdf', tamanho: 1234, sha256: 'abc' };
+// A API pública não diz no detalhe que há arquivo: só a rota /handoff/file responde.
 let pdfDaIara = null;
 const lidosEmDetalhe = [];
 const fetchReal = global.fetch;
@@ -63,7 +63,7 @@ global.fetch = async (url) => {
   }
   const m = p.match(/^\/deals\/([^/]+)$/);
   if (m && CARDS[m[1]]) { lidosEmDetalhe.push(m[1]); return ok(CARDS[m[1]]); }
-  if (p === '/deals/i/handoff/arquivo') {
+  if (p === '/deals/i/handoff/file') { // rota oficial da API pública
     return { ok: true, status: 200, headers: { get: (k) => ({ 'content-type': 'application/pdf', 'content-disposition': 'attachment; filename="Report_Iara.pdf"' })[String(k).toLowerCase()] || '' }, arrayBuffer: async () => pdfDaIara.buffer.slice(pdfDaIara.byteOffset, pdfDaIara.byteOffset + pdfDaIara.byteLength) };
   }
   return { ok: false, status: 404, json: async () => ({}), text: async () => '' };

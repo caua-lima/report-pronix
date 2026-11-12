@@ -554,7 +554,7 @@ const soMasterComChave = (req, res, next) => (usuarios.ehMaster(req.usuario) ? n
 // guardado 30 min: a tela mostra o resumo e cada .zip sai dele, sem ler o CRM de novo. Incompleto (o tempo do
 // servidor acabou), a tela pede de novo e o CRM só é lido no que faltou.
 async function handoffsDoPeriodo(desde, ate) {
-  const chave = `hr_res2_${String(desde)}_${String(ate)}`; // v2: handoff também em { texto }, no histórico e em arquivo anexado
+  const chave = `hr_res3_${String(desde)}_${String(ate)}`; // v3: arquivo do handoff pela rota oficial /handoff/file
   const g = await db.cacheGet(chave).catch(() => null);
   if (g) { try { return JSON.parse(g); } catch (_) { /* refaz */ } }
   const r = await handoffsRealizadas.levantar({ desde, ate, prazoMs: 40000 });
