@@ -891,6 +891,16 @@
     <!-- ================= ABA: MEUS CLOSERS (só o master) ================= -->
     <section id="aba-meusclosers" class="hidden">
       <div class="card">
+        <div class="head"><div class="t"><i data-ic="download"></i>Handoffs das reuniões realizadas</div><div class="sub">— todos os cards que foram para a reunião realizada no período (de qualquer SDR), com o handoff que está no CRM (ou, sem ele, o texto do report guardado aqui). Um .zip por closer: um .txt por reunião e um índice em CSV.</div></div>
+        <div class="row">
+          <div style="min-width:150px"><label for="hrDe">De</label><input id="hrDe" type="date" /></div>
+          <div style="min-width:150px"><label for="hrAte">Até</label><input id="hrAte" type="date" /></div>
+          <button id="hrBuscar" class="btn"><i data-ic="filter"></i>Buscar</button>
+        </div>
+        <div id="hrStatus" class="status"></div>
+        <div id="hrLista" style="margin-top:8px"></div>
+      </div>
+      <div class="card">
         <div class="head"><div class="t"><i data-ic="download"></i>Leads em Respondeu (recontato)</div><div class="sub">— do mês. Você: Aplicação Direta (todos) e SMQLs Automáticos (só os seus). Outro SDR: só os cards dele, no funil dele (Samuel: SMQLs, Respondeu; Nicoly e Isamara: IA Social Selling; Luiza e Juliana: Funil MQL; Reinaldo: Funil de Recuperação — esses três em Contato iniciado e Respondeu). O .txt traz nome, telefone e inscrição; o CSV é o da lista de transmissão do WhatsApp (Nome, Telefone).</div></div>
         <div class="row">
           <div style="min-width:160px"><label for="lrMes">Mês</label><input id="lrMes" type="month" /></div>
@@ -1924,6 +1934,57 @@
         $('lrCsv').disabled = false;
       }
     }
+    // ---------- Handoffs das reuniões realizadas, por closer (master) ----------
+    (() => {
+      const hoje = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+      $('hrAte').value = hoje;
+      $('hrDe').value = hoje.slice(0, 8) + '01';
+      let periodo = null;
+      async function buscar(tentativa = 0) {
+        const desde = $('hrDe').value;
+        const ate = $('hrAte').value;
+        if (!desde || !ate || desde > ate) return setStatus('hrStatus', 'Escolha o período (De até Até).', { erro: true });
+        $('hrBuscar').disabled = true;
+        setStatus('hrStatus', tentativa ? `Lendo o CRM… (continuando, rodada ${tentativa + 1})` : 'Lendo o CRM… pode levar até um minuto na primeira vez.', { loading: true });
+        try {
+          const r = await fetchComTempo('/api/master/handoffs-realizadas', { method: 'POST', headers: hdr({ 'Content-Type': 'application/json' }), body: JSON.stringify({ desde, ate }) }, 70000);
+          const j = await r.json().catch(() => ({}));
+          if (!r.ok) throw new Error(j.erro || 'Não consegui ler o CRM.');
+          // O servidor tem 60 s por pedido: o que faltou continua sozinho (o que já foi lido fica guardado).
+          if (j.pendentes && tentativa < 8) return buscar(tentativa + 1);
+          periodo = { desde, ate };
+          const linhas = (j.closers || []).map((c) =>
+            `<div class="row" style="align-items:center;margin:6px 0"><div style="flex:1"><b>${esc(c.closer)}</b> — ${c.reunioes} reunião(ões)${c.semHandoff ? ` · <span style="color:var(--danger)">${c.semHandoff} sem handoff</span>` : ''}</div>` +
+            `<button class="btn sec" data-hr-closer="${esc(c.closer)}"><i data-ic="download"></i>Baixar .zip</button></div>`);
+          $('hrLista').innerHTML = linhas.length
+            ? linhas.join('') + '<div class="row" style="margin-top:8px"><button class="btn" data-hr-closer=""><i data-ic="download"></i>Baixar todos (uma pasta por closer)</button></div>'
+            : '';
+          aplicarIcones($('hrLista'));
+          setStatus('hrStatus', j.pendentes
+            ? `Ainda faltam ${j.pendentes} card(s) para ler. Clique em Buscar de novo.`
+            : `${j.total} reunião(ões) realizada(s) de ${desde.split('-').reverse().join('/')} a ${ate.split('-').reverse().join('/')}.`, j.pendentes ? { erro: true } : { ok: true });
+        } catch (e) {
+          setStatus('hrStatus', e.message, { erro: true });
+        } finally {
+          $('hrBuscar').disabled = false;
+        }
+      }
+      $('hrBuscar').addEventListener('click', () => buscar(0));
+      $('hrLista').addEventListener('click', async (ev) => {
+        const b = ev.target.closest('[data-hr-closer]');
+        if (!b || !periodo) return;
+        const closer = b.getAttribute('data-hr-closer');
+        b.disabled = true;
+        try {
+          const q = new URLSearchParams({ desde: periodo.desde, ate: periodo.ate, ...(closer ? { closer } : {}) });
+          await baixarArquivoAdmin('/api/master/handoffs-realizadas/zip?' + q.toString(), 'handoffs.zip');
+        } catch (e) {
+          setStatus('hrStatus', e.message, { erro: true });
+        } finally {
+          b.disabled = false;
+        }
+      });
+    })();
     $('lrGerar').addEventListener('click', () => gerarRespondeu(false, 'txt'));
     $('lrCsv').addEventListener('click', () => gerarRespondeu(false, 'csv'));
 

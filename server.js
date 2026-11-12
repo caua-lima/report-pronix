@@ -41,6 +41,7 @@ const transcricoes = require('./src/transcricoes');
 const driveGoogle = require('./src/driveGoogle');
 const limpezaRd = require('./src/limpezaRd');
 const fluxoReuniao = require('./src/fluxoReuniao');
+const handoffsRealizadas = require('./src/handoffsRealizadas');
 const transcricaoCrm = require('./src/transcricaoCrm');
 /** Espera a transcrição ir para o CRM, no máximo 9 s (o CRM tem o próprio limite de 8 s): o report não fica preso. */
 const esperarTranscricao = (p) => (p ? Promise.race([p, new Promise((r) => setTimeout(() => r({ enviada: false, motivo: 'demorou' }), 9000))]) : Promise.resolve(null));
@@ -548,6 +549,52 @@ app.get('/api/cron/rd', async (req, res) => {
 // Aba "Match com PH": reuniões realizadas, vendas, conversão e faturamento de cada mês com o closer, mais a meta
 // e o plano do mês (src/matchCloser.js). Só o master, com a chave dele (o SDR do match é quem pede).
 const soMasterComChave = (req, res, next) => (usuarios.ehMaster(req.usuario) ? next() : res.status(403).json({ erro: SO_MASTER_ERRO.erro }));
+
+// Handoffs das reuniões realizadas no período, por closer (src/handoffsRealizadas.js). O levantamento completo fica
+// guardado 30 min: a tela mostra o resumo e cada .zip sai dele, sem ler o CRM de novo. Incompleto (o tempo do
+// servidor acabou), a tela pede de novo e o CRM só é lido no que faltou.
+async function handoffsDoPeriodo(desde, ate) {
+  const chave = `hr_res1_${String(desde)}_${String(ate)}`;
+  const g = await db.cacheGet(chave).catch(() => null);
+  if (g) { try { return JSON.parse(g); } catch (_) { /* refaz */ } }
+  const r = await handoffsRealizadas.levantar({ desde, ate, prazoMs: 40000 });
+  if (!r.pendentes) await db.cacheSet(chave, JSON.stringify(r), 1800).catch(() => {});
+  return r;
+}
+app.post('/api/master/handoffs-realizadas', auth, soMasterComChave, async (req, res) => {
+  try {
+    const { desde, ate } = req.body || {};
+    res.set('Cache-Control', 'no-store');
+    res.json({ ok: true, ...handoffsRealizadas.resumo(await handoffsDoPeriodo(desde, ate)) });
+  } catch (err) {
+    res.status(/Período inválido/.test(err.message) ? 400 : 502).json({ erro: err.message });
+  }
+});
+app.get('/api/master/handoffs-realizadas/zip', auth, soMasterComChave, async (req, res) => {
+  try {
+    const { desde, ate, closer } = req.query || {};
+    const r = await handoffsDoPeriodo(desde, ate);
+    if (r.pendentes) return res.status(409).json({ erro: 'Ainda estou lendo o CRM. Clique em "Buscar" de novo e baixe quando terminar.' });
+    const closers = closer ? [String(closer)] : [...new Set(r.reunioes.map((x) => x.closer))];
+    const arquivos = [];
+    closers.forEach((c) => handoffsRealizadas.arquivosDoCloser(r, c).forEach((a) => {
+      arquivos.push({ nome: closers.length > 1 ? `${handoffsRealizadas.nomeDeArquivo(c)}/${a.nome}` : a.nome, texto: a.texto });
+    }));
+    if (!arquivos.some((a) => !a.nome.endsWith('_indice.csv'))) return res.status(404).json({ erro: 'Nenhuma reunião realizada deste closer no período.' });
+    const periodo = `${r.desde.slice(8, 10)}-${r.desde.slice(5, 7)}_a_${r.ate.slice(8, 10)}-${r.ate.slice(5, 7)}`;
+    const nomeZip = `Handoffs_${closer ? handoffsRealizadas.nomeDeArquivo(closer).replace(/\s+/g, '-') : 'todos-os-closers'}_${periodo}.zip`;
+    res.set('Content-Type', 'application/zip');
+    res.set('Content-Disposition', `attachment; filename="${nomeZip}"`);
+    const zip = archiver('zip', { zlib: { level: 9 } });
+    zip.on('error', (err) => res.status(500).end(err.message));
+    zip.pipe(res);
+    const nomes = diario.nomesUnicos(arquivos.map((a) => a.nome));
+    arquivos.forEach((a, i) => zip.append(Buffer.from(a.texto, 'utf8'), { name: nomes[i] }));
+    await zip.finalize();
+  } catch (err) {
+    if (!res.headersSent) res.status(/Período inválido/.test(err.message) ? 400 : 502).json({ erro: err.message });
+  }
+});
 app.get('/api/master/match', auth, soMasterComChave, async (req, res) => {
   try {
     const { closer, desde, atualizar, escopo } = req.query || {};
