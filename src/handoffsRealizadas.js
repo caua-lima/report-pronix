@@ -44,6 +44,17 @@ function diaDaRealizada(deal, catalogo) {
   return passagens[0] || '';
 }
 
+const semAcento = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+const NO_SHOW = /no ?show|nao (compareceu|apareceu|veio|entrou)|faltou|ausente/;
+/** Resultado da reunião para o histórico do closer: 'venda' | 'perda' | 'no_show' | 'aberto'. */
+function resultadoDe(deal, catalogo) {
+  if (deal.win === true) return 'venda';
+  const onde = catalogo.get(idDe(deal.deal_stage));
+  if (onde && onde.etapa.categoria === 'venda') return 'venda';
+  if (deal.win === false) return NO_SHOW.test(semAcento(deal.deal_lost_reason && deal.deal_lost_reason.name)) ? 'no_show' : 'perda';
+  return 'aberto';
+}
+
 function situacao(deal, catalogo) {
   if (deal.win === true) return 'Venda';
   if (deal.win === false) return 'Perdido' + (deal.deal_lost_reason && deal.deal_lost_reason.name ? ` (${crm.consertarAcentos(deal.deal_lost_reason.name)})` : '');
@@ -183,6 +194,7 @@ async function levantar({ desde, ate, prazoMs = 40000 } = {}) {
       sdr: sdrDe(d),
       dia: quando,
       situacao: situacao(d, catalogo),
+      resultado: resultadoDe(d, catalogo),
       url: crm.linkDoCard ? crm.linkDoCard(id) : '',
       handoff,
       origem,
@@ -246,4 +258,4 @@ async function anexosDoCloser(r, closer) {
   return saida;
 }
 
-module.exports = { levantar, resumo, arquivosDoCloser, anexosDoCloser, handoffDoHistorico, podeTerPassado, diaDaRealizada, catalogoDe, nomeDeArquivo };
+module.exports = { resultadoDe, levantar, resumo, arquivosDoCloser, anexosDoCloser, handoffDoHistorico, podeTerPassado, diaDaRealizada, catalogoDe, nomeDeArquivo };

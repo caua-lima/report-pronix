@@ -42,6 +42,7 @@ const driveGoogle = require('./src/driveGoogle');
 const limpezaRd = require('./src/limpezaRd');
 const fluxoReuniao = require('./src/fluxoReuniao');
 const handoffsRealizadas = require('./src/handoffsRealizadas');
+const indicacaoCloser = require('./src/indicacaoCloser');
 const transcricaoCrm = require('./src/transcricaoCrm');
 /** Espera a transcrição ir para o CRM, no máximo 9 s (o CRM tem o próprio limite de 8 s): o report não fica preso. */
 const esperarTranscricao = (p) => (p ? Promise.race([p, new Promise((r) => setTimeout(() => r({ enviada: false, motivo: 'demorou' }), 9000))]) : Promise.resolve(null));
@@ -598,6 +599,42 @@ app.get('/api/master/handoffs-realizadas/zip', auth, soMasterComChave, async (re
     if (!res.headersSent) res.status(/Período inválido/.test(err.message) ? 400 : 502).json({ erro: err.message });
   }
 });
+// "Qual closer para este lead?" (src/indicacaoCloser.js). A base sai das reuniões realizadas dos últimos 120 dias
+// (o mesmo levantamento dos handoffs): pedir de novo continua de onde parou até ficar pronta.
+const diaSP = (deslocamentoDias = 0) => new Date(Date.now() + deslocamentoDias * 86400000).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+app.get('/api/master/indicacao/base', auth, soMasterComChave, async (_req, res) => {
+  try {
+    const base = await indicacaoCloser.lerBase();
+    res.set('Cache-Control', 'no-store');
+    res.json({ ok: true, base: base ? { atualizadoEm: base.atualizadoEm, desde: base.desde, ate: base.ate, closers: indicacaoCloser.resumoDaBase(base) } : null });
+  } catch (err) {
+    res.status(500).json({ erro: err.message });
+  }
+});
+app.post('/api/master/indicacao/base', auth, soMasterComChave, async (_req, res) => {
+  try {
+    const r = await handoffsDoPeriodo(diaSP(-indicacaoCloser.DIAS_BASE), diaSP(0));
+    if (r.pendentes) return res.json({ ok: true, pronto: false, pendentes: r.pendentes, lidas: r.reunioes.length });
+    const base = await indicacaoCloser.salvarBase(r);
+    res.json({ ok: true, pronto: true, base: { atualizadoEm: base.atualizadoEm, desde: base.desde, ate: base.ate, closers: indicacaoCloser.resumoDaBase(base) } });
+  } catch (err) {
+    res.status(502).json({ erro: err.message });
+  }
+});
+app.post('/api/master/indicacao', auth, soMasterComChave, async (req, res) => {
+  try {
+    const base = await indicacaoCloser.lerBase();
+    if (!base) return res.status(409).json({ erro: 'Monte a base primeiro: clique em "Atualizar a base".' });
+    const { pdfBase64, texto } = req.body || {};
+    const conteudo = pdfBase64 ? textoDoPdf(Buffer.from(String(pdfBase64), 'base64')) : String(texto || '');
+    if (conteudo.replace(/\s+/g, ' ').trim().length < 40) return res.status(400).json({ erro: 'Não consegui ler o texto deste PDF. Mande o PDF do report (o gerado pelo sistema) ou cole o texto.' });
+    const c = indicacaoCloser.caracteristicas(conteudo);
+    res.json({ ok: true, ...indicacaoCloser.indicar(base, c) });
+  } catch (err) {
+    res.status(500).json({ erro: err.message });
+  }
+});
+
 app.get('/api/master/match', auth, soMasterComChave, async (req, res) => {
   try {
     const { closer, desde, atualizar, escopo } = req.query || {};

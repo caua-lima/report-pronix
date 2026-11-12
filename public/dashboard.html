@@ -901,6 +901,17 @@
         <div id="hrLista" style="margin-top:8px"></div>
       </div>
       <div class="card">
+        <div class="head"><div class="t"><i data-ic="users"></i>Qual closer para este lead?</div><div class="sub">— coloque o PDF do report: o sistema cruza o perfil do lead com o histórico de cada closer no CRM (reuniões realizadas dos últimos 120 dias, com venda ou não e o handoff de cada uma) e indica os dois com mais chance de fechar</div></div>
+        <div id="icBase" class="hint" style="margin:0 0 8px">Base ainda não montada.</div>
+        <div class="row">
+          <button id="icAtualizar" class="btn sec"><i data-ic="filter"></i>Atualizar a base</button>
+          <input id="icPdf" type="file" accept="application/pdf,.pdf" style="flex:1;min-width:200px" />
+          <button id="icIndicar" class="btn"><i data-ic="users"></i>Indicar closers</button>
+        </div>
+        <div id="icStatus" class="status"></div>
+        <div id="icResultado" style="margin-top:8px"></div>
+      </div>
+      <div class="card">
         <div class="head"><div class="t"><i data-ic="download"></i>Leads em Respondeu (recontato)</div><div class="sub">— do mês. Você: Aplicação Direta (todos) e SMQLs Automáticos (só os seus). Outro SDR: só os cards dele, no funil dele (Samuel: SMQLs, Respondeu; Nicoly e Isamara: IA Social Selling; Luiza e Juliana: Funil MQL; Reinaldo: Funil de Recuperação — esses três em Contato iniciado e Respondeu). O .txt traz nome, telefone e inscrição; o CSV é o da lista de transmissão do WhatsApp (Nome, Telefone).</div></div>
         <div class="row">
           <div style="min-width:160px"><label for="lrMes">Mês</label><input id="lrMes" type="month" /></div>
@@ -1934,6 +1945,85 @@
         $('lrCsv').disabled = false;
       }
     }
+    // ---------- Qual closer para este lead? (master) ----------
+    (() => {
+      const brData = (d) => String(d || '').split('-').reverse().join('/');
+      function mostrarBase(b) {
+        if (!b) { $('icBase').textContent = 'Base ainda não montada: clique em "Atualizar a base" (lê o CRM, pode levar alguns minutos na primeira vez).'; return; }
+        const quando = new Date(b.atualizadoEm).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+        const linhas = (b.closers || []).map((c) => `${esc(c.closer)}: ${c.vendas} venda(s) em ${c.decididas} reunião(ões) decidida(s)`).join(' · ');
+        $('icBase').innerHTML = `Base: reuniões realizadas de ${esc(brData(b.desde))} a ${esc(brData(b.ate))}, atualizada em ${esc(quando)}.<br>${linhas}`;
+      }
+      let baseCarregada = false;
+      async function carregarBase() {
+        if (baseCarregada) return;
+        baseCarregada = true;
+        try {
+          const r = await fetchComTempo('/api/master/indicacao/base', { headers: hdr() });
+          const j = await r.json().catch(() => ({}));
+          if (r.ok) mostrarBase(j.base);
+        } catch (_) { baseCarregada = false; }
+      }
+      document.addEventListener('click', (ev) => { if (ev.target.closest('[data-aba="meusclosers"]')) carregarBase(); });
+      setTimeout(() => { if (!$('aba-meusclosers').classList.contains('hidden')) carregarBase(); }, 1500);
+
+      async function atualizar(rodada = 0) {
+        $('icAtualizar').disabled = true;
+        setStatus('icStatus', rodada ? `Lendo o CRM… (rodada ${rodada + 1})` : 'Lendo o CRM: reuniões realizadas dos últimos 120 dias, com o handoff de cada uma…', { loading: true });
+        try {
+          const r = await fetchComTempo('/api/master/indicacao/base', { method: 'POST', headers: hdr({ 'Content-Type': 'application/json' }), body: '{}' }, 70000);
+          const j = await r.json().catch(() => ({}));
+          if (!r.ok) throw new Error(j.erro || 'Não consegui ler o CRM.');
+          if (!j.pronto) {
+            if (rodada < 30) return atualizar(rodada + 1);
+            throw new Error(`Ainda faltam ${j.pendentes} card(s). Clique de novo em "Atualizar a base".`);
+          }
+          mostrarBase(j.base);
+          setStatus('icStatus', 'Base atualizada.', { ok: true });
+        } catch (e) {
+          setStatus('icStatus', e.message, { erro: true });
+        } finally {
+          $('icAtualizar').disabled = false;
+        }
+      }
+      $('icAtualizar').addEventListener('click', () => atualizar(0));
+
+      $('icIndicar').addEventListener('click', async () => {
+        const arq = $('icPdf').files && $('icPdf').files[0];
+        if (!arq) return setStatus('icStatus', 'Escolha o PDF do report do lead.', { erro: true });
+        $('icIndicar').disabled = true;
+        setStatus('icStatus', 'Cruzando o lead com o histórico dos closers…', { loading: true });
+        try {
+          const pdfBase64 = await new Promise((ok, falha) => {
+            const fr = new FileReader();
+            fr.onload = () => ok(String(fr.result).split(',')[1] || '');
+            fr.onerror = () => falha(new Error('Não consegui ler o arquivo.'));
+            fr.readAsDataURL(arq);
+          });
+          const r = await fetchComTempo('/api/master/indicacao', { method: 'POST', headers: hdr({ 'Content-Type': 'application/json' }), body: JSON.stringify({ pdfBase64 }) }, 60000);
+          const j = await r.json().catch(() => ({}));
+          if (!r.ok) throw new Error(j.erro || 'Não consegui indicar.');
+          const perfil = (j.perfil || []).length
+            ? j.perfil.map((p) => `<span class="st">${esc(p.campo)}: ${esc(p.valor)}</span>`).join(' ')
+            : '<span class="hint">O report não deixou claro o perfil (estágio, capital, quem decide, motivação): a indicação usa só a taxa geral de cada closer.</span>';
+          const cartao = (x, i) => `<div class="card" style="margin:8px 0;padding:12px 14px${i === 0 ? ';border-color:var(--ouro)' : ''}">` +
+            `<div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline"><b style="font-size:1.05rem">${i + 1}º ${esc(x.closer)}</b><b style="font-size:1.4rem;color:var(--ouro-tinta)">${x.chance}%</b></div>` +
+            `<div class="hint" style="margin:2px 0 6px">chance estimada de fechar, pelo histórico dele com leads assim</div>` +
+            `<ul style="margin:0;padding-left:18px">${x.porque.map((p) => `<li>${esc(p)}</li>`).join('')}</ul></div>`;
+          const top = (j.ranking || []).slice(0, 2);
+          const resto = (j.ranking || []).slice(2);
+          $('icResultado').innerHTML = `<div style="margin-bottom:6px">Perfil lido no report: ${perfil}</div>` +
+            (top.length ? top.map(cartao).join('') : '<div class="hint">Nenhum closer tem reuniões suficientes na base.</div>') +
+            (resto.length ? `<div class="hint">Os outros: ${resto.map((x) => `${esc(x.closer)} ${x.chance}%`).join(' · ')}</div>` : '') +
+            `<div class="hint" style="margin-top:6px">Média do time: ${j.taxaDoTime}% de vendas por reunião decidida (${j.base.reunioes} reuniões). Reuniões em aberto e no-show não entram na conta; closer com poucas reuniões fica perto da média dele.</div>`;
+          setStatus('icStatus', '');
+        } catch (e) {
+          setStatus('icStatus', e.message, { erro: true });
+        } finally {
+          $('icIndicar').disabled = false;
+        }
+      });
+    })();
     // ---------- Handoffs das reuniões realizadas, por closer (master) ----------
     (() => {
       const hoje = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
