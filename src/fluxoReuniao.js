@@ -450,7 +450,7 @@ async function planejar({ dealId, closerNome = '', busca = {}, alvo: qual = 'rea
     closersSemCrm, // cadastrados na aba Closers que o CRM não tem (o painel avisa)
     closerSugerido: sugerirCloser(listaClosers, closerNome) || (listaClosers.some((c) => c.id === dono.id) ? dono.id : ''),
     // O texto do report vai junto: o SDR pode editar e complementar com o que veio da ligação.
-    handoff: { noCrm: Boolean(deal.handoff && deal.handoff.text), doReport: guardado ? { quando: guardado.quando, sdr: guardado.sdr, texto: guardado.texto } : null },
+    handoff: { noCrm: crm.temHandoff(deal), doReport: guardado ? { quando: guardado.quando, sdr: guardado.sdr, texto: guardado.texto } : null },
     aprendizado: { amostras: fluxos.amostras || 0 },
     faltando,
   };
@@ -477,8 +477,9 @@ async function executar({ usuario = {}, dealId, assinatura, closerId, handoff, c
   let deal = await lerCard(id);
   let textoHandoff = '';
   const extra = String(complemento || '').trim().slice(0, 3000);
-  const handoffJaNoCrm = Boolean(deal.handoff && deal.handoff.text);
-  if (comCloser && !(deal.handoff && deal.handoff.text)) {
+  // O card já tem handoff (texto em qualquer formato ou arquivo anexado): não reescreve.
+  const handoffJaNoCrm = crm.temHandoff(deal);
+  if (comCloser && !handoffJaNoCrm) {
     const guardado = await handoffGuardado({ dealId: id, contatoId: idDe((deal.contacts || [])[0]) || busca.contatoId, telefone: busca.telefone });
     textoHandoff = String(handoff || '').trim() || (guardado && guardado.texto) || '';
     // Começou no WhatsApp e terminou na ligação: o que veio da ligação entra no mesmo handoff.

@@ -554,7 +554,7 @@ const soMasterComChave = (req, res, next) => (usuarios.ehMaster(req.usuario) ? n
 // guardado 30 min: a tela mostra o resumo e cada .zip sai dele, sem ler o CRM de novo. Incompleto (o tempo do
 // servidor acabou), a tela pede de novo e o CRM só é lido no que faltou.
 async function handoffsDoPeriodo(desde, ate) {
-  const chave = `hr_res1_${String(desde)}_${String(ate)}`;
+  const chave = `hr_res2_${String(desde)}_${String(ate)}`; // v2: handoff também em { texto }, no histórico e em arquivo anexado
   const g = await db.cacheGet(chave).catch(() => null);
   if (g) { try { return JSON.parse(g); } catch (_) { /* refaz */ } }
   const r = await handoffsRealizadas.levantar({ desde, ate, prazoMs: 40000 });
@@ -577,9 +577,12 @@ app.get('/api/master/handoffs-realizadas/zip', auth, soMasterComChave, async (re
     if (r.pendentes) return res.status(409).json({ erro: 'Ainda estou lendo o CRM. Clique em "Buscar" de novo e baixe quando terminar.' });
     const closers = closer ? [String(closer)] : [...new Set(r.reunioes.map((x) => x.closer))];
     const arquivos = [];
-    closers.forEach((c) => handoffsRealizadas.arquivosDoCloser(r, c).forEach((a) => {
-      arquivos.push({ nome: closers.length > 1 ? `${handoffsRealizadas.nomeDeArquivo(c)}/${a.nome}` : a.nome, texto: a.texto });
-    }));
+    for (const c of closers) {
+      const pasta = (nome) => (closers.length > 1 ? `${handoffsRealizadas.nomeDeArquivo(c)}/${nome}` : nome);
+      handoffsRealizadas.arquivosDoCloser(r, c).forEach((a) => arquivos.push({ nome: pasta(a.nome), buffer: Buffer.from(a.texto, 'utf8') }));
+      // O handoff anexado ao card (PDF ou imagem) vai junto, baixado agora do CRM.
+      (await handoffsRealizadas.anexosDoCloser(r, c).catch(() => [])).forEach((a) => arquivos.push({ nome: pasta(a.nome), buffer: a.buffer }));
+    }
     if (!arquivos.some((a) => !a.nome.endsWith('_indice.csv'))) return res.status(404).json({ erro: 'Nenhuma reunião realizada deste closer no período.' });
     const periodo = `${r.desde.slice(8, 10)}-${r.desde.slice(5, 7)}_a_${r.ate.slice(8, 10)}-${r.ate.slice(5, 7)}`;
     const nomeZip = `Handoffs_${closer ? handoffsRealizadas.nomeDeArquivo(closer).replace(/\s+/g, '-') : 'todos-os-closers'}_${periodo}.zip`;
@@ -589,7 +592,7 @@ app.get('/api/master/handoffs-realizadas/zip', auth, soMasterComChave, async (re
     zip.on('error', (err) => res.status(500).end(err.message));
     zip.pipe(res);
     const nomes = diario.nomesUnicos(arquivos.map((a) => a.nome));
-    arquivos.forEach((a, i) => zip.append(Buffer.from(a.texto, 'utf8'), { name: nomes[i] }));
+    arquivos.forEach((a, i) => zip.append(a.buffer, { name: nomes[i] }));
     await zip.finalize();
   } catch (err) {
     if (!res.headersSent) res.status(/Período inválido/.test(err.message) ? 400 : 502).json({ erro: err.message });

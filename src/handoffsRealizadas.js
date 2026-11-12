@@ -12,6 +12,7 @@ const crm = require('./crm');
 const db = require('./db');
 const { emDiaLocal } = require('./stats');
 const { handoffGuardado } = require('./fluxoReuniao');
+const { textoDoPdf } = require('./textoDoPdf');
 
 const DEPOIS_DA_REUNIAO = new Set(['reuniao_realizada', 'fup', 'negociacao_avancada', 'venda']);
 const idDe = (x) => String((x && (x.id || x._id)) || '');
@@ -48,6 +49,33 @@ function situacao(deal, catalogo) {
   if (deal.win === false) return 'Perdido' + (deal.deal_lost_reason && deal.deal_lost_reason.name ? ` (${crm.consertarAcentos(deal.deal_lost_reason.name)})` : '');
   const onde = catalogo.get(idDe(deal.deal_stage));
   return onde ? `${onde.funil.nome} › ${onde.etapa.nome}` : crm.consertarAcentos((deal.deal_stage && deal.deal_stage.name) || '');
+}
+
+/** Handoff escrito numa passagem de etapa (o CRM pede closer + handoff ao mover para algumas etapas). */
+function handoffDoHistorico(deal) {
+  const textos = (Array.isArray(deal.deal_stage_histories) ? deal.deal_stage_histories : [])
+    .map((h) => crm.textoDoHandoff(h))
+    .filter((x) => x.length > 20);
+  return textos.length ? textos[textos.length - 1] : '';
+}
+
+/** O arquivo do handoff anexado ao card: baixa e, se for PDF com texto, tira o texto. */
+async function lerArquivoDoHandoff(dealId) {
+  const a = await crm.baixarArquivo(`/deals/${encodeURIComponent(dealId)}/handoff/arquivo`).catch(() => null);
+  if (!a || !a.buffer || !a.buffer.length) return null;
+  const ehPdf = /pdf/i.test(a.tipo) || a.buffer.subarray(0, 5).toString('latin1') === '%PDF-';
+  let texto = '';
+  if (ehPdf) { try { texto = textoDoPdf(a.buffer); } catch (_) { texto = ''; } }
+  return { ...a, ehPdf, texto: String(texto || '').trim() };
+}
+
+function extensaoDe(arq, info) {
+  const doNome = /\.([a-z0-9]{2,5})$/i.exec(String((info && info.nome) || (arq && arq.nome) || ''));
+  if (doNome) return doNome[1].toLowerCase();
+  if (arq && arq.ehPdf) return 'pdf';
+  if (/png/i.test((arq && arq.tipo) || '')) return 'png';
+  if (/jpe?g/i.test((arq && arq.tipo) || '')) return 'jpg';
+  return 'bin';
 }
 
 function sdrDe(deal) {
@@ -92,9 +120,22 @@ async function levantar({ desde, ate, prazoMs = 40000 } = {}) {
     const quando = diaDaRealizada(d, catalogo);
     if (!quando || quando < ini || quando > fim) continue;
     const id = idDe(d);
-    let handoff = String((d.handoff && d.handoff.text) || '').trim();
+    // O handoff, na ordem: texto do card, texto da passagem de etapa, arquivo anexado (PDF vira texto), report guardado.
+    let handoff = crm.textoDoHandoff(d) || handoffDoHistorico(d);
     let origem = handoff ? 'crm' : '';
-    if (!handoff) {
+    const infoArquivo = crm.arquivoDoHandoff(d);
+    let arquivo = null;
+    if (infoArquivo) {
+      arquivo = { nome: String(infoArquivo.nome || ''), ext: 'pdf' };
+      if (!handoff) {
+        const a = await lerArquivoDoHandoff(id);
+        if (a) {
+          arquivo.ext = extensaoDe(a, infoArquivo);
+          if (a.texto) { handoff = a.texto; origem = 'arquivo'; } else origem = 'arquivo-sem-texto';
+        }
+      }
+    }
+    if (!handoff && !arquivo) {
       const contato = (d.contacts || [])[0];
       const g = await handoffGuardado({ dealId: id, contatoId: idDe(contato) }).catch(() => null);
       if (g && g.texto) { handoff = String(g.texto).trim(); origem = 'report'; }
@@ -110,6 +151,7 @@ async function levantar({ desde, ate, prazoMs = 40000 } = {}) {
       url: crm.linkDoCard ? crm.linkDoCard(id) : '',
       handoff,
       origem,
+      arquivo,
     });
   }
   reunioes.sort((a, b) => a.closer.localeCompare(b.closer, 'pt-BR') || a.dia.localeCompare(b.dia) || a.lead.localeCompare(b.lead, 'pt-BR'));
@@ -122,7 +164,7 @@ function resumo(r) {
   r.reunioes.forEach((x) => {
     const c = porCloser.get(x.closer) || { closer: x.closer, reunioes: 0, semHandoff: 0 };
     c.reunioes++;
-    if (!x.handoff) c.semHandoff++;
+    if (!x.handoff && !x.arquivo) c.semHandoff++;
     porCloser.set(x.closer, c);
   });
   return { desde: r.desde, ate: r.ate, pendentes: r.pendentes, total: r.reunioes.length, closers: [...porCloser.values()] };
@@ -146,15 +188,26 @@ function arquivosDoCloser(r, closer) {
       x.url ? `Card no CRM: ${x.url}` : '',
       '',
       'HANDOFF',
-      x.handoff || '(sem handoff: o card não tem handoff no CRM e o Report PRONIX não guardou o texto do report deste lead)',
+      x.handoff || (x.arquivo ? '(o handoff deste card é o arquivo anexado — está junto, com o mesmo nome)' : '(sem handoff: o card não tem handoff no CRM e o Report PRONIX não guardou o texto do report deste lead)'),
+      x.origem === 'arquivo' ? '\n(Texto tirado do PDF anexado ao card como handoff; o PDF está junto.)' : '',
       x.origem === 'report' ? '\n(O handoff não estava no card do CRM; este é o texto do report guardado no Report PRONIX.)' : '',
     ].filter((l) => l !== '').join('\n').replace(/\n(HANDOFF)/, '\n\n$1'),
   }));
   const csv = (v) => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`;
   const indice = ['Dia;Lead;SDR;Situação hoje;Handoff;Card no CRM']
-    .concat(doCloser.map((x) => [brData(x.dia), x.lead, x.sdr, x.situacao, x.handoff ? (x.origem === 'crm' ? 'no CRM' : 'do report') : 'sem handoff', x.url].map(csv).join(';')))
+    .concat(doCloser.map((x) => [brData(x.dia), x.lead, x.sdr, x.situacao, x.handoff || x.arquivo ? ({ crm: 'no CRM', report: 'do report' }[x.origem] || 'arquivo anexado') : 'sem handoff', x.url].map(csv).join(';')))
     .join('\r\n');
   return arquivos.concat([{ nome: '_indice.csv', texto: '﻿' + indice }]);
 }
 
-module.exports = { levantar, resumo, arquivosDoCloser, podeTerPassado, diaDaRealizada, catalogoDe, nomeDeArquivo };
+/** Os anexos (arquivo do handoff) das reuniões de um closer, baixados agora do CRM, com o nome do .txt. */
+async function anexosDoCloser(r, closer) {
+  const saida = [];
+  for (const x of r.reunioes.filter((y) => y.closer === closer && y.arquivo)) {
+    const a = await lerArquivoDoHandoff(x.dealId);
+    if (a) saida.push({ nome: `${x.dia.slice(8, 10)}-${x.dia.slice(5, 7)} - ${nomeDeArquivo(x.lead)} - handoff.${extensaoDe(a, x.arquivo)}`, buffer: a.buffer });
+  }
+  return saida;
+}
+
+module.exports = { levantar, resumo, arquivosDoCloser, anexosDoCloser, handoffDoHistorico, podeTerPassado, diaDaRealizada, catalogoDe, nomeDeArquivo };

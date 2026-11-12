@@ -87,6 +87,45 @@ async function rd(caminho, params = {}, { metodo = 'GET', corpo, timeoutMs } = {
   return r.json().catch(() => null);
 }
 
+/**
+ * O handoff escrito no card, em qualquer formato que o CRM devolva: { text }, { texto } (o da tela do Pronix CRM) ou
+ * texto puro. '' quando não há texto (pode haver só o arquivo anexado — ver arquivoDoHandoff).
+ */
+function textoDoHandoff(deal) {
+  const h = deal && deal.handoff;
+  if (typeof h === 'string') return h.trim();
+  if (h && typeof h === 'object') return String(h.text || h.texto || h.conteudo || h.content || '').trim();
+  return '';
+}
+/** O arquivo do handoff anexado ao card (PDF ou imagem), ou null. */
+const arquivoDoHandoff = (deal) => (deal && (deal.handoff_arquivo || (deal.handoff && typeof deal.handoff === 'object' && deal.handoff.arquivo))) || null;
+/** O card já tem handoff (texto ou arquivo)? */
+const temHandoff = (deal) => Boolean(textoDoHandoff(deal) || arquivoDoHandoff(deal));
+
+/**
+ * Baixa um arquivo da API do CRM (ex.: o arquivo do handoff). Aceita a resposta em binário ou em JSON
+ * ({ conteudo: base64 } ou { url }). null se não existir.
+ */
+async function baixarArquivo(caminho, { timeoutMs = 20000 } = {}) {
+  const cab = ehPronix() ? { Authorization: `Bearer ${token()}` } : {};
+  const q = ehPronix() ? '' : `?token=${encodeURIComponent(token())}`;
+  const r = await fetch(`${base()}${caminho}${q}`, { headers: cab, signal: AbortSignal.timeout(timeoutMs) }).catch(() => null);
+  if (!r || !r.ok) return null;
+  const tipo = String(r.headers.get('content-type') || '');
+  const disp = String(r.headers.get('content-disposition') || '');
+  const nome = (/filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(disp) || [])[1] || '';
+  if (/json/i.test(tipo)) {
+    const j = await r.json().catch(() => null);
+    if (j && j.conteudo) return { buffer: Buffer.from(String(j.conteudo), 'base64'), tipo: j.tipo || j.mime || '', nome: j.nome || nome };
+    if (j && j.url) {
+      const r2 = await fetch(j.url, { signal: AbortSignal.timeout(timeoutMs) }).catch(() => null);
+      if (r2 && r2.ok) return { buffer: Buffer.from(await r2.arrayBuffer()), tipo: String(r2.headers.get('content-type') || ''), nome: j.nome || nome };
+    }
+    return null;
+  }
+  return { buffer: Buffer.from(await r.arrayBuffer()), tipo, nome: decodeURIComponent(nome) };
+}
+
 // ---------------------------------------------------------------- telefone
 
 const soDigitos = (s) => String(s || '').replace(/\D/g, '');
@@ -1117,6 +1156,7 @@ async function esquecerLead(busca = {}) {
 }
 
 module.exports = {
+  textoDoHandoff, arquivoDoHandoff, temHandoff, baixarArquivo,
   // Para a limpeza do funil (src/limpezaRd.js): a chamada crua ao RD, os funis, os usuários e a chave geral de escrita.
   rd,
   todosOsUsuarios,

@@ -42,6 +42,13 @@ const CARDS = {
   // perdido antes da reunião (etapa Perdido, sem passar pela realizada): lido, mas não entra
   e: card('e', 'e-perda', 'f-mql', { win: false, historico: [h('e-resp', '2026-11-02T12:00:00Z'), h('e-perda', '2026-11-06T12:00:00Z')] }),
 };
+// Os formatos de handoff que o Pronix CRM devolve: { texto } (o da tela), na passagem de etapa e arquivo anexado.
+CARDS.f = card('f', 'e-fup', 'f-mql', { closer: 'Zoe Closer', historico: [h('e-real', '2026-11-07T12:00:00Z')], contato: 'Fabi' });
+CARDS.f.handoff = { texto: 'Handoff da Fabi escrito na tela do CRM.', por: 'Isamara', em: '2026-11-07T12:00:00Z' };
+CARDS.g = card('g', 'e-fup', 'f-mql', { closer: 'Zoe Closer', historico: [h('e-agend', '2026-11-01T12:00:00Z'), { deal_stage_id: 'e-real', start_date: '2026-11-08T12:00:00Z', handoff: { texto: 'Handoff do Gil escrito ao mover para a reunião realizada.' } }], contato: 'Gil' });
+CARDS.i = card('i', 'e-fup', 'f-mql', { closer: 'Zoe Closer', historico: [h('e-real', '2026-11-09T12:00:00Z')], contato: 'Iara' });
+CARDS.i.handoff_arquivo = { nome: 'Report_Iara.pdf', tamanho: 1234, sha256: 'abc' };
+let pdfDaIara = null;
 const lidosEmDetalhe = [];
 const fetchReal = global.fetch;
 global.fetch = async (url) => {
@@ -56,25 +63,39 @@ global.fetch = async (url) => {
   }
   const m = p.match(/^\/deals\/([^/]+)$/);
   if (m && CARDS[m[1]]) { lidosEmDetalhe.push(m[1]); return ok(CARDS[m[1]]); }
+  if (p === '/deals/i/handoff/arquivo') {
+    return { ok: true, status: 200, headers: { get: (k) => ({ 'content-type': 'application/pdf', 'content-disposition': 'attachment; filename="Report_Iara.pdf"' })[String(k).toLowerCase()] || '' }, arrayBuffer: async () => pdfDaIara.buffer.slice(pdfDaIara.byteOffset, pdfDaIara.byteOffset + pdfDaIara.byteLength) };
+  }
   return { ok: false, status: 404, json: async () => ({}), text: async () => '' };
 };
 test.after(() => { global.fetch = fetchReal; });
 
 test('só os cards que entraram na reunião realizada no período, por closer, com o handoff do CRM ou do report', async () => {
+  pdfDaIara = await require('../src/generatePdf').gerarPdfBuffer({ lead: 'Iara', sdr: 'Cauã Lima', resumo: [{ rotulo: 'Investimento', valor: 'R$ 4 mil para estoque' }], secoes: [], citacoes: [], abertura: 'Iara, o Cauã me passou o seu cenário.' });
   await fluxo.guardarHandoff({ dados: { lead: 'Bruno', resumo: [{ rotulo: 'Investimento', valor: 'R$ 5 mil' }] }, sdr: 'Cauã Lima', reportId: 'r1', vinculo: { dealId: 'b' } });
   const r = await hr.levantar({ desde: '2026-11-01', ate: '2026-11-12' });
   assert.equal(r.pendentes, 0);
   assert.deepEqual(r.reunioes.map((x) => [x.closer, x.lead, x.dia, x.origem]), [
     ['Paulo Henrique', 'Ana', '2026-11-03', 'crm'],
     ['Zoe Closer', 'Bruno', '2026-11-05', 'report'],
+    ['Zoe Closer', 'Fabi', '2026-11-07', 'crm'],
+    ['Zoe Closer', 'Gil', '2026-11-08', 'crm'],
+    ['Zoe Closer', 'Iara', '2026-11-09', 'arquivo'],
   ]);
+  assert.equal(r.reunioes[2].handoff, 'Handoff da Fabi escrito na tela do CRM.', '{ texto } da tela do CRM');
+  assert.match(r.reunioes[3].handoff, /escrito ao mover para a reunião realizada/, 'handoff da passagem de etapa');
+  assert.match(r.reunioes[4].handoff, /R\$ 4 mil para estoque/, 'texto tirado do PDF anexado');
+  assert.ok(r.reunioes.every((x) => x.handoff), 'nenhum sem handoff');
+  const anexos = await hr.anexosDoCloser(r, 'Zoe Closer');
+  assert.deepEqual(anexos.map((a) => a.nome), ['09-11 - Iara - handoff.pdf']);
+  assert.equal(anexos[0].buffer.subarray(0, 5).toString('latin1'), '%PDF-');
   assert.ok(!lidosEmDetalhe.includes('d'), 'card ainda antes da reunião não é lido em detalhe');
   assert.match(r.reunioes[1].handoff, /Investimento: R\$ 5 mil/);
   assert.equal(r.reunioes[1].situacao, 'Venda');
 
   const resumo = hr.resumo(r);
-  assert.deepEqual(resumo.closers, [{ closer: 'Paulo Henrique', reunioes: 1, semHandoff: 0 }, { closer: 'Zoe Closer', reunioes: 1, semHandoff: 0 }]);
-  assert.equal(resumo.total, 2);
+  assert.deepEqual(resumo.closers, [{ closer: 'Paulo Henrique', reunioes: 1, semHandoff: 0 }, { closer: 'Zoe Closer', reunioes: 4, semHandoff: 0 }]);
+  assert.equal(resumo.total, 5);
   assert.equal(JSON.stringify(resumo).includes('Handoff do lead A'), false, 'o resumo da tela não leva o texto');
 
   const arq = hr.arquivosDoCloser(r, 'Paulo Henrique');
