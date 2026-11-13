@@ -187,6 +187,21 @@ app.get('/privacidade', (_req, res) =>
   res.sendFile(path.join(__dirname, 'public', 'privacidade.html'))
 );
 
+// Contexto separado: renderização local com PDFKit, sem IA, pesquisa paga ou persistência.
+app.post('/api/contexto-lead/pdf', auth, async (req, res) => {
+  const { normalizar } = require('./public/js/contexto-lead-model');
+  let dados;
+  try { dados = normalizar(req.body, true); }
+  catch (err) { return res.status(400).json({ erro: err.message }); }
+  try {
+    const { gerarContextoPdf } = require('./src/contextoLeadPdf');
+    const buffer = await gerarContextoPdf(dados, req.usuario.nome);
+    const nome = dados.nome.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9_-]+/g, '-').slice(0, 80) || 'lead';
+    res.set('Cache-Control', 'no-store');
+    res.json({ arquivo: `contexto-pronix-${nome}.pdf`, arquivoBase64: buffer.toString('base64') });
+  } catch (_) { res.status(500).json({ erro: 'Não foi possível gerar o PDF de contexto. Tente novamente.' }); }
+});
+
 // Status é público (serve para o botão "Testar" da extensão).
 app.get('/api/status', (_req, res) => {
   res.json({ ok: true, provider: process.env.LLM_PROVIDER || 'anthropic' });

@@ -467,6 +467,18 @@
       .menu { flex-wrap: wrap; overflow: visible; row-gap: 0; }
     }
   </style>
+<style>
+    .ctx-form label { display:block; margin:12px 0; }
+    .ctx-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 18px; }
+    .ctx-form input:not([type=checkbox]), .ctx-form textarea { width:100%; box-sizing:border-box; }
+    .ctx-form .ctx-check { display:flex; gap:10px; align-items:flex-start; }
+    .ctx-check input { flex:0 0 auto; margin-top:4px; }
+    .ctx-links { display:flex; flex-wrap:wrap; gap:10px; margin-top:16px; }
+    .ctx-fonte { min-width:0; border:1px solid var(--border); border-radius:10px; padding:14px; margin:18px 0; }
+    .ctx-previa { overflow-wrap:anywhere; }
+    .ctx-previa:not(:empty) { border-top:1px solid var(--border); margin:20px 0; padding-top:12px; }
+    @media(max-width:600px) { .ctx-grid { grid-template-columns:1fr; } }
+  </style>
 </head>
 <body>
   <header>
@@ -480,6 +492,7 @@
       <div class="grupo">
         <div class="grupo-rotulo">Dia a dia</div>
         <button class="tab on" data-aba="report"><i data-ic="file-text"></i>Gerar report</button>
+        <button class="tab" data-aba="contexto"><i data-ic="search"></i>Pesquisar contexto do lead</button>
         <button class="tab" data-aba="dia"><i data-ic="download"></i>Reports do dia</button>
       </div>
       <div class="grupo">
@@ -508,6 +521,48 @@
       <h1><span id="tituloPagina" class="marca">Gerar report</span></h1>
       <p id="subPagina">Monte a conversa do lead e gere o handoff em PDF para o closer.</p>
     </div>
+
+    <section id="aba-contexto" class="hidden">
+      <form class="ctx-form">
+        <div class="card">
+          <div class="head"><div class="t">1. Identifique e pesquise</div></div>
+          <p>Prepare buscas em fontes públicas, confira a identidade e registre o que for relevante. Sem API paga e sem consumo de IA. A busca abre em outra aba; os resultados não são importados automaticamente.</p>
+          <p class="hint">Ao abrir uma busca, os dados usados nela são enviados ao buscador. Um e-mail pode não ter resultados. Nome, empresa e cidade ajudam a evitar homônimos.</p>
+          <div class="ctx-grid">
+            <label>Nome do lead<input name="nome" maxlength="180" required autocomplete="off"></label>
+            <label>E-mail<input name="email" type="email" maxlength="254" autocomplete="off"></label>
+            <label>Empresa informada<input name="empresa" maxlength="240" autocomplete="off"></label>
+            <label>Cidade informada<input name="cidade" maxlength="180" autocomplete="off"></label>
+          </div>
+          <div class="acoes"><button type="button" class="btn" data-buscar>Preparar pesquisas gratuitas</button><button type="button" class="btn sec" data-limpar>Novo lead / limpar</button></div>
+          <div data-pesquisas class="ctx-links"></div>
+        </div>
+        <div class="card">
+          <div class="head"><div class="t">2. Registre o contexto e as evidências</div></div>
+          <label>Contexto informado pelo lead<textarea name="resumo" rows="4" maxlength="4000" placeholder="O que ele contou sobre atuação, experiência, negócio e objetivos. Diferencie o que ele disse do que você encontrou online."></textarea></label>
+          <p class="hint">Registre fontes profissionais públicas. Confirme nome, empresa e outros sinais antes de atribuir um perfil ao lead. Se não encontrar, deixe essa lacuna explícita.</p>
+          <div data-fontes></div>
+          <button type="button" class="btn sec" data-adicionar>Adicionar fonte e evidência</button>
+        </div>
+        <div class="card">
+          <div class="head"><div class="t">3. Sua leitura para o closer</div></div>
+          <label>Minha visão estratégica<textarea name="visao" rows="5" maxlength="6000" placeholder="Por que vale aprofundar este lead? Conecte as evidências à oportunidade. Separe sua interpretação dos fatos."></textarea></label>
+          <label>Como explorar na reunião<textarea name="gancho" rows="3" maxlength="3000" placeholder="Um gancho relevante para iniciar a conversa, sem presumir orçamento ou poder de decisão."></textarea></label>
+          <label>Perguntas para aprofundar<textarea name="perguntas" rows="4" maxlength="4000" placeholder="Uma pergunta por linha. O que o closer precisa descobrir para entender a oportunidade?"></textarea></label>
+          <label>Lacunas e pontos a confirmar<textarea name="lacunas" rows="3" maxlength="4000" placeholder="Perfis incertos, informações antigas, contradições ou pontos ainda não confirmados."></textarea></label>
+        </div>
+        <div class="card">
+          <div class="head"><div class="t">4. Revise e baixe separadamente</div></div>
+          <p class="hint">Este contexto não altera o report, não é enviado ao closer e não fica salvo no servidor. Os campos permanecem apenas nesta página até recarregá-la.</p>
+          <button type="button" class="btn sec" data-visualizar>Visualizar conteúdo do PDF</button>
+          <div data-previa class="ctx-previa"></div>
+          <label class="ctx-check"><input type="checkbox" name="revisado"> Revisei o conteúdo e as sinalizações de identidade das fontes.</label>
+          <button type="submit" class="btn" data-pdf disabled>Baixar PDF de contexto</button>
+          <p role="status" aria-live="polite"></p>
+        </div>
+      </form>
+    </section>
+
     <!-- ================= ABA: GERAR REPORT ================= -->
     <section id="aba-report">
       <div class="card">
@@ -1484,6 +1539,7 @@
     // Desenhos de traço embutidos: a página tem de ser autocontida (a Vercel e a
     // extensão não carregam script/fonte de fora).
     const ICONES = {
+      search: '<circle cx="10.5" cy="10.5" r="7.5"/><path d="m16 16 5 5"/>',
       'file-text': '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/>',
       key: '<circle cx="7.5" cy="15.5" r="4.5"/><path d="m10.7 12.3 8.7-8.7"/><path d="m17 6 2.5 2.5"/><path d="m14.5 8.5 2.5 2.5"/>',
       chart: '<path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/>',
@@ -1544,7 +1600,7 @@
     }
 
     // ---------- Menu ----------
-    const ABAS = ['report', 'dia', 'acessos', 'numeros', 'resultados', 'closers', 'funil', 'match', 'meusclosers', 'closerstime', 'pronixclub', 'arquivos', 'base', 'extensao'];
+    const ABAS = ['contexto', 'report', 'dia', 'acessos', 'numeros', 'resultados', 'closers', 'funil', 'match', 'meusclosers', 'closerstime', 'pronixclub', 'arquivos', 'base', 'extensao'];
     const SO_ADMIN = ['acessos', 'numeros', 'resultados', 'closers', 'funil', 'match', 'meusclosers', 'closerstime', 'pronixclub', 'arquivos', 'base', 'extensao'];
     let souAdmin = false;
     let souGestor = false;
@@ -1558,7 +1614,7 @@
       ['base', 'Base'], ['extensao', 'Extensão'], ['equipe', 'Reports do dia da equipe'],
     ];
     const podeAba = (a) =>
-      a === 'report' || a === 'dia' || (a === 'acessos' || a === 'funil' || a === 'match' || a === 'meusclosers' || a === 'closerstime' || a === 'pronixclub' ? podeMexerEmUsuarios() : Boolean(senhaAdmin) || minhasAbas.has(a));
+      a === 'contexto' || a === 'report' || a === 'dia' || (a === 'acessos' || a === 'funil' || a === 'match' || a === 'meusclosers' || a === 'closerstime' || a === 'pronixclub' ? podeMexerEmUsuarios() : Boolean(senhaAdmin) || minhasAbas.has(a));
     const temAbaDeGestao = () => SO_ADMIN.some(podeAba);
     let papelConhecido = false; // a chave já foi conferida (antes disso não dá para saber se é master)
     let validacaoPendente = false; // a chave ainda está sendo conferida (a lista do dia espera: o papel muda o que ela mostra)
@@ -1568,6 +1624,7 @@
 
     // Título e descrição de cada aba (aparecem no topo do conteúdo).
     const PAGINAS = {
+      contexto: ['Pesquisar contexto do lead', 'Pesquisa assistida gratuita, com revisão e PDF separado do handoff.'],
       report: ['Gerar report', 'Monte a conversa do lead e gere o handoff em PDF para o closer.'],
       dia: ['Reports do dia', 'O .zip com os reports do dia, pronto para mandar ao líder.'],
       resultados: ['Resultados da reunião', 'O que deu cada reunião e o que o histórico ensina sobre closers e perfis de lead.'],
@@ -5232,5 +5289,7 @@
 
     abrir((location.hash || '').replace('#', '') || 'report');
   </script>
+  <script src="/js/contexto-lead-model.js"></script>
+  <script src="/js/contexto-lead.js"></script>
 </body>
 </html>
