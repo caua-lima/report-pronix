@@ -76,3 +76,11 @@ Pedido do Cauã: a Juliana vê apenas os closers dos leads dela.
   individual (o sistema não tem login com usuário e senha); a chave fica na aba Acessos e não foi registrada aqui.
 - Conferido com a chave dela no site: /api/master/closers-do-sdr devolve só "Juliana Ferreira" mesmo pedindo
   `sdr=Cauã Lima` ou `sdr=time`; resultados, leads-respondeu, usuários e cadastro de closers → 401/403.
+
+## 2026-11-19 — Total de reuniões igual ao CRM (main 379cfa1)
+
+Juliana Ferreira, novembro: o painel mostrava 61 reuniões; faltavam 9 com donos de card fora da lista de closers
+(Igor Martins, Sthefanie Alves Felicio Magioli, Vitor Augusto Manoel dos Santos Batista, Pedro Henrique Barbosa de
+Souza, Maria Clara Soares Zanco). O total passou a somar todas as reuniões dos leads do SDR.
+Conferido no site: 70 reuniões, 13 vendas, R$ 258.861, conversão 18,6%. O Cauã confirmou 70 como o número certo
+(a diferença para 71/72 era do dashboard do CRM).
