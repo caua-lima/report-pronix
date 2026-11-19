@@ -301,6 +301,8 @@
     return null;
   }
 
+  const JA_TRANSCRITO = '__ja_transcrito__'; // marcador em audioBytes: a transcrição já está em audiosLidos
+
   // Captura os bytes dos áudios visíveis, de cima para baixo (mapeamento
   // cronológico). Pula os que JÁ foram capturados (audioBytes) — nunca desiste de
   // um que ainda falta. tentadosNestaPassada evita reclicar o mesmo áudio enquanto
@@ -314,6 +316,8 @@
       if (!ehAudio(el)) continue;
       const chave = chaves[i];
       if (!chave || audioBytes.has(chave) || tentadosNestaPassada.has(chave)) continue;
+      // Já transcrito numa tentativa anterior (nesta aba): usa a transcrição guardada, sem clicar nem esperar o arquivo.
+      if (audiosLidos.has(conversaDaLeitura + '|' + chave)) { audioBytes.set(chave, JA_TRANSCRITO); continue; }
       if (conversaDaLeitura && nomeDoContato() !== conversaDaLeitura) return; // trocou de conversa no meio
       tentadosNestaPassada.add(chave);
       try {
@@ -727,7 +731,7 @@
   // Sem filtrar, o status vira o nome do lead — foi assim que um report saiu com
   // "Lead: online".
   const STATUS_CONTATO =
-    /^(online|digitando|gravando|escrevendo|visto por [úu]ltimo|[úu]ltima vez|typing|recording|last seen|click here|clique aqui|toque aqui)/i;
+    /^(online|digitando|gravando|escrevendo|visto por [úu]ltimo|[úu]ltima vez|typing|recording|last seen|click here|click for|clique aqui|clique para|toque aqui|toque para|dados do contato|contact info|business account|conta comercial)/i;
 
   function nomeDoContato() {
     const header = document.querySelector('#main header');
@@ -836,7 +840,7 @@
       let estavel = 0;
       for (let i = 0; i < 150 && estavel < 3; i++) {
         scroller.scrollTop = 0;
-        await sleep(450);
+        await sleep(300);
         garantirMesmaConversa();
         const h = scroller.scrollHeight;
         if (h === alturaAnterior) estavel++;
@@ -853,12 +857,12 @@
     // 2) Passadas de captura: desce do topo capturando os áudios que faltam.
     //    A primeira pega a maioria; as seguintes voltam nos teimosos com mais
     //    paciência, até não faltar nenhum (ou esgotar as tentativas).
-    const MAX_PASSADAS = 6;
+    const MAX_PASSADAS = 3; // eram 6: a 4ª em diante quase nunca recuperava nada e custava minutos
     let faltaramAntes = Infinity;
     filaDiagnosticada = false;
     for (let passada = 0; passada < MAX_PASSADAS; passada++) {
       const vistosAntesDaPassada = totalBlobsVistos;
-      const iteracoes = 40 + passada * 25; // ~6s na 1ª, subindo até ~24s por áudio
+      const iteracoes = 20 + passada * 20; // ~3s na 1ª, ~6s e ~9s nas repescagens (antes: até ~24s por áudio)
       if (passada > 0 && capturarAudio) {
         mostrarBadge({
           texto: `<b>Repescando áudios…</b> faltam ${faltamAudios()} (tentativa ${passada + 1})`,
@@ -890,31 +894,40 @@
       const totalAudios = [...mapa.values()].filter((r) => r.type === 'audio').length;
       const pendentes = [...mapa].filter(([chave, reg]) => reg.type === 'audio' && audioBytes.get(chave));
       logA(`${totalAudios} áudios | ${pendentes.length} capturados p/ transcrever`);
-      for (let i = 0; i < pendentes.length; i++) {
-        const [chave, reg] = pendentes[i];
-        mostrarBadge({
-          texto: `<b>Transcrevendo áudios…</b> (${i + 1}/${pendentes.length})`,
-          loading: true,
-        });
-        try {
-          const resp = await new Promise((r) =>
-            chrome.runtime.sendMessage(
-              { action: 'transcreverAudio', server, base64: audioBytes.get(chave) },
-              r
-            )
-          );
-          if (resp && resp.ok && resp.texto && resp.texto.trim()) {
-            // quem enviou já veio do DOM (aria-label "Você:"), não sobrescreve.
-            reg.content = resp.texto.trim();
-            if (audiosLidos.size > 3000) audiosLidos.clear();
-            audiosLidos.set(conversaDaLeitura + '|' + chave, reg.content); // a leitura rápida da tela usa sem transcrever de novo
-          } else if (resp && resp.erro) {
-            logA('transcrição falhou:', resp.erro);
+      // 4 transcrições ao mesmo tempo (antes, uma por vez: 15 áudios eram 15 esperas seguidas no servidor).
+      let feitos = 0;
+      const mostrarProgresso = () =>
+        mostrarBadge({ texto: `<b>Transcrevendo áudios…</b> (${feitos}/${pendentes.length})`, loading: true });
+      const transcreverUm = async ([chave, reg]) => {
+        const guardada = audioBytes.get(chave) === JA_TRANSCRITO ? audiosLidos.get(conversaDaLeitura + '|' + chave) : '';
+        if (guardada) {
+          reg.content = guardada;
+        } else {
+          try {
+            const resp = await new Promise((r) =>
+              chrome.runtime.sendMessage({ action: 'transcreverAudio', server, base64: audioBytes.get(chave) }, r)
+            );
+            if (resp && resp.ok && resp.texto && resp.texto.trim()) {
+              // quem enviou já veio do DOM (aria-label "Você:"), não sobrescreve.
+              reg.content = resp.texto.trim();
+              if (audiosLidos.size > 3000) audiosLidos.clear();
+              audiosLidos.set(conversaDaLeitura + '|' + chave, reg.content); // a leitura rápida e a próxima tentativa usam sem transcrever de novo
+            } else if (resp && resp.erro) {
+              logA('transcrição falhou:', resp.erro);
+            }
+          } catch (e) {
+            logA('transcrição erro:', e.message);
           }
-        } catch (e) {
-          logA('transcrição erro:', e.message);
         }
-      }
+        feitos++;
+        mostrarProgresso();
+      };
+      mostrarProgresso();
+      const fila = pendentes.slice();
+      const trabalhador = async () => {
+        while (fila.length) await transcreverUm(fila.shift());
+      };
+      await Promise.all(Array.from({ length: Math.min(4, fila.length) }, trabalhador));
     }
 
     const mensagens = [...mapa.values()]
@@ -1159,6 +1172,72 @@
     afinidadeUi.anexar({ aviso: document.getElementById(BADGE_ID), closer, resp, mensagens, nome });
   }
 
+  /**
+   * Áudios que não foram transcritos: mostra quais são (hora e quem mandou) e deixa anexar o arquivo baixado do
+   * WhatsApp para cada um. O arquivo é transcrito e entra no lugar do "[áudio]", na ordem certa da conversa.
+   * Devolve true para gerar (com os anexados ou sem eles) ou false se o SDR fechou o aviso (cancela).
+   */
+  function completarAudiosFaltando(mensagens, server) {
+    const faltando = mensagens.map((m, i) => ({ m, i })).filter(({ m }) => m.type === 'audio' && String(m.content || '').startsWith('[áudio'));
+    if (!faltando.length) return Promise.resolve(true);
+    const hora = (iso) => {
+      const d = iso ? new Date(iso) : null;
+      return d && !Number.isNaN(d.getTime()) ? d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : 'sem hora';
+    };
+    const total = mensagens.filter((m) => m.type === 'audio').length;
+    const linhas = faltando.map(({ m, i }, k) =>
+      `<div data-cr-falta="${i}" style="display:flex;align-items:center;gap:8px;margin-top:6px;padding:6px 8px;background:#232127;border-radius:7px">` +
+      `<span style="flex:1;min-width:0">${k + 1}. <b>${m.from === 'eu' ? 'Você' : 'Lead'}</b> · ${escHtml(hora(m.timestamp))}` +
+      `<br><span data-cr-falta-status style="color:#a39e93;font-size:12px">não transcrito</span></span>` +
+      `<label style="flex:none;cursor:pointer;background:#ffc233;color:#1a191c;font-weight:700;border-radius:6px;padding:4px 8px;font-size:12px">Anexar áudio` +
+      `<input type="file" accept="audio/*,.ogg,.opus,.oga,.mp3,.m4a,.aac,.wav,.webm,.amr" style="display:none"></label></div>`
+    ).join('');
+    return new Promise((resolve) => {
+      mostrarBadge({
+        texto:
+          `<b>${total - faltando.length} de ${total} áudios transcritos.</b> Faltaram estes ${faltando.length}: ` +
+          'baixe o áudio no WhatsApp (seta na bolha → Baixar) e anexe aqui para ele entrar no report.' +
+          `<div style="max-height:260px;overflow:auto;margin-top:4px">${linhas}</div>`,
+        cor: '#ffc233',
+        botoes: [{ acao: 'gerar', rotulo: 'Gerar com os anexados', primario: true }, { acao: 'sem', rotulo: 'Gerar sem eles' }],
+        aoEscolher: () => resolve(true),
+        aoFechar: () => resolve(false),
+      });
+      const el = document.getElementById(BADGE_ID);
+      if (!el) return;
+      el.querySelectorAll('[data-cr-falta]').forEach((linha) => {
+        const idx = Number(linha.getAttribute('data-cr-falta'));
+        const status = linha.querySelector('[data-cr-falta-status]');
+        const input = linha.querySelector('input[type=file]');
+        const tratar = async (arquivo) => {
+          if (!arquivo) return;
+          if (arquivo.size > 20 * 1024 * 1024) { status.textContent = 'arquivo grande demais (máx. 20 MB)'; status.style.color = '#ff6f5c'; return; }
+          status.textContent = 'transcrevendo…';
+          status.style.color = '#ffc233';
+          try {
+            const base64 = arrayBufferToBase64(await arquivo.arrayBuffer());
+            const resp = await new Promise((r) => chrome.runtime.sendMessage({ action: 'transcreverAudio', server, base64 }, r));
+            if (resp && resp.ok && resp.texto && resp.texto.trim()) {
+              mensagens[idx].content = resp.texto.trim();
+              status.textContent = 'transcrito ✓ — entra no report';
+              status.style.color = '#3ddc84';
+            } else {
+              status.textContent = (resp && resp.erro) || 'não consegui transcrever este arquivo';
+              status.style.color = '#ff6f5c';
+            }
+          } catch (e) {
+            status.textContent = 'erro ao ler o arquivo';
+            status.style.color = '#ff6f5c';
+          }
+        };
+        input.addEventListener('change', () => tratar(input.files && input.files[0]));
+        // também aceita arrastar o arquivo para a linha
+        linha.addEventListener('dragover', (e) => { e.preventDefault(); e.stopPropagation(); });
+        linha.addEventListener('drop', (e) => { e.preventDefault(); e.stopPropagation(); tratar(e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]); });
+      });
+    });
+  }
+
   async function gerarReportEmBackground(server, opcoes = {}) {
     const closerDaAnalise = closerPedido(opcoes.afinidade);
     if (jobEmAndamento) {
@@ -1199,6 +1278,19 @@
         anexarAfinidade(closerDaAnalise, null, mensagens, nome);
         jobEmAndamento = false;
         return;
+      }
+
+      // Faltou transcrever algum áudio: mostra quais e deixa anexar o arquivo antes de gerar.
+      if (stats.audiosTranscritos < stats.audios) {
+        capturaAtiva = false;
+        restaurarAudios();
+        const seguir = await completarAudiosFaltando(mensagens, server);
+        if (!seguir) {
+          mostrarBadge({ texto: 'Geração cancelada.', cor: '#f2a93b' });
+          jobEmAndamento = false;
+          return;
+        }
+        stats.audiosTranscritos = mensagens.filter((m) => m.type === 'audio' && !String(m.content || '').startsWith('[áudio')).length;
       }
 
       const linhaAudio =

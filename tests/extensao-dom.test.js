@@ -36,7 +36,13 @@ function servidorFalso(opcoes = {}) {
   return { aoEnviar, chamadas };
 }
 
-const terminou = (p) => /Report pronto|conversa mudou|Nenhuma mensagem|Não achei|Falha|Já existe/i.test(p.badge());
+// Faltou transcrever algum áudio: a extensão lista os que faltaram e espera o SDR. Nos testes de leitura, o SDR
+// escolhe "Gerar sem eles" (o teste da lista em si fica mais abaixo).
+const terminou = (p) => {
+  const sem = p.document.querySelector('#closer-report-badge [data-cr-acao="sem"]');
+  if (sem && /Faltaram estes/.test(p.badge())) sem.click();
+  return /Report pronto|conversa mudou|Nenhuma mensagem|Não achei|Falha|Já existe/i.test(p.badge());
+};
 const limpar = (m) => ({ from: m.from, type: m.type, content: m.content });
 
 async function rodarInstagram(conversa, { visiveis = 6, servidor = servidorFalso(), url = 'https://www.instagram.com/direct/t/111/', durante, opcoes = {} } = {}) {
