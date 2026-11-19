@@ -12,13 +12,13 @@ const stats = require('./stats');
 const match = require('./matchCloser');
 const closersCadastro = require('./closers');
 const { leadDoCard } = require('./vendasDoRd');
+const timeComercial = require('./timeComercial');
 
 const ORCAMENTO_MS = () => Number(process.env.CLOSERS_ORCAMENTO_MS) || 45000;
 const CACHE_SEG = 20 * 60;
-// Os closers do time (o calendário dos closers, 31/10/2026), como o CRM os chama. Somam-se aos da aba Closers;
-// CLOSERS_PADRAO (nomes separados por vírgula) troca a lista sem mexer no código.
-const CLOSERS_PADRAO = 'Paulo Henrique Pagoti, Amarildo Queiroz, Giovane Ribeiro Romano, Raphael Cassiano Ribeiro, Daniel Camargo de Andrade, Gabrielle Machado Silveira, Igor Martins, Jenniffer Lauany Barros, Pedro Henrique Melo Palermo, Pedro Pasin, Roselaynne Lima Costa Cabral, Vitor Santos, Zayra';
-const closersPadrao = () => String(process.env.CLOSERS_PADRAO || CLOSERS_PADRAO).split(',').map((x) => x.trim()).filter(Boolean);
+// Os closers do time (src/timeComercial.js, a mesma lista dos handoffs e da indicação), como o RD os chama. Somam-se aos
+// da aba Closers; CLOSERS_PADRAO (nomes separados por vírgula) troca a lista sem mexer no código.
+const closersPadrao = () => (process.env.CLOSERS_PADRAO ? String(process.env.CLOSERS_PADRAO).split(',') : timeComercial.CLOSERS_DO_TIME).map((x) => x.trim()).filter(Boolean);
 const LISTA_SEG = 10 * 60;
 
 const norm = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
@@ -138,7 +138,7 @@ async function painel({ usuario, sdr, mes, atualizar = false } = {}) {
   const time = String(sdr || '') === 'time';
   const escolhido = time ? '' : disponiveis.find((n) => mesmaPessoa(n, sdr)) || usuario.nome;
   const sdrs = time ? disponiveis : [escolhido];
-  const chave = `closers4_${usuario.id}_${slug(sdrs.join(' '))}_${mesOk}`;
+  const chave = `closers5_${usuario.id}_${slug(sdrs.join(' '))}_${mesOk}`;
   if (!atualizar) {
     const guardado = await db.cacheGet(chave).catch(() => null);
     if (guardado) { try { return { ...JSON.parse(guardado), cache: true }; } catch (_) { /* refaz */ } }
@@ -161,7 +161,8 @@ async function painel({ usuario, sdr, mes, atualizar = false } = {}) {
   const naoCloser = new Set();
   const reunioes = [];
   for (const d of cards) {
-    const closer = String((d.user && d.user.name) || '').trim();
+    // grafias duplicadas do mesmo closer no RD ("Pedro Pasin" e "Pedro Henrique Pasin") viram uma linha só
+    const closer = timeComercial.nomeOficial((d.user && d.user.name) || '');
     if (!closer) continue;
     // o campo SDR do card tem de ser um dos SDRs escolhidos (a lista do CRM já filtra; aqui confere)
     const quem = match.quemEhOSdr(d, { nome: sdrs[0] }, sdrs.slice(1));
