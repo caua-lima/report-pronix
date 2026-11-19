@@ -193,3 +193,16 @@ test('aba "meusclosers": liberável por pessoa, fechada por padrão para SDR e g
   assert.equal(usuarios.podeAba({ papel: 'sdr', abas: { meusclosers: true } }, 'meusclosers'), true);
   assert.equal(usuarios.podeAba({ papel: 'sdr', abas: { meusclosers: true } }, 'closers'), false, 'liberar Meus closers não libera o resto');
 });
+
+test('período personalizado: de/até no lugar do mês (últimos N dias, uma semana, datas escolhidas)', async () => {
+  // uma semana de setembro: só a venda do p1 (12/09) e a reunião do d1 (05/09) ficam de fora/dentro conforme as datas
+  const r = await painelClosers.painel({ usuario: { id: 'eu-per', nome: 'Cauã Lima' }, de: '2026-09-08', ate: '2026-09-14', atualizar: true });
+  assert.deepEqual([r.inicio, r.fim], ['2026-09-08', '2026-09-14']);
+  const ph = r.closers.find((c) => c.closer === 'Paulo Henrique Pagoti');
+  assert.deepEqual([ph.reunioes, ph.vendas], [1, 1], 'p1: reunião 10/09 e venda 12/09 dentro; p2 (15/09) fora');
+  assert.equal(r.closers.some((c) => c.closer === 'Daniel Camargo' && c.reunioes > 0 && c.leads.some((l) => l.id === 'd1')), false, 'd1 (05/09) fora da semana');
+  // até no futuro vira hoje; datas trocadas, faltando ou período enorme são recusados
+  await assert.rejects(painelClosers.painel({ usuario: { id: 'eu-per', nome: 'Cauã Lima' }, de: '2026-09-14', ate: '2026-09-08' }), /data inicial é depois/);
+  await assert.rejects(painelClosers.painel({ usuario: { id: 'eu-per', nome: 'Cauã Lima' }, de: '2026-09-14' }), /informe as duas datas/);
+  await assert.rejects(painelClosers.painel({ usuario: { id: 'eu-per', nome: 'Cauã Lima' }, de: '2024-01-01', ate: '2026-09-30' }), /grande demais/);
+});
