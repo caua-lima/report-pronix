@@ -13,7 +13,7 @@ const db = require('./db');
 const { emDiaLocal } = require('./stats');
 const { handoffGuardado } = require('./fluxoReuniao');
 const { textoDoPdf } = require('./textoDoPdf');
-const { ehDoTime } = require('./timeComercial');
+const { ehDoTime, closerDoTime } = require('./timeComercial');
 
 const DEPOIS_DA_REUNIAO = new Set(['reuniao_realizada', 'fup', 'negociacao_avancada', 'venda']);
 const idDe = (x) => String((x && (x.id || x._id)) || '');
@@ -193,7 +193,8 @@ async function levantar({ desde, ate, prazoMs = 40000 } = {}) {
       dealId: id,
       card: crm.consertarAcentos(d.name || ''),
       lead: crm.consertarAcentos(((d.contacts || [])[0] && d.contacts[0].name) || d.name || ''),
-      closer: crm.consertarAcentos((d.user && d.user.name) || '') || 'Sem closer',
+      // o nome oficial do time: grafias duplicadas no RD ("Pedro Pasin") caem no mesmo closer ("Pedro Henrique Pasin")
+      closer: closerDoTime(crm.consertarAcentos((d.user && d.user.name) || '')) || crm.consertarAcentos((d.user && d.user.name) || '') || 'Sem closer',
       sdr: sdrDe(d),
       dia: quando,
       situacao: situacao(d, catalogo),
