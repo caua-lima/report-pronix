@@ -292,8 +292,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         vinculo: msg.vinculo || null,
         // A profissão do formulário do RD: vai para o PDF de quem tem "Profissão no report" ligado.
         formulario: msg.formulario || null,
-        // A visão do master sobre o lead (o servidor só aceita do master).
-        visao: String(msg.visao || '').slice(0, 3000),
       });
       if (!r.ok) return sendResponse({ ok: false, erro: r.erro });
       // Idempotência: mesma conversa já gerada antes — o content script decide
