@@ -470,6 +470,7 @@ test('report rico: a resposta da IA volta limpa para a tela e vai para o PDF', a
   const resposta = anthropicPadrao();
   Object.assign(resposta.content[0].input, {
     consciencia: { nivel: 'Pronto', porque: 'Perguntou quando pode começar.' },
+    timing: { status: 'pronto', titulo: 'Pronto para decidir na call', porque: 'Perguntou quando pode começar.', fala: '' },
     conversa: ['Ana SDR explicou que a entrega é a conta completa no Mercado Livre; Marcos disse que faz sentido.', ''],
     sinais_compra: ['Perguntou quando pode começar'],
   });
@@ -484,7 +485,8 @@ test('report rico: a resposta da IA volta limpa para a tela e vai para o PDF', a
   assert.ok(TITULOS.pronto.includes(lida.titulo), 'a IA não mandou título: entra um de reserva, positivo');
   assert.deepEqual(r.json.dados.conversa, ['Ana SDR explicou que a entrega é a conta completa no Mercado Livre; Marcos disse que faz sentido.']);
   const t = textoDoPdf(r.json.arquivoBase64);
-  assert.ok(t.includes('MOMENTO DO LEAD') && t.includes(lida.titulo) && !t.includes('Pronto para decidir'), 'o selo leva o título, não o nome da régua');
+  assert.ok(t.includes('TIMING DO LEAD') && t.includes('Pronto para decidir na call'), 'no PDF o closer lê o timing');
+  assert.ok(!t.includes('MOMENTO DO LEAD') && !t.includes(lida.titulo), 'o nível de consciência ficou interno');
   assert.ok(t.includes('Ana SDR explicou que a entrega'));
 });
 
@@ -511,23 +513,40 @@ test('momento do lead e perfil: título e fala da IA vão para o report; fala in
   assert.deepEqual(j.dados.citacoes, [CITACAO_REAL], 'a vitrine continua com a fala dela');
   assert.equal(j.dados.resumo.find((x) => x.rotulo === 'Perfil').valor, 'Analítico — Abra pela conta do atacado. Evite: promessa sem mostrar o número.');
   let t = textoDoPdf(j.arquivoBase64);
-  for (const x of ['MOMENTO DO LEAD', 'Decidiu o canal e já fatura', 'Fatura 20 mil por mês', 'Disse que o Mercado Livre já está decidido.', 'Evite: promessa sem mostrar o número.']) assert.ok(t.replace(/\s+/g, ' ').includes(x), 'faltou no PDF: ' + x);
+  for (const x of ['Evite: promessa sem mostrar o número.']) assert.ok(t.replace(/\s+/g, ' ').includes(x), 'faltou no PDF: ' + x);
+  assert.ok(!t.includes('MOMENTO DO LEAD') && !t.includes('Decidiu o canal e já fatura'), 'o selo do nível ficou interno (no PDF vai o timing)');
   assert.ok(!t.includes('Consciente da solu'), 'o nome da régua não aparece');
   // a IA recebeu as regras e o formato novos
   const system = chamadasAnthropic[0].system.map((b) => b.text).join('');
-  assert.match(system, /O SELO QUE O CLOSER LÊ \("Momento do lead"\)[\s\S]*aparece em TODO relatório[\s\S]*PROIBIDO o nome da régua/);
+  assert.match(system, /TÍTULO E FALA DO NÍVEL \(uso interno[\s\S]*PROIBIDO o nome da régua/);
+  assert.match(system, /TIMING DO LEAD \(campo "timing"\)[\s\S]*TOMADA DE DECISÃO/);
+  assert.match(system, /COISAS PARA USAR CONTRA O LEAD \(campo "alavancas"\)/);
+  assert.match(system, /"Portas que devem ser fechadas" \(numerada:true/);
+  assert.doesNotMatch(system, /"abertura":|"frase_impacto":/, 'abertura e frase de impacto saíram do prompt');
   assert.match(system, /Prefira uma que NÃO esteja em "citacoes"/);
   assert.match(system, /Em "evitar", UMA frase curta com o que faz este lead esfriar/);
   const schema = chamadasAnthropic[0].tools[0].input_schema;
   assert.deepEqual(schema.properties.consciencia.required, ['nivel', 'titulo', 'fala', 'porque']);
   assert.deepEqual(schema.properties.perfil.required, ['tipo', 'evidencia', 'conduzir', 'evitar']);
+  assert.deepEqual(schema.properties.timing.required, ['status', 'titulo', 'porque', 'fala']);
+  assert.ok(schema.required.includes('timing') && schema.required.includes('alavancas') && !schema.required.includes('abertura'));
+  assert.equal(schema.properties.abertura, undefined);
+  assert.equal(schema.properties.frase_impacto, undefined);
 
   // 2) fala que o lead não disse sai (o título fica); título com o nome da régua é trocado por um de reserva
   j = await pedir({ consciencia: { nivel: 'problema', titulo: 'Consciente do problema', fala: 'Quero pagar hoje mesmo no Pix', porque: 'Contou que quer escalar.' } });
   assert.equal(j.dados.consciencia.fala, undefined);
   assert.ok(TITULOS.problema.includes(j.dados.consciencia.titulo));
   t = textoDoPdf(j.arquivoBase64);
-  assert.ok(t.includes('MOMENTO DO LEAD') && t.includes(j.dados.consciencia.titulo) && !t.includes('Quero pagar hoje') && !t.includes('Consciente do problema'), 'nível 2 também ganha o selo, positivo e sem o rótulo de livro');
+  assert.ok(!t.includes('Quero pagar hoje') && !t.includes('Consciente do problema'), 'fala inventada e rótulo de livro não vão para o PDF');
+
+  // timing e alavancas: só fala que o lead disse fica
+  j = await pedir({
+    timing: { status: 'pronto', titulo: 'Pronto para decidir', porque: 'p', fala: 'Quero pagar hoje mesmo no Pix' },
+    alavancas: [{ fala: 'Fatura 20 mil por mês', usar: 'devolver na decisão' }, { fala: 'Eu decido sozinho e pago agora', usar: 'inventada' }],
+  });
+  assert.equal(j.dados.timing.fala, '', 'fala do timing que o lead não disse sai');
+  assert.deepEqual(j.dados.alavancas, [{ fala: 'Fatura 20 mil por mês', usar: 'devolver na decisão' }], 'alavanca com fala inventada sai inteira');
 
   // 3) a fala do selo é a mesma da única citação: fica só na vitrine, não aparece duas vezes
   j = await pedir({ consciencia: { nivel: 'solucao', titulo: 'Já decidiu pelo Mercado Livre', fala: CITACAO_REAL, porque: 'p' } });
@@ -570,8 +589,10 @@ test('corrigir o perfil do lead ensina a IA: a troca vira exemplo no prompt dos 
 test('report rico: PDF regerado depois de editar mantém os campos novos (e ignora nível inválido)', async () => {
   const dados = {
     lead: 'Marcos', resumo: [{ rotulo: 'Investimento', valor: 'R$5 mil' }],
-    secoes: [{ titulo: 'O que o closer deve bater', numerada: true, itens: ['Fechar'] }],
+    secoes: [{ titulo: 'Portas que devem ser fechadas', numerada: true, itens: ['Fechar'] }],
     consciencia: { nivel: 'solucao', porque: 'Editado pelo SDR: já busca estrutura' },
+    timing: { status: 'quase', titulo: 'Editado: depende da esposa', porque: 'Editado: a esposa aprova', fala: 'vou ver com ela' },
+    alavancas: [{ fala: 'Editado: eu decido', usar: 'Editado: devolver na decisão' }],
     conversa: ['Editado: Ana explicou a entrega completa'],
     sinais_compra: ['Editado: pediu a reunião'],
     dores: [{ dor: 'Editada: estoque parado', intensidade: 4, porque: 'Editado: contou do giro lento' }, { dor: 'Fraca demais', intensidade: 1, porque: 'x' }, { dor: 'Sem intensidade' }],
@@ -580,12 +601,13 @@ test('report rico: PDF regerado depois de editar mantém os campos novos (e igno
   assert.equal(r.status, 200);
   let t = textoDoPdf(r.json.arquivoBase64);
   assert.ok(!t.includes('Fraca demais') && !t.includes('Sem intensidade'), 'dor fraca ou inválida não vai para o PDF');
-  for (const x of ['MOMENTO DO LEAD', 'Editado pelo SDR: já busca estrutura', 'Editado: Ana explicou a entrega completa', 'Editado: pediu a reunião', 'TERMÔMETRO DE DORES', 'Editada: estoque parado', 'Editado: contou do giro lento']) {
+  for (const x of ['TIMING DO LEAD', 'Editado: depende da esposa', 'vou ver com ela', 'Coisas para usar contra o lead', 'Editado: devolver na decisão', 'Editado: Ana explicou a entrega completa', 'Editado: pediu a reunião', 'TERMÔMETRO DE DORES', 'Editada: estoque parado', 'Editado: contou do giro lento']) {
     assert.ok(t.includes(x), 'faltou: ' + x);
   }
-  r = await api('POST', '/api/pdf', { chave: E.ana, corpo: { dados: { ...dados, consciencia: { nivel: 'hackeado', porque: '<script>' } } } });
+  r = await api('POST', '/api/pdf', { chave: E.ana, corpo: { dados: { ...dados, consciencia: { nivel: 'hackeado', porque: '<script>' }, timing: { status: 'hackeado' } } } });
+  assert.equal(r.status, 200);
   t = textoDoPdf(r.json.arquivoBase64);
-  assert.ok(!t.includes('MOMENTO DO LEAD'));
+  assert.ok(!t.includes('TIMING DO LEAD'), 'timing sem título não aparece');
 });
 
 test('palavras do lead: fala real que desanima o closer sai do report; as boas ficam; no máximo 3', async () => {
@@ -763,7 +785,7 @@ test('profissão do formulário: vai como 1ª linha do resumo e para o PDF só d
   assert.ok(textoDoPdf(m.json.arquivoBase64).replace(/\s+/g, ' ').includes('Lojista / Comerciante'), 'no PDF');
 
   // SDR sem a opção: o que a extensão mandar é ignorado
-  const s = await pedir(E.bia, 'prof-2', { profissao: 'Médico' });
+  const s = await pedir(E.bia, 'prof-2', { profissao: 'Empresário' });
   assert.equal(s.status, 200);
   assert.equal(prof(s), undefined);
   // sem formulário, ou com campo de integração não preenchido: nada
@@ -772,7 +794,9 @@ test('profissão do formulário: vai como 1ª linha do resumo e para o PDF só d
 
   // o master liga para a SDR na aba Acessos
   assert.equal((await api('PATCH', '/api/admin/usuarios/' + bia.id, { admin: true, corpo: { profissaoNoReport: true } })).status, 200);
-  assert.equal(prof(await pedir(E.bia, 'prof-5', { profissao: 'Médico' })).valor, 'Médico');
+  assert.equal(prof(await pedir(E.bia, 'prof-5', { profissao: 'Empresário' })).valor, 'Empresário');
+  // só profissão de quem tem negócio: aposentado, médico, CLT... ficam fora
+  for (const [i, p] of ['Aposentado', 'Médico', 'CLT', 'Estudante'].entries()) assert.equal(prof(await pedir(E.chefe, 'prof-x' + i, { profissao: p })), undefined, p);
   assert.equal((await api('PATCH', '/api/admin/usuarios/' + bia.id, { admin: true, corpo: { profissaoNoReport: false } })).status, 200);
   assert.equal(prof(await pedir(E.bia, 'prof-6', { profissao: 'Médico' })), undefined);
 });

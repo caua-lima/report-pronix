@@ -31,11 +31,14 @@ const BASE = {
   ],
   secoes: [
     { titulo: 'Perfil e momento', numerada: false, itens: ['Loja física há 8 anos.'] },
-    { titulo: 'O que o closer deve bater', numerada: true, itens: ['Fechar na call.'] },
+    { titulo: 'Portas que devem ser fechadas', numerada: true, itens: ['Sócio: decide com o irmão — trazer o irmão para a call.'] },
   ],
   citacoes: ['Quero começar a vender no Mercado Livre'],
+  // saíram do report: mesmo vindo nos dados (report antigo), não aparecem mais no PDF
   abertura: 'Marcos, tudo bem? O Cauã me passou aqui o seu momento. É isso mesmo?',
   frase_impacto: 'Só falta o caminho.',
+  timing: { status: 'pronto', titulo: 'Pronto para decidir na call', porque: 'Decide sozinho e confirmou o valor.', fala: 'Eu decido sozinho' },
+  alavancas: [{ fala: 'Estou há 10 anos na mesma loja', usar: 'Se pedir para pensar: em 10 anos o caminho atual não trouxe o resultado.' }],
   consciencia: { nivel: 'produto', porque: 'Perguntou como funciona o acompanhamento e topou a reunião na hora.' },
   sinais_compra: ['Confirmou o investimento sem pedir desconto', 'Perguntou quando pode começar'],
   conversa: [
@@ -88,11 +91,19 @@ test('a resposta da IA é limpa: listas sem vazios e com teto; campos ausentes n
   const d = normalizarDados({
     lead: 'X', resumo: [], secoes: [],
     consciencia: { nivel: 'Solução', porque: ' já busca estrutura ' },
-    conversa: [' a ', '', null, 'b', 'c', 'd', 'e', 'f', 'g'],
+    conversa: [' a ', '', null, 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j'],
     sinais_compra: ['s1', '  ', 's2'],
+    timing: { status: 'QUASE', titulo: '  Depende do sócio  ', porque: ' p ', fala: ' "o sócio decide comigo" ' },
+    alavancas: [{ fala: ' "eu decido sozinho" ', usar: ' devolver na decisão ' }, { fala: '', usar: 'x' }, { fala: 'y' }, null],
   });
   assert.deepEqual(d.consciencia, { nivel: 'solucao', porque: 'já busca estrutura' });
-  assert.deepEqual(d.conversa, ['a', 'b', 'c', 'd', 'e', 'f']);
+  assert.deepEqual(d.conversa, ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i'], 'até 9 frases');
+  assert.deepEqual(d.timing, { status: 'quase', titulo: 'Depende do sócio', porque: 'p', fala: 'o sócio decide comigo' });
+  assert.deepEqual(d.alavancas, [{ fala: 'eu decido sozinho', usar: 'devolver na decisão' }], 'sem fala ou sem uso, sai');
+  assert.equal(normalizarDados({ lead: 'X', resumo: [], secoes: [], timing: { status: 'inventado', titulo: 'T' } }).timing.status, 'avaliando');
+  assert.equal(normalizarDados({ lead: 'X', resumo: [], secoes: [], timing: { status: 'pronto' } }).timing, null, 'sem título, sem timing');
+  assert.equal(d.abertura, undefined, 'a abertura saiu do report');
+  assert.equal(d.frase_impacto, undefined, 'a frase de impacto saiu do report');
   assert.deepEqual(d.sinais_compra, ['s1', 's2']);
 
   const vazio = normalizarDados({ lead: 'X', resumo: [], secoes: [] });
@@ -102,52 +113,54 @@ test('a resposta da IA é limpa: listas sem vazios e com teto; campos ausentes n
 });
 
 // ---------------------------------------------------------------- PDF
-test('PDF: momento do lead, sinais de compra e "Como foi a conversa" aparecem, na ordem, logo depois do resumo', async () => {
+test('PDF: timing do lead, sinais de compra e "Como foi a conversa" aparecem, na ordem, logo depois do resumo', async () => {
   const buf = await gerarPdfBuffer(BASE);
   const t = textoDoPdf(buf);
-  assert.ok(!t.includes('Consciente da nossa entrega'), 'o nome da régua não vai para o closer');
-  assert.ok(TITULOS.produto.some((x) => t.includes(x)), 'sem título da IA, entra um de reserva do nível');
-  for (const trecho of ['MOMENTO DO LEAD', 'topou a reunião na hora', 'SINAIS DE COMPRA',
-    'Confirmou o investimento sem pedir desconto', 'Como foi a conversa', 'Cauã explicou que a entrega é montar a conta']) {
+  for (const trecho of ['TIMING DO LEAD', 'Pronto para decidir na call', 'Decide sozinho e confirmou o valor.', 'NAS PALAVRAS DO LEAD', 'Eu decido sozinho',
+    'SINAIS DE COMPRA', 'Confirmou o investimento sem pedir desconto', 'Como foi a conversa', 'Cauã explicou que a entrega é montar a conta']) {
     assert.ok(t.includes(trecho), 'faltou no PDF: ' + trecho);
   }
+  assert.ok(!t.includes('MOMENTO DO LEAD'), 'o "Momento do lead" virou "Timing do lead"');
   const pos = (x) => t.indexOf(x);
-  assert.ok(pos('Mais de R$5.000') < pos('MOMENTO DO LEAD'), 'resumo antes');
-  assert.ok(pos('MOMENTO DO LEAD') < pos('Como foi a conversa'));
+  assert.ok(pos('Mais de R$5.000') < pos('TIMING DO LEAD'), 'resumo antes');
+  assert.ok(pos('TIMING DO LEAD') < pos('Como foi a conversa'));
   assert.ok(pos('Como foi a conversa') < pos('Perfil e momento'), 'o desenrolar vem antes da análise');
   assert.ok(paginas(buf) <= 2);
 });
 
-test('PDF: o selo usa o título escrito para o lead e a fala dele; em nível baixo também aparece, sempre positivo', async () => {
-  const proprio = textoDoPdf(await gerarPdfBuffer({ ...BASE, consciencia: { nivel: 'solucao', titulo: 'Quer sair do CLT ainda este ano', fala: 'quero sair do CLT esse ano', porque: 'Contou que tem prazo para largar o emprego.' } }));
-  for (const x of ['MOMENTO DO LEAD', 'Quer sair do CLT ainda este ano', 'quero sair do CLT esse ano', 'Contou que tem prazo para largar o emprego.']) assert.ok(proprio.includes(x), 'faltou: ' + x);
-  assert.ok(!proprio.includes('Consciente da solu'));
+test('PDF: "Portas que devem ser fechadas" e "Coisas para usar contra o lead"; sem frase de impacto e sem "Como iniciar a reunião"', async () => {
+  const t = textoDoPdf(await gerarPdfBuffer(BASE));
+  for (const x of ['Portas que devem ser fechadas', 'Sócio: decide com o irmão', 'Coisas para usar contra o lead', 'Estou há 10 anos na mesma loja', 'em 10 anos o caminho atual']) assert.ok(t.includes(x), 'faltou: ' + x);
+  const pos = (x) => t.indexOf(x);
+  assert.ok(pos('Portas que devem ser fechadas') < pos('Coisas para usar contra o lead'));
+  assert.ok(pos('Coisas para usar contra o lead') < pos('Nas palavras do lead'));
+  assert.ok(!t.includes('COMO INICIAR A REUNIÃO') && !t.includes('O Cauã me passou aqui'), 'sem a abertura');
+  assert.ok(!t.includes('Só falta o caminho'), 'sem a frase de impacto');
+});
 
-  const buf = await gerarPdfBuffer({ ...BASE, consciencia: { nivel: 'problema', porque: 'Disse que quer uma renda além do salário.' } });
-  const t = textoDoPdf(buf);
-  assert.ok(t.includes('MOMENTO DO LEAD') && t.includes('Disse que quer uma renda além do salário.'));
-  assert.ok(TITULOS.problema.some((x) => t.includes(x)));
-  assert.ok(!t.includes('Consciente do problema') && !/2 de 5/.test(t), 'nada de "nível 2 de 5" desanimando o closer');
-  assert.ok(t.includes('SINAIS DE COMPRA'), 'os sinais de compra continuam');
-  assert.ok(t.includes('Como foi a conversa'));
+test('PDF: timing sem fala do lead não mostra "Nas palavras do lead" vazio', async () => {
+  const t = textoDoPdf(await gerarPdfBuffer({ ...BASE, timing: { status: 'cedo', titulo: 'Só depois de janeiro', porque: 'Disse que o dinheiro entra em janeiro.', fala: '' } }));
+  assert.ok(t.includes('TIMING DO LEAD') && t.includes('Só depois de janeiro') && t.includes('Ainda cedo'));
+  assert.ok(!t.includes('NAS PALAVRAS DO LEAD'));
 });
 
 test('PDF: sem consciência boa e sem sinais, o cartão escuro nem aparece', async () => {
-  const t = textoDoPdf(await gerarPdfBuffer({ ...BASE, consciencia: null, sinais_compra: [] }));
-  assert.ok(!t.includes('MOMENTO DO LEAD') && !t.includes('SINAIS DE COMPRA'));
+  const t = textoDoPdf(await gerarPdfBuffer({ ...BASE, timing: null, sinais_compra: [] }));
+  assert.ok(!t.includes('TIMING DO LEAD') && !t.includes('SINAIS DE COMPRA'));
 });
 
-test('PDF: report antigo (sem os campos novos) sai igual a antes', async () => {
+test('PDF: report antigo (sem os campos novos) sai sem quebrar, já sem a abertura', async () => {
   const antigo = { ...BASE };
-  delete antigo.consciencia;
+  delete antigo.timing;
+  delete antigo.alavancas;
   delete antigo.conversa;
   delete antigo.sinais_compra;
   const t = textoDoPdf(await gerarPdfBuffer(antigo));
-  assert.ok(t.includes('Perfil e momento') && t.includes('COMO INICIAR A REUNIÃO'));
-  assert.ok(!t.includes('Como foi a conversa'));
+  assert.ok(t.includes('Perfil e momento') && !t.includes('COMO INICIAR A REUNIÃO'));
+  assert.ok(!t.includes('Como foi a conversa') && !t.includes('TIMING DO LEAD') && !t.includes('Coisas para usar contra o lead'));
 });
 
-test('PDF: report enorme continua em até 2 páginas, sem perder o resumo nem a abertura', async () => {
+test('PDF: report enorme continua em até 2 páginas, sem perder o resumo nem o timing', async () => {
   const longo = (n, base) => Array.from({ length: n }, (_, i) => `${base} ${i + 1}: ` + 'detalhe importante da conversa com o lead '.repeat(3));
   const grande = {
     ...BASE,
@@ -158,15 +171,16 @@ test('PDF: report enorme continua em até 2 páginas, sem perder o resumo nem a 
       { titulo: 'Perfil e momento', numerada: false, itens: longo(4, 'Perfil') },
       { titulo: 'Dor e objetivo', numerada: false, itens: longo(4, 'Dor') },
       { titulo: 'Como fechar essa call', numerada: false, itens: longo(4, 'Fechar') },
-      { titulo: 'O que o closer deve bater', numerada: true, itens: longo(4, 'Bater') },
+      { titulo: 'Portas que devem ser fechadas', numerada: true, itens: longo(4, 'Porta') },
     ],
     citacoes: longo(3, 'Citação'),
+    alavancas: longo(5, 'Fala').map((f) => ({ fala: f, usar: 'como usar na decisão '.repeat(4) })),
   };
   const buf = await gerarPdfBuffer(grande);
   assert.ok(paginas(buf) <= 2, `saiu com ${paginas(buf)} páginas`);
   const t = textoDoPdf(buf);
   assert.ok(t.includes('Investimento') && t.includes('Decisor(es)'), 'o resumo nunca é cortado');
-  assert.ok(t.includes('COMO INICIAR A REUNIÃO'), 'a abertura nunca é cortada');
+  assert.ok(t.includes('TIMING DO LEAD'), 'o timing nunca é cortado');
   assert.ok(t.includes('Como foi a conversa'), 'a conversa encolhe, mas não some');
 });
 
@@ -224,7 +238,7 @@ test('PDF: o termômetro de dores abre o cartão do topo, só com dor de fato', 
   assert.ok(!t.includes('Citada de passagem'), 'dor citada de passagem não vai para o closer');
   const pos = (x) => t.indexOf(x);
   assert.ok(pos('Mais de R$5.000') < pos('TERMÔMETRO DE DORES'), 'logo depois do resumo');
-  assert.ok(pos('TERMÔMETRO DE DORES') < pos('MOMENTO DO LEAD'), 'as dores vêm antes do nível de consciência');
+  assert.ok(pos('TERMÔMETRO DE DORES') < pos('TIMING DO LEAD'), 'as dores vêm antes do timing');
   assert.ok(pos('R$100 mil de estoque parado') < pos('Vende no improviso'), 'a dor mais forte primeiro');
   assert.ok(pos('SINAIS DE COMPRA') < pos('Como foi a conversa'));
   assert.ok(paginas(buf) <= 2);
@@ -233,13 +247,13 @@ test('PDF: o termômetro de dores abre o cartão do topo, só com dor de fato', 
 test('PDF: sem dor de fato o termômetro não aparece; só com dores, o cartão do topo aparece do mesmo jeito', async () => {
   const fracas = textoDoPdf(await gerarPdfBuffer({ ...BASE, dores: [{ dor: 'Citada de passagem', intensidade: 2, porque: 'x' }] }));
   assert.ok(!fracas.includes('TERMÔMETRO DE DORES'));
-  assert.ok(fracas.includes('MOMENTO DO LEAD'), 'o resto do cartão continua');
+  assert.ok(fracas.includes('TIMING DO LEAD'), 'o resto do cartão continua');
   const semCampo = textoDoPdf(await gerarPdfBuffer(BASE));
   assert.ok(!semCampo.includes('TERMÔMETRO DE DORES'), 'report antigo sai igual');
 
-  const soDores = textoDoPdf(await gerarPdfBuffer({ ...BASE, consciencia: null, sinais_compra: [], dores: DORES }));
+  const soDores = textoDoPdf(await gerarPdfBuffer({ ...BASE, timing: null, sinais_compra: [], dores: DORES }));
   assert.ok(soDores.includes('TERMÔMETRO DE DORES') && soDores.includes('R$100 mil de estoque parado'));
-  assert.ok(!soDores.includes('MOMENTO DO LEAD') && !soDores.includes('SINAIS DE COMPRA'));
+  assert.ok(!soDores.includes('TIMING DO LEAD') && !soDores.includes('SINAIS DE COMPRA'));
 });
 
 test('PDF enorme com dores: continua em até 2 páginas e pelo menos uma dor fica', async () => {
@@ -255,7 +269,7 @@ test('PDF enorme com dores: continua em até 2 páginas e pelo menos uma dor fic
   assert.ok(paginas(buf) <= 2, `saiu com ${paginas(buf)} páginas`);
   const t = textoDoPdf(buf);
   assert.ok(t.includes('TERMÔMETRO DE DORES') && t.includes('ocupa bastante'), 'a dor mais forte sobrevive ao aperto');
-  assert.ok(t.includes('COMO INICIAR A REUNIÃO'));
+  assert.ok(t.includes('TIMING DO LEAD'));
 });
 
 test('o prompt pede as dores do LEAD com prova, e manda ficar com a intensidade menor na dúvida', () => {

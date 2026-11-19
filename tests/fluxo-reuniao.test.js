@@ -146,16 +146,20 @@ const DADOS_REPORT = {
   lead: 'Lead Teste',
   resumo: [{ rotulo: 'Investimento', valor: 'R$ 3 a 5 mil' }, { rotulo: 'Decisor', valor: 'Ele mesmo' }],
   dores: [{ dor: 'Estoque parado', intensidade: 4, porque: 'Disse que tem R$ 50 mil parados' }],
-  secoes: [{ titulo: 'O que o closer deve bater', numerada: true, itens: ['Mostrar casos de loja física', 'Fechar na call'] }],
+  secoes: [{ titulo: 'Portas que devem ser fechadas', numerada: true, itens: ['Mostrar casos de loja física', 'Fechar na call'] }],
   sinais_compra: ['Perguntou como paga'],
-  abertura: 'Oi, o Cauã me passou o seu contexto.',
+  timing: { status: 'quase', titulo: 'Depende da esposa', porque: 'A esposa aprova o investimento', fala: 'vou ver com ela' },
+  alavancas: [{ fala: 'eu decido sozinho', usar: 'devolver se pedir para pensar' }],
+  abertura: 'Oi, o Cauã me passou o seu contexto.', // report antigo: não vai mais para o texto
 };
 
 test('o report vira o texto do handoff, nos tópicos que o closer lê', () => {
   const t = fluxo.textoDoHandoff(DADOS_REPORT, { sdr: 'Cauã Lima', quando: '23/10/2026' });
-  for (const x of ['Nome: Lead Teste', 'Investimento: R$ 3 a 5 mil', 'Dor / momento do lead: Estoque parado', 'O QUE O CLOSER DEVE BATER', '1. Mostrar casos de loja física', 'SINAIS DE COMPRA', 'ABERTURA SUGERIDA', 'Report PRONIX de Cauã Lima em 23/10/2026.']) {
+  for (const x of ['Nome: Lead Teste', 'Investimento: R$ 3 a 5 mil', 'Dor: Estoque parado', 'Timing do lead: Depende da esposa — A esposa aprova o investimento', 'Nas palavras do lead: "vou ver com ela"',
+    'PORTAS QUE DEVEM SER FECHADAS', '1. Mostrar casos de loja física', 'SINAIS DE COMPRA', 'COISAS PARA USAR CONTRA O LEAD', '- "eu decido sozinho" — devolver se pedir para pensar', 'Report PRONIX de Cauã Lima em 23/10/2026.']) {
     assert.ok(t.includes(x), 'faltou: ' + x);
   }
+  assert.ok(!t.includes('ABERTURA SUGERIDA'), 'a abertura saiu do report');
 });
 
 test('funil que vai até a reunião: Qualificado → Reunião Agendada (closer + handoff do report) → Reunião Realizada', async () => {
