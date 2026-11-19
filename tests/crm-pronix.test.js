@@ -178,9 +178,18 @@ test('sugestão de desqualificação: a IA escolhe um motivo DA LISTA; motivo fo
     const motivos = [{ id: 'm1', nome: 'Parou de responder', tipo: 'perda' }, { id: 'm2', nome: 'Sem dinheiro', tipo: 'desqualificacao' }];
     const mensagens = [{ from: 'eu', content: 'Consegue investir?' }, { from: 'eles', content: 'Agora não tenho' }];
     const r = await sugestao.sugerir({ mensagens, motivos });
-    assert.deepEqual(r, { motivoId: 'm2', nota: 'Lead disse que não tem dinheiro agora para investir.', porque: 'Sem dinheiro' });
+    assert.deepEqual(r, { motivoId: 'm2', nota: 'Lead disse que não tem dinheiro agora para investir.', porque: 'Sem dinheiro', certeza: '' });
     assert.ok(enviado.includes('- m2: Sem dinheiro'));
     assert.ok(enviado.includes('Lead: Agora não tenho'));
+    // os fatos contados pelo código vão prontos para a IA (e a ordem de decisão está no prompt)
+    assert.ok(enviado.includes('Última mensagem do lead: "Agora não tenho".'));
+    assert.ok(enviado.includes('Mensagens do SDR depois da última resposta do lead, sem resposta: 0.'));
+    assert.ok(enviado.includes('ORDEM DE DECISÃO'));
+    // a certeza vem junto do porquê
+    resposta = { motivoId: 'm2', nota: 'Lead disse que não tem o valor.', porque: "Disse 'agora não tenho'", certeza: 'alta' };
+    const r2 = await sugestao.sugerir({ mensagens: mensagens.concat([{ from: 'eu', content: 'E aí?' }, { from: 'eu', content: 'Oi?' }]), motivos });
+    assert.equal(r2.porque, "Disse 'agora não tenho' (certeza alta)");
+    assert.ok(enviado.includes('sem resposta: 2.'), 'conta as 2 mensagens do SDR depois da última do lead');
     resposta = { motivoId: 'inventado', nota: 'x' };
     await assert.rejects(sugestao.sugerir({ mensagens, motivos }), (e) => e.message.includes('não escolheu um motivo da lista'));
     await assert.rejects(sugestao.sugerir({ mensagens: [], motivos }), (e) => e.message.includes('Não há mensagens na tela'));
