@@ -8,7 +8,7 @@ const crypto = require('crypto');
 const express = require('express');
 const archiver = require('archiver');
 
-const { dadosDireto, dadosDeTexto, PROMPT_VERSAO } = require('./src/report');
+const { dadosDireto, dadosDeTexto, PROMPT_VERSAO, normalizarTiming, normalizarAlavancas } = require('./src/report');
 const { gerarPdfBuffer } = require('./src/generatePdf');
 const { transcribeBuffer } = require('./src/transcribe');
 const { lerImagemGroq } = require('./src/groq');
@@ -1840,13 +1840,24 @@ async function vinculoDoReport(vinculo, nome) {
 }
 
 /**
+ * A profissão do formulário só entra no report quando diz que o lead TEM NEGÓCIO (empresário, lojista, dono,
+ * comerciante...). Aposentado, CLT, estudante e o resto ficam de fora — se o lead falou da profissão na conversa,
+ * a IA já põe a linha "Profissão" com o que ele disse.
+ */
+const PROFISSAO_DE_NEGOCIO = /empres[aá]ri|empreended|lojist|\bloja\b|comerci|\bdono\b|\bdona\b|propriet[aá]ri|s[oó]ci[oa]\b|\bmei\b|microempreend|aut[oô]nom|distribuid|fabrica|ind[uú]stri|import|atacad|varej|revend|neg[oó]cio pr[oó]prio|\bcnpj\b/i;
+const profissaoDeNegocio = (p) => PROFISSAO_DE_NEGOCIO.test(String(p || ''));
+
+/**
  * A profissão que o lead marcou no formulário do RD (a extensão manda o que o cartão do lead leu), como a
- * primeira linha do resumo do PDF. Só para quem tem "Profissão no report" ligado (começa só com o master).
+ * primeira linha do resumo do PDF. Só para quem tem "Profissão no report" ligado (começa só com o master), só quando
+ * é profissão de quem tem negócio e só se a IA ainda não pôs a profissão que o lead disse na conversa.
  */
 function comProfissaoDoFormulario(dados, formulario, usuario) {
   if (!usuario || !usuario.profissaoNoReport || !formulario || typeof formulario !== 'object') return;
   const profissao = String(formulario.profissao || '').replace(/\s+/g, ' ').trim();
   if (!profissao || /\{\{/.test(profissao)) return; // "{{data.…}}" é campo de integração não preenchido
+  if (!profissaoDeNegocio(profissao)) return;
+  if ((Array.isArray(dados.resumo) ? dados.resumo : []).some((r) => r && /profiss/i.test(String(r.rotulo || '')))) return;
   const rotulo = 'Profissão (formulário)';
   const resto = (Array.isArray(dados.resumo) ? dados.resumo : []).filter((r) => !r || r.rotulo !== rotulo);
   dados.resumo = [{ rotulo, valor: profissao.slice(0, 120) }].concat(resto);
@@ -2102,11 +2113,12 @@ function saneadorDeReport(d) {
       .filter((s) => s.titulo || s.itens.length),
     citacoes: arr(d.citacoes).map(txt).map((t) => t.trim()).filter(Boolean),
     consciencia: normalizarConsciencia(d.consciencia),
-    conversa: arr(d.conversa).map(txt).map((t) => t.trim()).filter(Boolean).slice(0, 6),
+    conversa: arr(d.conversa).map(txt).map((t) => t.trim()).filter(Boolean).slice(0, 9),
     sinais_compra: arr(d.sinais_compra).map(txt).map((t) => t.trim()).filter(Boolean).slice(0, 5),
     dores: normalizarDores(d.dores),
-    abertura: txt(d.abertura).trim(),
-    frase_impacto: txt(d.frase_impacto).trim(),
+    // timing do lead e "coisas para usar contra o lead" (a abertura e a frase de impacto saíram do report)
+    timing: normalizarTiming(d.timing),
+    alavancas: normalizarAlavancas(d.alavancas),
   };
 }
 

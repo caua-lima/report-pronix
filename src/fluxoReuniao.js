@@ -69,7 +69,11 @@ function textoDoHandoff(dados, { sdr = '', quando = '' } = {}) {
     if (r && r.rotulo && r.valor) linhas.push(`${r.rotulo}: ${r.valor}`);
   });
   const dores = (Array.isArray(d.dores) ? d.dores : []).map((x) => (x && x.dor ? x.dor + (x.porque ? ` (${x.porque})` : '') : '')).filter(Boolean);
-  if (dores.length) linhas.push(`Dor / momento do lead: ${dores.join('; ')}`);
+  if (dores.length) linhas.push(`Dor: ${dores.join('; ')}`);
+  if (d.timing && d.timing.titulo) {
+    linhas.push(`Timing do lead: ${d.timing.titulo}${d.timing.porque ? ` — ${d.timing.porque}` : ''}`);
+    if (d.timing.fala) linhas.push(`Nas palavras do lead: "${d.timing.fala}"`);
+  }
   (Array.isArray(d.secoes) ? d.secoes : []).forEach((s) => {
     if (!s || !s.titulo || !Array.isArray(s.itens) || !s.itens.length) return;
     linhas.push('', String(s.titulo).toUpperCase());
@@ -79,7 +83,11 @@ function textoDoHandoff(dados, { sdr = '', quando = '' } = {}) {
     linhas.push('', 'SINAIS DE COMPRA');
     d.sinais_compra.forEach((x) => linhas.push(`- ${x}`));
   }
-  if (d.abertura) linhas.push('', 'ABERTURA SUGERIDA', d.abertura);
+  const alavancas = (Array.isArray(d.alavancas) ? d.alavancas : []).filter((a) => a && a.fala && a.usar);
+  if (alavancas.length) {
+    linhas.push('', 'COISAS PARA USAR CONTRA O LEAD');
+    alavancas.forEach((a) => linhas.push(`- "${a.fala}" — ${a.usar}`));
+  }
   linhas.push('', `Report PRONIX${sdr ? ` de ${sdr}` : ''}${quando ? ` em ${quando}` : ''}.`);
   return linhas.join('\n').replace(/\n{3,}/g, '\n\n').trim().slice(0, 6000);
 }

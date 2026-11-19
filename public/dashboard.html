@@ -4218,8 +4218,6 @@
       const t = ord ? 'ol' : 'ul';
       return `<${t}>${(itens || []).map((i, k) => `<li>${ed(base + '.' + k, i)}</li>`).join('')}</${t}>`;
     }
-    // Nível de consciência: o report só mostra quando é bom (de "consciente da solução" para cima).
-    const NIVEIS_VISIVEIS = { solucao: 'Consciente da solução', produto: 'Consciente da nossa entrega', pronto: 'Pronto para decidir' };
 
     function renderReport(d) {
       const linhas = [];
@@ -4234,12 +4232,16 @@
       const cit = (d.citacoes && d.citacoes.length)
         ? '<h2><i data-ic="quote"></i>Nas palavras do lead</h2>' + d.citacoes.map((c, i) => `<p class="frase">"${ed('citacoes.' + i, c)}"</p>`).join('')
         : '';
-      const frase = d.frase_impacto ? `<h2><i data-ic="zap"></i>Frase de Impacto</h2><p class="frase">"${ed('frase_impacto', d.frase_impacto)}"</p>` : '';
-      const abertura = d.abertura ? `<h2><i data-ic="message"></i>Como iniciar a reunião</h2><p class="frase">"${ed('abertura', d.abertura)}"</p>` : '';
-      // O selo do report: o título escrito para o lead (ou o nome do nível, em report antigo), a fala dele e o porquê.
-      const nivel = d.consciencia && (d.consciencia.titulo || NIVEIS_VISIVEIS[d.consciencia.nivel]);
-      const tituloNivel = d.consciencia && d.consciencia.titulo ? ed('consciencia.titulo', d.consciencia.titulo) : esc(nivel || '');
-      const falaNivel = d.consciencia && d.consciencia.fala ? `<p class="frase">“${esc(d.consciencia.fala)}”</p>` : '';
+      // "Frase de impacto" e "Como iniciar a reunião" saíram do report.
+      // Coisas para usar contra o lead: a fala dele + como o closer usa.
+      const alav = (d.alavancas || []).filter((a) => a && a.fala);
+      const alavancas = alav.length
+        ? '<h2><i data-ic="target"></i>Coisas para usar contra o lead</h2>' + alav.map((a, i) => `<p class="frase">“${ed('alavancas.' + i + '.fala', a.fala)}”</p><p style="margin:0 0 10px">${ed('alavancas.' + i + '.usar', a.usar)}</p>`).join('')
+        : '';
+      // Timing do lead (pronto para decidir ou não), com a fala que comprova.
+      const nivel = d.timing && d.timing.titulo;
+      const tituloNivel = nivel ? ed('timing.titulo', d.timing.titulo) : '';
+      const falaNivel = d.timing && d.timing.fala ? `<p class="frase"><b>Nas palavras do lead:</b> “${esc(d.timing.fala)}”</p>` : '';
       const sinais = d.sinais_compra || [];
       // Termômetro de dores: só dor de fato (3 ou mais), na ordem em que vieram (da mais forte para a mais fraca).
       const dores = (d.dores || []).map((x, i) => ({ ...x, i })).filter((x) => x && x.dor && x.intensidade >= 3);
@@ -4250,13 +4252,13 @@
       const temperatura = nivel || sinais.length || dores.length
         ? '<h2><i data-ic="target"></i>Temperatura do lead</h2>' +
           blocoDores +
-          (nivel ? `<p><b>Momento do lead:</b> ${tituloNivel}</p>${falaNivel}<p class="frase">${ed('consciencia.porque', d.consciencia.porque)}</p>` : '') +
+          (nivel ? `<p><b>Timing do lead:</b> ${tituloNivel}</p><p class="frase">${ed('timing.porque', d.timing.porque || '')}</p>${falaNivel}` : '') +
           (sinais.length ? `<p><b>Sinais de compra</b></p>${listaEditavel(sinais, false, 'sinais_compra')}` : '')
         : '';
       const conversa = (d.conversa || []).length
         ? `<h2><i data-ic="message"></i>Como foi a conversa</h2>${listaEditavel(d.conversa, false, 'conversa')}`
         : '';
-      return tabela + temperatura + conversa + secoes + cit + frase + abertura;
+      return tabela + temperatura + conversa + secoes + alavancas + cit;
     }
 
     // Grava um valor no objeto seguindo o caminho "a.0.b" (números viram índice).
