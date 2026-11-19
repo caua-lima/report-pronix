@@ -30,6 +30,21 @@ const mesmaPessoa = (a, b) => {
   const y = norm(b);
   return Boolean(x && y) && (x === y || x.split(' ')[0] === y.split(' ')[0]);
 };
+const DIA = /^\d{4}-\d{2}-\d{2}$/;
+const MAX_DIAS = 366;
+/**
+ * O período pedido (de/até, AAAA-MM-DD), ou null para usar o mês. Até no futuro vira hoje; de depois de até é erro;
+ * no máximo 366 dias (o CRM é lido card a card).
+ */
+function periodoPedido({ de, ate, hoje }) {
+  if (!de && !ate) return null;
+  if (!DIA.test(String(de || '')) || !DIA.test(String(ate || ''))) throw new Error('Período inválido: informe as duas datas.');
+  const fim = ate > hoje ? hoje : ate;
+  if (de > fim) throw new Error('Período inválido: a data inicial é depois da final.');
+  const dias = Math.round((Date.parse(fim + 'T00:00:00Z') - Date.parse(de + 'T00:00:00Z')) / 86400000) + 1;
+  if (dias > MAX_DIAS) throw new Error(`Período grande demais: escolha até ${MAX_DIAS} dias.`);
+  return { inicio: de, fim };
+}
 const ultimoDiaDoMes = (mes) => {
   const [a, m] = mes.split('-').map(Number);
   return new Date(Date.UTC(a, m, 0)).toISOString().slice(0, 10);
@@ -126,25 +141,27 @@ function porCloser(reunioes) {
  * O painel: o mês (AAAA-MM, padrão o atual), o SDR (nome; 'time' = você e o time do Match) e os números por closer.
  * @param {{ usuario: {id, nome}, sdr?: string, mes?: string, atualizar?: boolean, soOsMeus?: boolean }} p
  */
-async function painel({ usuario, sdr, mes, atualizar = false, soOsMeus = false } = {}) {
+async function painel({ usuario, sdr, mes, de, ate, atualizar = false, soOsMeus = false } = {}) {
   if (!crm.configurado()) throw new Error('O CRM não está configurado no servidor.');
   const prazoFinal = Date.now() + ORCAMENTO_MS();
   const hoje = stats.emDiaLocal(new Date().toISOString());
   const mesOk = /^\d{4}-(0[1-9]|1[0-2])$/.test(String(mes || '')) ? mes : hoje.slice(0, 7);
-  const inicio = mesOk + '-01';
-  const fim = ultimoDiaDoMes(mesOk) < hoje ? ultimoDiaDoMes(mesOk) : hoje;
-  if (inicio > hoje) throw new Error('Esse mês ainda não começou.');
+  // Período: de/até (últimos 60 dias, uma semana, datas escolhidas...) ou, sem eles, o mês.
+  const periodo = periodoPedido({ de, ate, hoje });
+  const inicio = periodo ? periodo.inicio : mesOk + '-01';
+  const fim = periodo ? periodo.fim : ultimoDiaDoMes(mesOk) < hoje ? ultimoDiaDoMes(mesOk) : hoje;
+  if (inicio > hoje) throw new Error(periodo ? 'Esse período ainda não começou.' : 'Esse mês ainda não começou.');
   // Quem não é master só vê os próprios números: nem outro SDR, nem o time (o servidor garante, não só a tela).
   const disponiveis = soOsMeus ? [usuario.nome] : sdrsDisponiveis(usuario);
   const time = !soOsMeus && String(sdr || '') === 'time';
   const escolhido = time ? '' : disponiveis.find((n) => mesmaPessoa(n, sdr)) || usuario.nome;
   const sdrs = time ? disponiveis : [escolhido];
-  const chave = `closers6_${usuario.id}_${slug(sdrs.join(' '))}_${mesOk}`;
+  const chave = `closers7_${usuario.id}_${slug(sdrs.join(' '))}_${inicio}_${fim}`;
   if (!atualizar) {
     const guardado = await db.cacheGet(chave).catch(() => null);
     if (guardado) { try { return { ...JSON.parse(guardado), cache: true }; } catch (_) { /* refaz */ } }
   }
-  const { cards, diag } = await buscarCards({ sdrs, inicio, fim, prazoFinal });
+  const { cards, diag } = await buscarCards({ sdrs, inicio, fim: hoje, prazoFinal });
   const catalogo = new Map();
   (await crm.funis().catch(() => [])).forEach((f) => f.etapas.forEach((e) => e.categoria && catalogo.set(e.id, e.categoria)));
   const diagnostico = {

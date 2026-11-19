@@ -660,12 +660,12 @@ const meusClosersLiberado = (req, res, next) =>
   usuarios.ehMaster(req.usuario) || usuarios.podeAba(req.usuario, 'meusclosers') ? next() : res.status(403).json({ erro: SO_MASTER_ERRO.erro });
 app.get('/api/master/closers-do-sdr', auth, meusClosersLiberado, async (req, res) => {
   try {
-    const { sdr, mes, atualizar } = req.query || {};
+    const { sdr, mes, de, ate, atualizar } = req.query || {};
     const soOsMeus = !usuarios.ehMaster(req.usuario);
     res.set('Cache-Control', 'no-store');
-    res.json({ ok: true, ...(await painelClosers.painel({ usuario: req.usuario, sdr: soOsMeus ? '' : sdr, mes, atualizar: atualizar === '1', soOsMeus })) });
+    res.json({ ok: true, ...(await painelClosers.painel({ usuario: req.usuario, sdr: soOsMeus ? '' : sdr, mes, de, ate, atualizar: atualizar === '1', soOsMeus })) });
   } catch (err) {
-    res.status(/ainda não começou/.test(err.message) ? 400 : 502).json({ erro: err.message });
+    res.status(/ainda não começou|Período/.test(err.message) ? 400 : 502).json({ erro: err.message });
   }
 });
 app.put('/api/master/match/meta', auth, soMasterComChave, async (req, res) => {
