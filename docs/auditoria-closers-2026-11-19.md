@@ -84,3 +84,12 @@ Juliana Ferreira, novembro: o painel mostrava 61 reuniões; faltavam 9 com donos
 Souza, Maria Clara Soares Zanco). O total passou a somar todas as reuniões dos leads do SDR.
 Conferido no site: 70 reuniões, 13 vendas, R$ 258.861, conversão 18,6%. O Cauã confirmou 70 como o número certo
 (a diferença para 71/72 era do dashboard do CRM).
+
+## 2026-11-19 — Período personalizado nos closers (main 5d4d705)
+
+Pedido do Cauã: filtrar por data personalizada. Meus closers e Closers do time ganharam "Período": Mês, Últimos
+7/15/30/60/90 dias, Esta semana, Semana passada e Escolher datas (De/Até), até 366 dias.
+Junto: os cards passam a ser listados do início do período até hoje (antes, num mês passado, um card que mudou depois
+do fim do mês ficava de fora).
+Conferido no site (Cauã): 21–30/09 = 49 reuniões / 15 vendas; outubro = 202 / 51; novembro = 85 / 23;
+últimos 60 dias = 336 / 89 / R$ 1.650.900 — igual à soma das partes. Datas trocadas → erro 400.
