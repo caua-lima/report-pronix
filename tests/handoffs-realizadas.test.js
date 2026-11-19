@@ -78,17 +78,17 @@ test('só os cards que entraram na reunião realizada no período, por closer, c
   const r = await hr.levantar({ desde: '2026-11-01', ate: '2026-11-12' });
   assert.equal(r.pendentes, 0);
   assert.deepEqual(r.reunioes.map((x) => [x.closer, x.lead, x.dia, x.origem]), [
-    ['Paulo Henrique Pagoti de Oliveira', 'Ana', '2026-11-03', 'crm'],
-    ['Pedro Pasin', 'Bruno', '2026-11-05', 'report'],
-    ['Pedro Pasin', 'Fabi', '2026-11-07', 'crm'],
-    ['Pedro Pasin', 'Gil', '2026-11-08', 'crm'],
-    ['Pedro Pasin', 'Iara', '2026-11-09', 'arquivo'],
+    ['Paulo Henrique Pagoti', 'Ana', '2026-11-03', 'crm'],
+    ['Pedro Henrique Pasin', 'Bruno', '2026-11-05', 'report'],
+    ['Pedro Henrique Pasin', 'Fabi', '2026-11-07', 'crm'],
+    ['Pedro Henrique Pasin', 'Gil', '2026-11-08', 'crm'],
+    ['Pedro Henrique Pasin', 'Iara', '2026-11-09', 'arquivo'],
   ]);
   assert.equal(r.reunioes[2].handoff, 'Handoff da Fabi escrito na tela do CRM.', '{ texto } da tela do CRM');
   assert.match(r.reunioes[3].handoff, /escrito ao mover para a reunião realizada/, 'handoff da passagem de etapa');
   assert.match(r.reunioes[4].handoff, /R\$ 4 mil para estoque/, 'texto tirado do PDF anexado');
   assert.ok(r.reunioes.every((x) => x.handoff), 'nenhum sem handoff');
-  const anexos = await hr.anexosDoCloser(r, 'Pedro Pasin');
+  const anexos = await hr.anexosDoCloser(r, 'Pedro Henrique Pasin');
   assert.deepEqual(anexos.map((a) => a.nome), ['09-11 - Iara - handoff.pdf']);
   assert.equal(anexos[0].buffer.subarray(0, 5).toString('latin1'), '%PDF-');
   assert.ok(!lidosEmDetalhe.includes('d'), 'card ainda antes da reunião não é lido em detalhe');
@@ -97,13 +97,13 @@ test('só os cards que entraram na reunião realizada no período, por closer, c
   assert.equal(r.reunioes[1].situacao, 'Venda');
 
   const resumo = hr.resumo(r);
-  assert.deepEqual(resumo.closers, [{ closer: 'Paulo Henrique Pagoti de Oliveira', reunioes: 1, semHandoff: 0 }, { closer: 'Pedro Pasin', reunioes: 4, semHandoff: 0 }]);
+  assert.deepEqual(resumo.closers, [{ closer: 'Paulo Henrique Pagoti', reunioes: 1, semHandoff: 0 }, { closer: 'Pedro Henrique Pasin', reunioes: 4, semHandoff: 0 }]);
   assert.equal(resumo.total, 5);
   assert.equal(JSON.stringify(resumo).includes('Handoff do lead A'), false, 'o resumo da tela não leva o texto');
 
-  const arq = hr.arquivosDoCloser(r, 'Paulo Henrique Pagoti de Oliveira');
+  const arq = hr.arquivosDoCloser(r, 'Paulo Henrique Pagoti');
   assert.deepEqual(arq.map((a) => a.nome), ['03-11 - Ana.txt', '_indice.csv']);
-  assert.match(arq[0].texto, /^Lead: Ana\nCard: PRXC \| Ana\nCloser: Paulo Henrique Pagoti de Oliveira\nSDR: Cauã Lima\nReunião realizada em: 03\/11\/2026/);
+  assert.match(arq[0].texto, /^Lead: Ana\nCard: PRXC \| Ana\nCloser: Paulo Henrique Pagoti\nSDR: Cauã Lima\nReunião realizada em: 03\/11\/2026/);
   assert.match(arq[0].texto, /\n\nHANDOFF\nHandoff do lead A, escrito no CRM\./);
   assert.match(arq[1].texto, /Dia;Lead;SDR/);
 });
@@ -117,4 +117,21 @@ test('time comercial: só os closers da lista, reconhecidos pelo começo do nome
   const { ehDoTime } = require('../src/timeComercial');
   for (const n of ['Paulo Henrique Pagoti de Oliveira', 'Gabrielle Vitória Machado Silva', 'Rôselaynne Lima Costa Cabral', 'Pedro Pasin', 'ZAYRA BEATRIZ DA SILVA LIMA', 'Jenniffer Lauany Barros']) assert.equal(ehDoTime(n), true, n);
   for (const n of ['Fulano do Outro Time', 'Pedro Henrique Souza', 'Paulo Silva', 'Amarildo', '', null]) assert.equal(ehDoTime(n), false, String(n));
+});
+
+test('time comercial: o RD escreve o mesmo closer de jeitos diferentes — tudo vira o nome oficial', () => {
+  const { ehDoTime, closerDoTime, nomeOficial } = require('../src/timeComercial');
+  // como o RD chama os closers hoje (usuários e donos de card)
+  for (const n of ['Gabrielle Machado', 'Jenniffer', 'Zayra', 'Pedro Henrique Pasin', 'Giovane Ribeiro', 'André Granato Oliveira', 'Victoria Pinheiro de Carvalho', 'Washington Gomes da Silva']) assert.equal(ehDoTime(n), true, n);
+  assert.equal(closerDoTime('Pedro Pasin'), 'Pedro Henrique Pasin');
+  assert.equal(closerDoTime('Zayra'), 'Zayra Beatriz da Silva Lima');
+  assert.equal(closerDoTime('Gabrielle Vitória Machado'), 'Gabrielle Machado');
+  assert.equal(closerDoTime('Jenniffer Lauany Barros'), 'Jenniffer');
+  assert.equal(nomeOficial('Pedro Pasin'), 'Pedro Henrique Pasin');
+  assert.equal(nomeOficial('ZAYRA'), 'Zayra Beatriz da Silva Lima');
+  // nome que não é grafia conhecida fica como veio (não junta por palpite)
+  assert.equal(nomeOficial('Daniel Camargo'), 'Daniel Camargo');
+  assert.equal(nomeOficial('Maria Clara Soares Zanco'), 'Maria Clara Soares Zanco');
+  // fora do time atual
+  for (const n of ['Igor Martins', 'Lívia Moura', 'Pedro', 'Zayra Souza']) assert.equal(ehDoTime(n), false, n);
 });
