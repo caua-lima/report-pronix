@@ -721,9 +721,12 @@ test('WhatsApp novo: os áudios baixados logo depois do clique na conversa (ante
       trocarCabecalho(p, 'Contato Teste');
     },
   });
-  assert.deepEqual(envio.mensagens.filter((m) => m.type === 'audio').map((m) => m.content), ['transcrição do áudio 51', 'transcrição do áudio 52']);
-  assert.equal(envio.captureQuality.audiosTranscritos, 2);
-  pagina.fechar();
+  try {
+    assert.deepEqual(envio.mensagens.filter((m) => m.type === 'audio').map((m) => m.content), ['transcrição do áudio 51', 'transcrição do áudio 52']);
+    assert.equal(envio.captureQuality.audiosTranscritos, 2);
+  } finally {
+    pagina.fechar(); // falhando ou não: página aberta deixa o processo de testes preso
+  }
 });
 
 test('mistura de leads: áudio ouvido na conversa anterior, ANTES do clique nesta, continua fora do report', async () => {

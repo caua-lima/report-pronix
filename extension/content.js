@@ -794,7 +794,17 @@
     // misturado — então aborta na hora. O id da conversa é definitivo; sem ele (WhatsApp mudou
     // o formato), cai para o nome do cabeçalho, exigindo 3 leituras seguidas diferentes.
     const alvoJid = jidPredominante(root);
-    const alvoNome = nomeDoContato();
+    // O WhatsApp novo não põe mais o número no id das mensagens: o nome do topo é a referência. Sem nome ainda (o topo
+    // carregando ou só "clique para mostrar os dados do contato"), espera até 4 s; sem ele, NÃO lê — sem referência,
+    // uma troca de conversa no meio passaria batida e o report sairia com dois leads.
+    let alvoNome = nomeDoContato();
+    for (let i = 0; !alvoJid && !alvoNome && i < 20; i++) {
+      await sleep(200);
+      alvoNome = nomeDoContato();
+    }
+    if (!alvoJid && !alvoNome) throw new Error('Não consegui ler o nome do contato no topo da conversa. Espere a conversa carregar e tente de novo.');
+    // Clique em OUTRA conversa da lista durante a leitura (mesmo que o nome pareça igual): para na hora.
+    const rodadaDaLeitura = rodada;
     let divergenciasDeNome = 0;
     conversaDaLeitura = alvoNome;
     /**
@@ -802,12 +812,13 @@
      * voltas, a leitura para. Antes, a outra conversa era lida até a 3ª volta — e, se o SDR voltasse, ficava no report.
      */
     const garantirMesmaConversa = () => {
+      if (rodada !== rodadaDaLeitura && rodada.nome && rodada.nome !== alvoNome) throw new Error(MSG_CONVERSA_MUDOU);
       const jid = jidPredominante(root);
       if (alvoJid && jid) {
         if (jid !== alvoJid) throw new Error(MSG_CONVERSA_MUDOU);
         return true;
       }
-      if (!alvoNome) return true;
+      if (!alvoNome) return true; // só acontece com o id da conversa nas mensagens (conferido acima)
       const nome = nomeDoContato();
       const outra = nome !== alvoNome; // cabeçalho vazio (trocando de conversa) também não é esta
       divergenciasDeNome = outra ? divergenciasDeNome + 1 : 0;
