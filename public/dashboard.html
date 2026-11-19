@@ -922,10 +922,13 @@
         <div id="statusLr" class="status"></div>
       </div>
       <div class="card">
-        <div class="head"><div class="t"><i data-ic="users"></i>Meus closers</div><div class="sub">— com que closer seus leads mais compram: reuniões realizadas, vendas, ticket médio e conversão do mês, lidos do CRM</div></div>
+        <div class="head"><div class="t"><i data-ic="users"></i>Meus closers</div><div class="sub">— com que closer seus leads mais compram: reuniões realizadas, vendas, ticket médio e conversão do período, lidos do CRM</div></div>
         <div class="row">
           <div id="mcSdrCaixa" style="min-width:200px;flex:1"><label for="mcSdr">SDR</label><select id="mcSdr"><option value="">Você</option></select></div>
-          <div style="min-width:160px"><label for="mcMes">Mês</label><input id="mcMes" type="month" /></div>
+          <div style="min-width:170px"><label for="mcPeriodo">Período</label><select id="mcPeriodo"><option value="mes">Mês</option><option value="7">Últimos 7 dias</option><option value="15">Últimos 15 dias</option><option value="30">Últimos 30 dias</option><option value="60">Últimos 60 dias</option><option value="90">Últimos 90 dias</option><option value="semana">Esta semana</option><option value="semanaPassada">Semana passada</option><option value="datas">Escolher datas…</option></select></div>
+          <div id="mcMesCaixa" style="min-width:160px"><label for="mcMes">Mês</label><input id="mcMes" type="month" /></div>
+          <div class="mc-datas hidden" style="min-width:150px"><label for="mcDe">De</label><input id="mcDe" type="date" /></div>
+          <div class="mc-datas hidden" style="min-width:150px"><label for="mcAte">Até</label><input id="mcAte" type="date" /></div>
           <button id="mcAtualizar" class="btn sec"><i data-ic="refresh"></i>Atualizar do CRM</button>
         </div>
         <div id="statusMc" class="status"></div>
@@ -934,7 +937,7 @@
         <div class="kpis kpis-destaque" id="mcTotal"></div>
         <div class="card" id="mcDestaque"></div>
         <div class="card">
-          <div class="head"><div class="t"><i data-ic="chart"></i>Por closer</div><div class="sub">— conversão = vendas do mês ÷ reuniões realizadas do mês. Clique num closer para ver os leads.</div></div>
+          <div class="head"><div class="t"><i data-ic="chart"></i>Por closer</div><div class="sub">— conversão = vendas do período ÷ reuniões realizadas do período. Clique num closer para ver os leads.</div></div>
           <div style="overflow:auto">
             <table>
               <thead><tr><th>Closer</th><th class="r">Reuniões</th><th class="r">Vendas</th><th class="r">Conversão</th><th class="r">Ticket médio</th><th class="r">Faturamento</th><th class="r">No-show</th></tr></thead>
@@ -981,7 +984,10 @@
         <div class="head"><div class="t"><i data-ic="users"></i>Closers do time</div><div class="sub">— os mesmos números da aba Meus closers, de cada SDR do time: escolha o SDR e clique em Carregar</div></div>
         <div class="row">
           <div style="min-width:200px;flex:1"><label for="scSdr">SDR</label><select id="scSdr"><option value="">Escolha o SDR…</option><option value="Juliana Ferreira">Juliana Ferreira</option><option value="Luiza Lemes">Luiza Lemes</option><option value="Nicoly Beatriz">Nicoly Beatriz</option><option value="Isamara">Isamara</option><option value="Reinaldo Junior">Reinaldo Junior</option><option value="Samuel Filipe">Samuel Filipe</option></select></div>
-          <div style="min-width:160px"><label for="scMes">Mês</label><input id="scMes" type="month" /></div>
+          <div style="min-width:170px"><label for="scPeriodo">Período</label><select id="scPeriodo"><option value="mes">Mês</option><option value="7">Últimos 7 dias</option><option value="15">Últimos 15 dias</option><option value="30">Últimos 30 dias</option><option value="60">Últimos 60 dias</option><option value="90">Últimos 90 dias</option><option value="semana">Esta semana</option><option value="semanaPassada">Semana passada</option><option value="datas">Escolher datas…</option></select></div>
+          <div id="scMesCaixa" style="min-width:160px"><label for="scMes">Mês</label><input id="scMes" type="month" /></div>
+          <div class="sc-datas hidden" style="min-width:150px"><label for="scDe">De</label><input id="scDe" type="date" /></div>
+          <div class="sc-datas hidden" style="min-width:150px"><label for="scAte">Até</label><input id="scAte" type="date" /></div>
           <button id="scCarregar" class="btn">Carregar</button>
           <button id="scAtualizar" class="btn sec"><i data-ic="refresh"></i>Atualizar do CRM</button>
         </div>
@@ -991,7 +997,7 @@
         <div class="kpis kpis-destaque" id="scTotal"></div>
         <div class="card" id="scDestaque"></div>
         <div class="card">
-          <div class="head"><div class="t"><i data-ic="chart"></i>Por closer</div><div class="sub">— conversão = vendas do mês ÷ reuniões realizadas do mês. Clique num closer para ver os leads.</div></div>
+          <div class="head"><div class="t"><i data-ic="chart"></i>Por closer</div><div class="sub">— conversão = vendas do período ÷ reuniões realizadas do período. Clique num closer para ver os leads.</div></div>
           <div style="overflow:auto">
             <table>
               <thead><tr><th>Closer</th><th class="r">Reuniões</th><th class="r">Vendas</th><th class="r">Conversão</th><th class="r">Ticket médio</th><th class="r">Faturamento</th><th class="r">No-show</th></tr></thead>
@@ -1577,7 +1583,7 @@
       match: ['Match com PH', 'Reuniões realizadas, conversão e faturamento com o closer, mês a mês, e quanto falta para a meta.'],
       pronixclub: ['Pronix Club', 'Cada lead novo no funil Pronix Club: nome, telefone, WhatsApp e o aviso no seu celular.'],
       closerstime: ['Closers do time', 'Os números por closer de cada SDR do time: escolha o SDR e carregue.'],
-      meusclosers: ['Meus closers', 'Com que closer seus leads mais compram: reuniões, vendas, ticket médio e conversão do mês, por closer.'],
+      meusclosers: ['Meus closers', 'Com que closer seus leads mais compram: reuniões, vendas, ticket médio e conversão do período, por closer.'],
       funil: ['Limpeza do RD', 'Card parado no começo do funil vira perda em Desqualificados, com o motivo.'],
       acessos: ['Acessos', 'Quem usa a ferramenta e o que cada pessoa vê e faz.'],
       arquivos: ['Arquivos', 'Os PDFs já gerados, para baixar por pessoa ou por período.'],
@@ -2146,6 +2152,20 @@
     const brlMc = (v) => (Number(v) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
     const pctMc = (v) => (Number(v) || 0).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '%';
     const mesAtualMc = () => new Date().toISOString().slice(0, 7);
+    // Período do painel de closers: atalho (mês, últimos N dias, semana) ou datas escolhidas. Datas no fuso de Brasília.
+    const diaLocalMc = (d) => new Date(d.getTime() - 3 * 3600 * 1000).toISOString().slice(0, 10);
+    function periodoMc(el) {
+      const tipo = el('Periodo').value;
+      if (tipo === 'mes') return { mes: el('Mes').value || mesAtualMc() };
+      const hoje = new Date();
+      const menos = (n) => diaLocalMc(new Date(hoje.getTime() - n * 86400000));
+      if (/^\d+$/.test(tipo)) return { de: menos(Number(tipo) - 1), ate: menos(0) };
+      // semana de segunda a domingo
+      const dow = (new Date(hoje.getTime() - 3 * 3600 * 1000).getUTCDay() + 6) % 7; // 0 = segunda
+      if (tipo === 'semana') return { de: menos(dow), ate: menos(0) };
+      if (tipo === 'semanaPassada') return { de: menos(dow + 7), ate: menos(dow + 1) };
+      return { de: el('De').value, ate: el('Ate').value };
+    }
     function painelDeClosers(p, { doTime = false } = {}) {
       const P = p.charAt(0).toUpperCase() + p.slice(1);
       const el = (s) => $(p + s);
@@ -2181,7 +2201,7 @@
           ? `<div class="head"><div class="t"><i data-ic="target"></i>Onde ${esc(quem === 'Você' ? 'você se dá' : quem + ' se dá')} melhor</div></div>` +
             `<div style="font-size:1.05rem;line-height:1.6">${esc(quem)} converte mais com <b>${esc(melhor.closer)}</b>: ${esc(pctMc(melhor.conversao))} (${melhor.vendas} venda(s) em ${melhor.reunioes} reunião(ões))${comAmostra.length ? '' : ' <span class="hint">— poucas reuniões ainda, olhe com cuidado</span>'}.` +
             (maisVende && maisVende.faturamento && maisVende.closer !== melhor.closer ? `<br>Quem mais faturou com os leads: <b>${esc(maisVende.closer)}</b> (${esc(brlMc(maisVende.faturamento))}).` : '') + '</div>'
-          : '<div class="hint">Nenhuma reunião realizada neste mês ainda.</div>';
+          : '<div class="hint">Nenhuma reunião realizada neste período ainda.</div>';
         const maxConv = Math.max(1, ...(d.closers || []).map((c) => c.conversao));
         const linhas = (d.closers || []).map((c, i) => {
           const pouca = c.reunioes < MIN_AMOSTRA_MC;
@@ -2191,7 +2211,7 @@
             `<td class="r">${esc(pctMc(c.conversao))}<div class="barra" style="margin-left:auto"><i style="width:${Math.round((c.conversao / maxConv) * 100)}%"></i></div></td>` +
             `<td class="r">${c.vendas ? esc(brlMc(c.ticketMedio)) : '—'}</td><td class="r">${esc(brlMc(c.faturamento))}</td><td class="r">${c.noShow || 0}</td></tr>` + leads;
         });
-        el('Tabela').innerHTML = linhas.join('') || '<tr><td colspan="7" class="hint">Nenhuma reunião, venda ou no-show dos leads neste mês.</td></tr>';
+        el('Tabela').innerHTML = linhas.join('') || '<tr><td colspan="7" class="hint">Nenhuma reunião, venda ou no-show dos leads neste período.</td></tr>';
         const dg = d.diagnostico || {};
         el('Nota').textContent = `Período: ${(d.inicio || '').split('-').reverse().join('/')} a ${(d.fim || '').split('-').reverse().join('/')}. ${dg.cardsLidos || 0} card(s) lidos do CRM${dg.aindaNaoAconteceu ? `; ${dg.aindaNaoAconteceu} com reunião ainda por acontecer (não contam)` : ''}. Os números são só do CRM. Linhas apagadas têm menos de ${MIN_AMOSTRA_MC} reuniões.` +
           ((dg.naoCloser || []).length ? ` Fora da tabela (donos de card que não estão na lista de closers): ${dg.naoCloser.join(', ')}${dg.foraDaTabela ? ` — somam ${dg.foraDaTabela.reunioes} reunião(ões), ${dg.foraDaTabela.vendas} venda(s), ${brlMc(dg.foraDaTabela.faturamento)}, que já entram no total de cima (igual ao CRM)` : ''}. Se algum for closer, cadastre na aba Closers.` : '') +
@@ -2207,7 +2227,9 @@
         setStatus('status' + P, atualizar ? 'Lendo os cards no CRM… (pode levar até um minuto)' : 'Carregando…', { loading: true });
         el('Atualizar').disabled = true;
         try {
-          const q = new URLSearchParams({ sdr: el('Sdr').value, mes: el('Mes').value });
+          const per = periodoMc(el);
+          if (per.de !== undefined && (!per.de || !per.ate)) { setStatus('status' + P, 'Escolha as duas datas (De e Até).', { erro: true }); el('Atualizar').disabled = false; return; }
+          const q = new URLSearchParams({ sdr: el('Sdr').value, ...per });
           if (atualizar) q.set('atualizar', '1');
           const d = await api('GET', '/api/master/closers-do-sdr?' + q.toString());
           desenhar(d);
@@ -2235,6 +2257,17 @@
       if (el('Carregar')) el('Carregar').addEventListener('click', () => { dados = null; aberto = ''; carregar(false); });
       el('Sdr').addEventListener('change', trocou);
       el('Mes').addEventListener('change', trocou);
+      // Período: mostra o mês ou as datas conforme o atalho; trocar recarrega (nas datas, quando as duas estão preenchidas).
+      const mostrarPeriodo = () => {
+        const tipo = el('Periodo').value;
+        el('MesCaixa').classList.toggle('hidden', tipo !== 'mes');
+        document.querySelectorAll('.' + p + '-datas').forEach((x) => x.classList.toggle('hidden', tipo !== 'datas'));
+        if (tipo === 'datas' && !el('De').value) { const u = periodoMc((s) => (s === 'Periodo' ? { value: '30' } : el(s))); el('De').value = u.de; el('Ate').value = u.ate; }
+      };
+      el('Periodo').addEventListener('change', () => { mostrarPeriodo(); trocou(); });
+      el('De').addEventListener('change', trocou);
+      el('Ate').addEventListener('change', trocou);
+      mostrarPeriodo();
       el('Tabela').addEventListener('click', (ev) => {
         const tr = ev.target.closest('[data-mc-closer]');
         if (!tr || !dados) return;
