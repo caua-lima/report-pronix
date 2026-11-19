@@ -153,7 +153,7 @@ test('só o CRM, nas duas abas: a venda que só está no report NÃO entra — M
   assert.deepEqual([reunioes, vendas.length, vendas.reduce((s, x) => s + x.ticket, 0)], [ph.reunioes, ph.vendas, ph.faturamento], 'Match e Meus closers batem');
 });
 
-test('só quem está na aba Closers é closer: dono de card que não está lá (SDR, gestor) sai da tabela e é listado à parte', async () => {
+test('só quem está na aba Closers é closer: dono de card que não está lá (SDR, gestor) sai da tabela, é listado à parte e entra no total (igual ao CRM)', async () => {
   const closers = require('../src/closers');
   await closers.criar('Paulo Henrique', 'ph@x.test');
   await closers.criar('Daniel Camargo', '');
@@ -164,7 +164,7 @@ test('só quem está na aba Closers é closer: dono de card que não está lá (
   assert.deepEqual(r.closers.map((c) => c.closer), ['Paulo Henrique Pagoti']);
   assert.deepEqual(r.diagnostico.naoCloser, ['Maria Clara Soares Zanco'], 'os closers do time já vêm na lista; ela não é closer');
   assert.deepEqual([r.diagnostico.foraDaTabela.vendas, r.diagnostico.foraDaTabela.faturamento], [1, 1609], 'o que ela soma aparece à parte');
-  assert.deepEqual([r.total.vendas, r.total.faturamento], [1, 7000], 'a venda dela não entra no total');
+  assert.deepEqual([r.total.vendas, r.total.faturamento], [2, 8609], 'o total é igual ao do CRM: a venda dela entra no total, só não ganha linha na tabela');
   delete CARDS.m1;
   delete CARDS.p6;
 });

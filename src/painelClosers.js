@@ -139,7 +139,7 @@ async function painel({ usuario, sdr, mes, atualizar = false, soOsMeus = false }
   const time = !soOsMeus && String(sdr || '') === 'time';
   const escolhido = time ? '' : disponiveis.find((n) => mesmaPessoa(n, sdr)) || usuario.nome;
   const sdrs = time ? disponiveis : [escolhido];
-  const chave = `closers5_${usuario.id}_${slug(sdrs.join(' '))}_${mesOk}`;
+  const chave = `closers6_${usuario.id}_${slug(sdrs.join(' '))}_${mesOk}`;
   if (!atualizar) {
     const guardado = await db.cacheGet(chave).catch(() => null);
     if (guardado) { try { return { ...JSON.parse(guardado), cache: true }; } catch (_) { /* refaz */ } }
@@ -188,8 +188,10 @@ async function painel({ usuario, sdr, mes, atualizar = false, soOsMeus = false }
   }
   // Os números são SÓ do CRM (é o que o CRM mostra na coluna "Vendido"): report que o CRM não traz não entra.
   diagnostico.naoCloser = [...naoCloser].sort((x, y) => x.localeCompare(y, 'pt-BR'));
-  const { closers, total } = porCloser(reunioes.filter((r) => r.ehCloser));
-  // o que os donos que não são closers somam: para o total da tela + isto bater com o CRM
+  // A tabela é por closer; o TOTAL é de todas as reuniões dos leads do SDR, como o CRM conta (dono de card que não
+  // está na lista de closers também entra, senão o total da tela fica abaixo do CRM).
+  const { closers } = porCloser(reunioes.filter((r) => r.ehCloser));
+  const { total } = porCloser(reunioes);
   const fora = porCloser(reunioes.filter((r) => !r.ehCloser)).total;
   diagnostico.foraDaTabela = { nomes: diagnostico.naoCloser, reunioes: fora.reunioes, vendas: fora.vendas, faturamento: fora.faturamento };
   const saida = { mes: mesOk, inicio, fim, sdr: time ? 'time' : escolhido, sdrsDisponiveis: disponiveis, closers, total, diagnostico, atualizadoEm: new Date().toISOString() };
