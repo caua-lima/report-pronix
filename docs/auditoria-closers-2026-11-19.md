@@ -66,3 +66,13 @@ Fora do time atual (não cadastrados de propósito): Igor Martins, Vitor Santos,
 - Conferido no site após o deploy (Meus closers, time todo, novembro): uma linha por closer.
   Pedro Henrique Pasin 8 reuniões / 2 vendas (antes dividido em 3 + 5) e Zayra Beatriz da Silva Lima 4 reuniões
   (antes 2 + 2). Igor Martins agora aparece em "fora da tabela", por não estar no time atual.
+
+## 2026-11-19 — Acesso da Juliana Ferreira (só os closers dela)
+
+Pedido do Cauã: a Juliana vê apenas os closers dos leads dela.
+- Código (main 3ca1ec1): nova aba liberável `meusclosers`. Quem não é master vê só a própria tabela; o servidor ignora
+  pedido de outro SDR ou do time (`soOsMeus`). Testes: painel-closers e painel (113/113).
+- Usuária criada: Juliana Ferreira, papel SDR, id d6649082abb1, com só a aba `meusclosers` liberada. Acesso por chave
+  individual (o sistema não tem login com usuário e senha); a chave fica na aba Acessos e não foi registrada aqui.
+- Conferido com a chave dela no site: /api/master/closers-do-sdr devolve só "Juliana Ferreira" mesmo pedindo
+  `sdr=Cauã Lima` ou `sdr=time`; resultados, leads-respondeu, usuários e cadastro de closers → 401/403.
