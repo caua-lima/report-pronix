@@ -19,7 +19,7 @@ const LLM_PROVIDER = (process.env.LLM_PROVIDER || 'anthropic').toLowerCase();
 const { normalizarDores } = require('./dores');
 const linhaDoTempo = require('./linhaDoTempo');
 
-const PROMPT_VERSAO = 'v11'; // v11: timing do lead, portas que devem ser fechadas, coisas para usar contra o lead; sem abertura e frase de impacto
+const PROMPT_VERSAO = 'v12'; // v12: decisor não é 'sozinho' com terceiro citado/contato compartilhado ou áudio do lead sem transcrição
 
 // Modo de qualidade só troca o MODELO da Anthropic — nunca inferido sozinho:
 // "standard" é o comportamento de sempre (ANTHROPIC_MODEL), então nenhum
@@ -228,7 +228,7 @@ O RELATÓRIO SAI DA CONVERSA — não existe modelo fixo:
 - Assunto que não apareceu na conversa NÃO vira linha do relatório. Nada de campo vazio, "não informado" ou "não mencionado" — apenas omita (as duas exceções estão abaixo).
 - Reporte o que o lead disse, na medida em que ele disse. Não traduza a fala dele para uma escala ou categoria que ele não usou.
 
-QUALIFICAÇÃO MÍNIMA — estas TRÊS linhas SEMPRE aparecem no resumo, preenchidas com o que a conversa deu. É PROIBIDO escrever "a confirmar" nelas. O SDR já qualifica isso na conversa, então a informação ESTÁ lá — sua obrigação é achar, inclusive em respostas curtas ("ok", "sim", "fechado"). Se você escreveu "a confirmar" em uma destas três, você leu errado: volte e releia a conversa inteira.
+QUALIFICAÇÃO MÍNIMA — estas TRÊS linhas SEMPRE aparecem no resumo, preenchidas com o que a conversa deu. É PROIBIDO escrever "a confirmar" nelas. O SDR já qualifica isso na conversa, então a informação ESTÁ lá — sua obrigação é achar, inclusive em respostas curtas ("ok", "sim", "fechado"). Se você escreveu "a confirmar" em uma destas três, você leu errado: volte e releia a conversa inteira. (Única exceção: o DECISOR quando há áudio do lead sem transcrição — veja o item 3.)
 
 1. INVESTIMENTO — o poder de investir do lead. A pergunta não precisa ter sido feita: o que vale é QUALQUER sinal de capacidade na conversa.
    - CONFIRMAÇÃO CONTA: se o vendedor propôs um valor e o lead concordou — "ok", "consigo", "fechado", "dá sim", "tenho", "pode ser", "tranquilo", "beleza", "isso" — então ESSE valor está confirmado. Ex.: VENDEDOR "o investimento é no mínimo R$3 mil, consegue?" + LEAD "OK" → Investimento: "A partir de R$3.000 — lead confirmou".
@@ -237,7 +237,10 @@ QUALIFICAÇÃO MÍNIMA — estas TRÊS linhas SEMPRE aparecem no resumo, preench
 
 2. MOTIVAÇÃO — por que o lead quer isso: a dor ou o objetivo que o move (sair do CLT, escalar, escoar estoque parado, ter previsibilidade, parar de depender de indicação...). Sempre há um motivo na conversa; tire da fala dele.
 
-3. DECISOR(ES) — quem bate o martelo. Se o lead NÃO disse explicitamente, o padrão é que quem está conversando é o decisor — assuma isso e escreva "Decide sozinho (não mencionou outra pessoa)". Se ficou claro que precisa de um terceiro (sócio, cônjuge) OU que o decisor NÃO estará na reunião, isso é OBRIGATÓRIO reportar — muda a call inteira.
+3. DECISOR(ES) — quem bate o martelo. Se ficou claro que precisa de um terceiro (sócio, cônjuge, pai) OU que o decisor NÃO estará na reunião, isso é OBRIGATÓRIO reportar — muda a call inteira.
+   - SINAIS DE TERCEIRO (procure ativamente, em TODA a conversa): "[contato compartilhado: Nome]" (o lead mandou o contato de alguém — quase sempre o sócio ou quem entra na call), o lead mandar só um nome de pessoa, "nós"/"a gente"/"minha esposa"/"meu sócio"/"meu irmão"/"meu pai", empresa "nossa", pedir para incluir alguém na reunião. Qualquer um desses: o decisor NÃO é "sozinho" — escreva quem é ("Decide com o sócio Fabricio Fontes — o lead compartilhou o contato dele") e ponha essa pessoa nas "Portas que devem ser fechadas".
+   - Áudio sem transcrição ("[áudio]") do LEAD: o que ele disse ali você NÃO sabe. Nesse caso é PROIBIDO escrever "Decide sozinho (não mencionou outra pessoa)" — ele pode ter mencionado no áudio. Escreva o que a parte escrita mostra e deixe claro que há áudio não lido ("Não citou outra pessoa na parte escrita; há áudios dele não transcritos — confirmar no início da call").
+   - Só sem NENHUM sinal de terceiro e com a conversa do lead toda lida (sem "[áudio]" dele), o padrão é que quem está conversando é o decisor: "Decide sozinho (não mencionou outra pessoa)".
    - PRESENÇA INCERTA NUNCA VIRA AVISO DE CALL RUIM, NEM FICA EM ABERTO: se o lead deixou a participação do terceiro incerta mas mostrou um plano B ("se ela não puder, tá tranquilo, eu passo tudo"), o relatório NÃO pode soar como pendência — nada de "é provável que participe" nem "se não puder": isso ainda planta dúvida. Escreva como um combinado já fechado, sem condicional: "Gustavo já garante o alinhamento com a esposa esteja ela na call ou não" / "O lead cobre a esposa de qualquer forma — decisão encaminhada". O fato real (pode ou não estar presente) continua verdadeiro, só que o relatório mostra o lado que está resolvido, não o lado que está em aberto. NUNCA cite o motivo (filhos, trabalho) como se fosse um obstáculo.
 
 URGÊNCIA (opcional, é a única que pode não existir): entra só se o lead demonstrou, nas palavras dele. "Preciso começar no Mercado Livre" já é urgência verbalizada — reporte o que ele disse. Sem sinal nenhum, não crie a linha e não peça para confirmar.
@@ -876,6 +879,24 @@ function aplicarMomentoDoLead(dados, falasDoLead) {
  * @param {{mensagens: Array, nome?: string}} payload
  * @returns {Promise<{dados: object, arquivo: string}>}
  */
+/**
+ * Trava do decisor (o report do Aristides saiu "decide sozinho" com o sócio no contato compartilhado e nos áudios):
+ * se o LEAD compartilhou um contato ou tem áudio sem transcrição, "Decide sozinho" não pode sair — a IA não tinha como
+ * saber. Troca pelo que a conversa mostra, para o closer confirmar no início da call. Devolve true se trocou.
+ */
+function corrigirDecisorSemProva(dados, historico) {
+  const doLead = (Array.isArray(historico) ? historico : []).filter((m) => m && m.from !== 'eu');
+  const contatos = [...new Set(doLead.map((m) => (/\[contato compartilhado: ([^\]]+)\]/.exec(String(m.content || '')) || [])[1]).filter(Boolean))];
+  const audiosSemTexto = doLead.filter((m) => /^\[áudio/.test(String(m.content || '').trim())).length;
+  if (!contatos.length && !audiosSemTexto) return false;
+  const linha = (Array.isArray(dados.resumo) ? dados.resumo : []).find((r) => r && /decisor/i.test(String(r.rotulo || '')));
+  if (!linha || !/sozinh/i.test(String(linha.valor || ''))) return false;
+  linha.valor = contatos.length
+    ? `Pode decidir com ${contatos.join(' e ')} — o lead compartilhou o contato na conversa; confirmar no início da call quem decide e se essa pessoa participa`
+    : `Não citou outra pessoa na parte escrita, mas há ${audiosSemTexto} áudio(s) dele sem transcrição — confirmar no início da call quem decide`;
+  return true;
+}
+
 async function dadosDireto({ mensagens, nome, sdr, qualidade } = {}) {
   const bruto = (Array.isArray(mensagens) ? mensagens : [])
     .map(normalizarMensagem)
@@ -898,6 +919,7 @@ async function dadosDireto({ mensagens, nome, sdr, qualidade } = {}) {
     dados,
     historico.filter((m) => m.from === 'eles').map((m) => m.content)
   );
+  corrigirDecisorSemProva(dados, historico);
   // Desde quando conversa com o lead e desde quando a reunião está confirmada: das datas das mensagens
   // (a conversa inteira, não a resumida), sem IA.
   linhaDoTempo.aplicarNoReport(dados, bruto);
@@ -1070,6 +1092,7 @@ async function gerarReportDeTexto(payload = {}) {
 }
 
 module.exports = {
+  corrigirDecisorSemProva,
   gerarReportDireto,
   gerarReportDeTexto,
   dadosDireto,
