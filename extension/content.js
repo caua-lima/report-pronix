@@ -719,7 +719,11 @@
       );
       // Placeholder limpo; a transcrição real vem da captura + Whisper (não do DOM,
       // que aqui só traria lixo como nome do remetente/duração).
-      return { from: fromMe ? 'eu' : 'eles', type: 'audio', content: '[áudio]', timestamp, ts };
+      // Hora e duração que aparecem na bolha ("0:11" e "13:31"): é por elas que o SDR acha o áudio na conversa.
+      const tempos = [...el.querySelectorAll('*')].filter((n) => !n.children.length).map((n) => (n.textContent || '').trim()).filter((t) => /^\d{1,2}:\d{2}$/.test(t));
+      const duracao = tempos.length > 1 ? tempos[0] : '';
+      const hora = tempos.length ? tempos[tempos.length - 1] : '';
+      return { from: fromMe ? 'eu' : 'eles', type: 'audio', content: '[áudio]', timestamp, ts, hora, duracao };
     }
 
     const texto = extrairTexto(el);
@@ -957,9 +961,10 @@
       await Promise.all(Array.from({ length: Math.min(4, fila.length) }, trabalhador));
     }
 
-    const mensagens = [...mapa.values()]
-      .sort((a, b) => a._ord - b._ord)
-      .map(({ from, type, content, timestamp }) => ({ from, type, content, timestamp }));
+    const ordenados = [...mapa].sort((a, b) => a[1]._ord - b[1]._ord);
+    const mensagens = ordenados.map(([, { from, type, content, timestamp }]) => ({ from, type, content, timestamp }));
+    // Para achar na tela o áudio que faltou: a chave da bolha, a hora e a duração (não vão para o servidor).
+    const infoAudios = ordenados.map(([chave, r]) => (r.type === 'audio' ? { chave, hora: r.hora || '', duracao: r.duracao || '' } : null));
 
     if (mensagens.length === 0) {
       const diag = diagnostico();
@@ -984,7 +989,7 @@
         `${stats.audios} áudios (${stats.audiosTranscritos} com transcrição).`
     );
     // O nome vem do INÍCIO da leitura: lido no fim, podia ser o de outra conversa aberta enquanto os áudios transcreviam.
-    return { mensagens, nome: alvoNome || nomeDoContato(), stats };
+    return { mensagens, nome: alvoNome || nomeDoContato(), stats, infoAudios };
   }
 
   // ---------------------------------------------------------------------------
@@ -1204,7 +1209,39 @@
    * WhatsApp para cada um. O arquivo é transcrito e entra no lugar do "[áudio]", na ordem certa da conversa.
    * Devolve true para gerar (com os anexados ou sem eles) ou false se o SDR fechou o aviso (cancela).
    */
-  function completarAudiosFaltando(mensagens, server) {
+  /** Rola a conversa até a bolha desta chave e a destaca. Devolve true se achou. */
+  async function irParaAudio(chave) {
+    const root = document.querySelector('#main') || document;
+    const achar = () => {
+      const els = acharMensagens(root);
+      const chaves = chavesDasMensagens(els);
+      const i = chaves.indexOf(chave);
+      return i === -1 ? null : els[i];
+    };
+    let el = achar();
+    const scroller = acharScroller(acharMensagens(root)[0]);
+    if (!el && scroller) {
+      // a lista do WhatsApp só tem na tela o que está perto: desce do topo até achar
+      scroller.scrollTop = 0;
+      await sleep(350);
+      for (let i = 0; i < 80 && !(el = achar()); i++) {
+        const antes = scroller.scrollTop;
+        scroller.scrollTop = antes + Math.max(200, Math.floor(scroller.clientHeight * 0.7));
+        await sleep(250);
+        if (scroller.scrollTop === antes) break;
+      }
+    }
+    if (!el) return false;
+    const bolha = el.closest('[role="row"]') || el;
+    try { bolha.scrollIntoView({ block: 'center' }); } catch (_) { /* jsdom */ }
+    const antes = bolha.style.outline;
+    bolha.style.outline = '3px solid #ffc233';
+    bolha.style.outlineOffset = '2px';
+    setTimeout(() => { bolha.style.outline = antes; }, 4000);
+    return true;
+  }
+
+  function completarAudiosFaltando(mensagens, server, infoAudios = []) {
     const faltando = mensagens.map((m, i) => ({ m, i })).filter(({ m }) => m.type === 'audio' && String(m.content || '').startsWith('[áudio'));
     if (!faltando.length) return Promise.resolve(true);
     const hora = (iso) => {
@@ -1212,13 +1249,29 @@
       return d && !Number.isNaN(d.getTime()) ? d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : 'sem hora';
     };
     const total = mensagens.filter((m) => m.type === 'audio').length;
-    const linhas = faltando.map(({ m, i }, k) =>
-      `<div data-cr-falta="${i}" style="display:flex;align-items:center;gap:8px;margin-top:6px;padding:6px 8px;background:#232127;border-radius:7px">` +
-      `<span style="flex:1;min-width:0">${k + 1}. <b>${m.from === 'eu' ? 'Você' : 'Lead'}</b> · ${escHtml(hora(m.timestamp))}` +
-      `<br><span data-cr-falta-status style="color:#a39e93;font-size:12px">não transcrito</span></span>` +
+    // A mensagem de texto logo antes do áudio: o jeito mais rápido de achar a bolha rolando a conversa.
+    const anterior = (i) => {
+      for (let j = i - 1; j >= 0; j--) {
+        if (mensagens[j].type !== 'audio' && mensagens[j].content) {
+          const t = String(mensagens[j].content).replace(/\s+/g, ' ').trim();
+          return (mensagens[j].from === 'eu' ? 'você: ' : 'lead: ') + (t.length > 38 ? t.slice(0, 38) + '…' : t);
+        }
+      }
+      return '';
+    };
+    const linhas = faltando.map(({ m, i }, k) => {
+      const info = infoAudios[i] || {};
+      const quando = [info.hora || (m.timestamp ? hora(m.timestamp) : ''), info.duracao ? `duração ${info.duracao}` : ''].filter(Boolean).join(' · ') || 'sem hora';
+      const antes = anterior(i);
+      return `<div data-cr-falta="${i}" style="display:flex;align-items:center;gap:8px;margin-top:6px;padding:6px 8px;background:#232127;border-radius:7px">` +
+      `<span style="flex:1;min-width:0">${k + 1}. <b>${m.from === 'eu' ? 'Você' : 'Lead'}</b> · ${escHtml(quando)}` +
+      (antes ? `<br><span style="color:#a39e93;font-size:12px">logo depois de “${escHtml(antes)}”</span>` : '') +
+      `<br><span data-cr-falta-status style="color:#a39e93;font-size:12px">não transcrito</span>` +
+      (info.chave ? ` <a href="#" data-cr-ver="${escHtml(info.chave)}" style="color:#ffc233;font-size:12px">Ver na conversa</a>` : '') +
+      `</span>` +
       `<label style="flex:none;cursor:pointer;background:#ffc233;color:#1a191c;font-weight:700;border-radius:6px;padding:4px 8px;font-size:12px">Anexar áudio` +
-      `<input type="file" accept="audio/*,.ogg,.opus,.oga,.mp3,.m4a,.aac,.wav,.webm,.amr" style="display:none"></label></div>`
-    ).join('');
+      `<input type="file" accept="audio/*,.ogg,.opus,.oga,.mp3,.m4a,.aac,.wav,.webm,.amr" style="display:none"></label></div>`;
+    }).join('');
     return new Promise((resolve) => {
       mostrarBadge({
         texto:
@@ -1242,7 +1295,10 @@
           status.textContent = 'transcrevendo…';
           status.style.color = '#ffc233';
           try {
-            const base64 = arrayBufferToBase64(await arquivo.arrayBuffer());
+            const bytes = arquivo.arrayBuffer
+              ? await arquivo.arrayBuffer()
+              : await new Promise((ok, erro) => { const fr = new FileReader(); fr.onload = () => ok(fr.result); fr.onerror = erro; fr.readAsArrayBuffer(arquivo); });
+            const base64 = arrayBufferToBase64(bytes);
             const resp = await new Promise((r) => chrome.runtime.sendMessage({ action: 'transcreverAudio', server, base64 }, r));
             if (resp && resp.ok && resp.texto && resp.texto.trim()) {
               mensagens[idx].content = resp.texto.trim();
@@ -1258,6 +1314,13 @@
           }
         };
         input.addEventListener('change', () => tratar(input.files && input.files[0]));
+        const ver = linha.querySelector('[data-cr-ver]');
+        if (ver) ver.addEventListener('click', async (e) => {
+          e.preventDefault();
+          ver.textContent = 'procurando…';
+          const achou = await irParaAudio(ver.getAttribute('data-cr-ver'));
+          ver.textContent = achou ? 'Ver na conversa (destacado em amarelo)' : 'não achei na tela — role até a hora indicada';
+        });
         // também aceita arrastar o arquivo para a linha
         linha.addEventListener('dragover', (e) => { e.preventDefault(); e.stopPropagation(); });
         linha.addEventListener('drop', (e) => { e.preventDefault(); e.stopPropagation(); tratar(e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]); });
@@ -1289,7 +1352,7 @@
           '<u>Não troque de conversa agora</u>.',
         loading: true,
       });
-      const { mensagens, nome, stats } = await coletarConversa(server, true);
+      const { mensagens, nome, stats, infoAudios } = await coletarConversa(server, true);
       if (!mensagens.length) {
         mostrarBadge({ texto: 'Nenhuma mensagem encontrada nesta conversa.', cor: '#ff6f5c' });
         jobEmAndamento = false;
@@ -1311,7 +1374,7 @@
       if (stats.audiosTranscritos < stats.audios) {
         capturaAtiva = false;
         restaurarAudios();
-        const seguir = await completarAudiosFaltando(mensagens, server);
+        const seguir = await completarAudiosFaltando(mensagens, server, infoAudios);
         if (!seguir) {
           mostrarBadge({ texto: 'Geração cancelada.', cor: '#f2a93b' });
           jobEmAndamento = false;

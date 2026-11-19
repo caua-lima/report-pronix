@@ -752,3 +752,38 @@ test('mistura de leads: áudio ouvido na conversa anterior, ANTES do clique nest
   assert.equal(envio.captureQuality.audiosTranscritos, 0);
   pagina.fechar();
 });
+
+// ---------------------------------------------------------------- áudios que faltaram: achar e anexar
+test('áudio que faltou: a lista mostra hora, duração e a mensagem de antes; anexar o arquivo transcreve e entra no report', async () => {
+  const servidor = servidorFalso();
+  const pagina = abrirPagina({ arquivo: 'extension/content.js', url: 'https://web.whatsapp.com/', aoEnviar: servidor.aoEnviar });
+  montarWhatsApp(pagina, [
+    { from: 'eu', texto: 'Me passa o contato do seu sócio?', hora: '13:29, 19/11/2026' },
+    { from: 'eles', texto: 'Sim irmão', hora: '13:31, 19/11/2026' },
+    { from: 'eles', tipo: 'audio', semBytes: true, dur: '0:11', horaBolha: '13:31' },
+    { from: 'eu', texto: 'Fechado', hora: '13:35, 19/11/2026' },
+  ], { audiosSemId: true });
+  try {
+    pagina.iniciar();
+    await esperar(() => /Faltaram estes/.test(pagina.badge()), { motivo: 'lista dos áudios que faltaram' });
+    const b = pagina.badge();
+    assert.match(b, /0 de 1 áudios transcritos/);
+    assert.match(b, /· 13:31 · duração 0:11/);
+    assert.match(b, /logo depois de “lead: Sim irmão”/);
+    assert.ok(pagina.document.querySelector('[data-cr-ver]'), 'botão "Ver na conversa"');
+    // anexa o arquivo baixado (arrastando para a linha)
+    const linha = pagina.document.querySelector('[data-cr-falta]');
+    const arquivo = new pagina.w.File([audioFake(77)], 'audio.ogg', { type: 'audio/ogg' });
+    const ev = new pagina.w.Event('drop', { bubbles: true, cancelable: true });
+    Object.defineProperty(ev, 'dataTransfer', { value: { files: [arquivo] } });
+    linha.dispatchEvent(ev);
+    await esperar(() => /transcrito ✓/.test(pagina.badge()), { motivo: 'áudio anexado transcrito' });
+    pagina.document.querySelector('[data-cr-acao="gerar"]').click();
+    await esperar(() => servidor.chamadas.reports.length === 1, { motivo: 'report enviado' });
+    const envio = servidor.chamadas.reports[0];
+    assert.deepEqual(envio.mensagens.filter((m) => m.type === 'audio').map((m) => m.content), ['transcrição do áudio 77']);
+    assert.equal(envio.captureQuality.audiosTranscritos, 1);
+  } finally {
+    pagina.fechar();
+  }
+});
