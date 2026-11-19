@@ -174,3 +174,22 @@ test('Closers do time: o SDR escolhido (Samuel) — os cards dele, não os seus'
   assert.equal(r.sdr, 'Samuel Filipe');
   assert.ok(listas.some((q) => q.sdr_id === 'u-sam'), 'a lista do CRM é a do Samuel');
 });
+
+test('SDR com a aba "Meus closers" liberada: só os próprios números, mesmo pedindo outro SDR ou o time', async () => {
+  for (const pedido of ['Cauã Lima', 'time', '']) {
+    listas.length = 0;
+    const r = await painelClosers.painel({ usuario: { id: 'u-sam-chave', nome: 'Samuel Filipe' }, sdr: pedido, mes: '2026-09', atualizar: true, soOsMeus: true });
+    assert.equal(r.sdr, 'Samuel Filipe', `pediu "${pedido}"`);
+    assert.deepEqual(r.sdrsDisponiveis, ['Samuel Filipe'], 'não oferece outro SDR');
+    assert.ok(listas.every((q) => !q.sdr_id || q.sdr_id === 'u-sam'), 'nenhuma leitura do CRM com os cards de outro SDR');
+  }
+});
+
+test('aba "meusclosers": liberável por pessoa, fechada por padrão para SDR e gestor', () => {
+  const usuarios = require('../src/usuarios');
+  assert.ok(usuarios.ABAS.includes('meusclosers'));
+  assert.equal(usuarios.podeAba({ papel: 'sdr' }, 'meusclosers'), false);
+  assert.equal(usuarios.podeAba({ papel: 'gestor' }, 'meusclosers'), false);
+  assert.equal(usuarios.podeAba({ papel: 'sdr', abas: { meusclosers: true } }, 'meusclosers'), true);
+  assert.equal(usuarios.podeAba({ papel: 'sdr', abas: { meusclosers: true } }, 'closers'), false, 'liberar Meus closers não libera o resto');
+});
