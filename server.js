@@ -655,11 +655,15 @@ app.get('/api/master/leads-respondeu', auth, soMasterComChave, async (req, res) 
     res.status(502).json({ erro: err.message });
   }
 });
-app.get('/api/master/closers-do-sdr', auth, soMasterComChave, async (req, res) => {
+// Master: qualquer SDR do time e o time todo. Quem tem a aba "meusclosers" liberada (Acessos): só os próprios números.
+const meusClosersLiberado = (req, res, next) =>
+  usuarios.ehMaster(req.usuario) || usuarios.podeAba(req.usuario, 'meusclosers') ? next() : res.status(403).json({ erro: SO_MASTER_ERRO.erro });
+app.get('/api/master/closers-do-sdr', auth, meusClosersLiberado, async (req, res) => {
   try {
     const { sdr, mes, atualizar } = req.query || {};
+    const soOsMeus = !usuarios.ehMaster(req.usuario);
     res.set('Cache-Control', 'no-store');
-    res.json({ ok: true, ...(await painelClosers.painel({ usuario: req.usuario, sdr, mes, atualizar: atualizar === '1' })) });
+    res.json({ ok: true, ...(await painelClosers.painel({ usuario: req.usuario, sdr: soOsMeus ? '' : sdr, mes, atualizar: atualizar === '1', soOsMeus })) });
   } catch (err) {
     res.status(/ainda não começou/.test(err.message) ? 400 : 502).json({ erro: err.message });
   }

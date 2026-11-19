@@ -43,7 +43,8 @@ const normalizar = (u) => {
 // Abas do painel que o master libera por pessoa (a de Acessos é sempre só dele). Sem escolha feita, vale
 // o padrão do papel: master vê todas; gestor vê as de gestão; usuário (SDR) não vê nenhuma.
 //  - equipe: na aba "Reports do dia", ver e baixar os reports de todos os SDRs.
-const ABAS = ['numeros', 'resultados', 'closers', 'arquivos', 'base', 'extensao', 'equipe'];
+//  - meusclosers: a aba "Meus closers" SÓ com os números da própria pessoa (sem escolher outro SDR nem o time).
+const ABAS = ['numeros', 'resultados', 'closers', 'arquivos', 'base', 'extensao', 'equipe', 'meusclosers'];
 const ABAS_DO_GESTOR = ['numeros', 'arquivos', 'base', 'extensao', 'equipe'];
 
 /** Esta pessoa pode abrir esta aba? A escolha do master (u.abas) vale sobre o padrão do papel. */

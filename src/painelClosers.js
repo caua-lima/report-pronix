@@ -124,9 +124,9 @@ function porCloser(reunioes) {
 
 /**
  * O painel: o mês (AAAA-MM, padrão o atual), o SDR (nome; 'time' = você e o time do Match) e os números por closer.
- * @param {{ usuario: {id, nome}, sdr?: string, mes?: string, atualizar?: boolean }} p
+ * @param {{ usuario: {id, nome}, sdr?: string, mes?: string, atualizar?: boolean, soOsMeus?: boolean }} p
  */
-async function painel({ usuario, sdr, mes, atualizar = false } = {}) {
+async function painel({ usuario, sdr, mes, atualizar = false, soOsMeus = false } = {}) {
   if (!crm.configurado()) throw new Error('O CRM não está configurado no servidor.');
   const prazoFinal = Date.now() + ORCAMENTO_MS();
   const hoje = stats.emDiaLocal(new Date().toISOString());
@@ -134,8 +134,9 @@ async function painel({ usuario, sdr, mes, atualizar = false } = {}) {
   const inicio = mesOk + '-01';
   const fim = ultimoDiaDoMes(mesOk) < hoje ? ultimoDiaDoMes(mesOk) : hoje;
   if (inicio > hoje) throw new Error('Esse mês ainda não começou.');
-  const disponiveis = sdrsDisponiveis(usuario);
-  const time = String(sdr || '') === 'time';
+  // Quem não é master só vê os próprios números: nem outro SDR, nem o time (o servidor garante, não só a tela).
+  const disponiveis = soOsMeus ? [usuario.nome] : sdrsDisponiveis(usuario);
+  const time = !soOsMeus && String(sdr || '') === 'time';
   const escolhido = time ? '' : disponiveis.find((n) => mesmaPessoa(n, sdr)) || usuario.nome;
   const sdrs = time ? disponiveis : [escolhido];
   const chave = `closers5_${usuario.id}_${slug(sdrs.join(' '))}_${mesOk}`;
