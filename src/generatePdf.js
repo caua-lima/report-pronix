@@ -6,7 +6,6 @@ const fs = require('fs');
 const path = require('path');
 const PDFDocument = require('pdfkit');
 const { slugify } = require('./generateDoc');
-const { infoDoNivel, mostrarConsciencia, mostrarBarra, tituloDoMomento, NIVEIS } = require('./consciencia');
 const { doresVisiveis } = require('./dores');
 
 const OUTPUT_DIR = path.join(__dirname, '..', 'output');
@@ -58,6 +57,9 @@ function faixaNoTopo(doc, y0, larg, altura) {
   doc.rect(MARGIN, y0, larg, 3.5).fill(OURO);
   doc.restore();
 }
+
+const ETAPAS_TIMING = ['cedo', 'avaliando', 'quase', 'pronto'];
+const ROTULO_TIMING = { cedo: 'Ainda cedo', avaliando: 'Avaliando', quase: 'Quase pronto', pronto: 'Pronto para decidir' };
 
 function semEmoji(t) {
   return String(t || '')
@@ -140,13 +142,15 @@ function render(doc, dados) {
   }
 
 
-  // ---- Temperatura do lead: dores, momento do lead (o selo do nível de consciência) e sinais de compra ----
-  // O selo aparece sempre que há leitura: título escrito para o lead, a fala dele e o porquê. A barra de
-  // degraus só entra quando o nível é bom.
-  const verConsciencia = mostrarConsciencia(dados.consciencia);
-  const verBarra = mostrarBarra(dados.consciencia);
-  const tituloMomento = verConsciencia ? tituloDoMomento(dados.consciencia, dados.lead) : '';
-  const falaMomento = verConsciencia && dados.consciencia.fala ? `“${semEmoji(dados.consciencia.fala)}”` : '';
+  // ---- Temperatura do lead: dores, TIMING DO LEAD (pronto para decidir ou não) e sinais de compra ----
+  // O timing substitui o antigo "Momento do lead": título, o porquê, a régua de 4 degraus e, quando há,
+  // a fala do lead que comprova ("Nas palavras do lead").
+  const timing = dados.timing && dados.timing.titulo ? dados.timing : null;
+  const verConsciencia = Boolean(timing); // (nome antigo da variável: o bloco do meio do cartão)
+  const verBarra = Boolean(timing);
+  const tituloMomento = timing ? semEmoji(timing.titulo) : '';
+  const falaMomento = timing && timing.fala ? `“${semEmoji(timing.fala)}”` : '';
+  const ROTULO_FALA = 'NAS PALAVRAS DO LEAD';
   const sinais = (dados.sinais_compra || []).filter(Boolean);
   // Termômetro de dores: só dor de fato (intensidade 3 ou mais). É o motivo da compra, então abre o cartão.
   const dores = doresVisiveis(dados.dores);
@@ -156,8 +160,8 @@ function render(doc, dados) {
     const pad = 13;
     const xIn = MARGIN + pad + 4;
     const wTxt = larg - pad * 2 - 4;
-    const info = infoDoNivel(dados.consciencia);
-    const porque = verConsciencia ? String(dados.consciencia.porque || '') : '';
+    const passoDoTiming = timing ? Math.max(1, ETAPAS_TIMING.indexOf(timing.status) + 1) : 0;
+    const porque = timing ? String(timing.porque || '') : '';
 
     // Mede antes de desenhar (o cartão tem fundo).
     let h = pad;
@@ -178,13 +182,14 @@ function render(doc, dados) {
       h += 12 + (verBarra ? 16 : 2); // rótulo + barra
       doc.font('Helvetica-Bold').fontSize(12);
       h += doc.heightOfString(tituloMomento, { width: wTxt }) + 2;
-      if (falaMomento) {
-        doc.font('Helvetica-Oblique').fontSize(10);
-        h += doc.heightOfString(falaMomento, { width: wTxt }) + 3;
-      }
       if (porque) {
         doc.font('Helvetica').fontSize(10);
         h += doc.heightOfString(porque, { width: wTxt }) + 4;
+      }
+      if (falaMomento) {
+        h += 13; // rótulo "Nas palavras do lead"
+        doc.font('Helvetica-Oblique').fontSize(10);
+        h += doc.heightOfString(falaMomento, { width: wTxt }) + 3;
       }
     }
     if (sinais.length) {
@@ -224,29 +229,29 @@ function render(doc, dados) {
 
     if (verConsciencia) {
       doc.font('Helvetica-Bold').fontSize(8.5).fillColor(OURO)
-        .text('MOMENTO DO LEAD', xIn, y, { width: wTxt, characterSpacing: 0.5 });
+        .text('TIMING DO LEAD', xIn, y, { width: wTxt, characterSpacing: 0.5 });
       y += 12;
-      if (verBarra) {
-        // Barra de 5 degraus: acende até o nível do lead.
-        const gap = 4;
-        const wSeg = (Math.min(wTxt, 260) - gap * (NIVEIS.length - 1)) / NIVEIS.length;
-        NIVEIS.forEach((n, i) => {
-          const cor = n.numero <= info.numero ? OURO : '#45424b';
-          doc.save().roundedRect(xIn + i * (wSeg + gap), y + 2, wSeg, 6, 3).fill(cor).restore();
-        });
-        y += 16;
-      } else {
-        y += 2;
-      }
+      // Régua de 4 degraus (cedo → avaliando → quase → pronto): acende até o timing do lead.
+      const gap = 4;
+      const wSeg = (Math.min(wTxt, 260) - gap * (ETAPAS_TIMING.length - 1)) / ETAPAS_TIMING.length;
+      ETAPAS_TIMING.forEach((_, i) => {
+        const cor = i < passoDoTiming ? OURO : '#45424b';
+        doc.save().roundedRect(xIn + i * (wSeg + gap), y + 2, wSeg, 6, 3).fill(cor).restore();
+      });
+      doc.font('Helvetica').fontSize(8).fillColor('#a39e93')
+        .text(ROTULO_TIMING[timing.status] || '', xIn + Math.min(wTxt, 260) + 10, y, { width: wTxt - Math.min(wTxt, 260) - 10 });
+      y += 16;
       doc.font('Helvetica-Bold').fontSize(12).fillColor('#ffffff').text(tituloMomento, xIn, y, { width: wTxt });
       y = doc.y + 2;
-      if (falaMomento) {
-        doc.font('Helvetica-Oblique').fontSize(10).fillColor(OURO).text(falaMomento, xIn, y, { width: wTxt });
-        y = doc.y + 3;
-      }
       if (porque) {
         doc.font('Helvetica').fontSize(10).fillColor('#d5d0c5').text(porque, xIn, y, { width: wTxt });
         y = doc.y + 4;
+      }
+      if (falaMomento) {
+        doc.font('Helvetica-Bold').fontSize(7.5).fillColor(OURO).text(ROTULO_FALA, xIn, y + 1, { width: wTxt, characterSpacing: 0.5 });
+        y = doc.y + 2;
+        doc.font('Helvetica-Oblique').fontSize(10).fillColor(OURO).text(falaMomento, xIn, y, { width: wTxt });
+        y = doc.y + 3;
       }
     }
     if (sinais.length) {
@@ -291,6 +296,21 @@ function render(doc, dados) {
     doc.moveDown(0.7);
   });
 
+  // ---- Coisas para usar contra o lead (falas do lead que o closer devolve na hora da decisão) ----
+  const alavancas = (dados.alavancas || []).filter((a) => a && a.fala && a.usar);
+  if (alavancas.length) {
+    novaPaginaSePreciso(doc, 70);
+    tituloSecao(doc, 'Coisas para usar contra o lead');
+    alavancas.forEach((a) => {
+      novaPaginaSePreciso(doc, 40);
+      const y0 = doc.y;
+      doc.font('Helvetica-Oblique').fontSize(10.5).fillColor(PRETO).text(`“${semEmoji(a.fala)}”`, MARGIN + 14, y0, { width: larg - 14 });
+      doc.font('Helvetica').fontSize(10).fillColor('#4d4a45').text(semEmoji(a.usar), MARGIN + 14, doc.y + 1, { width: larg - 14, paragraphGap: 6 });
+      doc.save().rect(MARGIN, y0, 3, doc.y - y0 - 6).fill(OURO_ESC).restore();
+    });
+    doc.moveDown(0.5);
+  }
+
   // ---- Nas palavras do lead (citações) ----
   if (Array.isArray(dados.citacoes) && dados.citacoes.length) {
     novaPaginaSePreciso(doc, 60);
@@ -304,79 +324,7 @@ function render(doc, dados) {
     });
     doc.moveDown(0.4);
   }
-
-  // ---- Frase de impacto (caixa preta com texto dourado = marca PRONIX) ----
-  if (dados.frase_impacto) {
-    novaPaginaSePreciso(doc, 80);
-    doc.moveDown(0.2);
-    const y0 = doc.y;
-    doc.font('Helvetica-Oblique').fontSize(11.5);
-    const wTxt = larg - 30;
-    const h = doc.heightOfString(`“${dados.frase_impacto}”`, { width: wTxt });
-    doc.save().roundedRect(MARGIN, y0, larg, h + 24, 9).fill(PRETO).restore();
-    faixaNoTopo(doc, y0, larg, h + 24);
-    doc.font('Helvetica-Oblique').fontSize(11.5).fillColor(OURO)
-      .text(`“${dados.frase_impacto}”`, MARGIN + 15, y0 + 12, { width: wTxt });
-    doc.y = y0 + h + 24;
-  }
-
-  // ---- Abertura sugerida (fala pronta) — POR ÚLTIMO: é o que o closer usa ao vivo ----
-  if (dados.abertura) {
-    doc.moveDown(0.5);
-    const pad = 12;
-    const wTxt = larg - pad * 2 - 4;
-
-    // Pontos-chave (Investimento/Motivação/Decisor) logo abaixo da fala: entre uma
-    // call e outra o closer bate o olho só neste card e já tem o essencial, sem
-    // rolar até a tabela do topo. São os mesmos 3 campos que o resumo já garante
-    // preenchidos — não chama a IA de novo, é só reaproveitar o que já veio.
-    const normalizado = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
-    const rotulosChave = ['investimento', 'motiva', 'decisor'];
-    const pontosChave = rotulosChave
-      .map((alvo) => (dados.resumo || []).find((r) => normalizado(r.rotulo).includes(alvo)))
-      .filter(Boolean);
-
-    doc.font('Helvetica-Bold').fontSize(8.5);
-    const hRot = doc.heightOfString('COMO INICIAR A REUNIÃO', { width: wTxt });
-    doc.font('Helvetica-Oblique').fontSize(10.5);
-    const hTxt = doc.heightOfString(`“${dados.abertura}”`, { width: wTxt, lineGap: 1.5 });
-
-    doc.font('Helvetica').fontSize(8.5);
-    let hChave = 0;
-    if (pontosChave.length) {
-      hChave = 14; // divisor + respiro
-      pontosChave.forEach((p) => {
-        hChave += doc.heightOfString(`${p.rotulo}: ${p.valor}`, { width: wTxt, lineGap: 1 }) + 4;
-      });
-    }
-
-    const alturaCartao = pad * 2 + hRot + 6 + hTxt + hChave;
-    novaPaginaSePreciso(doc, alturaCartao + 12);
-    const y0 = doc.y;
-    doc.save().roundedRect(MARGIN, y0, larg, alturaCartao, 9).fillAndStroke(CLARO, BORDA).restore();
-    faixaNoTopo(doc, y0, larg, alturaCartao);
-    doc.font('Helvetica-Bold').fontSize(8.5).fillColor(OURO_ESC)
-      .text('COMO INICIAR A REUNIÃO', MARGIN + pad + 4, y0 + pad, { width: wTxt, characterSpacing: 0.5 });
-    doc.font('Helvetica-Oblique').fontSize(10.5).fillColor(TEXTO)
-      .text(`“${dados.abertura}”`, MARGIN + pad + 4, doc.y + 6, { width: wTxt, lineGap: 1.5 });
-
-    if (pontosChave.length) {
-      doc.moveDown(0.35);
-      const lyChave = doc.y;
-      doc.save().moveTo(MARGIN + pad + 4, lyChave).lineTo(MARGIN + pad + 44, lyChave)
-        .lineWidth(1).strokeColor(BORDA).stroke().restore();
-      doc.moveDown(0.3);
-      pontosChave.forEach((p) => {
-        doc.font('Helvetica-Bold').fontSize(8.5).fillColor(OURO_ESC)
-          .text(`${p.rotulo}: `, MARGIN + pad + 4, doc.y, { continued: true, width: wTxt });
-        doc.font('Helvetica').fontSize(8.5).fillColor('#4d4a45').text(p.valor, { width: wTxt, lineGap: 1 });
-        doc.moveDown(0.15);
-      });
-    }
-
-    doc.y = y0 + alturaCartao + 16;
-    doc.x = MARGIN;
-  }
+  // "Frase de impacto" e "Como iniciar a reunião" saíram do report.
 }
 
 const MAX_PAGINAS = 2;
@@ -384,6 +332,8 @@ const MAX_PAGINAS = 2;
 // Cortes progressivos para caber no limite, do menos essencial para o mais.
 // O RESUMO (a qualificação) nunca é tocado — é o motivo do relatório existir.
 const CORTES = [
+  (d) => { d.conversa = (d.conversa || []).slice(0, 7); d.alavancas = (d.alavancas || []).slice(0, 4); },
+  (d) => { d.conversa = (d.conversa || []).slice(0, 5); d.alavancas = (d.alavancas || []).slice(0, 3); },
   (d) => { d.conversa = (d.conversa || []).slice(0, 4); },
   (d) => { d.secoes = (d.secoes || []).map((s) => ({ ...s, itens: (s.itens || []).slice(0, 3) })); },
   (d) => { d.citacoes = (d.citacoes || []).slice(0, 2); },
@@ -397,6 +347,7 @@ const CORTES = [
   (d) => { d.secoes = (d.secoes || []).slice(0, 2); },
   (d) => { d.dores = (d.dores || []).slice(0, 1); },
   (d) => { d.citacoes = []; },
+  (d) => { d.alavancas = (d.alavancas || []).slice(0, 2); },
 ];
 
 /** Aplica os cortes 0..n numa CÓPIA (a tela continua mostrando o relatório inteiro). */
