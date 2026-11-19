@@ -723,8 +723,24 @@
     }
 
     const texto = extrairTexto(el);
-    if (!texto) return null; // imagem/figurinha/sistema sem texto: ignora
+    if (!texto) {
+      // Contato compartilhado (cartão com "Conversar" / "Salvar contato"): não tem texto comum, mas diz muito —
+      // quase sempre é o sócio, o cônjuge ou quem decide junto. Vai para o report como fala do remetente.
+      const contato = contatoCompartilhado(el);
+      if (contato) return { from: fromMe ? 'eu' : 'eles', type: 'texto', content: `[contato compartilhado: ${contato}]`, timestamp, ts };
+      return null; // imagem/figurinha/sistema sem texto: ignora
+    }
     return { from: fromMe ? 'eu' : 'eles', type: 'texto', content: texto, timestamp, ts };
+  }
+
+  /** Nome do contato de um cartão de contato compartilhado (vCard), ou '' se a bolha não é um. */
+  const BOTOES_DO_CARTAO = /^(conversar|salvar contato|adicionar contato|adicionar a um grupo|ver todos|message|save contact|add contact|view all|enviar mensagem)$/i;
+  function contatoCompartilhado(el) {
+    // cada pedaço de texto do cartão (nó-folha): nome, hora, "Conversar", "Salvar contato"
+    const linhas = [...el.querySelectorAll('*')].filter((n) => !n.children.length).map((n) => (n.textContent || '').trim()).filter(Boolean);
+    if (!linhas.some((t) => BOTOES_DO_CARTAO.test(t))) return '';
+    const nome = linhas.find((t) => !BOTOES_DO_CARTAO.test(t) && !/^\d{1,2}:\d{2}$/.test(t) && !/^(encaminhada|forwarded|editada)$/i.test(t) && t.length <= 80);
+    return nome || '';
   }
 
   // O cabeçalho traz o nome E o status ("online", "digitando…", "visto por último…").
