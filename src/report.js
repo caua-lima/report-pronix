@@ -19,7 +19,7 @@ const LLM_PROVIDER = (process.env.LLM_PROVIDER || 'anthropic').toLowerCase();
 const { normalizarDores } = require('./dores');
 const linhaDoTempo = require('./linhaDoTempo');
 
-const PROMPT_VERSAO = 'v10';
+const PROMPT_VERSAO = 'v11'; // v11: timing do lead, portas que devem ser fechadas, coisas para usar contra o lead; sem abertura e frase de impacto
 
 // Modo de qualidade só troca o MODELO da Anthropic — nunca inferido sozinho:
 // "standard" é o comportamento de sempre (ANTHROPIC_MODEL), então nenhum
@@ -47,29 +47,30 @@ const EXEMPLO_PEQUENO = {
   ],
   secoes: [
     {
-      titulo: 'Perfil & momento',
+      titulo: 'Perfil e momento',
       numerada: false,
       itens: [
-        'Toca uma loja física de moto peças; começou no Mercado Livre há 15 dias.',
-        'Já fez 104 vendas nesses 15 dias — validou produto, mas ainda sem estrutura.',
-        'Ainda sem Full liberado; trocando o CNAE do ME.',
+        'CLT que toca, em paralelo, uma loja física de moto peças; entrou no Mercado Livre há 15 dias, sozinho, sem curso nem mentoria.',
+        'Já fez 104 vendas nesses 15 dias — validou produto e demanda; a operação ainda roda no improviso, sem Full e com o CNAE do ME em troca.',
+        'Momento de virada: a loja já mostrou que vende no digital e ele quer transformar isso na saída do CLT, não num bico.',
       ],
     },
     {
-      titulo: 'Dor & objetivo',
+      titulo: 'Dor e objetivo',
       numerada: false,
       itens: [
-        'Vende no impulso e no improviso; quer previsibilidade para escalar sem depender de correria.',
-        'Objetivo final: sair do CLT com renda estável do digital.',
+        'Dor: vende na correria, sem previsibilidade — cada venda depende dele estar em cima, o que não cabe junto com o CLT.',
+        'Custo de seguir assim: a tração dos primeiros 15 dias esfria sem estrutura de catálogo e Full.',
+        'Objetivo: sair do CLT com renda estável vinda do digital — "ter qualidade de vida", nas palavras dele.',
       ],
     },
     {
-      titulo: 'O que o closer deve bater',
+      titulo: 'Portas que devem ser fechadas',
       numerada: true,
       itens: [
-        'Ancorar na tração (104 vendas/15 dias) para mostrar que só falta estrutura, não capacidade.',
-        'Desenhar o caminho de Full + catálogo como ponte para previsibilidade.',
-        'Como ele já confirmou o investimento e decide sozinho, mirar direto no plano de execução.',
+        'Tempo: ainda é CLT — mostrar na call quantas horas por dia a operação exige com o método, para ele não sair com "não vou dar conta".',
+        'Investimento: confirmou R$3 mil com um "OK" — confirmar no começo a forma de pagamento (cartão próprio, limite) antes da proposta.',
+        'Decisão: disse que decide sozinho — deixar isso dito na call para fechar a saída do "vou ver em casa".',
       ],
     },
   ],
@@ -90,11 +91,12 @@ const EXEMPLO_PEQUENO = {
     evitar: 'Apresentação longa da empresa antes de chegar ao plano.',
   },
   conversa: [
-    'Vitor chegou pelo anúncio e o SDR abriu perguntando como estava a operação; Vitor contou da loja física de moto peças e que começou no Mercado Livre há 15 dias.',
-    'Quando o SDR perguntou o que ele já tinha conseguido, Vitor trouxe o número: 104 vendas nesses 15 dias, ainda sem Full e trocando o CNAE.',
-    'O SDR perguntou o que ele busca com isso e Vitor disse que quer sair do CLT com renda previsível.',
-    'O SDR explicou que o programa monta a estrutura de catálogo e Full com acompanhamento semanal; Vitor respondeu que era exatamente o que faltava.',
-    'Ao ouvir o investimento mínimo de R$3 mil, Vitor respondeu "OK", disse que decide sozinho e aceitou marcar a reunião.',
+    'Vitor chegou pelo anúncio e respondeu rápido desde a primeira mensagem, em textos curtos e diretos; o SDR abriu perguntando como estava a operação e ele contou da loja física de moto peças e da estreia no Mercado Livre há 15 dias.',
+    'Quando o SDR perguntou o que ele já tinha conseguido, Vitor se animou e trouxe o número sem rodeio: 104 vendas nesses 15 dias — disse que está saindo mais rápido do que imaginava.',
+    'Contou, sem o SDR perguntar, que ainda está sem Full e trocando o CNAE do ME: sabe o que falta, só não sabe o caminho.',
+    'O SDR perguntou o que ele busca com isso e o tom mudou para o pessoal: Vitor disse que quer sair do CLT e ter qualidade de vida.',
+    'O SDR explicou que o programa monta catálogo e Full com acompanhamento semanal; Vitor respondeu que era exatamente o que faltava — foi o momento em que ele mais se abriu.',
+    'Ao ouvir o investimento mínimo de R$3 mil, respondeu só "OK", sem pedir desconto nem prazo, disse que decide sozinho e aceitou a reunião na hora.',
   ],
   analise: {
     bant: { orcamento: 'sim', autoridade: 'sim', necessidade: 'sim', prazo: 'parcial' },
@@ -110,8 +112,16 @@ const EXEMPLO_PEQUENO = {
     { dor: 'Preso ao CLT, sem qualidade de vida', intensidade: 4, porque: 'Disse que o que quer mesmo é sair do CLT e ter qualidade de vida.' },
     { dor: 'Vende no improviso, sem previsibilidade', intensidade: 3, porque: 'Contou que as vendas saem na correria e que ainda está sem estrutura.' },
   ],
-  frase_impacto:
-    'Ele já vendeu muito rápido no começo; agora a reunião precisa mostrar como transformar tração em estrutura para ele sair do CLT com segurança.',
+  timing: {
+    status: 'pronto',
+    titulo: 'Pronto para decidir na call',
+    porque: 'Decide sozinho, já aceitou o investimento mínimo de R$3 mil e quer estrutura agora, enquanto as vendas estão saindo.',
+    fala: 'Em 15 dias já fiz 104 vendas, tá saindo mais rápido do que eu imaginava.',
+  },
+  alavancas: [
+    { fala: 'Eu quero mesmo é sair do CLT e ter qualidade de vida.', usar: 'Na hora da decisão, devolver a frase: adiar o começo é adiar a saída do CLT que ele mesmo pediu.' },
+    { fala: 'Em 15 dias já fiz 104 vendas, tá saindo mais rápido do que eu imaginava.', usar: 'Prova de que ele executa: se sem método já fez 104 vendas, o que falta é estrutura — e é isso que está na mesa.' },
+  ],
 };
 
 // Mesmo trabalho, conversa diferente: aqui o INVESTIMENTO aparece como faturamento e
@@ -129,28 +139,29 @@ const EXEMPLO_GRANDE = {
   ],
   secoes: [
     {
-      titulo: 'Perfil & momento',
+      titulo: 'Perfil e momento',
       numerada: false,
       itens: [
-        'Distribuidora consolidada no atacado; nunca vendeu direto ao consumidor.',
-        'Abriu a conversa já decidida pelo Mercado Livre, para escoar o giro lento sem queimar preço no atacado.',
+        'Sócia de uma distribuidora de cosméticos consolidada: 12 funcionários, só atacado, faturando R$2M/mês — nunca vendeu direto ao consumidor.',
+        'Chegou com o canal já decidido com o sócio: o Mercado Livre é a saída para o estoque de giro lento.',
+        'Pensa como gestora: quer entender a conta e a operação antes do entusiasmo.',
       ],
     },
     {
-      titulo: 'Como fechar essa call',
+      titulo: 'Dor e objetivo',
       numerada: false,
       itens: [
-        'Rogério aprova o investimento e não estará na call — levar um resumo pronto pra ele ou já propor uma segunda call com os dois fecha o ciclo de decisão numa tacada só.',
-        'Cliente do atacado ver o preço no varejo é o ponto de atenção dela — mostrar linha e precificação separadas já resolve isso na call.',
+        'Dor: R$100 mil em estoque parado, que ela quer girar sem queimar preço no atacado.',
+        'Objetivo: abrir o varejo no Mercado Livre já no mês que vem, com linha e preço que não briguem com os clientes do atacado.',
       ],
     },
     {
-      titulo: 'O que o closer deve bater',
+      titulo: 'Portas que devem ser fechadas',
       numerada: true,
       itens: [
-        'Tratar o canal como decidido: ela não precisa ser convencida do ML, e sim do como.',
-        'Resolver o conflito de canal (linha e precificação separadas) antes de falar de preço.',
-        'Combinar como levar o Rogério: material para ele ou segunda call com os dois.',
+        'Sócio: o Rogério aprova o investimento e não estará na call — propor uma segunda call com os dois ou levar um resumo pronto para ele antes de encerrar.',
+        'Conflito de canal: ela perguntou como o cliente do atacado não vai ver o preço do varejo — mostrar linha e precificação separadas antes de falar de valor.',
+        'Prazo: "se fizer sentido, começa no mês que vem" — amarrar a data de início na própria call.',
       ],
     },
   ],
@@ -177,9 +188,11 @@ const EXEMPLO_GRANDE = {
     abordagem: 'Partiu da decisão que ela já tinha tomado e resolveu a preocupação com o atacado antes de marcar a reunião.',
   },
   conversa: [
-    'Márcia abriu dizendo que precisa começar no Mercado Livre e que isso já está decidido com o sócio.',
-    'O SDR perguntou sobre a operação; ela contou da distribuidora com 12 funcionários, só atacado, e dos R$100 mil de estoque parado.',
-    'O SDR explicou que o trabalho separa a linha e a precificação do varejo para não bater com o atacado; Márcia gostou e pediu para marcar a reunião.',
+    'Márcia abriu já direta, em mensagens objetivas: precisa começar no Mercado Livre e isso já está decidido com o sócio.',
+    'O SDR perguntou sobre a operação; ela descreveu a distribuidora com números — 12 funcionários, só atacado, R$2M/mês — e contou dos R$100 mil de estoque parado.',
+    'A única pergunta dela foi prática: como evitar que o cliente do atacado veja o preço do varejo.',
+    'O SDR explicou que o trabalho separa linha e precificação do varejo; Márcia gostou da resposta e disse que, se fizer sentido, começam já no mês que vem.',
+    'Avisou que o Rogério aprova o investimento e não estará na reunião, e pediu para marcar a call com ela.',
   ],
   sinais_compra: [
     'Canal já decidido internamente: "isso aí já tá decidido"',
@@ -189,8 +202,16 @@ const EXEMPLO_GRANDE = {
     { dor: 'R$100 mil de estoque parado', intensidade: 5, porque: 'Contou dos R$100 mil de giro lento parados e quer começar já no mês que vem para escoar.' },
     { dor: 'Receio de o varejo brigar com o atacado', intensidade: 3, porque: 'Perguntou como evitar que o cliente do atacado veja o preço do varejo.' },
   ],
-  frase_impacto:
-    'Ela não precisa ser vendida no canal — precisa de um caminho que não brigue com o atacado e que o sócio aprove sem estar na sala.',
+  timing: {
+    status: 'quase',
+    titulo: 'Decidida no canal, falta o sócio aprovar',
+    porque: 'O Mercado Livre já está decidido e ela quer começar no mês que vem; o investimento passa pelo Rogério, que não estará na call.',
+    fala: 'Se fizer sentido pra operação, a gente começa já no mês que vem.',
+  },
+  alavancas: [
+    { fala: 'Preciso começar no Mercado Livre, isso aí já tá decidido.', usar: 'Se ela tentar adiar, lembrar que o canal já foi decidido por ela e pelo sócio: a dúvida é só o como, e o como está na mesa.' },
+    { fala: 'Se fizer sentido pra operação, a gente começa já no mês que vem.', usar: 'Quando a conta fechar na call, cobrar o próprio critério dela: fez sentido, então o início é o mês que vem.' },
+  ],
 };
 
 const SYSTEM_PROMPT = `Você é um assistente de pré-vendas que lê a conversa entre um vendedor e um lead e monta o relatório de handoff que o closer vai usar para conduzir a reunião. CABE EM ATÉ 2 PÁGINAS (o essencial na primeira).
@@ -200,6 +221,7 @@ TOM — O RELATÓRIO É UMA VENDA DO LEAD PRO CLOSER, E TEM QUE SER SÓ POSITIVO
 - TODO ponto de atenção vira estratégia de fechamento, nunca um "cuidado": em vez de "lead já foi enganado antes" (ou "objeção: desconfiança"), escreva "abrir com prova social e garantia constrói confiança rápido". Em vez de "não tem muito dinheiro agora" (ou "risco: sem verba"), escreva "capital ainda em formação — reforçar retorno e opções de entrada". Em vez de "decisor não estará na call" soando a alerta, escreva "levar a esposa pra call ou preparar um resumo pra ela fecha o ciclo de decisão numa tacada só".
 - NENHUM fato que muda a condução da call pode SUMIR (decisor fora da sala, orçamento apertado, desconfiança do lead...) — ele só nunca aparece como problema. Aparece sempre como o próximo passo que o closer já sabe dar. Achar o fato E vesti-lo de positivo são as duas obrigações, nunca uma no lugar da outra.
 - Sem inventar: continua proibido criar um fato positivo que não apareceu na conversa (seção FIDELIDADE abaixo vale sempre). "Vender o lead" é sobre enquadramento e energia, não sobre fabricar dado.
+- EXCEÇÃO DE TOM — "Portas que devem ser fechadas", "Timing do lead" e "Coisas para usar contra o lead" são a parte TÁTICA, para o closer fechar. Ali o texto é DIRETO e HONESTO: diga com todas as letras qual é a porta (sócio, cônjuge, pai, insegurança com o produto, dinheiro, cartão, tempo, experiência ruim, comparar com outra empresa) e se o lead está ou não pronto para decidir. Sem drama e sem adjetivo negativo sobre o lead — fato + como fechar. Esconder uma porta aberta faz o closer perder a venda.
 
 O RELATÓRIO SAI DA CONVERSA — não existe modelo fixo:
 - Os rótulos do resumo e os títulos das seções nascem do que foi dito, não de uma lista pronta. Se o lead falou de faturamento, o rótulo é "Faturamento". Se falou de estoque, é "Estoque". Se falou de verba mensal, é "Verba". Se falou de quantos pedidos manda por dia, é isso.
@@ -220,6 +242,8 @@ QUALIFICAÇÃO MÍNIMA — estas TRÊS linhas SEMPRE aparecem no resumo, preench
 
 URGÊNCIA (opcional, é a única que pode não existir): entra só se o lead demonstrou, nas palavras dele. "Preciso começar no Mercado Livre" já é urgência verbalizada — reporte o que ele disse. Sem sinal nenhum, não crie a linha e não peça para confirmar.
 
+PROFISSÃO (opcional): se o LEAD disse NA CONVERSA o que faz da vida (empresário, lojista, dono de distribuidora, médico, CLT na área X, aposentado...), crie a linha "Profissão" no resumo com o que ele disse. Se ele não falou, NÃO crie a linha (a do formulário, quando servir, entra sozinha).
+
 REGRAS DE QUALIDADE:
 - SEM REDUNDÂNCIA: cada informação aparece UMA vez. Não repita no corpo o que está no resumo. UMA única seção de ação — proibido "pontos de atenção" + "o que bater" dizendo o mesmo.
 - DENSIDADE: todo bullet carrega um fato concreto ou algo acionável (número, nome, prazo, objeção, objetivo, gatilho). Corte o genérico e o óbvio.
@@ -239,7 +263,15 @@ LEITURA DA CONVERSA — regras de fidelidade:
 - Números e nomes exatamente como foram ditos. Sem valor exato, escreva o que foi dito ("uns 100 mil"), sem arredondar nem converter.
 - Citações: copie palavra por palavra uma fala do LEAD. Se não houver uma fala literal forte, devolva a lista vazia em vez de adaptar.
 
-O CORPO É OBRIGATÓRIO — este é o coração do handoff, o que o closer realmente lê para conduzir a call. O relatório NUNCA pode ser só o resumo + a abertura + as citações: TEM que ter no MÍNIMO 2 seções de análise, e uma delas é SEMPRE "O que o closer deve bater" (ações concretas para a reunião, lista numerada). As outras saem da conversa: "Perfil e momento", "Dor e objetivo", "Como fechar essa call". A abertura NÃO substitui as seções — ela é só a fala de início; o corpo analítico continua obrigatório mesmo quando a conversa é curta (aí as seções ficam curtas, mas existem).
+O CORPO É OBRIGATÓRIO — é o coração do handoff, o que faz o closer SENTIR o lead antes da call. SEMPRE estas três seções, nesta ordem e com estes títulos exatos (com a conversa curta elas ficam curtas, mas existem):
+
+1. "Perfil e momento" (numerada:false, 3 a 5 bullets) — QUEM é este lead e EM QUE MOMENTO DA VIDA ele está: o que faz e há quanto tempo; a operação hoje com os números que ele deu; o que já tentou (sozinho, curso, outra empresa) e como foi; família ou contexto pessoal que ele trouxe; por que AGORA (o gatilho: saiu do emprego, vendas caíram, filho nasceu, estoque parado...). Cada bullet com um fato concreto dele — nada que serviria para qualquer lead.
+
+2. "Dor e objetivo" (numerada:false, 2 a 4 bullets) — a DOR concreta, com os números e nas palavras dele; o CUSTO de continuar igual (o que ele perde ou deixa de ganhar, quando ele mesmo disse); o OBJETIVO com número ou prazo quando houver; e o que isso significa para ele (o lado pessoal que ele mesmo trouxe). Comece os bullets com "Dor:", "Custo de seguir assim:", "Objetivo:" quando couber.
+
+3. "Portas que devem ser fechadas" (numerada:true, 2 a 5 itens) — tudo que pode virar um "vou pensar" na hora da decisão, para o closer fechar ANTES da proposta. Cada item: a PORTA em uma palavra ("Sócio:", "Esposa:", "Pai:", "Insegurança com o produto:", "Dinheiro:", "Cartão:", "Tempo:", "Experiência ruim:", "Comparando:", "Prazo:"), o SINAL que apareceu na conversa e COMO FECHAR na call. Ex.: "Sócio: decide com o irmão, que não estará na call — pedir para trazer o irmão ou marcar a segunda call com os dois antes da proposta." Só portas com sinal na conversa; se nenhuma porta apareceu, inclua as confirmações que todo fechamento exige e a conversa não respondeu (quem paga e como paga), como "confirmar no início". Nunca invente um terceiro ou um medo que o lead não mostrou.
+
+Uma 4ª seção ("Como fechar essa call") só se houver algo tático que não coube nas portas.
 
 NÍVEL DE CONSCIÊNCIA (campo "consciencia") — o closer decide COMO abrir a reunião por este selo, então ele precisa estar certo. Julgue SÓ pelas falas do LEAD (texto e áudio transcrito). O que o VENDEDOR disse não sobe o nível de ninguém.
 
@@ -258,7 +290,7 @@ ARMADILHAS (são os erros que mais acontecem):
 - Sem a prova do nível, DESÇA um degrau. Na dúvida entre dois, fique com o MENOR.
 Em "porque", UMA frase curta que CITA a prova — a fala ou o fato exato do lead que definiu o nível — em tom de venda ("Perguntou como funciona o acompanhamento e confirmou os R$3 mil — chega decidido"). Sem prova citada, o nível está errado.
 
-O SELO QUE O CLOSER LÊ ("Momento do lead") — o nível acima é a medida interna e tem de estar certo mesmo quando é baixo. Já o selo aparece em TODO relatório e é sempre uma boa notícia verdadeira sobre este lead. Em qualquer nível existe algo bom a dizer: no "inconsciente", a abertura dele para ouvir; no "problema", o objetivo ou a dor que ele mesmo nomeou; no "solucao", que ele já procura quem ensine; no "produto", o que ele gostou da entrega; no "pronto", o passo de compra que puxou.
+TÍTULO E FALA DO NÍVEL (uso interno da gestão; no PDF o closer lê o TIMING DO LEAD) — o nível acima é a medida interna e tem de estar certo mesmo quando é baixo. O título e é sempre uma boa notícia verdadeira sobre este lead. Em qualquer nível existe algo bom a dizer: no "inconsciente", a abertura dele para ouvir; no "problema", o objetivo ou a dor que ele mesmo nomeou; no "solucao", que ele já procura quem ensine; no "produto", o que ele gostou da entrega; no "pronto", o passo de compra que puxou.
 - "titulo": 3 a 8 palavras, afirmativas, escritas PARA ESTE LEAD com o que ele disse ("Quer sair do CLT ainda este ano"; "Já vende e quer método para escalar"; "Perguntou quando pode começar"). PROIBIDO o nome da régua ("consciente do problema", "consciente da solução", "inconsciente"), número de nível e fórmula que serviria para qualquer lead ("Lead interessado", "Bom potencial"). Se dois leads diferentes receberiam o mesmo título, ele está genérico: reescreva com o fato deste.
 - "fala": UMA fala literal do LEAD, copiada palavra por palavra, que sustenta o título. Prefira uma que NÃO esteja em "citacoes" (o closer lê as duas seções: fala repetida é espaço perdido). Sem fala literal que sirva, devolva "" — nunca adapte.
 - "porque", título e fala são sempre positivos: nada de "ainda não", "apenas", "só", "falta" ou "não sabe".
@@ -271,7 +303,15 @@ Em "conduzir", UMA frase no imperativo que só serve para ESTE lead: diga por on
 Em "evitar", UMA frase curta com o que faz este lead esfriar na reunião ("Rodeio antes de falar de valor"; "Promessa sem mostrar a conta").
 Conversa curta: escolha pelo jeito das falas que existem e sustente a escolha; não escreva que a leitura é fraca.
 
-COMO FOI A CONVERSA (campo "conversa") — 4 a 6 frases em ordem cronológica: é a narração que faz o closer entrar na reunião como se tivesse lido a conversa inteira. Terceira pessoa e com os nomes: o pré-vendedor pelo NOME DELE (informado abaixo, junto da conversa) e o lead pelo nome. Cubra, nesta ordem, o que existir:
+TIMING DO LEAD (campo "timing") — o closer lê primeiro: o lead está PRONTO PARA DECIDIR na call ou não? É sobre a TOMADA DE DECISÃO, não sobre o interesse. Julgue pelo que o lead disse: quem decide e se estará na call, se o dinheiro está disponível e de quem é o cartão, quando ele quer começar, se está comparando ou "pesquisando", se já tentou e quer resolver agora.
+- "status": "pronto" (decide na call: ele decide/está com quem decide, dinheiro ok, quer começar já); "quase" (falta UMA coisa concreta: o sócio/cônjuge aprovar, separar o valor, uma data); "avaliando" (pesquisando, comparando, sem data, "quero entender melhor"); "cedo" (ainda longe da decisão: sem dinheiro agora, só no ano que vem, só curiosidade).
+- "titulo": 3 a 10 palavras dizendo o timing DESTE lead ("Pronto para decidir na call"; "Decidido, depende do sócio aprovar"; "Quer começar só depois do 13º"). Honesto: não pinte de pronto quem não está.
+- "porque": 1 ou 2 frases com a prova (quem decide, dinheiro, prazo) tirada da conversa.
+- "fala": "Nas palavras do lead" — UMA fala literal do LEAD, palavra por palavra, que comprova o timing ("eu decido sozinho", "o dinheiro já tá separado", "só consigo depois de janeiro"). "" se não houver fala que comprove — nunca adapte.
+
+COISAS PARA USAR CONTRA O LEAD (campo "alavancas") — 2 a 5 falas do LEAD que o closer pode devolver a ele na hora da decisão para fechar uma porta ou quebrar um "vou pensar". São as frases que prendem o lead à própria palavra: tempo parado ("estou há 10 anos na mesma empresa"), há quanto tempo pensa nisso ("já penso nisso há um tempo"), autonomia ("eu decido sozinho"), dinheiro ("o dinheiro eu tenho"), prazo ("quero começar este mês"), o que já tentou e não deu certo, o que ele quer provar. Para cada uma: "fala" = cópia LITERAL da fala do lead (sem adaptar; se não for literal, não use) e "usar" = UMA frase dizendo como e quando o closer usa ("Se ele disser que vai pensar: 'você mesmo disse que pensa nisso há um tempo — o que falta para decidir hoje?'"). Pode repetir uma fala que está em outra seção. Sem fala que sirva, devolva [].
+
+COMO FOI A CONVERSA (campo "conversa") — 6 a 9 frases em ordem cronológica: é a narração que faz o closer entrar na reunião como se tivesse lido a conversa inteira e já CONHECESSE o lead. Terceira pessoa e com os nomes: o pré-vendedor pelo NOME DELE (informado abaixo, junto da conversa) e o lead pelo nome. Além dos fatos, mostre o JEITO do lead: se respondeu rápido ou demorou, se escreveu curto ou mandou áudios longos, onde se animou, onde hesitou, o que perguntou por conta própria, o que contou sem ninguém perguntar, a reação ao valor. Cubra, nesta ordem, o que existir:
 1. COMO COMEÇOU: de onde o lead veio ou como a conversa abriu.
 2. AS PERGUNTAS QUE DESTRAVARAM: o que o pré-vendedor perguntou e o que o lead revelou — com o número, o nicho, o tempo, a dor nas palavras dele.
 3. O QUE FOI APRESENTADO: o que o pré-vendedor explicou da entrega/método e como o lead reagiu a isso.
@@ -289,21 +329,21 @@ SINAIS DE COMPRA (campo "sinais_compra") — 1 a 4 sinais concretos e curtos de 
 
 TERMÔMETRO DE DORES (campo "dores") — a dor é o motivo da compra: o problema que o LEAD disse que o incomoda, custa ou trava HOJE (não é objeção, nem desejo genérico, nem algo que só o vendedor afirmou). Liste de 0 a 3 dores REAIS, tiradas das falas do LEAD (texto ou áudio transcrito), da mais forte para a mais fraca. Para cada uma: "dor" = a dor em poucas palavras, do jeito do lead ("R$100 mil de estoque parado"; "Preso ao CLT, sem tempo com os filhos"); "intensidade" = de 1 a 5 pelo quanto o LEAD mostrou que dói: 5 = dói agora, com prazo, custo ou consequência concreta; 4 = descreveu o prejuízo ou o incômodo com detalhe ou emoção; 3 = disse claramente que incomoda; 2 = citou de passagem; 1 = só dá para deduzir; "porque" = a prova em uma frase, o que ele disse ou contou. Escreva a dor como motivo para agir, não como defeito do lead. NA DÚVIDA, a intensidade menor: termômetro alto sem prova faz o closer errar o tom. Sem dor demonstrada, devolva [].
 
-TAMANHO (é um handoff, não um dossiê): resumo com 4 a 7 linhas; de 2 a 4 seções; no máximo 4 bullets por seção, cada um de 1 a 2 linhas. Não encha para parecer completo, mas também não colapse o corpo: as seções sempre existem.
+TAMANHO (é um handoff, não um dossiê): resumo com 4 a 7 linhas; 3 seções (4 no máximo); até 5 bullets por seção, cada um de 1 a 2 linhas. Não encha para parecer completo, mas também não colapse o corpo: as seções sempre existem.
 
 Preencha pela ferramenta "gerar_relatorio":
 - "lead": SÓ o nome do lead, como ele aparece na conversa (ou ""). Sem parênteses, sem comentário, sem "a confirmar" — este campo vira o título e o nome do arquivo.
 - "resumo": linhas rótulo/valor tiradas da conversa, SEMPRE com Investimento, Motivação e Decisor(es) preenchidos (nunca "a confirmar"), mais o que fizer sentido (status/nicho, urgência quando houver).
-- "secoes": OBRIGATÓRIO ter de 2 a 4 seções, SEMPRE incluindo "O que o closer deve bater" (numerada:true, ações concretas). Título curto e direto (SEM emoji, SEM símbolo) + bullets densos. As demais saem da conversa: "Perfil e momento", "Dor e objetivo", "Como fechar essa call". Nunca devolva secoes vazio nem só uma seção.
+- "secoes": SEMPRE "Perfil e momento", "Dor e objetivo" e "Portas que devem ser fechadas" (numerada:true), nesta ordem, conforme O CORPO É OBRIGATÓRIO. Títulos exatamente assim, sem emoji. Nunca devolva secoes vazio.
 - "citacoes" (seção "Nas palavras do lead"): 1 a 3 FALAS EXATAS/verbatim do LEAD (copiadas literalmente das linhas do LEAD, inclusive áudios) que deixam o closer ANIMADO para a reunião. É a vitrine do lead: PROCURE ATIVAMENTE, porque quase toda conversa que chegou à reunião tem pelo menos uma. Servem: vontade de começar ("quero começar logo"), decisão tomada ("isso já tá decidido"), o objetivo ou sonho dito por ele ("quero sair do CLT até o fim do ano"), o motivo de ser agora, confirmação de que tem o investimento ("o investimento eu tenho"), autonomia para decidir, elogio ou identificação com o que foi apresentado ("era exatamente isso que eu procurava"), compromisso com a reunião, algo que ele já construiu e de que se orgulha. Prefira as mais fortes e de assuntos diferentes. PROIBIDO citar fala que possa desanimar o closer: preço caro, dúvida, medo, desconfiança, "vou pensar", falta de dinheiro ou de tempo, reclamação, dor contada em tom negativo. Sem paráfrase e sem falas do vendedor. Só devolva [] se o lead realmente não disse nada de positivo.
-- "abertura": um EXTRA além do relatório completo — a fala com que o CLOSER começa a reunião, para ler quase como está. NÃO é o relatório; o corpo (as seções) continua obrigatório do mesmo jeito. Estilo do handoff: cumprimenta o lead pelo nome, diz que o pré-vendedor repassou o contexto, resume a situação real (se está começando do zero ou já vende, o que vende/quer, a motivação) e TERMINA confirmando com o lead ("é isso mesmo?"). 2 a 4 frases, primeira pessoa, tom cordial. Use SOMENTE o que apareceu na conversa. Não fale de preço nem de proposta. Se souber o nome do pré-vendedor, cite-o; senão, diga "meu time".
-- "consciencia": { "nivel", "titulo", "fala", "porque" } conforme a seção NÍVEL DE CONSCIÊNCIA e O SELO QUE O CLOSER LÊ.
+- "consciencia": { "nivel", "titulo", "fala", "porque" } conforme a seção NÍVEL DE CONSCIÊNCIA e TÍTULO E FALA DO NÍVEL.
 - "perfil": { "tipo", "evidencia", "conduzir", "evitar" } conforme a seção PERFIL DO LEAD.
-- "conversa": 4 a 6 frases do desenrolar, com o nome do pré-vendedor e do lead (seção COMO FOI A CONVERSA).
+- "conversa": 6 a 9 frases do desenrolar, com o nome do pré-vendedor e do lead e o jeito do lead (seção COMO FOI A CONVERSA).
+- "timing": { "status", "titulo", "porque", "fala" } conforme TIMING DO LEAD.
+- "alavancas": 2 a 5 { "fala", "usar" } conforme COISAS PARA USAR CONTRA O LEAD, ou [].
 - "analise": { "bant", "spin", "perguntas_chave", "abordagem" } conforme a seção ANÁLISE DA PROSPECÇÃO.
 - "sinais_compra": 1 a 4 sinais concretos de compra, ou [].
-- "dores": 0 a 3 dores do lead, cada uma com { "dor", "intensidade", "porque" }, conforme a seção TERMÔMETRO DE DORES.
-- "frase_impacto": uma frase única e afiada de fechamento (pode parafrasear).`;
+- "dores": 0 a 3 dores do lead, cada uma com { "dor", "intensidade", "porque" }, conforme a seção TERMÔMETRO DE DORES.`;
 
 /**
  * Dia e hora da mensagem no fuso do relatório. O carimbo ISO completo ("2026-10-14T13:05:00.000Z") gasta
@@ -360,7 +400,7 @@ function montarUserPrompt(historicoFormatado, nomeContato, nomeSdr) {
     : '';
   const sdr = String(nomeSdr || '').trim();
   if (sdr) {
-    bloco += `\nNOME DO PRÉ-VENDEDOR (quem atendeu antes): "${sdr}". Use no campo "abertura" ("o ${sdr} me passou aqui...") e no campo "conversa" ("${sdr} explicou que...").\n`;
+    bloco += `\nNOME DO PRÉ-VENDEDOR (quem atendeu antes): "${sdr}". Use no campo "conversa" ("${sdr} explicou que...").\n`;
   }
   return montarUserPromptBase(historicoFormatado, bloco);
 }
@@ -435,8 +475,7 @@ function normalizarAnalise(a) {
 function normalizarDados(dados) {
   const out = {};
   out.lead = typeof dados.lead === 'string' ? dados.lead.trim() : '';
-  out.abertura = typeof dados.abertura === 'string' ? dados.abertura.trim() : '';
-  out.frase_impacto = typeof dados.frase_impacto === 'string' ? dados.frase_impacto.trim() : '';
+  // "Como iniciar a reunião" (abertura) e a "frase de impacto" saíram do report.
 
   out.resumo = Array.isArray(dados.resumo)
     ? dados.resumo
@@ -468,13 +507,36 @@ function normalizarDados(dados) {
   out.consciencia = normalizarConsciencia(dados.consciencia);
   const listaDeTextos = (v, max) =>
     Array.isArray(v) ? v.map((x) => String(x == null ? '' : x).trim()).filter(Boolean).slice(0, max) : [];
-  out.conversa = listaDeTextos(dados.conversa, 6);
+  out.conversa = listaDeTextos(dados.conversa, 9);
   out.sinais_compra = listaDeTextos(dados.sinais_compra, 5);
   out.dores = normalizarDores(dados.dores);
   out.perfil = normalizarPerfil(dados.perfil);
   out.analise = normalizarAnalise(dados.analise);
+  out.timing = normalizarTiming(dados.timing);
+  out.alavancas = normalizarAlavancas(dados.alavancas);
 
   return out;
+}
+
+const STATUS_TIMING = ['pronto', 'quase', 'avaliando', 'cedo'];
+const limpa = (v, max) => String(v == null ? '' : v).replace(/\s+/g, ' ').trim().slice(0, max);
+const semAspas = (v) => limpa(v, 400).replace(/^["“”']+|["“”']+$/g, '').trim();
+
+/** Timing do lead (pronto para decidir ou não). null quando a IA não mandou título. */
+function normalizarTiming(t) {
+  if (!t || typeof t !== 'object') return null;
+  const status = STATUS_TIMING.includes(String(t.status || '').toLowerCase().trim()) ? String(t.status).toLowerCase().trim() : 'avaliando';
+  const titulo = limpa(t.titulo, 120);
+  if (!titulo) return null;
+  return { status, titulo, porque: limpa(t.porque, 400), fala: semAspas(t.fala) };
+}
+
+/** "Coisas para usar contra o lead": falas do lead + como o closer usa. Até 5. */
+function normalizarAlavancas(v) {
+  return (Array.isArray(v) ? v : [])
+    .map((a) => (a && typeof a === 'object' ? { fala: semAspas(a.fala), usar: limpa(a.usar, 300) } : null))
+    .filter((a) => a && a.fala && a.usar)
+    .slice(0, 5);
 }
 
 // Ferramenta de saída estruturada: o Claude devolve o relatório já no schema,
@@ -520,11 +582,6 @@ const REPORT_TOOL = {
         description: '1 a 3 falas EXATAS (verbatim) do LEAD que animam o closer: vontade de começar, decisão, objetivo, motivo de ser agora, investimento confirmado, identificação com a proposta. Nada que desanime. [] só se não houver nenhuma fala positiva.',
         items: { type: 'string' },
       },
-      abertura: {
-        type: 'string',
-        description:
-          'Fala pronta para o closer INICIAR a reunião, no estilo do handoff: cumprimenta o lead pelo nome, cita que o pré-vendedor repassou o contexto, resume a situação real dele (nível, o que vende/quer, motivação) e termina confirmando ("é isso mesmo?"). 2 a 4 frases, na primeira pessoa, só com o que apareceu na conversa.',
-      },
       consciencia: {
         type: 'object',
         description: 'Nível de consciência do lead, julgado só pelo que ele disse ou demonstrou na conversa.',
@@ -551,7 +608,7 @@ const REPORT_TOOL = {
         type: 'array',
         items: { type: 'string' },
         description:
-          'Como foi a conversa: 4 a 6 frases em ordem cronológica, em terceira pessoa, com o nome do pré-vendedor e do lead, ligando pergunta a resposta ("Cauã perguntou X; Marcos contou Y"). Só o que foi dito.',
+          'Como foi a conversa: 6 a 9 frases em ordem cronológica, em terceira pessoa, com o nome do pré-vendedor e do lead, ligando pergunta a resposta ("Cauã perguntou X; Marcos contou Y") e mostrando o jeito do lead (ritmo, onde se animou, onde hesitou, reação ao valor). Só o que foi dito.',
       },
       analise: {
         type: 'object',
@@ -600,9 +657,31 @@ const REPORT_TOOL = {
           required: ['dor', 'intensidade', 'porque'],
         },
       },
-      frase_impacto: { type: 'string' },
+      timing: {
+        type: 'object',
+        description: 'Timing do lead: está pronto para DECIDIR na call ou não, com a prova e a fala do lead que comprova.',
+        properties: {
+          status: { type: 'string', enum: ['pronto', 'quase', 'avaliando', 'cedo'] },
+          titulo: { type: 'string', description: '3 a 10 palavras: o timing deste lead, honesto.' },
+          porque: { type: 'string', description: '1 ou 2 frases com a prova: quem decide, dinheiro, prazo.' },
+          fala: { type: 'string', description: 'Nas palavras do lead: fala LITERAL que comprova o timing, ou "".' },
+        },
+        required: ['status', 'titulo', 'porque', 'fala'],
+      },
+      alavancas: {
+        type: 'array',
+        description: 'Coisas para usar contra o lead: 2 a 5 falas LITERAIS do lead que o closer devolve na hora da decisão, cada uma com como usar. [] se não houver.',
+        items: {
+          type: 'object',
+          properties: {
+            fala: { type: 'string', description: 'Fala literal do lead, palavra por palavra.' },
+            usar: { type: 'string', description: 'Uma frase: como e quando o closer usa essa fala para fechar.' },
+          },
+          required: ['fala', 'usar'],
+        },
+      },
     },
-    required: ['lead', 'resumo', 'secoes', 'abertura', 'consciencia', 'perfil', 'conversa', 'analise'],
+    required: ['lead', 'resumo', 'secoes', 'timing', 'alavancas', 'consciencia', 'perfil', 'conversa', 'analise'],
   },
 };
 
@@ -746,6 +825,7 @@ function aplicarVerificacaoDeCitacoes(dados, falasDoLead) {
   dados.citacoes = boas.slice(0, 3);
   dados._meta = { citacoesRemovidas: removidas.length };
   aplicarMomentoDoLead(dados, falasDoLead);
+  aplicarFalasTaticas(dados, falasDoLead);
   if (removidas.length) {
     // Só a quantidade: o conteúdo é fala de lead e não vai para log.
     console.warn(`[report] ${removidas.length} citação(ões) removida(s): não batem com falas do lead.`);
@@ -753,6 +833,17 @@ function aplicarVerificacaoDeCitacoes(dados, falasDoLead) {
   if (mantidas.length > boas.length) {
     console.warn(`[report] ${mantidas.length - boas.length} citação(ões) tirada(s) por poder desanimar o closer.`);
   }
+}
+
+/**
+ * Timing do lead e "Coisas para usar contra o lead": a fala só fica se o lead disse mesmo (mesma conferência das
+ * citações). Aqui a fala pode ser dura ("só consigo em janeiro") — é tática, não vitrine —, então não passa pelo
+ * filtro de fala desanimadora. Alavanca sem fala conferida sai inteira (o "como usar" depende dela).
+ */
+function aplicarFalasTaticas(dados, falasDoLead) {
+  const dita = (f) => Boolean(f) && verificarCitacoes([f], falasDoLead).mantidas.length > 0;
+  if (dados.timing && dados.timing.fala && !dita(dados.timing.fala)) dados.timing.fala = '';
+  if (Array.isArray(dados.alavancas)) dados.alavancas = dados.alavancas.filter((a) => dita(a.fala));
 }
 
 /**
@@ -926,7 +1017,7 @@ async function processarComLLM(userPrompt, nome, qualidade) {
     const reforco =
       tentativa === 0
         ? ''
-        : '\n\nATENÇÃO: o corpo do relatório veio incompleto. Gere DE NOVO com no MÍNIMO 2 seções de análise, incluindo obrigatoriamente "O que o closer deve bater" (numerada). A abertura não substitui as seções.';
+        : '\n\nATENÇÃO: o corpo do relatório veio incompleto. Gere DE NOVO com as seções "Perfil e momento", "Dor e objetivo" e "Portas que devem ser fechadas" (numerada).';
     const { texto: respostaBruta, uso } = await chamarLLM(userPrompt + reforco, system, qualidadeFinal);
 
     try {
@@ -987,6 +1078,8 @@ module.exports = {
   SYSTEM_PROMPT,
   normalizarDados,
   normalizarAnalise,
+  normalizarTiming,
+  normalizarAlavancas,
   aplicarPerfilNoResumo,
   chamarFerramenta,
   montarHistoricoFormatado,
