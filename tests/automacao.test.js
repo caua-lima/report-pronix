@@ -390,7 +390,7 @@ test('etiquetas do formulário: permissão própria (padrão só o master); o ma
 // ---------------------------------------------------------------- abas do painel por pessoa
 test('abas do painel: padrão pelo papel, e o master libera ou tira aba por aba de cada pessoa', async () => {
   const eu = async (chave) => (await chamar('GET', '/api/eu', undefined, chave)).json.abas;
-  assert.deepEqual(await eu(E.master), ['numeros', 'resultados', 'closers', 'arquivos', 'base', 'extensao', 'equipe'], 'master: todas');
+  assert.deepEqual(await eu(E.master), ['numeros', 'resultados', 'closers', 'arquivos', 'base', 'extensao', 'equipe', 'meusclosers'], 'master: todas');
   assert.deepEqual(await eu(E.sdr), [], 'usuário: nenhuma aba de gestão');
   const get = (rota, chave) => chamar('GET', rota, undefined, chave);
   assert.equal((await get('/api/master/resultados', E.sdr)).status, 403);
@@ -415,7 +415,7 @@ test('abas do painel: padrão pelo papel, e o master libera ou tira aba por aba 
   // a lista de usuários mostra o que cada um tem, para o checklist
   const lista = (await get('/api/admin/usuarios', E.master)).json;
   const doSdr = lista.usuarios.find((u) => u.id === E.idSdr);
-  assert.deepEqual(doSdr.abas, { numeros: false, resultados: true, closers: false, arquivos: false, base: false, extensao: false, equipe: false });
+  assert.deepEqual(doSdr.abas, { numeros: false, resultados: true, closers: false, arquivos: false, base: false, extensao: false, equipe: false, meusclosers: false });
   assert.ok(Object.values(lista.usuarios.find((u) => u.papel === 'master').abas).every(Boolean));
 
   // gestor: começa com as de gestão, e o master pode tirar uma
