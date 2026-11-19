@@ -14,6 +14,8 @@ const closers = require('./closers');
 
 const DIAS = 30; // reports do lead olhados para trás
 
+const { nomeOficial } = require('./timeComercial');
+
 const normalizar = (s) =>
   String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 const digitos = (s) => String(s || '').replace(/\D/g, '');
@@ -23,14 +25,26 @@ const digitos = (s) => String(s || '').replace(/\D/g, '');
  * casa com "Vitor Augusto Manoel dos Santos": todas as palavras do cadastro estão no nome. Dois
  * cadastros casando = ambíguo, não escolhe.
  */
-function acharCloser(lista, nome) {
-  const palavras = new Set(normalizar(nome).split(' ').filter(Boolean));
+function acharCloserDireto(lista, nome) {
+  const doRd = normalizar(nome).split(' ').filter(Boolean);
+  const palavras = new Set(doRd);
   if (!palavras.size) return null;
-  const casam = (lista || []).filter((c) => {
-    const doCadastro = normalizar(c.nome).split(' ').filter(Boolean);
-    return doCadastro.length > 0 && doCadastro.every((p) => palavras.has(p));
-  });
-  return casam.length === 1 ? casam[0] : null;
+  const cadastro = (lista || []).map((c) => ({ c, p: normalizar(c.nome).split(' ').filter(Boolean) })).filter((x) => x.p.length > 0);
+  const casam = cadastro.filter((x) => x.p.every((p) => palavras.has(p)));
+  if (casam.length) return casam.length === 1 ? casam[0].c : null;
+  // O RD também abrevia: "Pedro Pasin" (RD) é o "Pedro Henrique Pasin" do cadastro. Vale ao contrário — todas as
+  // palavras do RD no cadastro — só com nome e sobrenome (2+ palavras) e um único cadastro casando.
+  if (doRd.length < 2) return null;
+  const contidos = cadastro.filter((x) => doRd.every((p) => x.p.includes(p)));
+  return contidos.length === 1 ? contidos[0].c : null;
+}
+
+/** Igual, mas aceita também as outras grafias conhecidas de um closer do time ("Zayra" → "Zayra Beatriz da Silva Lima"). */
+function acharCloser(lista, nome) {
+  const direto = acharCloserDireto(lista, nome);
+  if (direto) return direto;
+  const oficial = nomeOficial(nome);
+  return oficial && normalizar(oficial) !== normalizar(nome) ? acharCloserDireto(lista, oficial) : null;
 }
 
 /** O card está com um closer? No RD, o responsável só é o closer depois que a reunião aconteceu (ou no funil dos closers). */

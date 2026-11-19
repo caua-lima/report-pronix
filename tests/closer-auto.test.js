@@ -87,3 +87,19 @@ test('não preenche: closer que não está cadastrado, card ainda com o pré-ven
   assert.equal(await closerAuto.preencher({ usuario: CAUA, conversa, ficha: fichaRd('Qualificado', 'SMQLs Automaticos', 'Cauã Lima'), reuniao: { closer: '' } }), null);
   assert.equal(await closerDe('n1'), '');
 });
+
+test('acharCloser: o RD abrevia o nome do closer ("Pedro Pasin" é o "Pedro Henrique Pasin" do cadastro)', () => {
+  const lista = [{ id: 'p', nome: 'Pedro Henrique Pasin' }, { id: 'm', nome: 'Pedro Henrique Melo Palermo' }, { id: 'z', nome: 'Zayra Beatriz da Silva Lima' }];
+  assert.equal(closerAuto.acharCloser(lista, 'Pedro Pasin').nome, 'Pedro Henrique Pasin');
+  assert.equal(closerAuto.acharCloser(lista, 'pedro palermo').nome, 'Pedro Henrique Melo Palermo');
+  assert.equal(closerAuto.acharCloser(lista, 'Pedro Henrique'), null, 'casa com os dois Pedros: não escolhe');
+  assert.equal(closerAuto.acharCloser(lista, 'Pedro'), null, 'uma palavra só não basta ao contrário');
+  assert.equal(closerAuto.acharCloser(lista, 'Pedro Souza'), null);
+});
+
+test('acharCloser: grafia de uma palavra só que é conhecida do time ("Zayra") acha o cadastro oficial', () => {
+  const lista = [{ id: 'z', nome: 'Zayra Beatriz da Silva Lima' }, { id: 'j', nome: 'Jenniffer' }];
+  assert.equal(closerAuto.acharCloser(lista, 'Zayra').nome, 'Zayra Beatriz da Silva Lima');
+  assert.equal(closerAuto.acharCloser(lista, 'Jenniffer Lauany Barros').nome, 'Jenniffer');
+  assert.equal(closerAuto.acharCloser(lista, 'Amarildo'), null);
+});
