@@ -58,3 +58,11 @@ As duplicatas acima foram resolvidas no servidor, sem precisar mexer no RD:
 - Testes: `tests/handoffs-realizadas.test.js` cobre as grafias duplicadas. Closers: 24/24 passando.
 
 Fora do time atual (não cadastrados de propósito): Igor Martins, Vitor Santos, Lívia Moura (Inside - Vekta).
+
+## 2026-11-19 — No ar (merge direto na main, autorizado pelo Cauã)
+
+- report-pronix: `main` em f771d84 (fast-forward da branch `fix/closers-nome-oficial-rd`).
+- report-closer: `main` em 024cb74 (fast-forward da branch `fix/closer-nome-abreviado-rd`), mesma correção do `acharCloser`.
+- Conferido no site após o deploy (Meus closers, time todo, novembro): uma linha por closer.
+  Pedro Henrique Pasin 8 reuniões / 2 vendas (antes dividido em 3 + 5) e Zayra Beatriz da Silva Lima 4 reuniões
+  (antes 2 + 2). Igor Martins agora aparece em "fora da tabela", por não estar no time atual.
