@@ -1789,7 +1789,7 @@ test('Acessos: checklist das abas do painel por pessoa; marcar manda só aquela 
   const p = abrirPainel(api, { hash: '#acessos' });
   await esperar(() => p.$('lista').textContent.includes('Samuel'), { motivo: 'lista' });
   const caixas = [...p.document.querySelectorAll('[data-aba-de="u2"]')];
-  assert.deepEqual(caixas.map((c) => c.dataset.aba), ['numeros', 'resultados', 'closers', 'arquivos', 'base', 'extensao', 'equipe']);
+  assert.deepEqual(caixas.map((c) => c.dataset.aba), ['numeros', 'resultados', 'closers', 'arquivos', 'base', 'extensao', 'equipe', 'meusclosers']);
   assert.ok(caixas.every((c) => !c.checked));
   assert.equal(p.document.querySelectorAll('[data-aba-de="u1"]').length, 0, 'o master tem todas: sem caixas');
   assert.match(p.$('lista').textContent, /todas \(master\)/);

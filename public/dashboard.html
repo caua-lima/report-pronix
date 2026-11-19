@@ -890,7 +890,7 @@
 
     <!-- ================= ABA: MEUS CLOSERS (só o master) ================= -->
     <section id="aba-meusclosers" class="hidden">
-      <div class="card">
+      <div class="card so-master-bloco">
         <div class="head"><div class="t"><i data-ic="download"></i>Handoffs das reuniões realizadas</div><div class="sub">— todos os cards dos closers do nosso time que foram para a reunião realizada no período (de qualquer SDR; o outro time comercial fica de fora), com o handoff que está no CRM (ou, sem ele, o texto do report guardado aqui). Um .zip por closer: um .txt por reunião e um índice em CSV.</div></div>
         <div class="row">
           <div style="min-width:150px"><label for="hrDe">De</label><input id="hrDe" type="date" /></div>
@@ -900,7 +900,7 @@
         <div id="hrStatus" class="status"></div>
         <div id="hrLista" style="margin-top:8px"></div>
       </div>
-      <div class="card">
+      <div class="card so-master-bloco">
         <div class="head"><div class="t"><i data-ic="users"></i>Qual closer para este lead?</div><div class="sub">— coloque o PDF do report: o sistema cruza o perfil do lead com o histórico de cada closer do nosso time no CRM (reuniões realizadas dos últimos 120 dias, com venda ou não e o handoff de cada uma) e indica os dois com mais chance de fechar</div></div>
         <div id="icBase" class="hint" style="margin:0 0 8px">Base ainda não montada.</div>
         <div class="row">
@@ -911,7 +911,7 @@
         <div id="icStatus" class="status"></div>
         <div id="icResultado" style="margin-top:8px"></div>
       </div>
-      <div class="card">
+      <div class="card so-master-bloco">
         <div class="head"><div class="t"><i data-ic="download"></i>Leads em Respondeu (recontato)</div><div class="sub">— do mês. Você: Aplicação Direta (todos) e SMQLs Automáticos (só os seus). Outro SDR: só os cards dele, no funil dele (Samuel: SMQLs, Respondeu; Nicoly e Isamara: IA Social Selling; Luiza e Juliana: Funil MQL; Reinaldo: Funil de Recuperação — esses três em Contato iniciado e Respondeu). O .txt traz nome, telefone e inscrição; o CSV é o da lista de transmissão do WhatsApp (Nome, Telefone).</div></div>
         <div class="row">
           <div style="min-width:160px"><label for="lrMes">Mês</label><input id="lrMes" type="month" /></div>
@@ -924,7 +924,7 @@
       <div class="card">
         <div class="head"><div class="t"><i data-ic="users"></i>Meus closers</div><div class="sub">— com que closer seus leads mais compram: reuniões realizadas, vendas, ticket médio e conversão do mês, lidos do CRM</div></div>
         <div class="row">
-          <div style="min-width:200px;flex:1"><label for="mcSdr">SDR</label><select id="mcSdr"><option value="">Você</option></select></div>
+          <div id="mcSdrCaixa" style="min-width:200px;flex:1"><label for="mcSdr">SDR</label><select id="mcSdr"><option value="">Você</option></select></div>
           <div style="min-width:160px"><label for="mcMes">Mês</label><input id="mcMes" type="month" /></div>
           <button id="mcAtualizar" class="btn sec"><i data-ic="refresh"></i>Atualizar do CRM</button>
         </div>
@@ -1555,10 +1555,11 @@
     let minhasAbas = new Set();
     const ROTULO_ABAS = [
       ['numeros', 'Reports gerados'], ['resultados', 'Resultados da reunião'], ['closers', 'Closers'], ['arquivos', 'Arquivos'],
-      ['base', 'Base'], ['extensao', 'Extensão'], ['equipe', 'Reports do dia da equipe'],
+      ['base', 'Base'], ['extensao', 'Extensão'], ['equipe', 'Reports do dia da equipe'], ['meusclosers', 'Meus closers (só os números dela/dele)'],
     ];
     const podeAba = (a) =>
-      a === 'report' || a === 'dia' || (a === 'acessos' || a === 'funil' || a === 'match' || a === 'meusclosers' || a === 'closerstime' || a === 'pronixclub' ? podeMexerEmUsuarios() : Boolean(senhaAdmin) || minhasAbas.has(a));
+      a === 'report' || a === 'dia' || (a === 'acessos' || a === 'funil' || a === 'match' || a === 'closerstime' || a === 'pronixclub' ? podeMexerEmUsuarios() : a === 'meusclosers' ? podeMexerEmUsuarios() || minhasAbas.has(a) : Boolean(senhaAdmin) || minhasAbas.has(a));
+    // "Meus closers" liberado para quem não é master: a aba abre, mas só com os números da própria pessoa.
     const temAbaDeGestao = () => SO_ADMIN.some(podeAba);
     let papelConhecido = false; // a chave já foi conferida (antes disso não dá para saber se é master)
     let validacaoPendente = false; // a chave ainda está sendo conferida (a lista do dia espera: o papel muda o que ela mostra)
@@ -1606,6 +1607,9 @@
     function aplicarPapel() {
       // Cada aba aparece só para quem tem ela liberada (o master tem todas).
       document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('hidden', !podeAba(t.dataset.aba)));
+      // Em "Meus closers", quem não é master vê só a própria tabela: sem handoffs, indicação, recontato nem escolha de SDR.
+      document.querySelectorAll('.so-master-bloco').forEach((b) => b.classList.toggle('hidden', !podeMexerEmUsuarios()));
+      if ($('mcSdrCaixa')) $('mcSdrCaixa').classList.toggle('hidden', !podeMexerEmUsuarios());
       const naAba = (location.hash || '').replace('#', '');
       if (SO_ADMIN.includes(naAba) && !podeAba(naAba)) abrir('report');
     }
@@ -1956,7 +1960,7 @@
       }
       let baseCarregada = false;
       async function carregarBase() {
-        if (baseCarregada) return;
+        if (baseCarregada || !podeMexerEmUsuarios()) return;
         baseCarregada = true;
         try {
           const r = await fetchComTempo('/api/master/indicacao/base', { headers: hdr() });
@@ -2156,7 +2160,7 @@
         if (!doTime) {
           // você, cada um do time, ou o time todo
           const atual = d.sdr || '';
-          sel.innerHTML = (d.sdrsDisponiveis || []).map((n, i) => `<option value="${esc(i === 0 ? '' : n)}">${esc(i === 0 ? n + ' (você)' : n)}</option>`).join('') + '<option value="time">Time todo</option>';
+          sel.innerHTML = (d.sdrsDisponiveis || []).map((n, i) => `<option value="${esc(i === 0 ? '' : n)}">${esc(i === 0 ? n + ' (você)' : n)}</option>`).join('') + (podeMexerEmUsuarios() ? '<option value="time">Time todo</option>' : '');
           sel.value = atual === 'time' ? 'time' : (d.sdrsDisponiveis || [])[0] && atual === d.sdrsDisponiveis[0] ? '' : atual;
         }
         const t = d.total || {};
