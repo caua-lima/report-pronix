@@ -6,6 +6,9 @@
 // Com `sdr` (outro SDR do time): só os cards com aquele SDR, no funil dele (FUNIS_DO_SDR) — Samuel: SMQLs; Nicoly e
 // Isamara: IA Social Selling; Luiza e Juliana: Funil MQL; Reinaldo: Funil de Recuperação (esses três: Contato iniciado e
 // Respondeu).
+// Com `funil` (aplicacao, smql, social, mql, recuperacao): só aquele funil.
+// Com `de`/`ate` (AAAA-MM-DD): no lugar do mês, os cards que ENTRARAM em Respondeu (ou na etapa da lista) nesse período,
+// pelo histórico de etapas do card — é a lista de recontato de quem respondeu e parou ali.
 // Cada linha: nome, telefone e a data em que se inscreveu (criação do card). Só leitura no CRM. Lê em partes (a Vercel
 // corta em 60 s): o que não couber fica para a próxima rodada (pendentes) e o que já foi lido fica guardado.
 
@@ -74,6 +77,33 @@ const FUNIS_PADRAO = [
   { rotulo: 'SMQLs Automáticos', re: /smql/, etapas: ['respondeu'] },
 ];
 
+// Funis que dá para escolher na lista (a chave vai no ?funil=).
+const FUNIS_ESCOLHA = [
+  { chave: 'aplicacao', rotulo: 'Aplicação Direta', re: /aplicacao direta/ },
+  { chave: 'smql', rotulo: 'SMQLs Automáticos', re: /smql/ },
+  { chave: 'social', rotulo: 'IA Social Selling', re: /social selling/ },
+  { chave: 'mql', rotulo: 'Funil MQL', re: /(^| )mqls?( |$)/ },
+  { chave: 'recuperacao', rotulo: 'Funil de Recuperação', re: /recupera/ },
+];
+const diaOk = (s) => (/^\d{4}-\d{2}-\d{2}$/.test(String(s || '')) ? String(s) : '');
+const idDaEtapaNoHistorico = (h) => {
+  const v = h && h.deal_stage_id;
+  return v && typeof v === 'object' ? idDe(v) : String(v || '');
+};
+
+/**
+ * Quando o card entrou (pela última vez) na etapa, pelo histórico de etapas (ISO). '' quando a etapa não está no
+ * histórico (aí o card fica de fora e entra no aviso).
+ */
+function entrouNaEtapa(deal, etapa) {
+  const hist = (Array.isArray(deal && deal.deal_stage_histories) ? deal.deal_stage_histories : [])
+    .filter((h) => h && Number.isFinite(Date.parse(h.start_date || '')))
+    .sort((a, b) => Date.parse(a.start_date) - Date.parse(b.start_date));
+  const nela = hist.filter((h) => idDaEtapaNoHistorico(h) === etapa.id || (h.deal_stage_name && norm(h.deal_stage_name) === norm(etapa.nome)));
+  if (nela.length) return nela[nela.length - 1].start_date;
+  return '';
+}
+
 /** O telefone do contato do card: do próprio card, ou do detalhe do contato (guardado 1 dia). */
 async function telefoneDoCard(d) {
   const c = (d.contacts || [])[0] || {};
@@ -95,18 +125,31 @@ async function telefoneDoCard(d) {
  * @param {{ usuario: {id, nome}, mes?: string, sdr?: string }} p
  * @returns {Promise<{ mes, sdr, linhas: Array<{funil, nome, telefone, inscricao}>, texto, csv, pendentes, avisos }>}
  */
-async function gerar({ usuario, mes, sdr } = {}) {
+async function gerar({ usuario, mes, sdr, funil, de, ate } = {}) {
   if (!crm.configurado()) throw new Error('O CRM não está configurado no servidor.');
   const prazoFinal = Date.now() + ORCAMENTO_MS();
   const hoje = stats.emDiaLocal(new Date().toISOString());
   const mesOk = /^\d{4}-(0[1-9]|1[0-2])$/.test(String(mes || '')) ? mes : hoje.slice(0, 7);
-  const inicio = mesOk + '-01';
-  const fim = ultimoDiaDoMes(mesOk) < hoje ? ultimoDiaDoMes(mesOk) : hoje;
+  // período de ENTRADA na etapa (de/até) no lugar do mês de criação
+  const porEntrada = Boolean(diaOk(de) || diaOk(ate));
+  let inicio = mesOk + '-01';
+  let fim = ultimoDiaDoMes(mesOk) < hoje ? ultimoDiaDoMes(mesOk) : hoje;
+  if (porEntrada) {
+    inicio = diaOk(de) || '2000-01-01';
+    fim = diaOk(ate) && diaOk(ate) < hoje ? diaOk(ate) : hoje;
+    if (inicio > fim) throw new Error('Período inválido: a data "de" é depois da data "até".');
+  }
   const funis = await crm.funis();
   const avisos = [];
   const outro = String(sdr || '').trim() && norm(sdr) !== norm(usuario.nome) ? String(sdr).trim() : '';
   const nomeSdr = outro || usuario.nome;
-  const config = (outro && (FUNIS_DO_SDR.find((c) => c.sdr.test(norm(outro))) || {}).funis) || FUNIS_PADRAO;
+  let config = (outro && (FUNIS_DO_SDR.find((c) => c.sdr.test(norm(outro))) || {}).funis) || FUNIS_PADRAO;
+  const escolhido = FUNIS_ESCOLHA.find((f) => f.chave === String(funil || '').trim());
+  if (escolhido) {
+    // o funil escolhido, com as etapas que esse SDR já usa nele (senão: só Respondeu)
+    const doSdr = config.find((c) => c.rotulo === escolhido.rotulo);
+    config = [{ rotulo: escolhido.rotulo, re: escolhido.re, etapas: doSdr ? doSdr.etapas : ['respondeu'] }];
+  }
   const eu = await crm.usuarioDoCrm(nomeSdr).catch(() => null);
   if (!eu) avisos.push(`Não achei o usuário "${nomeSdr}" no CRM: ${outro ? 'a lista ficou vazia' : 'os SMQLs ficaram de fora'}.`);
 
@@ -124,34 +167,47 @@ async function gerar({ usuario, mes, sdr } = {}) {
   }
   const cards = [];
   for (const p of pedidos) {
-    const chave = `respondeu_lista2_${p.alvo.funil.id}_${p.alvo.etapa.id}_${p.filtro.sdr_id || 'todos'}_${inicio}_${fim}`;
+    const chave = `respondeu_lista2_${p.alvo.funil.id}_${p.alvo.etapa.id}_${p.filtro.sdr_id || 'todos'}_${porEntrada ? 'entrada_' : ''}${inicio}_${fim}`;
     let lista = null;
     const g = await db.cacheGet(chave).catch(() => null);
     if (g) { try { lista = JSON.parse(g); } catch (_) { lista = null; } }
     if (!lista) {
+      const periodo = porEntrada ? {} : { created_at_period: 'true', start_date: crm.instanteDoDia(inicio), end_date: crm.instanteDoDia(fim, true) };
       const deals = await crm.listarNegociacoes(
-        { deal_pipeline_id: p.alvo.funil.id, deal_stage_id: p.alvo.etapa.id, ...p.filtro, created_at_period: 'true', start_date: crm.instanteDoDia(inicio), end_date: crm.instanteDoDia(fim, true) },
+        { deal_pipeline_id: p.alvo.funil.id, deal_stage_id: p.alvo.etapa.id, ...p.filtro, ...periodo },
         { timeoutMs: 25000 }
       );
       // confere aqui o que a lista diz (etapa, aberto e criado no mês) — o CRM pode ignorar algum filtro
       lista = deals
         .filter((d) => idDe(d.deal_stage) === p.alvo.etapa.id || norm(d.deal_stage && d.deal_stage.name) === norm(p.alvo.etapa.nome))
         .filter((d) => d.win !== true && d.win !== false && !d.closed_at)
-        .filter((d) => { const c = d.created_at ? stats.emDiaLocal(d.created_at) : ''; return c >= inicio && c <= fim; })
+        .filter((d) => { if (porEntrada) return true; const c = d.created_at ? stats.emDiaLocal(d.created_at) : ''; return c >= inicio && c <= fim; })
         .map((d) => ({ id: idDe(d), name: d.name || '', created_at: d.created_at || '', contacts: d.contacts || [], updated_at: d.updated_at || '' }));
       await db.cacheSet(chave, JSON.stringify(lista), 10 * 60).catch(() => {});
     }
-    lista.forEach((d) => cards.push({ ...d, rotulo: p.rotulo }));
+    lista.forEach((d) => cards.push({ ...d, rotulo: p.rotulo, etapa: p.alvo.etapa }));
   }
 
   // contato e telefone: o detalhe do card (guardado) quando a lista não traz o contato; depois o telefone do contato
   const linhas = [];
   let pendentes = 0;
+  let semHistorico = 0;
   const vistos = new Set();
   for (const c of cards) {
     if (Date.now() > prazoFinal - 5000) { pendentes++; continue; }
     let d = c;
-    if (!(c.contacts || []).length) {
+    let entrada = '';
+    if (porEntrada) {
+      // a data de entrada na etapa vem do histórico, que só o detalhe do card traz
+      const det = await crm.detalhesDe([{ id: c.id, updated_at: c.updated_at }], { prazoMs: Math.max(1000, prazoFinal - 5000 - Date.now()) }).catch(() => []);
+      if (!det[0]) { pendentes++; continue; }
+      d = { ...c, ...det[0], contacts: (det[0].contacts || []).length ? det[0].contacts : c.contacts };
+      const quando = entrouNaEtapa(d, c.etapa);
+      if (!quando) { semHistorico++; continue; }
+      entrada = stats.emDiaLocal(quando);
+      if (entrada < inicio || entrada > fim) continue;
+    }
+    if (!(d.contacts || []).length) {
       const det = await crm.detalhesDe([{ id: c.id, updated_at: c.updated_at }], { prazoMs: Math.max(1000, prazoFinal - 5000 - Date.now()) }).catch(() => []);
       if (det[0]) d = { ...c, ...det[0] };
       else { pendentes++; continue; }
@@ -161,11 +217,12 @@ async function gerar({ usuario, mes, sdr } = {}) {
     const chaveLead = telefone.replace(/\D/g, '').slice(-8) || norm(nome);
     if (vistos.has(chaveLead)) continue;
     vistos.add(chaveLead);
-    linhas.push({ funil: c.rotulo, nome, telefone, inscricao: c.created_at ? stats.emDiaLocal(c.created_at).split('-').reverse().join('/') : '' });
+    linhas.push({ funil: c.rotulo, nome, telefone, inscricao: c.created_at ? stats.emDiaLocal(c.created_at).split('-').reverse().join('/') : '', entrada: entrada ? entrada.split('-').reverse().join('/') : '' });
   }
+  if (semHistorico) avisos.push(`${semHistorico} card(s) sem a entrada na etapa no histórico do CRM ficaram de fora.`);
   linhas.sort((a, b) => a.funil.localeCompare(b.funil) || String(a.inscricao.split('/').reverse().join('')).localeCompare(String(b.inscricao.split('/').reverse().join(''))) || a.nome.localeCompare(b.nome, 'pt-BR'));
-  const texto = linhas.map((l) => `${l.nome} - ${l.telefone || 'sem telefone no CRM'} - inscrito em ${l.inscricao || '?'}`).join('\r\n') + (linhas.length ? '\r\n' : '');
-  return { mes: mesOk, sdr: nomeSdr, inicio, fim, linhas, texto, csv: csvWhatsapp(linhas), pendentes, avisos };
+  const texto = linhas.map((l) => `${l.nome} - ${l.telefone || 'sem telefone no CRM'} - inscrito em ${l.inscricao || '?'}${l.entrada ? ' - entrou na etapa em ' + l.entrada : ''}`).join('\r\n') + (linhas.length ? '\r\n' : '');
+  return { mes: mesOk, sdr: nomeSdr, funil: escolhido ? escolhido.chave : '', porEntrada, inicio, fim, linhas, texto, csv: csvWhatsapp(linhas), pendentes, avisos };
 }
 
-module.exports = { gerar, telefoneBonito, acharFunil, csvWhatsapp };
+module.exports = { gerar, telefoneBonito, acharFunil, csvWhatsapp, entrouNaEtapa, FUNIS_ESCOLHA };

@@ -912,10 +912,13 @@
         <div id="icResultado" style="margin-top:8px"></div>
       </div>
       <div class="card so-master-bloco">
-        <div class="head"><div class="t"><i data-ic="download"></i>Leads em Respondeu (recontato)</div><div class="sub">— do mês. Você: Aplicação Direta (todos) e SMQLs Automáticos (só os seus). Outro SDR: só os cards dele, no funil dele (Samuel: SMQLs, Respondeu; Nicoly e Isamara: IA Social Selling; Luiza e Juliana: Funil MQL; Reinaldo: Funil de Recuperação — esses três em Contato iniciado e Respondeu). O .txt traz nome, telefone e inscrição; o CSV é o da lista de transmissão do WhatsApp (Nome, Telefone).</div></div>
+        <div class="head"><div class="t"><i data-ic="download"></i>Leads em Respondeu (recontato)</div><div class="sub">— do mês. Você: Aplicação Direta (todos) e SMQLs Automáticos (só os seus). Outro SDR: só os cards dele, no funil dele (Samuel: SMQLs, Respondeu; Nicoly e Isamara: IA Social Selling; Luiza e Juliana: Funil MQL; Reinaldo: Funil de Recuperação — esses três em Contato iniciado e Respondeu). Funil: escolha um só. Com as datas "Entrou na etapa de/até", o mês é ignorado e entram os cards que foram para a etapa nesse período (pelo histórico do card). O .txt traz nome, telefone e inscrição; o CSV é o da lista de transmissão do WhatsApp (Nome, Telefone).</div></div>
         <div class="row">
           <div style="min-width:160px"><label for="lrMes">Mês</label><input id="lrMes" type="month" /></div>
           <div style="min-width:200px"><label for="lrSdr">SDR</label><select id="lrSdr"><option value="">Eu</option><option value="Juliana Ferreira">Juliana Ferreira</option><option value="Luiza Lemes">Luiza Lemes</option><option value="Nicoly Beatriz">Nicoly Beatriz</option><option value="Isamara">Isamara</option><option value="Reinaldo Junior">Reinaldo Junior</option><option value="Samuel Filipe">Samuel Filipe</option></select></div>
+          <div style="min-width:190px"><label for="lrFunil">Funil</label><select id="lrFunil"><option value="">Os do SDR (padrão)</option><option value="smql">SMQLs Automáticos</option><option value="aplicacao">Aplicação Direta</option><option value="social">IA Social Selling</option><option value="mql">Funil MQL</option><option value="recuperacao">Funil de Recuperação</option></select></div>
+          <div style="min-width:150px"><label for="lrDe">Entrou na etapa de</label><input id="lrDe" type="date" /></div>
+          <div style="min-width:150px"><label for="lrAte">até</label><input id="lrAte" type="date" /></div>
           <button id="lrGerar" class="btn"><i data-ic="download"></i>Gerar .txt</button>
           <button id="lrCsv" class="btn"><i data-ic="download"></i>CSV do WhatsApp</button>
         </div>
@@ -1925,7 +1928,8 @@
       $('lrCsv').disabled = true;
       setStatus('statusLr', 'Lendo os leads no CRM… (pode levar até um minuto)', { loading: true });
       try {
-        const d = await api('GET', '/api/master/leads-respondeu?mes=' + encodeURIComponent($('lrMes').value) + ($('lrSdr').value ? '&sdr=' + encodeURIComponent($('lrSdr').value) : ''));
+        const extra = ['sdr', 'funil', 'de', 'ate'].map((k) => [k, $('lr' + k[0].toUpperCase() + k.slice(1)).value]).filter(([, v]) => v).map(([k, v]) => '&' + k + '=' + encodeURIComponent(v)).join('');
+        const d = await api('GET', '/api/master/leads-respondeu?mes=' + encodeURIComponent($('lrMes').value) + extra);
         if (d.pendentes && rodadaLr < 20) {
           rodadaLr++;
           setStatus('statusLr', `Lendo em partes (rodada ${rodadaLr}): ${d.linhas.length} prontos, faltam ${d.pendentes}. Continua sozinho…`, { loading: true });
@@ -1935,7 +1939,8 @@
         const csv = formatoLr === 'csv';
         const quem = $('lrSdr').value ? '-' + $('lrSdr').value.split(' ')[0].toLowerCase() : '';
         a.href = URL.createObjectURL(new Blob([csv ? d.csv : d.texto], { type: csv ? 'text/csv;charset=utf-8' : 'text/plain;charset=utf-8' }));
-        a.download = csv ? `recontato-whatsapp${quem}-${d.mes}.csv` : `respondeu${quem}-${d.mes}.txt`;
+        const sufixo = (d.funil ? '-' + d.funil : '') + '-' + (d.porEntrada ? d.inicio + '_a_' + d.fim : d.mes);
+        a.download = csv ? `recontato-whatsapp${quem}${sufixo}.csv` : `respondeu${quem}${sufixo}.txt`;
         document.body.appendChild(a);
         a.click();
         a.remove();

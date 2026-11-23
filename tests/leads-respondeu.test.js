@@ -57,6 +57,8 @@ global.fetch = async (url) => {
     const sdr = u.searchParams.get('sdr_id');
     return ok({ deals: DEALS.filter((d) => d.deal_pipeline.id === f && (!sdr || d.sdr === sdr)) });
   }
+  const dm = p.match(/^\/deals\/(.+)$/);
+  if (dm) { const d = DEALS.find((x) => x.id === dm[1]); return d ? ok(d) : ok({}, 404); }
   const m = p.match(/^\/contacts\/(.+)$/);
   if (m) return ok({ id: m[1], phones: TELEFONES[m[1]] ? [{ phone: TELEFONES[m[1]] }] : [] });
   return ok({}, 404);
@@ -104,4 +106,40 @@ test('cada SDR no funil dele: Nicoly na IA Social Selling (Contato iniciado e Re
 test('telefone em qualquer formato vira (DD) 9XXXX-XXXX', () => {
   assert.equal(respondeu.telefoneBonito('+55 (47) 99900-6343'), '(47) 99900-6343');
   assert.equal(respondeu.telefoneBonito('4733221100'), '(47) 3322-1100');
+});
+
+test('funil escolhido: só SMQLs (os seus), sem a Aplicação Direta', async () => {
+  const r = await respondeu.gerar({ usuario: { id: 'eu', nome: 'Cauã Lima' }, mes: '2026-10', funil: 'smql' });
+  assert.equal(r.funil, 'smql');
+  assert.deepEqual(r.linhas.map((l) => [l.funil, l.nome]), [['SMQLs Automáticos', 'Lead S1']]);
+});
+
+test('entrou em Respondeu de 01/11 a 15/11 (pelo histórico), qualquer mês de inscrição', async () => {
+  const hist = (stage, start) => ({ deal_stage_id: stage, start_date: start });
+  const novos = [
+    deal('s10', 'f-sm', 's-resp', { sdr: 'u-caua', created_at: '2026-09-10T12:00:00.000Z', deal_stage_histories: [hist('s-cont', '2026-09-10T12:00:00.000Z'), hist('s-resp', '2026-11-03T13:00:00.000Z')] }),
+    deal('s11', 'f-sm', 's-resp', { sdr: 'u-caua', deal_stage_histories: [hist({ id: 's-resp' }, '2026-11-16T02:30:00.000Z')] }), // 15/11 23:30 em Brasília: entra
+    deal('s12', 'f-sm', 's-resp', { sdr: 'u-caua', deal_stage_histories: [hist('s-resp', '2026-11-17T13:00:00.000Z')] }), // depois: fora
+    deal('s13', 'f-sm', 's-resp', { sdr: 'u-caua', deal_stage_histories: [hist('s-resp', '2026-10-30T13:00:00.000Z')] }), // antes: fora
+    deal('s14', 'f-sm', 's-resp', { sdr: 'u-caua', deal_stage_histories: [] }), // sem histórico: fora, com aviso (junto com o S1)
+  ];
+  DEALS.push(...novos);
+  try {
+    const r = await respondeu.gerar({ usuario: { id: 'eu', nome: 'Cauã Lima' }, funil: 'smql', de: '2026-11-01', ate: '2026-11-15' });
+    assert.equal(r.porEntrada, true);
+    assert.deepEqual(r.linhas.map((l) => [l.nome, l.entrada]), [['Lead S10', '03/11/2026'], ['Lead S11', '15/11/2026']]);
+    assert.match(r.avisos.join(' '), /2 card\(s\) sem a entrada/);
+    assert.match(r.texto, /Lead S10 - sem telefone no CRM - inscrito em 10\/09\/2026 - entrou na etapa em 03\/11\/2026/);
+  } finally {
+    DEALS.splice(DEALS.length - novos.length, novos.length);
+  }
+});
+
+test('entrada na etapa: a última vez que entrou, por id ou nome', () => {
+  const e = { id: 'x', nome: 'Respondeu' };
+  assert.equal(respondeu.entrouNaEtapa({ deal_stage_histories: [
+    { deal_stage_id: 'x', start_date: '2026-11-01T10:00:00Z' }, { deal_stage_id: 'y', start_date: '2026-11-02T10:00:00Z' },
+    { deal_stage_id: 'z', deal_stage_name: 'Respondeu', start_date: '2026-11-05T10:00:00Z' },
+  ] }, e), '2026-11-05T10:00:00Z');
+  assert.equal(respondeu.entrouNaEtapa({}, e), '');
 });
