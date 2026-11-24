@@ -66,6 +66,7 @@ let cards = {};
 let semHistorico = false;
 let listaLenta = false; // a lista de cards do CRM demorando (como no CRM de verdade, com dezenas de cards)
 let recusar = null; // { caminho, mensagem }
+const exigeSemAvisar = new Set(); // etapas em que o CRM pede o closer sem marcar exige_closer na lista de funis
 const escritas = [];
 const novoCard = (id, stageId, extra = {}) => ({
   id, _id: id, name: `PRXC | Lead ${id}`, win: null, closed_at: null, versao: 3, created_at: '2026-10-01T12:00:00.000Z', updated_at: '2026-10-20T12:00:00.000Z',
@@ -123,7 +124,7 @@ global.fetch = async (url, opts = {}) => {
     const sobe = (mud) => { cards[m[1]] = { ...c, ...mud, versao: c.versao + 1 }; return ok(cards[m[1]]); };
     if (rota === '/stage') {
       const destino = funilDe(corpo.deal_stage_id).deal_stages.find((e) => e.id === corpo.deal_stage_id);
-      if (destino.exige_closer && !c.closerDefinido && !corpo.user_id) return ok({ codigo: 'CLOSER_OBRIGATORIO', mensagem: 'Diga quem é o closer.' }, 422);
+      if ((destino.exige_closer || exigeSemAvisar.has(destino.id)) && !c.closerDefinido && !corpo.user_id) return ok({ codigo: 'CLOSER_OBRIGATORIO', mensagem: 'Diga quem é o closer.' }, 422);
       if (corpo.user_id && !c.handoff && !corpo.handoff) return ok({ codigo: 'HANDOFF_OBRIGATORIO', mensagem: 'Falta o handoff.' }, 422);
       return sobe({ deal_stage: { id: destino.id, name: destino.name }, ...(corpo.user_id ? { user: { id: corpo.user_id, name: 'closer' }, closerDefinido: true } : {}), ...(corpo.handoff ? { handoff: { text: corpo.handoff } } : {}) });
     }
@@ -293,6 +294,29 @@ test('Reunião realizada: o handoff do report (editado) e as informações da li
   await fluxo.executar({ dealId: 'd-mql', assinatura: plano.assinatura, closerId: 'u-ph', handoff: 'Nome: Lead Teste (editado)', complemento: 'Na ligação disse que a esposa decide junto.' });
   const passagem = escritas.find((e) => e.corpo.user_id);
   assert.equal(passagem.corpo.handoff, 'Nome: Lead Teste (editado)\n\nINFORMAÇÕES DA LIGAÇÃO\nNa ligação disse que a esposa decide junto.');
+});
+
+test('Reunião realizada: o CRM pede o closer numa etapa que a lista de funis não marca — refaz a troca com o closer', async () => {
+  reiniciar();
+  const agend = FUNIS[0].deal_stages.find((e) => e.id === 'e-agend');
+  agend.exige_closer = false; // o funil não diz…
+  exigeSemAvisar.add('e-agend'); // …mas o CRM recusa sem o closer (422 CLOSER_OBRIGATORIO)
+  await db.cacheDel('crm:funis3');
+  try {
+    await fluxo.guardarHandoff({ dados: DADOS_REPORT, sdr: 'Cauã Lima', reportId: 'r9', vinculo: { dealId: 'd-mql' } });
+    const plano = await fluxo.planejar({ dealId: 'd-mql' });
+    assert.equal(plano.precisaCloser, false);
+    const r = await fluxo.executar({ dealId: 'd-mql', assinatura: plano.assinatura, closerId: 'u-ph' });
+    assert.equal(cards['d-mql'].deal_stage.id, 'e-real');
+    assert.equal(cards['d-mql'].user.id, 'u-ph');
+    assert.ok(r.feitos.includes('Closer: Paulo Henrique Pagoti'), r.feitos.join(' › '));
+    const tentativas = escritas.filter((e) => e.caminho === '/deals/d-mql/stage' && e.corpo.deal_stage_id === 'e-agend');
+    assert.deepEqual(tentativas.map((e) => e.corpo.user_id || ''), ['', 'u-ph'], 'primeiro sem o closer, depois com ele');
+  } finally {
+    agend.exige_closer = true;
+    exigeSemAvisar.clear();
+    await db.cacheDel('crm:funis3');
+  }
 });
 
 test('Reunião realizada: card que já tinha handoff — o complemento da ligação vai como anotação no card', async () => {

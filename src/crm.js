@@ -74,7 +74,10 @@ async function rd(caminho, params = {}, { metodo = 'GET', corpo, timeoutMs } = {
     const msg = (e && e.mensagem) || `o CRM respondeu ${r.status}`;
     if (r.status === 401) throw new Error('O CRM recusou o token (confira CRM_API_TOKEN / RDSTATION_CRM_TOKEN na Vercel).');
     if (r.status === 429) throw new Error('O CRM limitou as consultas. Tente de novo em 1 minuto.');
-    throw new Error(`O CRM não aceitou: ${msg}`);
+    const erro = new Error(`O CRM não aceitou: ${msg}`);
+    erro.status = r.status;
+    erro.codigo = (e && e.codigo) || ''; // ex.: CLOSER_OBRIGATORIO — quem chamou decide se dá para refazer
+    throw erro;
   }
   if (r.status === 401 || r.status === 403) {
     // Na escrita o RD só aceita quem é responsável pelo card (ou do mesmo time do dono do token).

@@ -468,6 +468,9 @@ async function planejar({ dealId, closerNome = '', busca = {}, alvo: qual = 'rea
  * Executa o plano conferido pelo SDR. Relê o card antes de cada passagem (versão), confere que ele foi para a etapa
  * pedida e para no primeiro erro, dizendo o que já foi feito.
  */
+/** O CRM recusou a troca de etapa porque ela pede o closer (422 CLOSER_OBRIGATORIO, ou a mensagem que diz isso). */
+const pedeCloser = (e) => Boolean(e) && (e.codigo === 'CLOSER_OBRIGATORIO' || /closer/i.test(String(e.message || '')));
+
 async function executar({ usuario = {}, dealId, assinatura, closerId, handoff, complemento = '', closerNome = '', busca = {}, alvo: qual = 'realizada' }) {
   const plano = await planejar({ dealId, closerNome, busca, alvo: qual });
   if (plano.assinatura !== String(assinatura || '')) throw new Error('O card mudou desde que o plano foi aberto. Abra o botão de novo para conferir.');
@@ -510,8 +513,20 @@ async function executar({ usuario = {}, dealId, assinatura, closerId, handoff, c
         if (textoHandoff) corpo.handoff = textoHandoff;
         closerDefinido = true;
       }
-      if (p.tipo === 'funil') await rd(`/deals/${encodeURIComponent(id)}/pipeline`, {}, { metodo: 'POST', corpo: { ...corpo, deal_pipeline_id: p.funilId } });
-      else await rd(`/deals/${encodeURIComponent(id)}/stage`, {}, { metodo: 'POST', corpo });
+      const mover = (c) => (p.tipo === 'funil'
+        ? rd(`/deals/${encodeURIComponent(id)}/pipeline`, {}, { metodo: 'POST', corpo: { ...c, deal_pipeline_id: p.funilId } })
+        : rd(`/deals/${encodeURIComponent(id)}/stage`, {}, { metodo: 'POST', corpo: c }));
+      try {
+        await mover(corpo);
+      } catch (e) {
+        // A etapa pede o closer, mas o funil não disse (exige_closer ausente ou o cache de 1h ainda é o de antes):
+        // a mesma troca de novo, já com o closer escolhido (e o handoff, se ainda não foi gravado).
+        if (!pedeCloser(e) || !closer || closerDefinido) throw e;
+        corpo.user_id = closer.id;
+        if (textoHandoff && plano.precisaCloser) corpo.handoff = textoHandoff;
+        closerDefinido = true;
+        await mover(corpo);
+      }
       const agora = await lerCard(id);
       if (idDe(agora.deal_stage) !== p.etapaId) throw new Error(`o CRM respondeu, mas o card não foi para "${p.etapaNome}"`);
       feitos.push(p.tipo === 'funil' ? `${p.funilNome} › ${p.etapaNome}` : p.etapaNome);
