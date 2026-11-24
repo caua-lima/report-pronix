@@ -89,6 +89,26 @@ test('ao abrir a conversa: card vendido na ficha anota os reports daquele lead (
   assert.equal(await vendido('c2'), false);
 });
 
+test('ao abrir a conversa de novo: com o mesmo desfecho não relê os reports; desfecho novo, relê', async () => {
+  await report('d1', '+55 31 96666-2222');
+  const conversa = { telefone: '5531966662222', nome: '' };
+  const u = { id: 'u1', nome: 'Cauã Lima' };
+  const lidas = [];
+  const original = stats.listarRecente;
+  stats.listarRecente = async (f) => { lidas.push(f); return original(f); };
+  try {
+    const vendida = { nome: 'x', negociacoes: [{ id: 'd', ganha: true }] };
+    assert.equal(await vendasRd.anotarPelaFicha({ usuario: u, conversa, ficha: vendida }), 1);
+    assert.equal(await vendasRd.anotarPelaFicha({ usuario: u, conversa, ficha: vendida }), 0);
+    assert.equal(lidas.length, 1, 'a segunda abertura com o mesmo desfecho não lê a lista');
+    const perdida = { nome: 'x', negociacoes: [{ id: 'd', ganha: false, perdida: true, motivoPerda: 'Sem dinheiro' }] };
+    await vendasRd.anotarPelaFicha({ usuario: u, conversa, ficha: perdida });
+    assert.equal(lidas.length, 2, 'o desfecho mudou: lê de novo');
+  } finally {
+    stats.listarRecente = original;
+  }
+});
+
 test('a ficha do RD diz quais cards foram ganhos', () => {
   assert.equal(vendasRd.temVenda({ negociacoes: [{ ganha: false }, { ganha: true }] }), true);
   assert.equal(vendasRd.temVenda({ negociacoes: [{ ganha: false }] }), false);

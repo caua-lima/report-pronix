@@ -193,6 +193,16 @@ async function listar({ de, ate, sdr } = {}) {
   return filtrar(todos, { de, ate, sdr });
 }
 
+// A lista inteira (até LIMITE reports) guardada na memória desta instância por pouco tempo. Só para o que roda a cada
+// troca de conversa na ficha do CRM (closer e venda do report): baixar e fazer JSON.parse de milhares de reports a
+// cada conversa aberta era o maior gasto de CPU do servidor. Quem precisa da lista exata (painel, downloads) usa listar().
+const RECENTE_MS = 60 * 1000;
+let recente = null; // { em, todos }
+async function listarRecente({ de, ate, sdr } = {}) {
+  if (!recente || Date.now() - recente.em > RECENTE_MS) recente = { em: Date.now(), todos: await db.range(CHAVE_DB) };
+  return filtrar(recente.todos, { de, ate, sdr });
+}
+
 /**
  * Resumo para o dashboard, já filtrado.
  * @param {{de?: string, ate?: string, sdr?: string}} filtro datas em YYYY-MM-DD; sdr é o nome.
@@ -559,8 +569,22 @@ async function registrarAquecimento({ usuarioNome, uso }) {
   );
 }
 
+// Quem grava na lista de reports zera a cópia guardada em listarRecente (antes e depois da gravação), para esta
+// instância não usar uma lista sem o que acabou de mudar.
+function zeraRecente(fn) {
+  return async (...args) => {
+    recente = null;
+    try { return await fn(...args); } finally { recente = null; }
+  };
+}
+
 module.exports = {
   registrarAquecimento,
-  registrar, importar, resumo, listar, remover, buscarPorChave, buscarPorId, atualizarResultado, anotarAfinidade, hojeStr, registrarResumoRapido,
+  registrar, importar, resumo, listar, listarRecente, remover, buscarPorChave, buscarPorId, atualizarResultado, anotarAfinidade, hojeStr, registrarResumoRapido,
   RESULTADOS_VALIDOS, PRODUTOS_VALIDOS, valorEmReais, ehVenda, emDiaLocal, vinculoLimpo,
 };
+module.exports.registrar = zeraRecente(registrar);
+module.exports.remover = zeraRecente(remover);
+module.exports.atualizarResultado = zeraRecente(atualizarResultado);
+module.exports.anotarAfinidade = zeraRecente(anotarAfinidade);
+module.exports.importar = zeraRecente(importar);

@@ -99,7 +99,7 @@ async function preencher({ usuario, conversa, ficha, reuniao }) {
   await db.cacheSet(chave, '1', 600);
 
   const de = stats.emDiaLocal(new Date(Date.now() - DIAS * 86400000).toISOString());
-  const doLead = (await stats.listar({ de }))
+  const doLead = (await stats.listarRecente({ de }))
     .filter((r) => r.usuarioId === usuario.id && !r.closerId && r.resultado !== 'no_show' && ehDaConversa(r, conversa, ficha));
   for (const r of doLead) {
     await stats.atualizarResultado(r.id, { closerId: closer.id, closerNome: closer.nome, closerOrigem: doRd ? 'rd' : 'agenda' });

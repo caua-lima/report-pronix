@@ -364,13 +364,21 @@ async function sincronizar(reports, { porVez = POR_VEZ, minutosQuente = 0, horas
 async function anotarPelaFicha({ usuario, conversa, ficha }) {
   if (!usuario || !conversa || !ficha) return 0;
   const comDesfecho = temDesfecho(ficha);
+  const quem = `${usuario.id}:${soDigitos(conversa.telefone).slice(-8) || normalizar(conversa.nome)}`;
   if (!comDesfecho) {
-    const chave = `vinculo:${usuario.id}:${soDigitos(conversa.telefone).slice(-8) || normalizar(conversa.nome)}`;
+    const chave = `vinculo:${quem}`;
     if (await db.cacheGet(chave)) return 0;
     await db.cacheSet(chave, '1', 600);
+  } else {
+    // Com venda ou perda: abrir de novo a conversa do mesmo lead não relê os reports enquanto o desfecho for o mesmo
+    // (o cron diário do RD continua conferindo todos). Antes isso rodava a cada troca de conversa no funil dos closers.
+    const marca = JSON.stringify([desfecho(ficha, null), situacaoNoRd(ficha)]);
+    const chave = `vinculo-desfecho:${quem}`;
+    if ((await db.cacheGet(chave)) === marca) return 0;
+    await db.cacheSet(chave, marca, 6 * 3600);
   }
   const de = stats.emDiaLocal(new Date(Date.now() - DIAS * 86400000).toISOString());
-  const doLead = (await stats.listar({ de })).filter((r) => r.usuarioId === usuario.id && acompanhar(r) && closerAuto.ehDaConversa(r, conversa, ficha));
+  const doLead = (await stats.listarRecente({ de })).filter((r) => r.usuarioId === usuario.id && acompanhar(r) && closerAuto.ehDaConversa(r, conversa, ficha));
   let n = 0;
   for (const r of doLead) {
     const extra = vinculoQueFalta(r, ficha);
