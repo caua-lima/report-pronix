@@ -17,9 +17,10 @@ const erroDeRede = (msgTimeout) => (e) => {
  * Transcreve um buffer de áudio usando o Groq.
  * @param {Buffer} buffer
  * @param {string} [filename='audio.ogg']
- * @returns {Promise<string>} texto transcrito
+ * @param {{ segmentos?: boolean }} [opcoes] segmentos: devolve também cada trecho com o tempo (gravação de ligação)
+ * @returns {Promise<string|{texto: string, segmentos: Array<{inicio: number, fim: number, texto: string}>}>}
  */
-async function transcreverGroq(buffer, filename = 'audio.ogg') {
+async function transcreverGroq(buffer, filename = 'audio.ogg', { segmentos = false } = {}) {
   const key = process.env.GROQ_API_KEY;
   if (!key) throw new Error('GROQ_API_KEY não configurada.');
   const model = process.env.GROQ_MODEL || 'whisper-large-v3-turbo';
@@ -28,7 +29,7 @@ async function transcreverGroq(buffer, filename = 'audio.ogg') {
   form.append('file', new Blob([buffer]), filename);
   form.append('model', model);
   form.append('language', 'pt');
-  form.append('response_format', 'text');
+  form.append('response_format', segmentos ? 'verbose_json' : 'text');
 
   const r = await fetch(GROQ_URL, {
     method: 'POST',
@@ -41,7 +42,12 @@ async function transcreverGroq(buffer, filename = 'audio.ogg') {
     const detalhe = await r.text().catch(() => '');
     throw new Error(`Groq respondeu ${r.status}: ${detalhe.slice(0, 250)}`);
   }
-  return (await r.text()).trim();
+  if (!segmentos) return (await r.text()).trim();
+  const j = await r.json().catch(() => ({}));
+  const lista = (Array.isArray(j.segments) ? j.segments : [])
+    .map((x) => ({ inicio: Number(x.start) || 0, fim: Number(x.end) || 0, texto: String(x.text || '').trim() }))
+    .filter((x) => x.texto);
+  return { texto: String(j.text || lista.map((x) => x.texto).join(' ')).trim(), segmentos: lista };
 }
 
 // Instrução do print -> conversa. A saída tem que sair no MESMO formato que o

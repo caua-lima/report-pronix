@@ -127,7 +127,7 @@ async function abaAtiva() {
 // Qual site está aberto: cada um tem seu content script e sua leitura de DOM.
 // "arquivos" = o que injetar se a página ainda não tiver o script, na mesma ordem do manifest.
 const PLATAFORMAS = [
-  { regex: /^https:\/\/web\.whatsapp\.com\//, arquivos: ['agenda.js', 'afinidade.js', 'content.js'], nome: 'WhatsApp Web' },
+  { regex: /^https:\/\/web\.whatsapp\.com\//, arquivos: ['agenda.js', 'afinidade.js', 'ligacao.js', 'content.js'], nome: 'WhatsApp Web' },
   { regex: /^https:\/\/www\.instagram\.com\/direct\//, arquivos: ['afinidade.js', 'content-instagram.js'], nome: 'Instagram Direct' },
 ];
 const plataformaDaAba = (url) => PLATAFORMAS.find((p) => p.regex.test(url || ''));

@@ -2165,6 +2165,7 @@ function tipoDeAudio(buf) {
 app.post('/api/transcrever', auth, async (req, res) => {
   try {
     const { audioBase64, nome } = req.body || {};
+    const comTempos = (req.body || {}).segmentos === true; // gravação de ligação: trechos com o tempo de cada um
     if (!audioBase64) return res.status(400).json({ erro: 'Nenhum áudio recebido.' });
     const buffer = Buffer.from(String(audioBase64), 'base64');
     if (!buffer.length) return res.status(400).json({ erro: 'Nenhum áudio recebido.' });
@@ -2182,6 +2183,18 @@ app.post('/api/transcrever', auth, async (req, res) => {
 
     // Mesmo áudio (mesmos bytes) = mesma transcrição: evita retranscrever ao gerar de novo.
     const ttl = ttlCacheTranscricao();
+    if (comTempos) {
+      // Ligação gravada pela extensão: em partes de poucos minutos, cada uma com os trechos e o tempo deles.
+      const chaveTr = 'trs:' + crypto.createHash('sha256').update(buffer).digest('hex');
+      const guardado = ttlCacheTranscricao() ? await db.cacheGet(chaveTr) : null;
+      if (guardado) {
+        try { return res.json({ ...JSON.parse(guardado), cache: true }); } catch (_) { /* refaz */ }
+      }
+      const r = await transcribeBuffer(buffer, ext, { segmentos: true });
+      const saida = { texto: String(r.texto || '').slice(0, 60000), segmentos: (r.segmentos || []).slice(0, 2000) };
+      if (saida.texto && ttlCacheTranscricao()) await db.cacheSet(chaveTr, JSON.stringify(saida), ttlCacheTranscricao());
+      return res.json({ ...saida, cache: false });
+    }
     const chaveCache = 'tr:' + crypto.createHash('sha256').update(buffer).digest('hex');
     let texto = ttl ? await db.cacheGet(chaveCache) : null;
     let doCache = texto !== null;

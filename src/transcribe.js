@@ -47,11 +47,17 @@ function transcribeFile(audioPath) {
  * Sem ela, usa o faster-whisper local.
  * @param {Buffer} buffer
  * @param {string} [ext='.ogg'] extensão original (ajuda o decoder)
- * @returns {Promise<string>}
+ * @param {{ segmentos?: boolean }} [opcoes] segmentos: devolve { texto, segmentos: [{ inicio, fim, texto }] }
+ * @returns {Promise<string|{texto: string, segmentos: Array}>}
  */
-async function transcribeBuffer(buffer, ext = '.ogg') {
+async function transcribeBuffer(buffer, ext = '.ogg', { segmentos = false } = {}) {
   const seguro = /^\.[a-z0-9]{1,5}$/i.test(ext) ? ext : '.ogg';
-  if (process.env.GROQ_API_KEY) return transcreverGroq(buffer, `audio${seguro}`);
+  if (process.env.GROQ_API_KEY) return transcreverGroq(buffer, `audio${seguro}`, { segmentos });
+  if (segmentos) {
+    // faster-whisper local não devolve tempos por aqui: o áudio vira um trecho só, no começo
+    const texto = await transcribeBuffer(buffer, ext);
+    return { texto, segmentos: texto ? [{ inicio: 0, fim: 0, texto }] : [] };
+  }
   const tmpPath = path.join(
     os.tmpdir(),
     `audio-${Date.now()}-${Math.random().toString(36).slice(2)}${seguro}`

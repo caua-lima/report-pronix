@@ -369,6 +369,17 @@ campos personalizados, outras anotações e o link **Abrir no RD Station**.
 - **Limpeza.** Acentos quebrados por integrações ("EmpresÃ¡rio") são consertados, campos
   repetidos aparecem uma vez e campos de anúncio/origem ficam de fora.
 
+### Gravar a ligação do WhatsApp Web
+
+Quando uma ligação começa no WhatsApp Web, aparece no canto de baixo, à esquerda, **🎙 Gravar ligação**. Ao clicar, a
+extensão grava os dois lados separados: a voz do lead (o áudio que chega da chamada) e a sua (o microfone). Grava em
+partes de 3 minutos e transcreve cada parte enquanto a ligação continua (`POST /api/transcrever` com `segmentos: true`,
+que devolve cada trecho com o tempo). Ao parar, ou quando a ligação termina, as falas dos dois lados são intercaladas
+pelo tempo e ficam guardadas para a conversa que estava aberta (14 dias, no navegador). No próximo report, resumo ou
+mapa desta conversa, elas entram junto, marcadas como `[ligação]`. Nada grava sem o clique; vale avisar o lead de que a
+ligação está sendo gravada. Código: `extension/inject.js` (a gravação, na página) e `extension/ligacao.js` (o botão, a
+transcrição e a entrada no report).
+
 ### Resumo rápido
 
 Botão no cartão: lê a conversa e os áudios e devolve o **cenário**, **onde parou**, a **última

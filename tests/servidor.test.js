@@ -79,7 +79,10 @@ global.fetch = async (url, opts) => {
     return resposta(respostaAnthropic || anthropicPadrao());
   }
   if (u.includes('audio/transcriptions')) {
-    chamadasGroq.push({ arquivo: opts.body.get('file').name });
+    chamadasGroq.push({ arquivo: opts.body.get('file').name, formato: opts.body.get('response_format') });
+    if (opts.body.get('response_format') === 'verbose_json') {
+      return resposta({ text: 'oi tudo bem quero entender', segments: [{ start: 0.4, end: 1.8, text: ' oi tudo bem' }, { start: 2.1, end: 3.5, text: ' quero entender ' }] });
+    }
     return resposta(textoGroq);
   }
   throw new Error('chamada externa inesperada nos testes: ' + u);
@@ -278,6 +281,26 @@ test('áudio: rejeita o que não é áudio e usa o tipo real (não o nome) no ar
   assert.equal(ogg.status, 200);
   assert.equal(chamadasGroq.at(-1).arquivo, 'audio.ogg');
   assert.equal(ogg.json.texto, 'transcrição de teste');
+});
+
+test('ligação gravada: com segmentos:true volta cada trecho com o tempo (e o texto inteiro), sem o corte de 6 mil caracteres', async () => {
+  chamadasGroq.length = 0;
+  const parte = Buffer.concat([Buffer.from([0x1a, 0x45, 0xdf, 0xa3]), Buffer.alloc(3000, 7)]); // webm
+  const r = await api('POST', '/api/transcrever', { chave: E.ana, corpo: { audioBase64: parte.toString('base64'), nome: 'ligacao.webm', segmentos: true } });
+  assert.equal(r.status, 200);
+  assert.equal(chamadasGroq.at(-1).formato, 'verbose_json');
+  assert.equal(chamadasGroq.at(-1).arquivo, 'audio.webm');
+  assert.equal(r.json.texto, 'oi tudo bem quero entender');
+  assert.deepEqual(r.json.segmentos, [{ inicio: 0.4, fim: 1.8, texto: 'oi tudo bem' }, { inicio: 2.1, fim: 3.5, texto: 'quero entender' }]);
+  // o mesmo pedaço de novo vem do cache, sem chamar o Groq
+  const n = chamadasGroq.length;
+  const r2 = await api('POST', '/api/transcrever', { chave: E.ana, corpo: { audioBase64: parte.toString('base64'), segmentos: true } });
+  assert.equal(r2.json.cache, true);
+  assert.equal(chamadasGroq.length, n);
+  // sem segmentos, o mesmo áudio segue no formato de texto de sempre
+  const r3 = await api('POST', '/api/transcrever', { chave: E.ana, corpo: { audioBase64: parte.toString('base64') } });
+  assert.equal(chamadasGroq.at(-1).formato, 'text');
+  assert.equal(typeof r3.json.texto, 'string');
 });
 
 test('áudio: o mesmo áudio não é transcrito duas vezes (cache)', async () => {

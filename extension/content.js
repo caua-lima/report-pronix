@@ -988,6 +988,19 @@
       `[Report PRONIX] ${stats.total} mensagens lidas — ` +
         `${stats.audios} áudios (${stats.audiosTranscritos} com transcrição).`
     );
+    // Ligação gravada com este lead (ligacao.js): as falas entram no fim, marcadas como "[ligação]".
+    try {
+      if (window.__crLigacao) {
+        const daLigacao = await window.__crLigacao.mensagensDa(alvoNome || nomeDoContato());
+        if (daLigacao.length) {
+          mensagens.push(...daLigacao);
+          stats.total = mensagens.length;
+          stats.falasDeLigacao = daLigacao.length;
+        }
+      }
+    } catch (_) {
+      /* sem ligação guardada */
+    }
     // O nome vem do INÍCIO da leitura: lido no fim, podia ser o de outra conversa aberta enquanto os áudios transcreviam.
     return { mensagens, nome: alvoNome || nomeDoContato(), stats, infoAudios };
   }
