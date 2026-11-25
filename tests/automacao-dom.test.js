@@ -389,7 +389,7 @@ test('card perdido no RD: o cartão mostra DESQUALIFICADO (ou PERDIDO) com o mot
   // com a automação ligada: a perda vem primeiro e não se oferece "+ Qualificado" para card perdido
   const comAuto = abrir(comCards([card()], { automacao: true, podeResponder: false, marca: SEM_MARCA }));
   await esperar(() => !!perda(comAuto), { motivo: 'etiqueta de perda' });
-  assert.equal(etiquetas(comAuto), 'DESQUALIFICADO · Nunca respondeu');
+  assert.equal(etiquetas(comAuto), 'DESQUALIFICADO · Nunca respondeu🎙 Gravar ligação', 'sem "+ Qualificado"; o botão de gravar a ligação vem sempre');
 
   // lead com um card perdido e outro em aberto: o escolhido é o aberto, então não há etiqueta de perda
   const reaberto = abrir(comCards([{ ...card({ id: 'd2', etapa: 'Respondeu', aberta: true, perdida: false, motivoPerda: '' }) }, card({ escolhida: false })], { automacao: true, podeResponder: false, marca: SEM_MARCA }));

@@ -69,9 +69,35 @@
   ui.append(texto, botao, fechar);
   const montar = () => { if (!ui.isConnected && document.body) document.body.appendChild(ui); };
 
-  const estado = { chamada: false, gravando: false, inicio: 0, nome: '', falas: [], pendentes: 0, parou: false, partes: 0, erros: 0, id: '', relogio: null, finalizarTimer: null };
+  const cmd = (c) => window.postMessage({ __crLigacaoCmd: c }, '*');
+  const estado = { chamada: false, gravando: false, inicio: 0, nome: '', falas: [], pendentes: 0, parou: false, partes: 0, erros: 0, id: '', relogio: null, finalizarTimer: null, resultado: null };
+  const ouvintes = [];
+  const mudou = () => ouvintes.forEach((f) => { try { f(); } catch (_) { /* ignora */ } });
+  // O botão no cartão do lead (content.js desenha com este id): quando existe, ele mostra o estado e o aviso do canto some.
+  const botaoDoCartao = () => document.getElementById('cr-ligacao-btn');
+
+  /** Texto e cores do botão do cartão para o estado de agora. */
+  function infoCartao() {
+    if (estado.gravando) return { texto: `⏺ Parar gravação · ${mmss(Date.now() - estado.inicio)}`, cor: '#ff6f5c', borda: '#ff6f5c', titulo: 'Gravando a ligação (a sua voz e a do lead). Clique para parar; a transcrição começa sozinha.' };
+    if (estado.parou || estado.pendentes > 0) return { texto: 'Transcrevendo a ligação…', cor: '#ffc233', borda: '#ffc233', titulo: 'As partes da ligação estão sendo transcritas.' };
+    if (estado.resultado && Date.now() - estado.resultado.em < 10 * 60 * 1000) {
+      return { texto: estado.resultado.ok ? `✓ Ligação transcrita (${estado.resultado.falas} falas)` : 'Ligação sem transcrição', cor: estado.resultado.ok ? '#3ddc84' : '#ff6f5c', borda: estado.resultado.ok ? '#3ddc84' : '#ff6f5c', titulo: estado.resultado.ok ? 'As falas da ligação entram no próximo report desta conversa. Clique para gravar outra.' : estado.resultado.msg };
+    }
+    if (estado.chamada) return { texto: '🎙 Gravar ligação', cor: '#3ddc84', borda: '#3ddc84', titulo: 'Ligação em andamento: grava a sua voz e a do lead e transcreve para o report.' };
+    return { texto: '🎙 Gravar ligação', cor: '#a39e93', borda: '#55515b', titulo: 'Durante uma ligação no WhatsApp Web: grava a sua voz e a do lead e transcreve para o report.' };
+  }
+  /** O clique no botão do cartão (ou do painel lateral). */
+  function alternar() {
+    if (estado.gravando) return cmd('parar');
+    if (estado.parou || estado.pendentes > 0) return;
+    estado.nome = nomeDaConversa();
+    estado.resultado = null;
+    cmd('gravar');
+  }
 
   function mostrar(msg, rotulo, acao, cor) {
+    mudou();
+    if (botaoDoCartao()) { esconder(); return; }
     montar();
     texto.textContent = msg;
     botao.style.display = rotulo ? '' : 'none';
@@ -81,19 +107,21 @@
     botao.onclick = acao || null;
     ui.style.display = 'flex';
   }
-  const esconder = () => { ui.style.display = 'none'; };
+  function esconder() { ui.style.display = 'none'; }
   fechar.onclick = esconder;
 
-  const cmd = (c) => window.postMessage({ __crLigacaoCmd: c }, '*');
   function telaParado() {
-    mostrar('Ligação em andamento', '🎙 Gravar ligação', () => {
-      estado.nome = nomeDaConversa();
-      cmd('gravar');
-    });
+    mostrar('Ligação em andamento', '🎙 Gravar ligação', alternar);
   }
   function telaGravando() {
-    const tic = () => mostrar(`⏺ Gravando ${mmss(Date.now() - estado.inicio)}${estado.nome ? ' · ' + estado.nome : ''}`, 'Parar', () => cmd('parar'), '#c2331f');
-    tic();
+    mostrar(`⏺ Gravando ${mmss(Date.now() - estado.inicio)}${estado.nome ? ' · ' + estado.nome : ''}`, 'Parar', () => cmd('parar'), '#c2331f');
+    const tic = () => {
+      const b = botaoDoCartao();
+      if (b) { b.textContent = infoCartao().texto; esconder(); return; }
+      montar();
+      texto.textContent = `⏺ Gravando ${mmss(Date.now() - estado.inicio)}${estado.nome ? ' · ' + estado.nome : ''}`;
+      ui.style.display = 'flex';
+    };
     clearInterval(estado.relogio);
     estado.relogio = setInterval(tic, 1000);
   }
@@ -147,9 +175,11 @@
     const nome = estado.nome || nomeDaConversa();
     estado.nome = ''; // a próxima ligação pega o nome da conversa em que ela começar
     if (!juntas.length) {
+      estado.resultado = { ok: false, em: Date.now(), msg: estado.erros ? 'Não consegui transcrever a ligação. Confira a chave e a conexão.' : 'A ligação ficou sem fala reconhecida.' };
       mostrar(estado.erros ? 'Não consegui transcrever a ligação. Confira a chave e a conexão.' : 'A ligação ficou sem fala reconhecida.', '', null);
       return;
     }
+    estado.resultado = { ok: true, em: Date.now(), falas: juntas.length };
     await guardar({ id: estado.id, nome, em: estado.inicio, duracaoMs: estado.duracaoMs || 0, falas: juntas.map(({ quem, t, texto: tx }) => ({ quem, t: Math.round(t * 10) / 10, texto: tx })) });
     mostrar(`Ligação transcrita: ${juntas.length} falas${nome ? ` com ${nome}` : ''}. Ela entra no próximo report desta conversa.${estado.erros ? ` (${estado.erros} parte(s) falharam)` : ''}`, 'OK', esconder);
   }
@@ -163,6 +193,7 @@
       if (!estado.gravando) telaParado();
     } else if (d.evento === 'semChamada') {
       estado.chamada = false;
+      mudou();
       if (!estado.gravando && !estado.pendentes && !estado.parou) esconder();
     } else if (d.evento === 'gravando') {
       Object.assign(estado, { gravando: true, parou: false, inicio: d.inicio, falas: [], pendentes: 0, partes: 0, erros: 0, id: 'lig-' + d.inicio });
@@ -179,9 +210,11 @@
       telaTranscrevendo();
       agendarFim();
     } else if (d.evento === 'erro') {
+      estado.resultado = { ok: false, em: Date.now(), msg: d.erro || 'Não consegui gravar.' };
+      if (botaoDoCartao()) { mudou(); alert(d.erro || 'Não consegui gravar.'); return; }
       mostrar(d.erro || 'Não consegui gravar.', 'OK', esconder);
     }
   });
 
-  window.__crLigacao = { mensagensDa, nomeDaConversa };
+  window.__crLigacao = { mensagensDa, nomeDaConversa, infoCartao, alternar, aoMudar: (f) => ouvintes.push(f) };
 })();

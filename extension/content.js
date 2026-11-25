@@ -1738,6 +1738,8 @@
     if (ficha.cartaoLocal && document.getElementById(FICHA_ID)) renderFicha(est);
     else atualizarPainel(est);
   };
+  // A gravação da ligação mudou de estado (começou, parou, transcreveu): o botão do cartão acompanha.
+  if (window.__crLigacao) window.__crLigacao.aoMudar(() => { try { redesenharFicha(); } catch (_) { /* cartão fechado */ } });
 
   /**
    * Resumo rápido: lê a conversa aberta (inclusive transcrevendo os áudios, no mudo) e pede à IA o
@@ -2497,6 +2499,8 @@
     if (doFormulario.profissao) form.push({ texto: doFormulario.profissao, fundo: '#b79cff', cor: '#17102b', titulo: 'Profissão informada no formulário' });
     if (doFormulario.busca) form.push({ texto: doFormulario.busca, fundo: '#5ad1d1', cor: '#06201f', titulo: 'O que o lead busca (modalidade)' });
     if (form.length) itens.push({ tipo: 'formulario', itens: form });
+    // Gravar a ligação do WhatsApp Web (ligacao.js): para todos com o cartão.
+    if (window.__crLigacao) itens.push({ tipo: 'botao', id: 'cr-ligacao-btn', ...window.__crLigacao.infoCartao(), acao: { tipo: 'ligacao' } });
     // Desqualificar: só no card em aberto do lead, para quem tem a automação do cartão.
     const paraPerder = ficha.automacao && !perda ? cardParaDesqualificar(estado) : null;
     if (paraPerder && !estado.desq) itens.push({ tipo: 'botao', id: 'cr-desqualificar-btn', texto: 'Desqualificar', cor: '#ff6f5c', borda: '#ff6f5c', titulo: 'Dar perda no RD com um motivo, sem abrir o card', acao: { tipo: 'desqAbrir' } });
@@ -2547,6 +2551,9 @@
         if (!d || !card) return;
         if (typeof acao.nota === 'string') d.nota = acao.nota.slice(0, 2000);
         confirmarDesqualificar(estado, card);
+        return;
+      case 'ligacao':
+        if (window.__crLigacao) window.__crLigacao.alternar();
         return;
       case 'resumo':
         pedirResumoRapido();
