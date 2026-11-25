@@ -157,6 +157,26 @@
     }, 2500);
   }
 
+  /** Baixa a ligação como .txt (quem falou e em que minuto), para guardar ou mandar. */
+  function baixarTxt(nome, inicio, juntas) {
+    try {
+      const d = new Date(inicio);
+      const p2 = (n) => String(n).padStart(2, '0');
+      const data = `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`;
+      const hora = `${p2(d.getHours())}h${p2(d.getMinutes())}`;
+      const linhas = juntas.map((f) => `[${mmss(f.t * 1000)}] ${f.quem === 'eu' ? 'EU' : 'LEAD'}: ${f.texto}`);
+      const conteudo = `Ligação com ${nome || 'lead'} - ${data} ${hora}\n\n${linhas.join('\n\n')}\n`;
+      const url = URL.createObjectURL(new Blob([conteudo], { type: 'text/plain;charset=utf-8' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Ligação ${(nome || 'lead').replace(/[\\/:*?"<>|]+/g, ' ').trim()} ${data} ${hora}.txt`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+    } catch (_) { /* sem download: a transcrição continua guardada */ }
+  }
+
   async function finalizar() {
     if (!estado.parou) return;
     estado.parou = false;
@@ -181,7 +201,8 @@
     }
     estado.resultado = { ok: true, em: Date.now(), falas: juntas.length };
     await guardar({ id: estado.id, nome, em: estado.inicio, duracaoMs: estado.duracaoMs || 0, falas: juntas.map(({ quem, t, texto: tx }) => ({ quem, t: Math.round(t * 10) / 10, texto: tx })) });
-    mostrar(`Ligação transcrita: ${juntas.length} falas${nome ? ` com ${nome}` : ''}. Ela entra no próximo report desta conversa.${estado.erros ? ` (${estado.erros} parte(s) falharam)` : ''}`, 'OK', esconder);
+    baixarTxt(nome, estado.inicio, juntas);
+    mostrar(`Ligação transcrita: ${juntas.length} falas${nome ? ` com ${nome}` : ''}. O .txt foi baixado e ela entra no próximo report desta conversa.${estado.erros ? ` (${estado.erros} parte(s) falharam)` : ''}`, 'OK', esconder);
   }
 
   // ---------------------------------------------------------------- eventos da página
