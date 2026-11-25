@@ -466,6 +466,7 @@
       header { position: static; }
       .menu { flex-wrap: wrap; overflow: visible; row-gap: 0; }
     }
+      .btn.gravando { background: var(--danger); border-color: var(--danger); color: #fff; }
   </style>
 </head>
 <body>
@@ -554,9 +555,10 @@
           </select>
           <textarea id="chatMsg" rows="2" placeholder="Escreva uma mensagem ou cole a conversa inteira… (Enter adiciona, Shift+Enter quebra a linha)"></textarea>
           <button id="chatAnexar" type="button" class="btn sec" title="Anexar áudio, print ou arquivo de texto"><i data-ic="plus"></i>Anexar</button>
+          <button id="chatGravar" type="button" class="btn sec" title="Gravar um áudio pelo microfone; ele é transcrito e entra na conversa como fala de quem está marcado ao lado"><i data-ic="mic"></i><span>Gravar</span></button>
           <button id="chatEnviar" type="button" class="btn">Adicionar</button>
         </div>
-        <div class="hint" style="margin:6px 0 0">Aceita áudio (transcrito), print/foto (lido como conversa, grátis) e arquivo de texto (.txt, .md, .csv). PDF e Word ainda não: copie o texto e cole.</div>
+        <div class="hint" style="margin:6px 0 0">Aceita áudio (anexado ou gravado no botão Gravar, e transcrito), print/foto (lido como conversa, grátis) e arquivo de texto (.txt, .md, .csv). PDF e Word ainda não: copie o texto e cole.</div>
         <input id="audio" type="file" accept="audio/*,image/*,text/*,.ogg,.opus,.m4a,.mp3,.aac,.wav,.txt,.md,.csv,.json,.srt,.vtt,.log" multiple class="hidden" />
         <div id="dropzoneImg" class="hidden"></div>
         <input id="imagem" type="file" accept="image/*" multiple class="hidden" />
@@ -1493,6 +1495,7 @@
     // Desenhos de traço embutidos: a página tem de ser autocontida (a Vercel e a
     // extensão não carregam script/fonte de fora).
     const ICONES = {
+      mic: '<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/>',
       'file-text': '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/>',
       key: '<circle cx="7.5" cy="15.5" r="4.5"/><path d="m10.7 12.3 8.7-8.7"/><path d="m17 6 2.5 2.5"/><path d="m14.5 8.5 2.5 2.5"/>',
       chart: '<path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/>',
@@ -3993,6 +3996,66 @@
       }
     });
     $('chatAnexar').addEventListener('click', () => $('audio').click());
+
+    // ---------- Gravar áudio pelo microfone ----------
+    // Grava no navegador e manda pela mesma transcrição dos áudios anexados (vale o "Quem falou" ao lado).
+    (() => {
+      const bt = $('chatGravar');
+      if (!bt) return;
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) {
+        bt.disabled = true;
+        bt.title = 'Este navegador não grava áudio. Use o Anexar.';
+        return;
+      }
+      const LIMITE_SEG = 600; // 10 min: bem abaixo do limite de tamanho do servidor
+      const tipo = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus']
+        .find((t) => MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t)) || '';
+      let rec = null;
+      let relogio = null;
+      const rotulo = (t) => { bt.querySelector('span').textContent = t; };
+      const parar = () => { if (rec && rec.state !== 'inactive') rec.stop(); };
+      bt.addEventListener('click', async () => {
+        if (rec && rec.state === 'recording') return parar();
+        let stream;
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        } catch (_) {
+          setStatus('statusAudio', 'Não consegui usar o microfone. Libere o acesso ao microfone para este site (ícone ao lado do endereço) e tente de novo.', { erro: true });
+          return;
+        }
+        const partes = [];
+        const quem = $('quemAudio').value === 'VENDEDOR' ? 'vendedor' : 'lead';
+        rec = new MediaRecorder(stream, tipo ? { mimeType: tipo } : undefined);
+        rec.ondataavailable = (e) => { if (e.data && e.data.size) partes.push(e.data); };
+        rec.onstop = () => {
+          clearInterval(relogio);
+          stream.getTracks().forEach((t) => t.stop());
+          bt.classList.remove('gravando');
+          rotulo('Gravar');
+          const mime = (rec && rec.mimeType) || tipo || 'audio/webm';
+          const ext = /mp4/.test(mime) ? 'm4a' : /ogg/.test(mime) ? 'ogg' : 'webm';
+          const blob = new Blob(partes, { type: mime });
+          if (blob.size < 1000) {
+            setStatus('statusAudio', 'A gravação ficou vazia. Confira o microfone e tente de novo.', { erro: true });
+            return;
+          }
+          const agora = new Date();
+          const hora = String(agora.getHours()).padStart(2, '0') + 'h' + String(agora.getMinutes()).padStart(2, '0');
+          transcreverFiles([new File([blob], `gravacao-${hora}.${ext}`, { type: mime })]);
+        };
+        rec.start(1000);
+        const inicio = Date.now();
+        bt.classList.add('gravando');
+        const tic = () => {
+          const seg = Math.floor((Date.now() - inicio) / 1000);
+          rotulo(`Parar ${Math.floor(seg / 60)}:${String(seg % 60).padStart(2, '0')}`);
+          if (seg >= LIMITE_SEG) parar();
+        };
+        tic();
+        relogio = setInterval(tic, 500);
+        setStatus('statusAudio', `Gravando… clique em Parar quando terminar. O áudio entra na conversa como fala do ${quem}.`, { loading: true });
+      });
+    })();
 
     const EXT_TEXTO = /\.(txt|md|csv|json|srt|vtt|log)$/i;
     const EXT_SEM_LEITURA = /\.(pdf|docx?|xlsx?|pptx?|odt|rtf)$/i;
