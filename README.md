@@ -371,6 +371,10 @@ campos personalizados, outras anotações e o link **Abrir no RD Station**.
 
 ### Gravar a ligação do WhatsApp Web
 
+**⚙ Áudio** (no cartão do lead) escolhe o seu microfone e de onde vem a voz do lead (padrão: o áudio da aba). Durante
+a gravação, o botão mostra se está chegando som de cada lado. No painel, a aba **Report da ligação** recebe o .txt e
+gera o report com análise mais funda (modelo premium, conversa inteira).
+
 Ao clicar, o Chrome pede para compartilhar a aba: clique em **Permitir** (com o áudio ligado). É desse áudio que sai a voz
 do lead. Sem ele a gravação não começa, e se não chegar som do lead aparece um aviso durante a ligação.
 

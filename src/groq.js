@@ -13,6 +13,37 @@ const erroDeRede = (msgTimeout) => (e) => {
   throw e;
 };
 
+// Ajuda o modelo a escrever certo os termos que aparecem nas ligações.
+const VOCABULARIO_LIGACAO = 'Ligação de vendas em português do Brasil. Pronix, Mercado Livre, Shopee, Mercado Pago, CNPJ, MEI, nota fiscal, fornecedores, anúncios, ads, faturamento, investimento, mentoria, consultoria, especialista, reunião no Google Meet.';
+
+/** "Sim. Sim. Sim. Sim." ou a mesma frase em laço: fica no máximo duas vezes seguidas. */
+function semRepeticaoEmLaco(texto) {
+  const frases = String(texto).match(/[^.!?]+[.!?]*/g) || [];
+  const igual = (a, b) => a && b && a.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '') === b.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+  return frases.filter((f, i) => !(igual(f, frases[i - 1]) && igual(f, frases[i - 2]))).join('').trim();
+}
+
+/**
+ * Tira o que o Whisper inventa em silêncio e ruído: trecho que o próprio modelo marca como provável silêncio e sem
+ * confiança, ou texto em laço (muito repetitivo). Fala baixa mas reconhecida com confiança fica.
+ */
+function limparSegmentos(segments) {
+  const num = (v, padrao) => (typeof v === 'number' && Number.isFinite(v) ? v : padrao);
+  const saida = [];
+  for (const x of segments) {
+    const silencio = num(x.no_speech_prob, 0) > 0.6 && num(x.avg_logprob, 0) < -0.7;
+    const semSentido = num(x.compression_ratio, 1) > 2.4 && num(x.avg_logprob, 0) < -0.5;
+    if (silencio || semSentido) continue;
+    const texto = semRepeticaoEmLaco(String(x.text || '').trim());
+    if (!texto || VOCABULARIO_LIGACAO.includes(texto) && texto.length > 20) continue;
+    const anterior = saida[saida.length - 1];
+    const antes = saida[saida.length - 2];
+    if (anterior && antes && anterior.texto === texto && antes.texto === texto) continue;
+    saida.push({ inicio: Number(x.start) || 0, fim: Number(x.end) || 0, texto });
+  }
+  return saida;
+}
+
 /**
  * Transcreve um buffer de áudio usando o Groq.
  * @param {Buffer} buffer
@@ -23,13 +54,20 @@ const erroDeRede = (msgTimeout) => (e) => {
 async function transcreverGroq(buffer, filename = 'audio.ogg', { segmentos = false } = {}) {
   const key = process.env.GROQ_API_KEY;
   if (!key) throw new Error('GROQ_API_KEY não configurada.');
-  const model = process.env.GROQ_MODEL || 'whisper-large-v3-turbo';
+  // Ligação gravada: o modelo completo (mais preciso que o turbo, usado nos áudios curtos da conversa).
+  const model = segmentos
+    ? process.env.GROQ_MODEL_LIGACAO || 'whisper-large-v3'
+    : process.env.GROQ_MODEL || 'whisper-large-v3-turbo';
 
   const form = new FormData();
   form.append('file', new Blob([buffer]), filename);
   form.append('model', model);
   form.append('language', 'pt');
   form.append('response_format', segmentos ? 'verbose_json' : 'text');
+  if (segmentos) {
+    form.append('temperature', '0');
+    form.append('prompt', VOCABULARIO_LIGACAO);
+  }
 
   const r = await fetch(GROQ_URL, {
     method: 'POST',
@@ -44,10 +82,10 @@ async function transcreverGroq(buffer, filename = 'audio.ogg', { segmentos = fal
   }
   if (!segmentos) return (await r.text()).trim();
   const j = await r.json().catch(() => ({}));
-  const lista = (Array.isArray(j.segments) ? j.segments : [])
-    .map((x) => ({ inicio: Number(x.start) || 0, fim: Number(x.end) || 0, texto: String(x.text || '').trim() }))
-    .filter((x) => x.texto);
-  return { texto: String(j.text || lista.map((x) => x.texto).join(' ')).trim(), segmentos: lista };
+  const brutos = Array.isArray(j.segments) ? j.segments : [];
+  const lista = limparSegmentos(brutos);
+  // Com trechos, o texto sai deles (já sem o ruído); sem trechos na resposta, vale o texto corrido.
+  return { texto: (brutos.length ? lista.map((x) => x.texto).join(' ') : String(j.text || '')).trim(), segmentos: lista };
 }
 
 // Instrução do print -> conversa. A saída tem que sair no MESMO formato que o
@@ -191,4 +229,4 @@ async function chatGroq({ system, user, modelo, maxTokens = 900, json = true, pr
   throw ultimoErro || new Error('A IA gratuita não respondeu.');
 }
 
-module.exports = { transcreverGroq, lerImagemGroq, chatGroq, filaDeModelos, modeloIndisponivel, MODELOS_CHAT };
+module.exports = { limparSegmentos, transcreverGroq, lerImagemGroq, chatGroq, filaDeModelos, modeloIndisponivel, MODELOS_CHAT };

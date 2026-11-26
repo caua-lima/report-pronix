@@ -2078,13 +2078,15 @@ app.post('/api/report-texto', auth, async (req, res) => {
   let reportKey = null;
   try {
     const { texto, nome, qualidade, baseId } = req.body || {};
-    const qualidadeFinal = qualidadeValida(qualidade);
-    const { texto: textoNormalizado } = normalizarTextoLivre(String(texto || ''));
+    // Report da ligação (aba própria): sempre o modelo mais forte e a conversa inteira.
+    const deLigacao = (req.body || {}).ligacao === true;
+    const qualidadeFinal = deLigacao ? 'premium' : qualidadeValida(qualidade);
+    const { texto: textoNormalizado } = normalizarTextoLivre(String(texto || ''), deLigacao ? { maxChars: 90000 } : {});
     reportKey = calcularReportKey({ historicoNormalizado: textoNormalizado, promptVersao: PROMPT_VERSAO, qualidade: qualidadeFinal, contato: nome });
 
     if (!(await checarDuplicataETravar(req, res, reportKey))) return;
 
-    const dados = await dadosDeTexto({ texto, nome, sdr: req.usuario.nome, qualidade: qualidadeFinal });
+    const dados = await dadosDeTexto({ texto, nome, sdr: req.usuario.nome, qualidade: qualidadeFinal, ligacao: deLigacao });
     // Complemento de um report do WhatsApp: o report novo fica preso ao mesmo lead (card, contato, telefone).
     let vinculo;
     if (baseId) {
@@ -2202,7 +2204,7 @@ app.post('/api/transcrever', auth, async (req, res) => {
     const ttl = ttlCacheTranscricao();
     if (comTempos) {
       // Ligação gravada pela extensão: em partes de poucos minutos, cada uma com os trechos e o tempo deles.
-      const chaveTr = 'trs:' + crypto.createHash('sha256').update(buffer).digest('hex');
+      const chaveTr = 'trs2:' + crypto.createHash('sha256').update(buffer).digest('hex');
       const guardado = ttlCacheTranscricao() ? await db.cacheGet(chaveTr) : null;
       if (guardado) {
         try { return res.json({ ...JSON.parse(guardado), cache: true }); } catch (_) { /* refaz */ }

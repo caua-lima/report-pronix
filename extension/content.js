@@ -2502,7 +2502,10 @@
     if (doFormulario.busca) form.push({ texto: doFormulario.busca, fundo: '#5ad1d1', cor: '#06201f', titulo: 'O que o lead busca (modalidade)' });
     if (form.length) itens.push({ tipo: 'formulario', itens: form });
     // Gravar a ligação do WhatsApp Web (ligacao.js): para todos com o cartão.
-    if (window.__crLigacao) itens.push({ tipo: 'botao', id: 'cr-ligacao-btn', ...window.__crLigacao.infoCartao(), acao: { tipo: 'ligacao' } });
+    if (window.__crLigacao) {
+      itens.push({ tipo: 'botao', id: 'cr-ligacao-btn', ...window.__crLigacao.infoCartao(), acao: { tipo: 'ligacao' } });
+      itens.push({ tipo: 'botao', id: 'cr-audio-btn', texto: '⚙ Áudio', cor: '#a39e93', borda: '#55515b', titulo: 'Escolher o microfone e de onde vem a voz do lead', acao: { tipo: 'audioLigacao' } });
+    }
     // Desqualificar: só no card em aberto do lead, para quem tem a automação do cartão.
     const paraPerder = ficha.automacao && !perda ? cardParaDesqualificar(estado) : null;
     if (paraPerder && !estado.desq) itens.push({ tipo: 'botao', id: 'cr-desqualificar-btn', texto: 'Desqualificar', cor: '#ff6f5c', borda: '#ff6f5c', titulo: 'Dar perda no RD com um motivo, sem abrir o card', acao: { tipo: 'desqAbrir' } });
@@ -2553,6 +2556,9 @@
         if (!d || !card) return;
         if (typeof acao.nota === 'string') d.nota = acao.nota.slice(0, 2000);
         confirmarDesqualificar(estado, card);
+        return;
+      case 'audioLigacao':
+        if (window.__crLigacao) window.__crLigacao.abrirAudio();
         return;
       case 'ligacao':
         if (window.__crLigacao) window.__crLigacao.alternar();

@@ -481,6 +481,7 @@
       <div class="grupo">
         <div class="grupo-rotulo">Dia a dia</div>
         <button class="tab on" data-aba="report"><i data-ic="file-text"></i>Gerar report</button>
+        <button class="tab" data-aba="ligacao"><i data-ic="mic"></i>Report da ligação</button>
         <button class="tab" data-aba="dia"><i data-ic="download"></i>Reports do dia</button>
       </div>
       <div class="grupo">
@@ -631,6 +632,27 @@
         <div id="matchStatus" class="status"></div>
         <div class="hint" style="margin-top:6px">Gerou o report aqui em cima? Nem precisa do PDF: é só clicar. O PDF enviado não fica guardado; o match baixa em PDF, com os pontos que dão match e o plano da call.</div>
       </div>
+    </section>
+
+    <!-- ================= ABA: REPORT DA LIGAÇÃO (o .txt que a extensão baixa) ================= -->
+    <section id="aba-ligacao" class="hidden">
+      <div class="card">
+        <div class="head"><div class="t"><i data-ic="mic"></i>Transcrição da ligação</div><div class="sub">— cole o texto ou anexe o .txt que a extensão baixou</div></div>
+        <button id="ligAnexar" type="button" class="btn sec"><i data-ic="plus"></i>Anexar o .txt</button>
+        <input id="ligArquivo" type="file" accept="text/plain,.txt" class="hidden" />
+        <label for="ligTexto" style="margin-top:10px">Transcrição</label>
+        <textarea id="ligTexto" rows="12" placeholder="Cole aqui a transcrição da ligação…"></textarea>
+        <div id="ligAviso" class="status erro"></div>
+        <label for="ligNome" style="margin-top:10px">Nome do lead</label>
+        <input id="ligNome" type="text" placeholder="Ex.: Márcia Gonçalves (vira o título e o nome do PDF)" />
+        <label for="ligNotas" style="margin-top:10px">Anotações suas (opcional)</label>
+        <textarea id="ligNotas" rows="4" placeholder="O que o lead falou e a transcrição não pegou: investimento, decisor, objeções, o que ficou combinado…"></textarea>
+        <label for="ligBase" style="margin-top:10px">Report do WhatsApp deste lead (opcional)</label>
+        <select id="ligBase"><option value="">Nenhum: só a ligação</option></select>
+      </div>
+      <button id="ligGerar" type="button" class="btn btn-block">Gerar Report</button>
+      <div id="statusLig" class="status"></div>
+      <div id="ligSaida"></div>
     </section>
 
     <!-- ================= ABA: REPORTS DO DIA (todo usuário, só os próprios) ================= -->
@@ -1558,7 +1580,7 @@
     }
 
     // ---------- Menu ----------
-    const ABAS = ['report', 'dia', 'acessos', 'numeros', 'resultados', 'closers', 'funil', 'match', 'meusclosers', 'closerstime', 'pronixclub', 'arquivos', 'base', 'extensao'];
+    const ABAS = ['report', 'ligacao', 'dia', 'acessos', 'numeros', 'resultados', 'closers', 'funil', 'match', 'meusclosers', 'closerstime', 'pronixclub', 'arquivos', 'base', 'extensao'];
     const SO_ADMIN = ['acessos', 'numeros', 'resultados', 'closers', 'funil', 'match', 'meusclosers', 'closerstime', 'pronixclub', 'arquivos', 'base', 'extensao'];
     let souAdmin = false;
     let souGestor = false;
@@ -1572,7 +1594,7 @@
       ['base', 'Base'], ['extensao', 'Extensão'], ['equipe', 'Reports do dia da equipe'], ['meusclosers', 'Meus closers (só os números dela/dele)'],
     ];
     const podeAba = (a) =>
-      a === 'report' || a === 'dia' || (a === 'acessos' || a === 'funil' || a === 'match' || a === 'closerstime' || a === 'pronixclub' ? podeMexerEmUsuarios() : a === 'meusclosers' ? podeMexerEmUsuarios() || minhasAbas.has(a) : Boolean(senhaAdmin) || minhasAbas.has(a));
+      a === 'report' || a === 'ligacao' || a === 'dia' || (a === 'acessos' || a === 'funil' || a === 'match' || a === 'closerstime' || a === 'pronixclub' ? podeMexerEmUsuarios() : a === 'meusclosers' ? podeMexerEmUsuarios() || minhasAbas.has(a) : Boolean(senhaAdmin) || minhasAbas.has(a));
     // "Meus closers" liberado para quem não é master: a aba abre, mas só com os números da própria pessoa.
     const temAbaDeGestao = () => SO_ADMIN.some(podeAba);
     let papelConhecido = false; // a chave já foi conferida (antes disso não dá para saber se é master)
@@ -1584,6 +1606,7 @@
     // Título e descrição de cada aba (aparecem no topo do conteúdo).
     const PAGINAS = {
       report: ['Gerar report', 'Monte a conversa do lead e gere o handoff em PDF para o closer.'],
+      ligacao: ['Report da ligação', 'Cole a transcrição da ligação e gere o handoff em PDF para o closer.'],
       dia: ['Reports do dia', 'O .zip com os reports do dia, pronto para mandar ao líder.'],
       resultados: ['Resultados da reunião', 'O que deu cada reunião e o que o histórico ensina sobre closers e perfis de lead.'],
       numeros: ['Reports gerados', 'Volume, custo e quem gerou cada report.'],
@@ -1615,6 +1638,8 @@
       location.hash = aba;
       if (SO_ADMIN.includes(aba)) pedirAdmin();
       if (aba === 'dia') { carregarMeus(); carregarReportDia(); }
+      if (aba === 'ligacao') carregarBasesLig();
+      if (aba === 'report' || aba === 'ligacao') levarResultadoPara(aba);
     }
 
     /** Mostra ou esconde as abas de admin conforme o papel da chave. */
@@ -4436,7 +4461,7 @@
       $('duplicadoBox').classList.add('hidden');
     }
     $('dupCancelar').addEventListener('click', esconderDuplicado);
-    $('dupGerar').addEventListener('click', () => { esconderDuplicado(); gerar(true); });
+    $('dupGerar').addEventListener('click', () => { esconderDuplicado(); if (repetirGeracao) repetirGeracao(); });
     $('dupAbrir').addEventListener('click', async () => {
       if (!duplicadoAtual) return;
       const btn = $('dupAbrir');
@@ -4458,6 +4483,14 @@
       }
     });
 
+    /** O aviso de report repetido e o report gerado são os mesmos nas duas abas: vão para a que está aberta. */
+    function levarResultadoPara(aba) {
+      const caixas = [$('duplicadoBox'), $('resultado')];
+      if (aba === 'ligacao') caixas.forEach((c) => $('ligSaida').appendChild(c));
+      else caixas.reduce((antes, c) => { antes.after(c); return c; }, $('status'));
+    }
+
+    let repetirGeracao = null; // o "Gerar de novo" do aviso de repetido repete a última geração
     async function gerar(forcarNovo) {
       if (gerandoAgora) return; // já tem um report sendo gerado (clique duplo)
       if (tarefasAbertas > 0) {
@@ -4468,20 +4501,27 @@
       if ($('chatMsg').value.trim()) adicionarMensagem(); // o que ficou digitado e não foi adicionado também entra
       const textoFinal = $('texto').value.trim();
       if (!textoFinal) { setStatus('status', 'Monte a conversa (escreva, cole ou anexe os áudios) antes de gerar.', { erro: true }); return; }
+      repetirGeracao = () => gerar(true);
+      await enviarReport({ texto: textoFinal, nome: $('nomeLead').value.trim(), baseId: compBaseId, forcarNovo, onde: 'status' });
+    }
+
+    async function enviarReport({ texto, nome, baseId, forcarNovo, onde, ligacao }) {
+      if (gerandoAgora) return;
       esconderDuplicado();
       gerandoAgora = true; atualizarBotaoGerar(); $('resultado').classList.add('hidden');
-      setStatus('status', 'Gerando report…', { loading: true });
+      setStatus(onde, ligacao ? 'Analisando a ligação a fundo… pode levar até 2 minutos.' : 'Gerando report…', { loading: true });
+      $('ligGerar').disabled = true;
       try {
         const r = await fetchComTempo('/api/report-texto', {
           method: 'POST', headers: hdr({ 'Content-Type': 'application/json' }),
-          body: JSON.stringify({ texto: textoFinal, nome: $('nomeLead').value.trim(), forcarNovo: !!forcarNovo, ...(compBaseId ? { baseId: compBaseId } : {}) }),
-        });
+          body: JSON.stringify({ texto, nome, forcarNovo: !!forcarNovo, ...(baseId ? { baseId } : {}), ...(ligacao ? { ligacao: true } : {}) }),
+        }, ligacao ? 185000 : undefined);
         const data = await r.json();
         if (!r.ok) throw new Error(data.erro || 'Erro ao gerar o report.');
         // Idempotência: mesma conversa já gerada antes — não chama a IA de novo sem o SDR escolher
         // (evita cobrar duas vezes pelo mesmo report). Abrir o existente não custa nada.
         if (data.duplicado) {
-          setStatus('status', '');
+          setStatus(onde, '');
           mostrarDuplicado(data.existente);
           return;
         }
@@ -4493,12 +4533,12 @@
         const avisoResumo = reportAtual.resumida
           ? ' A conversa foi resumida para reduzir custo, preservando os pontos comerciais mais relevantes.'
           : '';
-        setStatus('status', 'Report gerado. Edite se quiser e baixe o PDF.' + avisoResumo, { ok: true });
+        setStatus(onde, 'Report gerado. Edite se quiser e baixe o PDF.' + avisoResumo, { ok: true });
         $('resultado').scrollIntoView({ behavior: 'smooth', block: 'start' });
         carregarStats();
       } catch (err) {
-        setStatus('status', err.message, { erro: true });
-      } finally { gerandoAgora = false; atualizarBotaoGerar(); }
+        setStatus(onde, err.message, { erro: true });
+      } finally { gerandoAgora = false; atualizarBotaoGerar(); $('ligGerar').disabled = false; }
     }
     $('gerar').addEventListener('click', () => gerar(false));
 
@@ -4574,6 +4614,101 @@
       setStatus('statusComp', 'Gerando o report completo (é o botão "Gerar Report", com os dois juntos)…', { ok: true });
       gerar(false).finally(() => { compBaseId = ''; }); // o vínculo vale só para este report
     });
+
+    // ---------- Report da ligação (aba própria) ----------
+    /** O .txt da extensão vira o formato da conversa: "[0:07] LEAD: oi" -> "LEAD: oi"; o nome sai do cabeçalho. */
+    function lerTranscricaoDeLigacao(bruto) {
+      let nome = '';
+      let doLead = 0;
+      let minhas = 0;
+      const linhas = [];
+      String(bruto || '').replace(/^\uFEFF/, '').split(/\r?\n/).forEach((l) => {
+        const cab = /^Ligação com (.+?) - \d{4}-\d{2}-\d{2}/.exec(l);
+        if (cab) {
+          if (!/^(lead|online|digitando|gravando|escrevendo|visto por)/i.test(cab[1])) nome = cab[1].trim();
+          return;
+        }
+        const fala = /^\s*(?:\[\d+:\d{2}\]\s*)?(EU|LEAD|VENDEDOR):\s*(.*)$/i.exec(l);
+        if (fala) {
+          const lead = fala[1].toUpperCase() === 'LEAD';
+          if (lead) doLead++; else minhas++;
+          linhas.push((lead ? 'LEAD: ' : 'VENDEDOR: ') + fala[2]);
+        } else if (l.trim()) linhas.push(l.trim());
+      });
+      return { nome, conversa: linhas.join('\n'), soMinhaVoz: minhas > 0 && doLead === 0 };
+    }
+
+    let nomeDoTxt = ''; // o nome que veio do .txt: uma nova transcrição troca; o que foi digitado à mão fica
+    function conferirTranscricao() {
+      const t = lerTranscricaoDeLigacao($('ligTexto').value);
+      if (!$('ligNome').value.trim() || $('ligNome').value === nomeDoTxt) { $('ligNome').value = t.nome; nomeDoTxt = t.nome; }
+      $('ligAviso').textContent = t.soMinhaVoz
+        ? 'Atenção: esta transcrição só tem a sua voz. Escreva em "Anotações suas" o que o lead falou, senão o report sai sem as respostas dele.'
+        : '';
+    }
+    $('ligTexto').addEventListener('input', conferirTranscricao);
+    $('ligAnexar').addEventListener('click', () => $('ligArquivo').click());
+    $('ligArquivo').addEventListener('change', async () => {
+      const arq = $('ligArquivo').files && $('ligArquivo').files[0];
+      if (!arq) return;
+      try {
+        $('ligTexto').value = await arq.text();
+        conferirTranscricao();
+        setStatus('statusLig', `${arq.name} anexado. Confira o nome do lead e gere o report.`, { ok: true });
+      } catch (_) {
+        setStatus('statusLig', 'Não consegui abrir o arquivo. Cole o texto no campo.', { erro: true });
+      } finally {
+        $('ligArquivo').value = '';
+      }
+    });
+
+    let ligBasesDe = ''; // de que chave é a lista carregada
+    async function carregarBasesLig() {
+      const chave = getChave();
+      if (!chave || ligBasesDe === chave) return;
+      ligBasesDe = chave;
+      try {
+        const r = await fetchComTempo('/api/report-base', { headers: hdr() });
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.erro || 'falhou');
+        const quando = (iso) => new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+        $('ligBase').innerHTML = '<option value="">Nenhum: só a ligação</option>' + (j.reports || []).map((x) => `<option value="${esc(x.id)}">${esc(x.lead || 'Lead')} · ${esc(quando(x.quando))}</option>`).join('');
+      } catch (_) {
+        ligBasesDe = ''; // a lista é opcional: tenta de novo na próxima vez que a aba abrir
+      }
+    }
+
+    async function gerarDaLigacao(forcarNovo) {
+      if (gerandoAgora) return;
+      if (!getChave()) return setStatus('statusLig', 'Coloque a sua chave na aba "Gerar report" antes de gerar.', { erro: true });
+      const t = lerTranscricaoDeLigacao($('ligTexto').value);
+      const notas = $('ligNotas').value.trim();
+      if ((t.conversa + notas).length < 40) return setStatus('statusLig', 'Cole a transcrição da ligação antes de gerar.', { erro: true });
+      const baseId = $('ligBase').value;
+      let anterior = '';
+      if (baseId) {
+        setStatus('statusLig', 'Trazendo o report do WhatsApp…', { loading: true });
+        try {
+          const r = await fetchComTempo('/api/report-base/' + encodeURIComponent(baseId), { headers: hdr() });
+          const j = await r.json();
+          if (!r.ok) throw new Error(j.erro || 'Não achei o texto deste report.');
+          anterior = j.texto;
+        } catch (e) {
+          return setStatus('statusLig', e.message, { erro: true });
+        }
+      }
+      const partes = [];
+      if (anterior) partes.push('[REPORT ANTERIOR — gerado da conversa no WhatsApp]', anterior, '');
+      partes.push('[LIGAÇÃO — transcrição automática da conversa por telefone, pode ter palavra trocada' + (anterior ? '; quando divergir do report anterior, vale a ligação' : '') + ']');
+      if (t.soMinhaVoz) partes.push('Só a voz do vendedor foi gravada. Não deduza respostas do lead a partir das perguntas ou das repetições do vendedor sem deixar claro que ele não foi ouvido.');
+      partes.push(t.conversa);
+      if (notas) partes.push('', '[ANOTAÇÕES DO VENDEDOR sobre a ligação — o que o lead contou]', notas);
+      repetirGeracao = () => gerarDaLigacao(true);
+      esconderDuplicado();
+      $('resultado').classList.add('hidden');
+      await enviarReport({ texto: partes.join('\n'), nome: $('ligNome').value.trim(), baseId, forcarNovo, onde: 'statusLig', ligacao: true });
+    }
+    $('ligGerar').addEventListener('click', () => gerarDaLigacao(false));
 
     // Estimativa de custo (determinística, sem IA) — atualiza com debounce ao digitar.
     let estimativaTimer = null;

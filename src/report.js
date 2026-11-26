@@ -703,7 +703,7 @@ async function chamarAnthropic(userPrompt, system, qualidade, opcoes = {}) {
   const ferramenta = opcoes.tool || REPORT_TOOL;
 
   const ESPERAS_MS = [1500, 4000]; // até 3 tentativas: 1ª direto, 2ª e 3ª com espera.
-  const limiteMs = Number(process.env.ANTHROPIC_TIMEOUT_MS) || 50000;
+  const limiteMs = opcoes.timeoutMs || Number(process.env.ANTHROPIC_TIMEOUT_MS) || 50000;
   let resp;
   for (let tentativa = 0; ; tentativa++) {
     try {
@@ -801,11 +801,11 @@ async function chamarOllama(userPrompt, systemOuBlocos) {
   return { texto, uso: { modelo: `ollama/${model}`, entrada: 0, saida: 0 } };
 }
 
-async function chamarLLM(userPrompt, system, qualidade) {
+async function chamarLLM(userPrompt, system, qualidade, opcoes = {}) {
   // Ollama roda um único modelo local (já configurado em OLLAMA_MODEL); o modo de
   // qualidade só existe pra escolher entre modelos pagos da Anthropic.
   if (LLM_PROVIDER === 'ollama') return chamarOllama(userPrompt, system);
-  if (LLM_PROVIDER === 'anthropic') return chamarAnthropic(userPrompt, system, qualidade);
+  if (LLM_PROVIDER === 'anthropic') return chamarAnthropic(userPrompt, system, qualidade, opcoes);
   throw new Error(`LLM_PROVIDER inválido: "${LLM_PROVIDER}" (use "anthropic" ou "ollama").`);
 }
 
@@ -1027,7 +1027,7 @@ async function aquecerCache() {
   return uso;
 }
 
-async function processarComLLM(userPrompt, nome, qualidade) {
+async function processarComLLM(userPrompt, nome, qualidade, opcoes = {}) {
   const system = await montarSystem();
   const qualidadeFinal = normalizarQualidade(qualidade);
   let dados;
@@ -1040,7 +1040,7 @@ async function processarComLLM(userPrompt, nome, qualidade) {
       tentativa === 0
         ? ''
         : '\n\nATENÇÃO: o corpo do relatório veio incompleto. Gere DE NOVO com as seções "Perfil e momento", "Dor e objetivo" e "Portas que devem ser fechadas" (numerada).';
-    const { texto: respostaBruta, uso } = await chamarLLM(userPrompt + reforco, system, qualidadeFinal);
+    const { texto: respostaBruta, uso } = await chamarLLM(userPrompt + reforco, system, qualidadeFinal, opcoes);
 
     try {
       dados = normalizarDados(extrairJson(respostaBruta));
@@ -1071,17 +1071,49 @@ async function processarComLLM(userPrompt, nome, qualidade) {
  * @param {{texto: string, nome?: string}} payload
  * @returns {Promise<{dados: object, arquivo: string}>}
  */
-async function dadosDeTexto({ texto, nome, sdr, qualidade } = {}) {
+// Report da ligação (aba própria do painel): lead quente, a call inteira é lida e a análise é mais funda.
+const LIGACAO_MAX_CHARS = 90000; // cabe mais de uma hora de conversa, sem cortar nada
+const LIGACAO_OPCOES = { maxTokens: 8000, timeoutMs: 150000 };
+const BLOCO_LIGACAO =
+  '\n\n---\n\nESTE É O REPORT DE UMA LIGAÇÃO COM UM LEAD QUENTE. Faça uma análise PROFUNDA antes de escrever; o closer vai conduzir a reunião com base nela.\n' +
+  '1. Leia a ligação inteira, do começo ao fim. O que aparece no meio e no final vale tanto quanto o começo.\n' +
+  '2. Cruze as falas: a dor por trás do que o lead pediu, o que ele já tentou, o que ele tem a perder se não agir, o que o move de verdade.\n' +
+  '3. Levante com precisão, quando foi dito: momento e profissão, experiência com venda online, faturamento e números citados, valor para investir e se confirmou, quem decide e quem participa, prazo e urgência, disponibilidade e o que ficou combinado.\n' +
+  '4. Objeções e riscos: as ditas e as que aparecem nas entrelinhas (dúvida, hesitação, assunto que o lead desviou). Para cada uma, diga como o closer deve tratar na reunião.\n' +
+  '5. Aponte o que ainda NÃO foi descoberto e o closer precisa perguntar.\n' +
+  '6. Seja específico deste lead: nada de frase genérica que serviria para qualquer um. Detalhe concreto vale mais que adjetivo.\n' +
+  '7. A transcrição é automática: pode ter palavra trocada e trecho repetido em sequência sem sentido (ruído). Ignore o ruído e não tire conclusão dele.\n' +
+  '8. Não invente nem deduza como fato. Se algo é leitura sua, deixe claro que é leitura; se não foi dito, não preencha. Fala do vendedor nunca vira fala do lead.\n' +
+  'Mantenha o formato do relatório.';
+
+/** O que conta como fala do lead na ligação: as linhas "LEAD:" e o que o vendedor anotou que o lead contou. */
+function falasDaLigacao(texto) {
+  const linhas = String(texto || '').split('\n');
+  const nota = linhas.findIndex((l) => l.startsWith('[ANOTAÇÕES DO VENDEDOR'));
+  return linhas.filter((l, i) => /^LEAD:/.test(l) || (nota >= 0 && i > nota));
+}
+
+async function dadosDeTexto({ texto, nome, sdr, qualidade, ligacao } = {}) {
   const conteudo = typeof texto === 'string' ? texto.trim() : '';
   if (!conteudo) {
     throw new Error('Cole a conversa antes de gerar o report.');
   }
-  const { texto: textoNormalizado, resumida } = normalizarTextoLivre(conteudo);
-  const userPrompt = montarUserPrompt(textoNormalizado, nome, sdr);
-  const dados = await processarComLLM(userPrompt, nome, qualidade);
+  const { texto: textoNormalizado, resumida } = normalizarTextoLivre(conteudo, ligacao ? { maxChars: LIGACAO_MAX_CHARS } : {});
+  const userPrompt = montarUserPrompt(textoNormalizado, nome, sdr) + (ligacao ? BLOCO_LIGACAO : '');
+  const opcoes = ligacao ? LIGACAO_OPCOES : {};
+  let dados;
+  try {
+    dados = await processarComLLM(userPrompt, nome, qualidade, opcoes);
+  } catch (err) {
+    // Se a chave não tiver o modelo mais forte, a ligação não fica sem report: sai no modelo de sempre.
+    if (!ligacao || !/Anthropic respondeu (400|403|404)\b[\s\S]*model/i.test(String(err.message))) throw err;
+    console.warn('[report] modelo premium indisponível; a ligação saiu no modelo padrão.');
+    dados = await processarComLLM(userPrompt, nome, 'standard', opcoes);
+  }
   dados.resumida = resumida;
   // Texto livre não diz quem falou: confere contra todas as linhas.
-  aplicarVerificacaoDeCitacoes(dados, textoNormalizado.split('\n'));
+  // Na ligação dá para saber: só vale como fala do lead o que é dele.
+  aplicarVerificacaoDeCitacoes(dados, ligacao ? falasDaLigacao(textoNormalizado) : textoNormalizado.split('\n'));
   return dados;
 }
 

@@ -101,7 +101,7 @@
     });
 
     function gravarParte(stream, quem, indice, inicioMs) {
-      const rec = new MediaRecorder(stream, tipo ? { mimeType: tipo, audioBitsPerSecond: 32000 } : undefined);
+      const rec = new MediaRecorder(stream, tipo ? { mimeType: tipo, audioBitsPerSecond: 64000 } : undefined);
       const pedacos = [];
       rec.ondataavailable = (e) => { if (e.data && e.data.size) pedacos.push(e.data); };
       rec.onstop = async () => {
@@ -148,54 +148,79 @@
       }
     }
 
-    /** Confere se está mesmo chegando som do lado do lead: avisa durante a ligação, não só no fim. */
-    function vigiarLead(g) {
+    /** Mede o som dos dois lados a cada segundo: mostra na hora se algum não está chegando, não só no fim. */
+    function vigiarSom(g) {
       const Ctx = window.AudioContext || window.webkitAudioContext;
       if (!Ctx) return;
       let ctx = null;
-      let ligadas = '';
-      let analisador = null;
-      let silencio = 0;
+      let segundos = 0;
+      const lados = {
+        lead: { faixas: () => faixasDoLead(g), ligadas: '', analisador: null, ultimo: 0 },
+        eu: { faixas: () => (g.mic ? g.mic.getAudioTracks().filter(viva) : []), ligadas: '', analisador: null, ultimo: 0 },
+      };
+      const pico = (lado) => {
+        const faixas = lado.faixas();
+        const ids = faixas.map((t) => t.id).join();
+        if (ids !== lado.ligadas) {
+          lado.ligadas = ids;
+          lado.analisador = null;
+          if (faixas.length) {
+            lado.analisador = ctx.createAnalyser();
+            faixas.forEach((t) => ctx.createMediaStreamSource(new MediaStream([t])).connect(lado.analisador));
+          }
+        }
+        if (!lado.analisador) return 0;
+        const amostras = new Uint8Array(lado.analisador.fftSize);
+        lado.analisador.getByteTimeDomainData(amostras);
+        return amostras.reduce((m, v) => Math.max(m, Math.abs(v - 128)), 0);
+      };
+      let avisouSemLead = false;
       g.vigia = setInterval(() => {
         try {
-          const faixas = faixasDoLead(g);
-          const ids = faixas.map((t) => t.id).join();
           if (!ctx) ctx = new Ctx();
           if (ctx.state === 'suspended') ctx.resume();
-          if (ids !== ligadas) {
-            ligadas = ids;
-            analisador = null;
-            if (faixas.length) {
-              analisador = ctx.createAnalyser();
-              faixas.forEach((t) => ctx.createMediaStreamSource(new MediaStream([t])).connect(analisador));
-            }
-          }
-          let pico = 0;
-          if (analisador) {
-            const amostras = new Uint8Array(analisador.fftSize);
-            analisador.getByteTimeDomainData(amostras);
-            amostras.forEach((v) => { pico = Math.max(pico, Math.abs(v - 128)); });
-          }
-          if (pico > 3) {
-            silencio = 0;
+          segundos++;
+          if (pico(lados.lead) > 3) {
+            lados.lead.ultimo = segundos;
             if (!g.leadOuvido) { g.leadOuvido = true; avisar({ evento: 'vozDoLead' }); }
-          } else if (!g.leadOuvido && ++silencio === 20) {
-            avisar({ evento: 'semVozDoLead' });
           }
+          if (pico(lados.eu) > 3) lados.eu.ultimo = segundos;
+          if (!g.leadOuvido && !avisouSemLead && segundos >= 20) { avisouSemLead = true; avisar({ evento: 'semVozDoLead' }); }
+          // "ouvindo" = teve som nos últimos 5 segundos
+          avisar({ evento: 'niveis', lead: lados.lead.ultimo > 0 && segundos - lados.lead.ultimo < 5, eu: lados.eu.ultimo > 0 && segundos - lados.eu.ultimo < 5 });
         } catch (_) { /* sem análise: a gravação segue */ }
       }, 1000);
       g.fecharVigia = () => { clearInterval(g.vigia); if (ctx) ctx.close().catch(() => {}); };
     }
 
+    // Sem tratamento de voz na fonte do lead (é um áudio que já chega pronto); no seu microfone, com.
+    const abrirEntrada = (id, tratar) => md.getUserMedia({ audio: { deviceId: { exact: id }, echoCancellation: tratar, noiseSuppression: tratar, autoGainControl: tratar } });
+
     let preparando = false;
-    async function comecar() {
+    /** @param {{ microfone?: string, fonteLead?: string }} [opcoes] ids dos aparelhos escolhidos; vazio = o padrão */
+    async function comecar(opcoes = {}) {
       if (gravacao || preparando) return;
       if (!window.MediaRecorder) return avisar({ evento: 'erro', erro: 'Este navegador não grava áudio.' });
       preparando = true;
       try {
-        const aba = await capturarAba();
-        let mic = micDaPagina && micDaPagina.getAudioTracks().some(viva) ? micDaPagina : null;
+        // Voz do lead: o áudio da aba (padrão) ou a entrada escolhida (ex.: um cabo de áudio virtual).
+        let aba = null;
+        if (opcoes.fonteLead) {
+          try { aba = await abrirEntrada(opcoes.fonteLead, false); } catch (_) {
+            return avisar({ evento: 'erro', erro: 'Não consegui abrir a entrada escolhida para a voz do lead. Confira em "Áudio da ligação".' });
+          }
+        } else {
+          aba = await capturarAba();
+        }
+        let mic = null;
         let micProprio = false;
+        if (opcoes.microfone && md && md.getUserMedia) {
+          try { mic = await abrirEntrada(opcoes.microfone, true); micProprio = true; } catch (_) {
+            if (aba) aba.getTracks().forEach((t) => t.stop());
+            return avisar({ evento: 'erro', erro: 'Não consegui abrir o microfone escolhido. Confira em "Áudio da ligação".' });
+          }
+        }
+        if (!mic) mic = micDaPagina && micDaPagina.getAudioTracks().some(viva) ? micDaPagina : null;
         if (!mic && md && md.getUserMedia) {
           try { mic = await navigator.mediaDevices.getUserMedia({ audio: true }); micProprio = true; } catch (_) { mic = null; }
         }
@@ -215,7 +240,7 @@
         }, PARTE_MS);
         // "Parar de compartilhar" na barra do Chrome encerra a gravação
         if (aba) aba.getAudioTracks().forEach((t) => t.addEventListener('ended', () => { if (gravacao === g) parar('compartilhamento encerrado'); }));
-        vigiarLead(g);
+        vigiarSom(g);
         avisar({ evento: 'gravando', inicio: g.inicio, temLead, temMic: Boolean(mic) });
       } finally {
         preparando = false;
@@ -237,7 +262,7 @@
 
     window.addEventListener('message', (ev) => {
       if (ev.source !== window || !ev.data || !ev.data.__crLigacaoCmd) return;
-      if (ev.data.__crLigacaoCmd === 'gravar') comecar();
+      if (ev.data.__crLigacaoCmd === 'gravar') comecar(ev.data.opcoes || {});
       else if (ev.data.__crLigacaoCmd === 'parar') parar('parado pelo SDR');
       else if (ev.data.__crLigacaoCmd === 'estado') avisar({ evento: 'estado', chamada: [...remotas].some(viva), gravando: Boolean(gravacao), inicio: gravacao ? gravacao.inicio : 0 });
     });

@@ -73,7 +73,7 @@
   ui.append(texto, botao, fechar);
   const montar = () => { if (!ui.isConnected && document.body) document.body.appendChild(ui); };
 
-  const cmd = (c) => window.postMessage({ __crLigacaoCmd: c }, '*');
+  const cmd = (c, extra) => window.postMessage({ __crLigacaoCmd: c, ...extra }, '*');
   const estado = { chamada: false, gravando: false, inicio: 0, nome: '', falas: [], pendentes: 0, parou: false, partes: 0, erros: 0, id: '', relogio: null, finalizarTimer: null, resultado: null };
   const ouvintes = [];
   const mudou = () => ouvintes.forEach((f) => { try { f(); } catch (_) { /* ignora */ } });
@@ -83,6 +83,7 @@
   /** Texto e cores do botão do cartão para o estado de agora. */
   function infoCartao() {
     if (estado.gravando && estado.semVoz) return { texto: `⚠️ Sem a voz do lead · Parar ${mmss(Date.now() - estado.inicio)}`, cor: '#ffc233', borda: '#ffc233', titulo: 'Não está chegando som do lead. Pare, clique em gravar de novo e permita o áudio desta aba. Se a ligação abriu em outra janela, traga para esta aba.' };
+    if (estado.gravando && estado.niveis) return { texto: `⏺ Parar ${mmss(Date.now() - estado.inicio)} · Você ${estado.niveis.eu ? '🟢' : '⚪'} Lead ${estado.niveis.lead ? '🟢' : '⚪'}`, cor: '#ff6f5c', borda: '#ff6f5c', titulo: 'Verde = chegando som daquele lado nos últimos segundos. Se alguém está falando e a bolinha dele não fica verde, confira em "Áudio da ligação".' };
     if (estado.gravando) return { texto: `⏺ Parar gravação · ${mmss(Date.now() - estado.inicio)}`, cor: '#ff6f5c', borda: '#ff6f5c', titulo: 'Gravando a ligação (a sua voz e a do lead). Clique para parar; a transcrição começa sozinha.' };
     if (estado.parou || estado.pendentes > 0) return { texto: 'Transcrevendo a ligação…', cor: '#ffc233', borda: '#ffc233', titulo: 'As partes da ligação estão sendo transcritas.' };
     if (estado.resultado && Date.now() - estado.resultado.em < 10 * 60 * 1000) {
@@ -97,7 +98,72 @@
     if (estado.parou || estado.pendentes > 0) return;
     estado.nome = nomeDaConversa();
     estado.resultado = null;
-    cmd('gravar');
+    // as escolhas já estão na memória: o pedido sai na hora do clique (o Chrome só pede a aba logo após um clique)
+    cmd('gravar', { opcoes: { ...audio } });
+  }
+
+  // ---------------------------------------------------------------- entradas de áudio
+  const audio = { microfone: '', fonteLead: '' }; // '' = padrão
+  try { chrome.storage.local.get({ audioLigacao: {} }, (c) => Object.assign(audio, (c && c.audioLigacao) || {})); } catch (_) { /* sem storage */ }
+  let painelAudio = null;
+
+  async function listarEntradas() {
+    const md = navigator.mediaDevices;
+    if (!md || !md.enumerateDevices) return [];
+    let lista = (await md.enumerateDevices()).filter((d) => d.kind === 'audioinput');
+    if (lista.length && !lista.some((d) => d.label)) {
+      // sem permissão ainda, o Chrome não mostra os nomes: pede o microfone uma vez
+      try { const s = await md.getUserMedia({ audio: true }); s.getTracks().forEach((t) => t.stop()); lista = (await md.enumerateDevices()).filter((d) => d.kind === 'audioinput'); } catch (_) { /* segue sem nomes */ }
+    }
+    return lista.filter((d) => d.deviceId && d.deviceId !== 'default');
+  }
+
+  async function abrirAudio() {
+    if (painelAudio) { painelAudio.remove(); painelAudio = null; return; }
+    const caixa = document.createElement('div');
+    caixa.id = 'cr-audio-painel';
+    caixa.style.cssText = 'position:fixed;left:16px;bottom:72px;z-index:2147483647;width:320px;padding:14px;border-radius:12px;background:#18171b;color:#fff;font:500 13px/1.4 system-ui,-apple-system,Segoe UI,sans-serif;box-shadow:0 8px 30px rgba(0,0,0,.35)';
+    painelAudio = caixa;
+    const entradas = await listarEntradas().catch(() => []);
+    if (painelAudio !== caixa) return;
+    const titulo = document.createElement('div');
+    titulo.textContent = 'Áudio da ligação';
+    titulo.style.cssText = 'font-weight:700;margin-bottom:8px';
+    caixa.appendChild(titulo);
+    const escolha = (chave, rotulo, padrao) => {
+      const l = document.createElement('label');
+      l.textContent = rotulo;
+      l.style.cssText = 'display:block;margin:8px 0 4px';
+      const sel = document.createElement('select');
+      sel.dataset.chave = chave;
+      sel.style.cssText = 'width:100%;padding:6px;border-radius:8px;background:#26252a;color:#fff;border:1px solid #55515b';
+      [['', padrao]].concat(entradas.map((d, i) => [d.deviceId, d.label || `Entrada ${i + 1}`])).forEach(([v, t]) => {
+        const o = document.createElement('option');
+        o.value = v;
+        o.textContent = t;
+        sel.appendChild(o);
+      });
+      sel.value = audio[chave] || '';
+      if (sel.value !== (audio[chave] || '')) sel.value = ''; // o aparelho escolhido não está ligado agora
+      sel.onchange = () => {
+        audio[chave] = sel.value;
+        try { chrome.storage.local.set({ audioLigacao: { ...audio } }); } catch (_) { /* sem storage */ }
+      };
+      l.appendChild(sel);
+      caixa.appendChild(l);
+    };
+    escolha('microfone', 'Seu microfone (a sua voz)', 'O mesmo da ligação (padrão)');
+    escolha('fonteLead', 'De onde vem a voz do lead', 'Áudio desta aba (recomendado)');
+    const dica = document.createElement('div');
+    dica.textContent = 'Use fone: sem ele o microfone ouve o lead e as falas se misturam. Só troque a fonte do lead se usar um cabo de áudio virtual. O fone onde você ouve é escolhido no WhatsApp ou no Mac.';
+    dica.style.cssText = 'margin-top:10px;color:#bbb;font-size:12px';
+    const ok = document.createElement('button');
+    ok.type = 'button';
+    ok.textContent = 'Pronto';
+    ok.style.cssText = 'margin-top:10px;border:0;border-radius:8px;padding:7px 14px;font-weight:700;cursor:pointer;background:#ffb800;color:#18171b';
+    ok.onclick = () => { caixa.remove(); painelAudio = null; };
+    caixa.append(dica, ok);
+    document.body.appendChild(caixa);
   }
 
   function mostrar(msg, rotulo, acao, cor) {
@@ -135,10 +201,16 @@
   }
 
   // ---------------------------------------------------------------- transcrição
-  function transcrever(parte) {
-    estado.pendentes++;
+  // Um trecho que falha (limite por minuto, rede) é perdido para sempre: tenta de novo antes de desistir.
+  const ESPERAS_DE_NOVO_MS = [5000, 20000, 60000];
+  function transcrever(parte, tentativa = 0) {
+    if (!tentativa) estado.pendentes++;
     if (!estado.gravando) telaTranscrevendo();
     chrome.runtime.sendMessage({ action: 'transcreverLigacao', base64: parte.b64 }, (r) => {
+      if (!(r && r.ok) && tentativa < ESPERAS_DE_NOVO_MS.length) {
+        setTimeout(() => transcrever(parte, tentativa + 1), ESPERAS_DE_NOVO_MS[tentativa]);
+        return;
+      }
       estado.pendentes--;
       if (r && r.ok) {
         (r.segmentos || []).forEach((s) => {
@@ -227,7 +299,7 @@
       mudou();
       if (!estado.gravando && !estado.pendentes && !estado.parou) esconder();
     } else if (d.evento === 'gravando') {
-      Object.assign(estado, { gravando: true, parou: false, inicio: d.inicio, falas: [], pendentes: 0, partes: 0, erros: 0, semVoz: false, id: 'lig-' + d.inicio });
+      Object.assign(estado, { gravando: true, parou: false, inicio: d.inicio, falas: [], pendentes: 0, partes: 0, erros: 0, semVoz: false, niveis: null, id: 'lig-' + d.inicio });
       if (!estado.nome) estado.nome = nomeDaConversa();
       telaGravando();
     } else if (d.evento === 'semVozDoLead') {
@@ -235,6 +307,10 @@
       clearInterval(estado.relogio);
       mostrar('⚠️ Não estou ouvindo a voz do lead. Se ele já falou, pare e grave de novo permitindo o áudio desta aba.', 'Parar', () => cmd('parar'), '#c2331f');
       if (botaoDoCartao()) alert('Report PRONIX: não estou ouvindo a voz do lead. Se ele já falou, pare e grave de novo permitindo o áudio desta aba.');
+    } else if (d.evento === 'niveis') {
+      estado.niveis = { eu: Boolean(d.eu), lead: Boolean(d.lead) };
+      const b = botaoDoCartao();
+      if (b && estado.gravando && !estado.semVoz) b.textContent = infoCartao().texto;
     } else if (d.evento === 'vozDoLead') {
       if (estado.semVoz) { estado.semVoz = false; telaGravando(); }
       mudou();
@@ -254,5 +330,5 @@
     }
   });
 
-  window.__crLigacao = { mensagensDa, nomeDaConversa, usarNome: (f) => { leitorDeNome = f; }, infoCartao, alternar, aoMudar: (f) => ouvintes.push(f) };
+  window.__crLigacao = { abrirAudio, mensagensDa, nomeDaConversa, usarNome: (f) => { leitorDeNome = f; }, infoCartao, alternar, aoMudar: (f) => ouvintes.push(f) };
 })();

@@ -1770,7 +1770,7 @@ test('abas por pessoa: usuário com a aba Resultados liberada vê só ela (além
   const p = abrirPainel(api, { hash: '#resultados' });
   await esperar(() => p.$('listaRes').querySelectorAll('tr').length === 2, { motivo: 'resultados do usuário' });
   const abas = [...p.document.querySelectorAll('.tab')].filter((t) => !t.classList.contains('hidden')).map((t) => t.dataset.aba);
-  assert.deepEqual(abas, ['report', 'dia', 'resultados']);
+  assert.deepEqual(abas, ['report', 'ligacao', 'dia', 'resultados']);
   assert.ok(visivel(p.$('aba-resultados')));
   p.document.querySelector('.tab[data-aba="report"]').click();
   p.w.location.hash = '#acessos';
