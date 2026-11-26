@@ -776,6 +776,8 @@
     return '';
   }
 
+  if (window.__crLigacao && window.__crLigacao.usarNome) window.__crLigacao.usarNome(nomeDoContato);
+
   function diagnostico() {
     return {
       main: !!document.querySelector('#main'),

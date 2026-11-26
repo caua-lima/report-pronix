@@ -16,8 +16,12 @@
     return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
   };
 
-  /** O nome da conversa aberta (o mesmo topo que o report usa). */
+  // O content.js entrega aqui o leitor de nome dele, que pula o status do topo ("online", "digitando…").
+  let leitorDeNome = null;
+
+  /** O nome da conversa aberta (o mesmo que o report usa: sem isso a ligação não entra no report do lead). */
   function nomeDaConversa() {
+    if (leitorDeNome) return leitorDeNome();
     const h = document.querySelector('#main header');
     if (!h) return '';
     const t = h.querySelector('span[title]');
@@ -250,5 +254,5 @@
     }
   });
 
-  window.__crLigacao = { mensagensDa, nomeDaConversa, infoCartao, alternar, aoMudar: (f) => ouvintes.push(f) };
+  window.__crLigacao = { mensagensDa, nomeDaConversa, usarNome: (f) => { leitorDeNome = f; }, infoCartao, alternar, aoMudar: (f) => ouvintes.push(f) };
 })();
