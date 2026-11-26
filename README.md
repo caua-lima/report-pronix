@@ -1055,7 +1055,7 @@ src/
   generatePdf.js              PDF com a marca PRONIX, até 2 páginas
   idempotencia.js             Hash da conversa (reportKey)
   precos.js · stats.js        Preço por modelo; histórico, custo e resultados
-  pdfStorage.js · diario.js   PDFs guardados; regra do .zip do dia
+  pdfStorage.js · diario.js   PDFs guardados até o dia 5 do mês seguinte; regra do .zip do dia
   transcribe.js · groq.js     Transcrição, visão e chat gratuito (com fila de modelos)
   resumoRapido.js             Resumo rápido da conversa
   crm.js · leads.js           RD Station (ficha e mover etapa); etiqueta e agendamento por lead

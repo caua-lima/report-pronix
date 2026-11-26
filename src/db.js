@@ -70,6 +70,23 @@ async function setJson(chave, valor) {
   await redis(['SET', chave, JSON.stringify(valor)]);
 }
 
+/** Grava um documento que o banco apaga sozinho depois de ttlSeg segundos. */
+async function setJsonComPrazo(chave, valor, ttlSeg) {
+  exigirBanco();
+  if (!usandoRedis) return salvarArquivo(chave, valor); // no modo local quem confere o prazo é quem lê
+  await redis(['SET', chave, JSON.stringify(valor), 'EX', String(Math.max(60, Math.floor(ttlSeg)))]);
+}
+
+/** Apaga documentos. */
+async function apagar(chave) {
+  exigirBanco();
+  if (!usandoRedis) {
+    try { fs.unlinkSync(arquivo(chave)); } catch (_) { /* não existia */ }
+    return;
+  }
+  await redis(['DEL', chave]);
+}
+
 /**
  * Acrescenta um item a uma lista e corta no limite.
  * Em lista o append é atômico: dois SDRs gerando report ao mesmo tempo não se atropelam.
@@ -254,5 +271,5 @@ async function cacheDel(chave) {
 }
 
 module.exports = {
-  getJson, setJson, push, range, removerDaLista, atualizarNaLista, travar, destravar, cacheGet, cacheSet, cacheDel, usandoRedis,
+  getJson, setJson, setJsonComPrazo, apagar, push, range, removerDaLista, atualizarNaLista, travar, destravar, cacheGet, cacheSet, cacheDel, usandoRedis,
 };

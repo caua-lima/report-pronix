@@ -1324,11 +1324,13 @@
             </div>
             <button id="verArquivos" class="btn">Ver</button>
             <button id="baixarZipTudo" class="btn sec"><i data-ic="download"></i>Baixar tudo (.zip)</button>
+            <button id="apagarPdfsArq" class="btn sec" style="color:var(--danger)">Apagar PDFs do período</button>
           </div>
           <label style="display:flex;align-items:center;gap:8px;margin-top:10px;font-weight:500">
             <input id="soUltimoArq" type="checkbox" checked style="width:auto" />
             No .zip, só o último report de cada lead no dia (os refeitos ficam de fora)
           </label>
+          <div class="hint" style="margin-top:8px">Os PDFs de um mês ficam guardados até o <b>dia 5</b> do mês seguinte e depois são apagados sozinhos. Baixe antes disso.</div>
           <div id="statusArquivos" class="status"></div>
         </div>
 
@@ -3743,6 +3745,23 @@
         setStatus('statusArquivos', e.message, { erro: true });
       }
     }
+
+    $('apagarPdfsArq').addEventListener('click', async () => {
+      const de = $('deArq').value;
+      const ate = $('ateArq').value;
+      if (!de || !ate) return setStatus('statusArquivos', 'Escolha o "de" e o "até" antes de apagar os PDFs.', { erro: true });
+      const br = (d) => d.split('-').reverse().join('/');
+      if (!confirm(`Apagar os PDFs de ${br(de)} a ${br(ate)}, de TODOS os SDRs?\n\nBaixe o .zip antes: não dá para desfazer. O histórico e os números continuam.`)) return;
+      $('apagarPdfsArq').disabled = true;
+      try {
+        const j = await api('POST', '/api/master/reports/pdf-apagar', { de, ate });
+        setStatus('statusArquivos', `${j.apagados} PDF(s) apagado(s).`);
+      } catch (e) {
+        setStatus('statusArquivos', e.message, { erro: true });
+      } finally {
+        $('apagarPdfsArq').disabled = false;
+      }
+    });
 
     $('baixarZipTudo').addEventListener('click', async () => {
       const btn = $('baixarZipTudo');

@@ -1157,7 +1157,7 @@ app.get('/api/reports/:id/pdf', auth, async (req, res) => {
 const pastaSegura = (nome) =>
   String(nome || 'Sem SDR').replace(/[\\/]+/g, '-').replace(/^\.+/, '').trim() || 'Sem SDR';
 
-const TETO_ZIP = 500; // protege contra timeout/memória num filtro largo demais na Vercel.
+const TETO_ZIP = 2000; // protege contra timeout/memória num filtro largo demais na Vercel.
 
 /**
  * Baixa em massa os PDFs de um período/SDR num .zip, organizado em pastas por
@@ -1190,9 +1190,26 @@ app.get('/api/admin/reports/pdf-zip', acesso(['arquivos']), async (req, res) => 
   }
 });
 
+/** O master apaga na hora os PDFs de um período, depois de baixar. O histórico e os números não mudam. */
+app.post('/api/master/reports/pdf-apagar', auth, soMasterComChave, async (req, res) => {
+  try {
+    const filtro = filtroDaQuery(req.body || {});
+    if (!filtro.de || !filtro.ate) return res.status(400).json({ erro: 'Escolha o "de" e o "até" antes de apagar os PDFs.' });
+    const comPdf = await lerPdfs(await stats.listar(filtro));
+    for (const { r } of comPdf) await pdfStorage.remover(r.id);
+    res.json({ ok: true, apagados: comPdf.length });
+  } catch (err) {
+    res.status(500).json({ erro: err.message });
+  }
+});
+
 /** Lê os PDFs guardados dos reports (os que não têm PDF — reports antigos — ficam de fora). */
 async function lerPdfs(registros) {
-  const lidos = await Promise.all(registros.map(async (r) => ({ r, salvo: await pdfStorage.ler(r.id).catch(() => null) })));
+  // 25 de cada vez: centenas de leituras juntas estouram o limite do banco.
+  const lidos = [];
+  for (let i = 0; i < registros.length; i += 25) {
+    lidos.push(...(await Promise.all(registros.slice(i, i + 25).map(async (r) => ({ r, salvo: await pdfStorage.ler(r.id).catch(() => null) })))));
+  }
   return lidos.filter((x) => x.salvo && x.salvo.base64);
 }
 
@@ -1917,9 +1934,9 @@ async function responderReport(req, res, dados, nome, origem, reportKey, captura
   await fluxoReuniao
     .guardarHandoff({ dados, sdr: req.usuario.nome, reportId: id, vinculo: vinculoLido })
     .catch((err) => console.error('Falha ao guardar o handoff:', err.message));
-  // O PDF inteiro no banco enchia o plano grátis do Upstash. Em produção ele não é mais guardado (o SDR recebe
-  // o PDF na hora e o painel redesenha a partir dos dados); GUARDAR_PDF=sim religa.
-  if (process.env.GUARDAR_PDF === 'sim' || !process.env.VERCEL) {
+  // O PDF fica guardado só até o dia 5 do mês seguinte (src/pdfStorage.js), para o banco não encher.
+  // GUARDAR_PDF=nao desliga.
+  if (process.env.GUARDAR_PDF !== 'nao') {
     await pdfStorage
       .salvar(id, base64, arquivo)
       .catch((err) => console.error('Falha ao salvar o PDF do report:', err.message));
