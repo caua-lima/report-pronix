@@ -78,6 +78,7 @@
 
   /** Texto e cores do botão do cartão para o estado de agora. */
   function infoCartao() {
+    if (estado.gravando && estado.semVoz) return { texto: `⚠️ Sem a voz do lead · Parar ${mmss(Date.now() - estado.inicio)}`, cor: '#ffc233', borda: '#ffc233', titulo: 'Não está chegando som do lead. Pare, clique em gravar de novo e permita o áudio desta aba. Se a ligação abriu em outra janela, traga para esta aba.' };
     if (estado.gravando) return { texto: `⏺ Parar gravação · ${mmss(Date.now() - estado.inicio)}`, cor: '#ff6f5c', borda: '#ff6f5c', titulo: 'Gravando a ligação (a sua voz e a do lead). Clique para parar; a transcrição começa sozinha.' };
     if (estado.parou || estado.pendentes > 0) return { texto: 'Transcrevendo a ligação…', cor: '#ffc233', borda: '#ffc233', titulo: 'As partes da ligação estão sendo transcritas.' };
     if (estado.resultado && Date.now() - estado.resultado.em < 10 * 60 * 1000) {
@@ -202,6 +203,11 @@
     estado.resultado = { ok: true, em: Date.now(), falas: juntas.length };
     await guardar({ id: estado.id, nome, em: estado.inicio, duracaoMs: estado.duracaoMs || 0, falas: juntas.map(({ quem, t, texto: tx }) => ({ quem, t: Math.round(t * 10) / 10, texto: tx })) });
     baixarTxt(nome, estado.inicio, juntas);
+    if (!juntas.some((f) => f.quem === 'lead')) {
+      mostrar('⚠️ A transcrição saiu SEM a voz do lead. Na próxima, permita o áudio desta aba na janela do Chrome.', 'OK', esconder);
+      if (botaoDoCartao()) alert('Report PRONIX: a transcrição saiu sem a voz do lead. Na próxima, permita o áudio desta aba na janela do Chrome.');
+      return;
+    }
     mostrar(`Ligação transcrita: ${juntas.length} falas${nome ? ` com ${nome}` : ''}. O .txt foi baixado e ela entra no próximo report desta conversa.${estado.erros ? ` (${estado.erros} parte(s) falharam)` : ''}`, 'OK', esconder);
   }
 
@@ -217,10 +223,17 @@
       mudou();
       if (!estado.gravando && !estado.pendentes && !estado.parou) esconder();
     } else if (d.evento === 'gravando') {
-      Object.assign(estado, { gravando: true, parou: false, inicio: d.inicio, falas: [], pendentes: 0, partes: 0, erros: 0, id: 'lig-' + d.inicio });
+      Object.assign(estado, { gravando: true, parou: false, inicio: d.inicio, falas: [], pendentes: 0, partes: 0, erros: 0, semVoz: false, id: 'lig-' + d.inicio });
       if (!estado.nome) estado.nome = nomeDaConversa();
       telaGravando();
-      if (!d.temLead) mostrar('Gravando só o seu microfone: não achei a voz do lead nesta aba.', 'Parar', () => cmd('parar'), '#c2331f');
+    } else if (d.evento === 'semVozDoLead') {
+      estado.semVoz = true;
+      clearInterval(estado.relogio);
+      mostrar('⚠️ Não estou ouvindo a voz do lead. Se ele já falou, pare e grave de novo permitindo o áudio desta aba.', 'Parar', () => cmd('parar'), '#c2331f');
+      if (botaoDoCartao()) alert('Report PRONIX: não estou ouvindo a voz do lead. Se ele já falou, pare e grave de novo permitindo o áudio desta aba.');
+    } else if (d.evento === 'vozDoLead') {
+      if (estado.semVoz) { estado.semVoz = false; telaGravando(); }
+      mudou();
     } else if (d.evento === 'parte') {
       transcrever(d);
     } else if (d.evento === 'parou') {

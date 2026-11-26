@@ -34,8 +34,9 @@
 })();
 
 // ---------------------------------------------------------------------------
-// Gravação de ligação do WhatsApp Web. A chamada é WebRTC aqui na página: a voz do lead chega como faixa de áudio
-// remota (RTCPeerConnection) e a sua sai do microfone (getUserMedia). Cada lado é gravado separado, em partes de
+// Gravação de ligação do WhatsApp Web. A sua voz sai do microfone (getUserMedia). A voz do lead é capturada do
+// ÁUDIO DA ABA (getDisplayMedia, o Chrome pede um "Permitir"): o WhatsApp nem sempre toca a chamada por uma faixa
+// WebRTC que dê para gravar. Se o áudio da aba não vier, tenta a faixa remota (RTCPeerConnection). Cada lado é gravado separado, em partes de
 // alguns minutos (o servidor recebe no máximo uns 4 MB por vez), e cada parte vai para o content script, que manda
 // transcrever. Nada grava sozinho: só depois do clique em "Gravar ligação" (mensagem __crLigacaoCmd).
 // ---------------------------------------------------------------------------
@@ -118,29 +119,107 @@
       const inicioMs = Date.now() - g.inicio;
       const indice = g.partes++;
       const ativos = [];
-      const lead = [...remotas].filter(viva);
+      const lead = faixasDoLead(g);
       if (lead.length) ativos.push(gravarParte(new MediaStream(lead), 'lead', indice, inicioMs));
       if (g.mic && g.mic.getAudioTracks().some(viva)) ativos.push(gravarParte(new MediaStream(g.mic.getAudioTracks().filter(viva)), 'eu', indice, inicioMs));
       g.recorders = ativos;
     }
 
-    async function comecar() {
-      if (gravacao) return;
-      if (!window.MediaRecorder) return avisar({ evento: 'erro', erro: 'Este navegador não grava áudio.' });
-      let mic = micDaPagina && micDaPagina.getAudioTracks().some(viva) ? micDaPagina : null;
-      let micProprio = false;
-      if (!mic && md && md.getUserMedia) {
-        try { mic = await navigator.mediaDevices.getUserMedia({ audio: true }); micProprio = true; } catch (_) { mic = null; }
+    const faixasDoLead = (g) => {
+      const daAba = g.aba ? g.aba.getAudioTracks().filter(viva) : [];
+      return daAba.length ? daAba : [...remotas].filter(viva);
+    };
+
+    /** O áudio que a aba está tocando. Precisa ser pedido logo no clique (antes de qualquer outra espera). */
+    async function capturarAba() {
+      if (!md || !md.getDisplayMedia) return null;
+      try {
+        const s = await md.getDisplayMedia({
+          video: true,
+          audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, suppressLocalAudioPlayback: false },
+          preferCurrentTab: true,
+          selfBrowserSurface: 'include',
+        });
+        if (!s.getAudioTracks().length) { s.getTracks().forEach((t) => t.stop()); return null; }
+        s.getVideoTracks().forEach((t) => { t.enabled = false; }); // só o áudio interessa
+        return s;
+      } catch (_) {
+        return null;
       }
-      if (![...remotas].some(viva) && !mic) return avisar({ evento: 'erro', erro: 'Não achei a ligação nem o microfone. Comece a ligação e clique de novo.' });
-      gravacao = { inicio: Date.now(), partes: 0, mic, micProprio, recorders: [] };
-      novaRodada();
-      gravacao.relogio = setInterval(() => {
-        const antigos = gravacao.recorders;
+    }
+
+    /** Confere se está mesmo chegando som do lado do lead: avisa durante a ligação, não só no fim. */
+    function vigiarLead(g) {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return;
+      let ctx = null;
+      let ligadas = '';
+      let analisador = null;
+      let silencio = 0;
+      g.vigia = setInterval(() => {
+        try {
+          const faixas = faixasDoLead(g);
+          const ids = faixas.map((t) => t.id).join();
+          if (!ctx) ctx = new Ctx();
+          if (ctx.state === 'suspended') ctx.resume();
+          if (ids !== ligadas) {
+            ligadas = ids;
+            analisador = null;
+            if (faixas.length) {
+              analisador = ctx.createAnalyser();
+              faixas.forEach((t) => ctx.createMediaStreamSource(new MediaStream([t])).connect(analisador));
+            }
+          }
+          let pico = 0;
+          if (analisador) {
+            const amostras = new Uint8Array(analisador.fftSize);
+            analisador.getByteTimeDomainData(amostras);
+            amostras.forEach((v) => { pico = Math.max(pico, Math.abs(v - 128)); });
+          }
+          if (pico > 3) {
+            silencio = 0;
+            if (!g.leadOuvido) { g.leadOuvido = true; avisar({ evento: 'vozDoLead' }); }
+          } else if (!g.leadOuvido && ++silencio === 20) {
+            avisar({ evento: 'semVozDoLead' });
+          }
+        } catch (_) { /* sem análise: a gravação segue */ }
+      }, 1000);
+      g.fecharVigia = () => { clearInterval(g.vigia); if (ctx) ctx.close().catch(() => {}); };
+    }
+
+    let preparando = false;
+    async function comecar() {
+      if (gravacao || preparando) return;
+      if (!window.MediaRecorder) return avisar({ evento: 'erro', erro: 'Este navegador não grava áudio.' });
+      preparando = true;
+      try {
+        const aba = await capturarAba();
+        let mic = micDaPagina && micDaPagina.getAudioTracks().some(viva) ? micDaPagina : null;
+        let micProprio = false;
+        if (!mic && md && md.getUserMedia) {
+          try { mic = await navigator.mediaDevices.getUserMedia({ audio: true }); micProprio = true; } catch (_) { mic = null; }
+        }
+        const temLead = Boolean(aba) || [...remotas].some(viva);
+        if (!temLead) {
+          // gravar só um lado não serve para o report: melhor parar aqui e dizer o que fazer
+          if (micProprio && mic) mic.getTracks().forEach((t) => t.stop());
+          return avisar({ evento: 'erro', erro: 'Não consegui o áudio do lead. Clique em "Gravar ligação" de novo e, na janela do Chrome, clique em "Permitir" deixando o áudio da aba ligado.' });
+        }
+        const g = { inicio: Date.now(), partes: 0, mic, micProprio, aba, recorders: [], leadOuvido: false };
+        gravacao = g;
         novaRodada();
-        antigos.forEach((r) => { try { r.stop(); } catch (_) { /* ignora */ } });
-      }, PARTE_MS);
-      avisar({ evento: 'gravando', inicio: gravacao.inicio, temLead: [...remotas].some(viva), temMic: Boolean(mic) });
+        g.relogio = setInterval(() => {
+          const antigos = g.recorders;
+          novaRodada();
+          antigos.forEach((r) => { try { r.stop(); } catch (_) { /* ignora */ } });
+        }, PARTE_MS);
+        // "Parar de compartilhar" na barra do Chrome encerra a gravação
+        if (aba) aba.getAudioTracks().forEach((t) => t.addEventListener('ended', () => { if (gravacao === g) parar('compartilhamento encerrado'); }));
+        vigiarLead(g);
+        avisar({ evento: 'gravando', inicio: g.inicio, temLead, temMic: Boolean(mic) });
+      } finally {
+        preparando = false;
+      }
     }
 
     function parar(motivo) {
@@ -148,9 +227,12 @@
       const g = gravacao;
       gravacao = null;
       clearInterval(g.relogio);
+      if (g.fecharVigia) g.fecharVigia();
       g.recorders.forEach((r) => { try { r.stop(); } catch (_) { /* ignora */ } });
       if (g.micProprio && g.mic) g.mic.getTracks().forEach((t) => t.stop());
-      avisar({ evento: 'parou', partes: g.partes, duracaoMs: Date.now() - g.inicio, motivo: motivo || '' });
+      // solta a captura da aba depois que os gravadores fecharam o arquivo
+      if (g.aba) setTimeout(() => g.aba.getTracks().forEach((t) => t.stop()), 500);
+      avisar({ evento: 'parou', partes: g.partes, duracaoMs: Date.now() - g.inicio, leadOuvido: g.leadOuvido, motivo: motivo || '' });
     }
 
     window.addEventListener('message', (ev) => {

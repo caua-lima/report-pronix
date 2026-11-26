@@ -371,6 +371,9 @@ campos personalizados, outras anotações e o link **Abrir no RD Station**.
 
 ### Gravar a ligação do WhatsApp Web
 
+Ao clicar, o Chrome pede para compartilhar a aba: clique em **Permitir** (com o áudio ligado). É desse áudio que sai a voz
+do lead. Sem ele a gravação não começa, e se não chegar som do lead aparece um aviso durante a ligação.
+
 Quando uma ligação começa no WhatsApp Web, aparece no canto de baixo, à esquerda, **🎙 Gravar ligação**. Ao clicar, a
 extensão grava os dois lados separados: a voz do lead (o áudio que chega da chamada) e a sua (o microfone). Grava em
 partes de 3 minutos e transcreve cada parte enquanto a ligação continua (`POST /api/transcrever` com `segmentos: true`,
