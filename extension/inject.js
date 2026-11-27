@@ -45,7 +45,6 @@
   try {
     if (window.__crLigacaoHook) return;
     window.__crLigacaoHook = true;
-    const PARTE_MS = 3 * 60 * 1000;
     const remotas = new Set(); // faixas de áudio que chegam da chamada (a voz do lead)
     let micDaPagina = null; // o microfone que o próprio WhatsApp abriu para a chamada
     let gravacao = null;
@@ -91,38 +90,136 @@
       };
     }
 
-    const tipo = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus']
-      .find((t) => window.MediaRecorder && MediaRecorder.isTypeSupported(t)) || '';
-    const base64 = (blob) => new Promise((res) => {
-      const fr = new FileReader();
-      fr.onload = () => res(String(fr.result).split(',')[1] || '');
-      fr.onerror = () => res('');
-      fr.readAsDataURL(blob);
-    });
+    // O áudio de cada lado é cortado NAS PAUSAS da fala: o trecho sai com frases inteiras, sem os silêncios (é no
+    // silêncio que o transcritor inventa texto) e com o horário certo, contado pelas amostras. Vai sem compressão
+    // (WAV 16 kHz mono, 32 KB por segundo): um trecho de 28 s tem uns 900 KB, bem abaixo do limite do servidor.
+    const TAXA = 16000;
+    const BLOCO = 4096; // 256 ms
+    const ANTES = TAXA; // 1 s guardado antes da fala, para não comer o começo da primeira palavra
+    const MINIMO_COM_PAUSA = 12 * TAXA; // a partir daqui, qualquer pausa fecha o trecho
+    const PAUSA_CURTA = Math.round(0.7 * TAXA);
+    const PAUSA_LONGA = Math.round(2.2 * TAXA); // quem parou de falar: fecha mesmo um trecho curto
+    const MAXIMO = 28 * TAXA;
+    const SOM_MINIMO = 0.004; // volume (RMS) a partir do qual conta como som; baixo de propósito, para não perder fala baixa
 
-    function gravarParte(stream, quem, indice, inicioMs) {
-      const rec = new MediaRecorder(stream, tipo ? { mimeType: tipo, audioBitsPerSecond: 64000 } : undefined);
-      const pedacos = [];
-      rec.ondataavailable = (e) => { if (e.data && e.data.size) pedacos.push(e.data); };
-      rec.onstop = async () => {
-        const blob = new Blob(pedacos, { type: rec.mimeType || 'audio/webm' });
-        if (blob.size > 2000) avisar({ evento: 'parte', quem, indice, inicioMs, b64: await base64(blob) });
-        else avisar({ evento: 'parteVazia', quem, indice });
-      };
-      rec.start(1000);
-      return rec;
+    function emBase64(bytes) {
+      let s = '';
+      for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+      return btoa(s);
+    }
+    function emWav(blocos, total) {
+      const bytes = new Uint8Array(44 + total * 2);
+      const v = new DataView(bytes.buffer);
+      const letras = (pos, t) => { for (let i = 0; i < t.length; i++) bytes[pos + i] = t.charCodeAt(i); };
+      letras(0, 'RIFF'); v.setUint32(4, 36 + total * 2, true); letras(8, 'WAVEfmt ');
+      v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+      v.setUint32(24, TAXA, true); v.setUint32(28, TAXA * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+      letras(36, 'data'); v.setUint32(40, total * 2, true);
+      let pos = 44;
+      for (const bloco of blocos) {
+        for (let i = 0; i < bloco.length; i++, pos += 2) v.setInt16(pos, Math.max(-1, Math.min(1, bloco[i])) * 0x7fff, true);
+      }
+      return bytes;
     }
 
-    function novaRodada() {
-      if (!gravacao) return;
-      const g = gravacao;
-      const inicioMs = Date.now() - g.inicio;
-      const indice = g.partes++;
-      const ativos = [];
-      const lead = faixasDoLead(g);
-      if (lead.length) ativos.push(gravarParte(new MediaStream(lead), 'lead', indice, inicioMs));
-      if (g.mic && g.mic.getAudioTracks().some(viva)) ativos.push(gravarParte(new MediaStream(g.mic.getAudioTracks().filter(viva)), 'eu', indice, inicioMs));
-      g.recorders = ativos;
+    /** Junta os blocos de um lado e manda um trecho a cada pausa. `entregar(blocos, inicioEmAmostras, total)`. */
+    function cortadorPorFala(entregar) {
+      let blocos = [];
+      let total = 0;
+      let inicio = 0; // posição (em amostras, desde o começo da gravação) do primeiro bloco guardado
+      let comSom = 0; // amostras com som no trecho atual
+      let silencio = 0; // silêncio no fim do trecho atual
+      let fundo = SOM_MINIMO / 3; // o chiado do ambiente, aprendido aos poucos
+      const fechar = (quantos = blocos.length) => {
+        const saem = blocos.slice(0, quantos);
+        const tamanho = saem.reduce((n, b) => n + b.amostras.length, 0);
+        const som = saem.reduce((n, b) => n + (b.som ? b.amostras.length : 0), 0);
+        if (som >= TAXA * 0.2) entregar(saem.map((b) => b.amostras), inicio, tamanho);
+        blocos = blocos.slice(quantos);
+        inicio += tamanho;
+        total -= tamanho;
+        comSom = blocos.reduce((n, b) => n + (b.som ? b.amostras.length : 0), 0);
+        silencio = 0;
+      };
+      return {
+        receber(amostras) {
+          let soma = 0;
+          for (let i = 0; i < amostras.length; i++) soma += amostras[i] * amostras[i];
+          const volume = Math.sqrt(soma / (amostras.length || 1));
+          const som = volume > Math.max(SOM_MINIMO, Math.min(fundo * 3, 0.02));
+          if (!som) fundo = fundo * 0.95 + volume * 0.05;
+          blocos.push({ amostras: new Float32Array(amostras), volume, som });
+          total += amostras.length;
+          if (som) { comSom += amostras.length; silencio = 0; } else silencio += amostras.length;
+          if (!comSom) { // ainda ninguém falou: guarda só o finalzinho
+            while (blocos.length > 1 && total - blocos[0].amostras.length >= ANTES) {
+              const velho = blocos.shift();
+              total -= velho.amostras.length;
+              inicio += velho.amostras.length;
+            }
+            return;
+          }
+          if ((total >= MINIMO_COM_PAUSA && silencio >= PAUSA_CURTA) || silencio >= PAUSA_LONGA) fechar();
+          else if (total >= MAXIMO) {
+            // fala sem pausa: corta no ponto mais baixo dos últimos 5 s
+            let melhor = blocos.length - 1;
+            let atras = 0;
+            for (let i = blocos.length - 1; i > 0 && atras < 5 * TAXA; i--) {
+              atras += blocos[i].amostras.length;
+              if (blocos[i].volume < blocos[melhor].volume) melhor = i;
+            }
+            fechar(melhor + 1);
+          }
+        },
+        encerrar() { if (blocos.length && comSom) fechar(); blocos = []; total = 0; comSom = 0; },
+      };
+    }
+
+    /** Liga um cortador em cada lado. As fontes são religadas se as faixas mudarem no meio da ligação. */
+    function capturarFalas(g) {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      const ctx = new Ctx({ sampleRate: TAXA });
+      const mudo = ctx.createGain();
+      mudo.gain.value = 0;
+      mudo.connect(ctx.destination); // o processador só roda ligado à saída; nada é tocado
+      const lados = [
+        { quem: 'lead', faixas: () => faixasDoLead(g) },
+        { quem: 'eu', faixas: () => (g.mic ? g.mic.getAudioTracks().filter(viva) : []) },
+      ].map((lado) => {
+        const cortador = cortadorPorFala((blocos, inicio, total) => {
+          avisar({ evento: 'parte', quem: lado.quem, indice: g.partes++, inicioMs: Math.round((inicio / TAXA) * 1000), b64: emBase64(emWav(blocos, total)) });
+        });
+        const no = ctx.createScriptProcessor(BLOCO, 1, 1);
+        no.onaudioprocess = (e) => cortador.receber(e.inputBuffer.getChannelData(0));
+        no.connect(mudo);
+        let fontes = [];
+        let ligadas = '';
+        const religar = () => {
+          const faixas = lado.faixas();
+          const ids = faixas.map((t) => t.id).join();
+          if (ids === ligadas) return;
+          ligadas = ids;
+          fontes.forEach((f) => f.disconnect());
+          fontes = faixas.map((t) => { const f = ctx.createMediaStreamSource(new MediaStream([t])); f.connect(no); return f; });
+        };
+        religar();
+        // sem fonte nenhuma o processador ainda roda (com silêncio): o relógio dos dois lados anda junto
+        const base = ctx.createConstantSource ? ctx.createConstantSource() : null;
+        if (base) { base.offset.value = 0; base.connect(no); base.start(); }
+        return { cortador, no, religar };
+      });
+      const relogio = setInterval(() => {
+        if (ctx.state === 'suspended') ctx.resume();
+        lados.forEach((l) => l.religar());
+      }, 1000);
+      if (ctx.state === 'suspended') ctx.resume();
+      return {
+        encerrar() {
+          clearInterval(relogio);
+          lados.forEach((l) => { l.no.onaudioprocess = null; l.cortador.encerrar(); l.no.disconnect(); });
+          ctx.close().catch(() => {});
+        },
+      };
     }
 
     const faixasDoLead = (g) => {
@@ -200,7 +297,7 @@
     /** @param {{ microfone?: string, fonteLead?: string }} [opcoes] ids dos aparelhos escolhidos; vazio = o padrão */
     async function comecar(opcoes = {}) {
       if (gravacao || preparando) return;
-      if (!window.MediaRecorder) return avisar({ evento: 'erro', erro: 'Este navegador não grava áudio.' });
+      if (!(window.AudioContext || window.webkitAudioContext)) return avisar({ evento: 'erro', erro: 'Este navegador não grava áudio.' });
       preparando = true;
       try {
         // Voz do lead: o áudio da aba (padrão) ou a entrada escolhida (ex.: um cabo de áudio virtual).
@@ -230,14 +327,9 @@
           if (micProprio && mic) mic.getTracks().forEach((t) => t.stop());
           return avisar({ evento: 'erro', erro: 'Não consegui o áudio do lead. Clique em "Gravar ligação" de novo e, na janela do Chrome, clique em "Permitir" deixando o áudio da aba ligado.' });
         }
-        const g = { inicio: Date.now(), partes: 0, mic, micProprio, aba, recorders: [], leadOuvido: false };
+        const g = { inicio: Date.now(), partes: 0, mic, micProprio, aba, falas: null, leadOuvido: false };
         gravacao = g;
-        novaRodada();
-        g.relogio = setInterval(() => {
-          const antigos = g.recorders;
-          novaRodada();
-          antigos.forEach((r) => { try { r.stop(); } catch (_) { /* ignora */ } });
-        }, PARTE_MS);
+        g.falas = capturarFalas(g);
         // "Parar de compartilhar" na barra do Chrome encerra a gravação
         if (aba) aba.getAudioTracks().forEach((t) => t.addEventListener('ended', () => { if (gravacao === g) parar('compartilhamento encerrado'); }));
         vigiarSom(g);
@@ -251,12 +343,10 @@
       if (!gravacao) return;
       const g = gravacao;
       gravacao = null;
-      clearInterval(g.relogio);
       if (g.fecharVigia) g.fecharVigia();
-      g.recorders.forEach((r) => { try { r.stop(); } catch (_) { /* ignora */ } });
+      try { if (g.falas) g.falas.encerrar(); } catch (_) { /* os trechos já enviados continuam valendo */ } // manda o que sobrou
       if (g.micProprio && g.mic) g.mic.getTracks().forEach((t) => t.stop());
-      // solta a captura da aba depois que os gravadores fecharam o arquivo
-      if (g.aba) setTimeout(() => g.aba.getTracks().forEach((t) => t.stop()), 500);
+      if (g.aba) g.aba.getTracks().forEach((t) => t.stop());
       avisar({ evento: 'parou', partes: g.partes, duracaoMs: Date.now() - g.inicio, leadOuvido: g.leadOuvido, motivo: motivo || '' });
     }
 

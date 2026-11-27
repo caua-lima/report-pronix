@@ -2204,7 +2204,7 @@ app.post('/api/transcrever', auth, async (req, res) => {
     const ttl = ttlCacheTranscricao();
     if (comTempos) {
       // Ligação gravada pela extensão: em partes de poucos minutos, cada uma com os trechos e o tempo deles.
-      const chaveTr = 'trs2:' + crypto.createHash('sha256').update(buffer).digest('hex');
+      const chaveTr = 'trs3:' + crypto.createHash('sha256').update(buffer).digest('hex');
       const guardado = ttlCacheTranscricao() ? await db.cacheGet(chaveTr) : null;
       if (guardado) {
         try { return res.json({ ...JSON.parse(guardado), cache: true }); } catch (_) { /* refaz */ }

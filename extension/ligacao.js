@@ -1,6 +1,6 @@
 // Ligação no WhatsApp Web: o botão "Gravar ligação", a transcrição automática e a entrada da ligação no report.
 //
-// O inject.js (na página) acha a chamada, grava a voz do lead e a sua em partes de 3 minutos e manda cada parte
+// O inject.js (na página) acha a chamada, grava a voz do lead e a sua em trechos cortados nas pausas e manda cada um
 // para cá. Aqui cada parte vai para o servidor transcrever (com o tempo de cada trecho), as falas dos dois lados são
 // intercaladas pelo tempo e a ligação fica guardada para a conversa em que você estava. No próximo report (ou
 // resumo) desta conversa, as falas da ligação entram junto, marcadas como "[ligação]".
@@ -215,7 +215,8 @@
       if (r && r.ok) {
         (r.segmentos || []).forEach((s) => {
           const t = parte.inicioMs / 1000 + (Number(s.inicio) || 0);
-          if (s.texto) estado.falas.push({ quem: parte.quem, t, texto: String(s.texto).trim() });
+          const fim = parte.inicioMs / 1000 + Math.max(Number(s.fim) || 0, Number(s.inicio) || 0);
+          if (s.texto) estado.falas.push({ quem: parte.quem, t, fim, texto: String(s.texto).trim() });
         });
       } else {
         estado.erros++;
@@ -262,11 +263,12 @@
     const juntas = [];
     falas.forEach((f) => {
       const ult = juntas[juntas.length - 1];
-      if (ult && ult.quem === f.quem && f.t - ult.fimT < 4) {
+      const fim = f.fim || f.t;
+      if (ult && ult.quem === f.quem && f.t - ult.fimT < 3) {
         ult.texto += ' ' + f.texto;
-        ult.fimT = f.t;
+        ult.fimT = fim;
       } else {
-        juntas.push({ ...f, fimT: f.t });
+        juntas.push({ ...f, fimT: fim });
       }
     });
     const nome = estado.nome || nomeDaConversa();

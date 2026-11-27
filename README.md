@@ -371,6 +371,8 @@ campos personalizados, outras anotações e o link **Abrir no RD Station**.
 
 ### Gravar a ligação do WhatsApp Web
 
+Cada lado é gravado em WAV e cortado nas pausas da fala (trechos de até 28 s, sem os silêncios).
+
 **⚙ Áudio** (no cartão do lead) escolhe o seu microfone e de onde vem a voz do lead (padrão: o áudio da aba). Durante
 a gravação, o botão mostra se está chegando som de cada lado. No painel, a aba **Report da ligação** recebe o .txt e
 gera o report com análise mais funda (modelo premium, conversa inteira).
@@ -380,7 +382,7 @@ do lead. Sem ele a gravação não começa, e se não chegar som do lead aparece
 
 Quando uma ligação começa no WhatsApp Web, aparece no canto de baixo, à esquerda, **🎙 Gravar ligação**. Ao clicar, a
 extensão grava os dois lados separados: a voz do lead (o áudio que chega da chamada) e a sua (o microfone). Grava em
-partes de 3 minutos e transcreve cada parte enquanto a ligação continua (`POST /api/transcrever` com `segmentos: true`,
+trechos cortados nas pausas e transcreve cada um enquanto a ligação continua (`POST /api/transcrever` com `segmentos: true`,
 que devolve cada trecho com o tempo). Ao parar, ou quando a ligação termina, as falas dos dois lados são intercaladas
 pelo tempo e ficam guardadas para a conversa que estava aberta (14 dias, no navegador). No próximo report, resumo ou
 mapa desta conversa, elas entram junto, marcadas como `[ligação]`. Nada grava sem o clique; vale avisar o lead de que a

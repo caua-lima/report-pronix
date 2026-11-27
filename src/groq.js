@@ -13,8 +13,19 @@ const erroDeRede = (msgTimeout) => (e) => {
   throw e;
 };
 
-// Ajuda o modelo a escrever certo os termos que aparecem nas ligações.
-const VOCABULARIO_LIGACAO = 'Ligação de vendas em português do Brasil. Pronix, Mercado Livre, Shopee, Mercado Pago, CNPJ, MEI, nota fiscal, fornecedores, anúncios, ads, faturamento, investimento, mentoria, consultoria, especialista, reunião no Google Meet.';
+// Frases que o Whisper inventa em ruído (vêm de legendas de vídeo do treino dele): ninguém fala isso numa ligação.
+const INVENCOES = /\blegendas? (por|pela) [^.!?]*|\blegendas pela comunidade[^.!?]*|\bamara\.org\b|obrigad[oa] por assistir[^.!?]*|inscreva-se no (nosso )?canal[^.!?]*|at[ée] o pr[óo]ximo v[íi]deo[^.!?]*/gi;
+
+/** Tira as invenções conhecidas e o laço sem pontuação ("Mercado Pago, CNPJ, Mercado Pago, CNPJ…", "an an an an"). */
+function semInvencoes(texto) {
+  return String(texto)
+    .replace(INVENCOES, ' ')
+    .replace(/(?<![\p{L}\p{N}])((?:[\p{L}\p{N}]+[\s,]+){0,3}[\p{L}\p{N}]+)(?:[\s,]+\1(?![\p{L}\p{N}])){3,}/giu, '$1')
+    .replace(/\b(Pornix|Pr[ôo]nix|Pr[ôo]nia)\b/g, 'Pronix')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/^[\s.,;!?-]+$/, '')
+    .trim();
+}
 
 /** "Sim. Sim. Sim. Sim." ou a mesma frase em laço: fica no máximo duas vezes seguidas. */
 function semRepeticaoEmLaco(texto) {
@@ -34,8 +45,8 @@ function limparSegmentos(segments) {
     const silencio = num(x.no_speech_prob, 0) > 0.6 && num(x.avg_logprob, 0) < -0.7;
     const semSentido = num(x.compression_ratio, 1) > 2.4 && num(x.avg_logprob, 0) < -0.5;
     if (silencio || semSentido) continue;
-    const texto = semRepeticaoEmLaco(String(x.text || '').trim());
-    if (!texto || VOCABULARIO_LIGACAO.includes(texto) && texto.length > 20) continue;
+    const texto = semInvencoes(semRepeticaoEmLaco(String(x.text || '').trim()));
+    if (!texto) continue;
     const anterior = saida[saida.length - 1];
     const antes = saida[saida.length - 2];
     if (anterior && antes && anterior.texto === texto && antes.texto === texto) continue;
@@ -52,22 +63,45 @@ function limparSegmentos(segments) {
  * @returns {Promise<string|{texto: string, segmentos: Array<{inicio: number, fim: number, texto: string}>}>}
  */
 async function transcreverGroq(buffer, filename = 'audio.ogg', { segmentos = false } = {}) {
+  if (!segmentos) return pedirTranscricao(buffer, filename, {});
+  // Às vezes o serviço devolve um trecho sem nenhum acento, com os pedaços acentuados faltando ("voc", "cria" no
+  // lugar de "você", "criação"). Detectado, pede de novo de outro jeito e fica a resposta menos estragada.
+  const modelo = process.env.GROQ_MODEL_LIGACAO || 'whisper-large-v3';
+  const tentativas = [{ modelo, temperatura: 0 }, { modelo, temperatura: 0.2 }, { modelo: 'whisper-large-v3-turbo', temperatura: 0 }];
+  let melhor = null;
+  for (const t of tentativas) {
+    let r;
+    try { r = await pedirTranscricao(buffer, filename, { segmentos: true, ...t }); } catch (e) {
+      if (melhor) break; // já há uma resposta: a nova tentativa era só para melhorar
+      throw e;
+    }
+    const estrago = r.segmentos.filter((x) => faltamAcentos(x.texto)).length;
+    if (!melhor || estrago < melhor.estrago) melhor = { r, estrago };
+    if (!estrago) break;
+  }
+  return melhor.r;
+}
+
+/** Fala em português com 8 palavras ou mais sem um acento e sem pontuação, ou com "voc" solto: veio faltando pedaço. */
+function faltamAcentos(texto) {
+  const t = String(texto || '');
+  if (/(^|\s)voc(\s|$)/i.test(t)) return true;
+  return t.split(/\s+/).length >= 8 && !/[áàâãéêíóôõúç.,!?]/i.test(t);
+}
+
+async function pedirTranscricao(buffer, filename, { segmentos = false, modelo, temperatura = 0 } = {}) {
   const key = process.env.GROQ_API_KEY;
   if (!key) throw new Error('GROQ_API_KEY não configurada.');
   // Ligação gravada: o modelo completo (mais preciso que o turbo, usado nos áudios curtos da conversa).
-  const model = segmentos
-    ? process.env.GROQ_MODEL_LIGACAO || 'whisper-large-v3'
-    : process.env.GROQ_MODEL || 'whisper-large-v3-turbo';
+  const model = modelo || process.env.GROQ_MODEL || 'whisper-large-v3-turbo';
 
   const form = new FormData();
   form.append('file', new Blob([buffer]), filename);
   form.append('model', model);
   form.append('language', 'pt');
   form.append('response_format', segmentos ? 'verbose_json' : 'text');
-  if (segmentos) {
-    form.append('temperature', '0');
-    form.append('prompt', VOCABULARIO_LIGACAO);
-  }
+  // Sem "prompt" de vocabulário: nos trechos baixos o modelo copiava a lista de termos como se alguém tivesse falado.
+  if (segmentos) form.append('temperature', String(temperatura));
 
   const r = await fetch(GROQ_URL, {
     method: 'POST',
@@ -229,4 +263,4 @@ async function chatGroq({ system, user, modelo, maxTokens = 900, json = true, pr
   throw ultimoErro || new Error('A IA gratuita não respondeu.');
 }
 
-module.exports = { limparSegmentos, transcreverGroq, lerImagemGroq, chatGroq, filaDeModelos, modeloIndisponivel, MODELOS_CHAT };
+module.exports = { limparSegmentos, faltamAcentos, transcreverGroq, lerImagemGroq, chatGroq, filaDeModelos, modeloIndisponivel, MODELOS_CHAT };

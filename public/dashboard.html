@@ -4625,7 +4625,8 @@
       String(bruto || '').replace(/^\uFEFF/, '').split(/\r?\n/).forEach((l) => {
         const cab = /^Ligação com (.+?) - \d{4}-\d{2}-\d{2}/.exec(l);
         if (cab) {
-          if (!/^(lead|online|digitando|gravando|escrevendo|visto por)/i.test(cab[1])) nome = cab[1].trim();
+          // status do WhatsApp ou número de telefone não são nome: aí o campo fica para preencher
+          if (!/^(lead|online|digitando|gravando|escrevendo|visto por)|^\+?[\d\s().-]+$/i.test(cab[1].trim())) nome = cab[1].trim();
           return;
         }
         const fala = /^\s*(?:\[\d+:\d{2}\]\s*)?(EU|LEAD|VENDEDOR):\s*(.*)$/i.exec(l);

@@ -99,7 +99,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   // Ligação gravada (ligacao.js): cada parte de 3 min volta com os trechos e o tempo de cada um.
   if (msg && msg.action === 'transcreverLigacao') {
     (async () => {
-      const r = await chamar('/api/transcrever', { audioBase64: msg.base64, nome: 'ligacao.webm', segmentos: true }, { timeoutMs: 60000 });
+      const r = await chamar('/api/transcrever', { audioBase64: msg.base64, nome: 'ligacao.wav', segmentos: true }, { timeoutMs: 60000 });
       if (!r.ok) return sendResponse({ ok: false, erro: r.erro });
       sendResponse({ ok: true, texto: r.data.texto, segmentos: r.data.segmentos || [] });
     })();
